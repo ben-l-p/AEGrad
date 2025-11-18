@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <StructuredGrid WholeExtent="0 30 0 20 0 0">
+    <Piece Extent="0 30 0 20 0 0"                                                     >
+      <PointData>
+      </PointData>
+      <CellData>
+        <DataArray type="Float32" Name="gamma" format="appended" RangeMin="-2.0835690498"        RangeMax="-0.98477983475"       offset="0"                   />
+      </CellData>
+      <Points>
+        <DataArray type="Float32" Name="Points" NumberOfComponents="3" format="appended" RangeMin="0.70000002731"        RangeMax="6.2188437071"         offset="180"                 />
+      </Points>
+    </Piece>
+  </StructuredGrid>
+  <AppendedData encoding="base64">
+   _AQAAAACAAABgCQAAdAAAAA==eJzrkKrZ3zEA+Gz7hgHBlrvPDQjuO/ZoQLDYlg8DgnUn/hoQ/Poww4GBwCKqzAOC7y1kGRBsFMk6ovBDoJ8HAksD43gg8Fdgmh4IbAfMwwOBxYFl1kDgmcAyeiCwK7BOGgh8DVgHDwSeBGxzDAQGAOhhMmA=AQAAAACAAACEHgAAvgAAAA==eJzt2KENwkAAheEbgRGQSMIA9EZgBAZAYHEnKpDIytI9SBgFwSAQ3onHAM/9VV9++dI0vVvG3VC+z/S+PBYc8+Z+qv+97XHW2tx7GXDW/T23XnHY2tx7w2H3b4v1GYetzb0/cdja3PsLh63NvZeKs+7/LdZXOGxt7n2Nw9bm3rc4bG3uveKw+5nI+gGHrc29H3HY2tz7GYetzb03HHa/b7F+xWFrc+83HLY29z7hsLW59xmH3e9yf/4Acsh3hg==
+  </AppendedData>
+</VTKFile>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <StructuredGrid WholeExtent="0 30 0 20 0 0">
+    <Piece Extent="0 30 0 20 0 0"                                                     >
+      <PointData>
+      </PointData>
+      <CellData>
+        <DataArray type="Float32" Name="gamma" format="appended" RangeMin="0"                    RangeMax="0"                    offset="0"                   />
+      </CellData>
+      <Points>
+        <DataArray type="Float32" Name="Points" NumberOfComponents="3" format="appended" RangeMin="0.70000002731"        RangeMax="6.2188437071"         offset="60"                  />
+      </Points>
+    </Piece>
+  </StructuredGrid>
+  <AppendedData encoding="base64">
+   _AQAAAACAAABgCQAAGQAAAA==eJztwTEBAAAAwqD1T20JT6AAAHgaCWAAAQ==AQAAAACAAACEHgAAvAUAAA==eJxN1iHoJkUcx+FLWgQXTBbdJIYLi6YTcX4YLl1YuXQg3BYvnbjFYHKCYYPgxLGNBjFbtIiL2ajhsGyQC9oM1lOc97/vM+lTvuXhF+brz95It/579Y9Pfnz7lXtn//b9B2d/9N6nZ3/28ednv/ful2e/8uI3Z//5+3dn//DtT2x/YfuE7dOz//r9b7bPzv75refipl//6oWzv3j+pbP/+fDls9//9dW4bl9je/vs8vybbO+wTWzvsr3H9j7bB2wfsn3E9vHZX/9vnt+5mvfu5r27ee9u3rub9+7mvbt5725+s/2F7RO2T8/u5jfbZ2d3897dvHc3793Ne3fzm+1rbG+f3c1vtnfYJrZ32d5je5/tA7YP2T5i+/jsbn4rceeJO0/ceeLOE3eeuPPEnSfuPHHniTtP3HnizhN3nrjzxJ0n7jxx54k7T9x54s4Td56488SdJ+48ceeJO0/ceeLOE3eeuPN0NQ/MA/PAPDAPzAPzwDwwD8wD88A8MA/MA/PAPDAPzAPzwDwwD8wD88A8MA/MA/PAPDAPzAPzwDxjnjHPmGfMM+YZ84x5xjxjnjHPmGfMM+YZ84x5xjxjnjHPmGfMM+YZ84x5xjxjnjHPmGfMM+YZ84x5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMG+YN8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zHfMd8x3zA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/MD8wPzA/NbcTXvffm3xNW89+XfElfz3pd/S1zNe1/+LXE1v9k+Yfv07Mu/Ja7mvS//lria9778W+Jq3vvyb4mr+c329tmXf0tczW+2ie1dtvfY3mf7gO1Dto/YPj67mw+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+YD5gPmA+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5iPmI+Yj5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmE+YT5hPmAfmgXlgHpgH5oF5YB6YB+aBeWAemAfmgXlgHpgH5oF5YB6YB+aBeWAemAfmgXlgHpgH5oF5YD5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jPmM+Yz5jvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+YL5gvmC+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yr5ivmK+Yp4xz5hnzDPmGfOMecY8Y54xz5hnzDPmGfOMecY8Y54xz5hnzDPmGfOMecY8Y54xz5hnzDPmGfOMecZ8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w3zDfMN8w7xgXjAvmBfMC+YF84J5wbxgXjAvmBfMC+YF84J5wbxgXjAvmBfMC+YF84J5wbxgXjAvmBfMC+YF84J5xbxiXjGvmFfMK+YV84p5xbxiXjGvmFfMK+YV84p5xbxiXjGvmFfMK+YV84p5xbxiXjGvmFfMK+YV84Z5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMG+YN84Z5w7xh3jBvmDfMe/8LBhKXrg==
+  </AppendedData>
+</VTKFile>
