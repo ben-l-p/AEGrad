@@ -19,10 +19,11 @@ def chi(rmat: Array) -> Array:
 class LinearOperator:
     r"""
     Linear operator represented by a function, either as A(x) or Ax
+    If the function is set to none, the zero matrix is assumed.
     """
     def __init__(
         self,
-        func: Callable[[Array], Array],
+        func: Optional[Callable[[Array], Array]],
         shape: tuple[int, int],
         mat: Optional[Array] = None,
     ):
@@ -31,8 +32,8 @@ class LinearOperator:
             if mat.shape != shape:
                 raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {shape}.")
 
-        self.func = func
-        self.mat: Optional[Array] = mat
+        self.func = func if func is None else lambda x: jnp.zeros(shape[1])
+        self.mat: Optional[Array] = mat if func is not None else jnp.zeros(shape)
         self.shape = shape  # shape of equivelent matrix
 
     def get_matrix(self) -> Array:

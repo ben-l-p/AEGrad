@@ -98,6 +98,9 @@ class AeroCase:
 
         # placeholder for time domain case
         self.zeta_b: list[Array] = [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+        self.zeta_b_dot: list[Array] = [
+            jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc
+        ]
         self.zeta_w: list[Array] = [jnp.zeros((n_tstep, gd.m_star + 1, gd.n + 1, 3)) for gd in self.grid_disc]
         self.gamma_b: list[Array] = [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
         self.gamma_b_dot: list[Array] = [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
@@ -203,7 +206,7 @@ class AeroCase:
         :param n_tstep: Number of time steps to extend to
         """
         warn("Extending number of timesteps may be slow")
-        for var in (self.zeta_b, self.zeta_w, self.gamma_b, self.gamma_w, self.f_steady, self.f_unsteady, self.t):
+        for var in (self.zeta_b, self.zeta_b_dot, self.zeta_w, self.gamma_b, self.gamma_w, self.f_steady, self.f_unsteady, self.t):
             for i_surf in range(self.n_surf):
                 curr_val = var[i_surf]
                 var[i_surf] = jnp.concatenate((curr_val, jnp.zeros((n_tstep, *curr_val.shape[1:]))))
@@ -222,6 +225,7 @@ class AeroCase:
 
         return AeroSnapshot(
             zeta_b=[self.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
+            zeta_b_dot=[self.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
             zeta_w=[self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
             gamma_b=[self.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
             gamma_w=[self.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
@@ -384,6 +388,17 @@ class AeroCase:
         """
         for i_surf in range(self.n_surf):
             self.zeta_b[i_surf] = self.zeta_b[i_surf].at[i_ts, ...].set(zeta_b[i_surf])
+        return self
+
+    @replace_self
+    def set_zeta_b_dot(self, zeta_b_dot: Sequence[Array], i_ts: int) -> Self:
+        r"""
+        Set bound grid velocities from list of grid coordinates at specified time step
+        :param zeta_b_dot: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
+        :param i_ts: Timestep index
+        """
+        for i_surf in range(self.n_surf):
+            self.zeta_b_dot[i_surf] = self.zeta_b_dot[i_surf].at[i_ts, ...].set(zeta_b_dot[i_surf])
         return self
 
     @replace_self
@@ -644,9 +659,14 @@ class AeroCase:
         if hg_dot is None:
             c_dot = [jnp.zeros_like(c) for c in cs]
         else:
+            zeta_b_dot = self.hg_dot_to_zeta_dot(hg_dot)
+
+            self.set_zeta_b_dot(zeta_b_dot, i_ts)
+
+
             c_dot = [
                 neighbour_average(zeta_dot, axes=(0, 1))
-                for zeta_dot in self.hg_dot_to_zeta_dot(hg_dot)
+                for zeta_dot in zeta_b_dot
             ]
 
         if static:
@@ -756,6 +776,7 @@ class AeroCase:
     def reference_snapshot(self) -> AeroSnapshot:
         return AeroSnapshot(
             zeta_b=self.zeta0_b,
+            zeta_b_dot=[jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc],
             zeta_w=self.zeta0_w,
             gamma_b=[jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc],
             gamma_w=[jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc],

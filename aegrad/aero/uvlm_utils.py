@@ -37,6 +37,7 @@ def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
 class AeroSnapshot:
     def __init__(self,
                  zeta_b: Sequence[Array],
+                zeta_b_dot: Sequence[Array],
                  zeta_w: Sequence[Array],
                  gamma_b: Sequence[Array],
                  gamma_w: Sequence[Array],
@@ -50,6 +51,7 @@ class AeroSnapshot:
         r"""
         Snapshot of aerodynamic surface at a single time step
         :param zeta_b: Bound grid coordinates, [n_surf][m+1, n+1, 3]
+        :param zeta_b_dot: Bound grid velocities, [n_surf][m+1, n+1, 3]
         :param zeta_w: Wake grid coordinates, [n_surf][m_star+1, n+1, 3]
         :param gamma_b: Bound circulation strengths, [n_surf][m, n]
         :param gamma_w: Wake circulation strengths, [n_surf][m_star, n]
@@ -57,6 +59,7 @@ class AeroSnapshot:
         :param f_unsteady: Unsteady force contributions, [n_surf][m, n]
         """
         self.zeta_b: Sequence[Array] = zeta_b
+        self.zeta_b_dot: Sequence[Array] = zeta_b_dot
         self.zeta_w: Sequence[Array] = zeta_w
         self.gamma_b: Sequence[Array] = gamma_b
         self.gamma_w: Sequence[Array] = gamma_w
@@ -74,6 +77,7 @@ class AeroSnapshot:
 
         return AeroSurfaceSnapshot(
             zeta_b=self.zeta_b[i_surf],
+            zeta_b_dot=self.zeta_b_dot[i_surf],
             zeta_w=self.zeta_w[i_surf],
             gamma_b=self.gamma_b[i_surf],
             gamma_w=self.gamma_w[i_surf],
@@ -95,6 +99,7 @@ class AeroSnapshot:
 class AeroSurfaceSnapshot:
     def __init__(self,
                  zeta_b: Array,
+                zeta_b_dot: Array,
                  zeta_w: Array,
                  gamma_b: Array,
                  gamma_w: Array,
@@ -105,6 +110,7 @@ class AeroSurfaceSnapshot:
                  i_ts: int,
                  t: float) -> None:
         self.zeta_b: Array = zeta_b
+        self.zeta_b_dot: Array = zeta_b_dot
         self.zeta_w: Array = zeta_w
         self.gamma_b: Array = gamma_b
         self.gamma_w: Array = gamma_w
@@ -120,7 +126,8 @@ class AeroSurfaceSnapshot:
         if plot_bound:
             bound_filename = Path(directory).joinpath(self.surf_b_name)
             paths.append(plot_frame_to_vtk(self.zeta_b, bound_filename, self.i_ts,
-                              node_vector_data={'f_steady': self.f_steady, 'f_unsteady': self.f_unsteady},
+                              node_vector_data={'f_steady': self.f_steady, 'f_unsteady': self.f_unsteady,
+                                                'zeta_dot': self.zeta_b_dot},
                               cell_scalar_data={'gamma': self.gamma_b},
                               ))
         if plot_wake:
