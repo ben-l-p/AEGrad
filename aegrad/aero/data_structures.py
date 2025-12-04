@@ -39,7 +39,7 @@ class _SliceEntry:
 class InputSlices:
     zeta_b: LinearComponent
     zeta_b_dot: LinearComponent
-    nu_c: LinearComponent
+    nu_b: LinearComponent
     nu_w: LinearComponent
 
 @dataclass
@@ -59,7 +59,7 @@ class OutputSlices:
 class InputUnflattened:
     zeta_b: Sequence[Array]
     zeta_b_dot: Sequence[Array]
-    nu_c: Optional[Sequence[Array]]
+    nu_b: Optional[Sequence[Array]]
     nu_w: Optional[Sequence[Array]]
 
 @dataclass

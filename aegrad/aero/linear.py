@@ -30,7 +30,7 @@ class LinearAero:
     def __init__(self,
                  case: AeroCase,
                  reference: AeroSnapshot,
-                 wake_type: LinearWakeType = LinearWakeType.FROZEN,
+                 wake_type: LinearWakeType = LinearWakeType.FREE,
                  bound_upwash: bool = True,
                  wake_upwash: bool = True,
                  unsteady_force: bool = True):
@@ -121,7 +121,7 @@ class LinearAero:
     def make_input_slices(self) -> tuple[InputSlices, int]:
         slice_entries = (_SliceEntry("zeta_b", True, self.zeta_b_shapes),
                     _SliceEntry("zeta_b_dot", True, self.zeta_b_shapes),
-                    _SliceEntry("nu_c", *((True, self.zeta_b_shapes) if self.bound_upwash else (False, None))),
+                    _SliceEntry("nu_b", *((True, self.zeta_b_shapes) if self.bound_upwash else (False, None))),
                     _SliceEntry("nu_w", *((True, self.zeta_w_shapes) if self.wake_upwash else (False, None))))
         return self._make_slices(slice_entries, InputSlices)
 
@@ -273,10 +273,34 @@ class LinearAero:
 
                 # optionally include circulation pertubations in the wake convection velocity
                 if self.free_wake:
-                    vertex_influence = compute_aic_sys_assembled([x],
-                                                             [*x_n_tot.zeta_b, *x_n_tot.zeta_b],
-                                                            [*self.kernels_b, *self.kernels_w],
-                                                             None)
+                    gamma_vec = jnp.concatenate(
+                        [
+                            x_n_tot.gamma_b[i_surf].ravel()
+                            for i_surf in range(self.n_surf)
+                        ]
+                        + [
+                            x_n_tot.gamma_w[i_surf].ravel()
+                            for i_surf in range(self.n_surf)
+                        ]
+                    )
+                else:
+                    gamma_vec = jnp.concatenate(
+                        [
+                            self.gamma0_b[i_surf].ravel()
+                            for i_surf in range(self.n_surf)
+                        ]
+                        + [
+                            self.gamma0_w[i_surf].ravel()
+                            for i_surf in range(self.n_surf)
+                        ]
+                    )
+                vertex_influence = compute_aic_sys_assembled([x],
+                                                         [*x_n_tot.zeta_b, *x_n_tot.zeta_w],
+                                                        [*self.kernels_b, *self.kernels_w],
+                                                         None)
+
+                # add influence from panels
+                v_x += jnp.einsum('ijk,j->ik', vertex_influence, gamma_vec).reshape(*x.shape)
 
                 return v_x
 
@@ -297,7 +321,19 @@ class LinearAero:
             # obtain the delta for the linear system
             d_gamma_w_np1 = [new - base for new, base in zip(gamma_w_np1_tot, self.gamma0_w)]
             d_zeta_w_np1 = [new - base for new, base in zip(zeta_w_np1_tot, self.zeta0_w)] if self.prescribed_wake else None
+
+            # add pertubations from input velocities
+            if self.prescribed_wake:
+                for i_surf in range(self.n_surf):
+                    if u_n_tot.nu_w is not None:
+                        d_zeta_w_np1[i_surf] += u_n_tot.nu_w[i_surf] * self.dt
+
             return d_zeta_w_np1, d_gamma_w_np1
+
+        def get_dn(d_zeta_b: Sequence[Array]) -> Sequence[Array]:
+            zeta_b_full = [d_zeta_b[i_surf] + self.zeta0_b[i_surf] for i_surf in range(self.n_surf)]
+            n_full = get_nc(zeta_b_full)
+            return [n_full[i_surf] + self.n0[i_surf] for i_surf in range(self.n_surf)]
 
 
         # boundary condition velocity and its derivatives [n_c]
@@ -314,9 +350,6 @@ class LinearAero:
 
         # [n_surf][n_c, m_star, n]
         d_v_bc_d_gamma_w = jax.jacobian(make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
-
-        # [n_surf][n_c, zeta_b_m, zeta_b_n, 3]
-        d_v_bc_d_zeta_b_dot = jax.jacobian(make_v_bc, argnums=3)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
         # e matrix and its derivative
         # [n_c, n_c]
@@ -358,6 +391,44 @@ class LinearAero:
         def b_func(u_np1_vec: Array) -> Array:
             u_np1 = self.unpack_input_vector(u_np1_vec)
 
+            # influence of grid pertubations on wake influence
+            d_v_bc = jnp.concatenate([jnp.einsum('ijkl,jkl->i', d_v_bc_d_zeta_b[i_surf], u_np1.zeta_b[i_surf]) for i_surf in range(self.n_surf)])
+
+            # pertubations in flow and bound grid at zeta_b
+            if self.bound_upwash:
+                d_nu_c = get_c(u_np1.nu_b)
+                d_n = get_dn(u_np1.zeta_b)
+                d_zeta_dot_c = get_c(u_np1.zeta_b_dot)
+                zeta0_c_dot = get_c(self.zeta0_b_dot)
+
+                out = []
+                for i_surf in range(self.n_surf):
+                    out.append(jnp.einsum('ijk,ijk->ij', d_nu_c[i_surf] - d_zeta_dot_c[i_surf], self.n0[i_surf]))
+                    out[-1] += jnp.einsum('ijk,ijk->ij', -zeta0_c_dot[i_surf], d_n[i_surf])
+                d_v_bc += jnp.concatenate([mat.ravel() for mat in out])
+            d_gamma_b_np1_vec = -e0 @ d_v_bc
+
+            # pertubations in E matrix [n_c, n_c]
+            d_e = sum([jnp.einsum('ijklm,klm->ij', d_e_d_zeta_b[i_surf], u_np1.zeta_b[i_surf]) for i_surf in range(self.n_surf)])
+            d_gamma_b_np1_vec += -d_e @ v_bc0
+
+            # pertubations in solve matrix
+            d_gamma_b_np1 = self.unflatten_subvec(d_gamma_b_np1_vec, self.state_slices.gamma_b)
+
+            # pertubations in wake
+            d_zeta_w_np1, d_gamma_w_np1 = propagate_linear_wake(
+                u_np1, self.get_zero_state()
+            )
+
+            state_np1 = StateUnflattened(
+                d_gamma_b_np1,
+                d_gamma_w_np1,
+                [jnp.zeros(shapes) for shapes in self.state_slices.gamma_bm1.shapes] if self.unsteady_force else None,
+                d_zeta_w_np1,
+                u_np1.zeta_b,
+            )
+            return self.pack_state_vector(state_np1)
+
         def c_func(x_n_vec: Array) -> Array:
             x_n = self.unpack_state_vector(x_n_vec)
 
@@ -369,7 +440,7 @@ class LinearAero:
             pass
 
         a = LinearOperator(jax.jit(a_func), shape=(self.n_states, self.n_states))
-        b = LinearOperator(b_func, shape=(self.n_states, self.n_inputs))
+        b = LinearOperator(jax.jit(b_func), shape=(self.n_states, self.n_inputs))
         c = LinearOperator(c_func, shape=(self.n_outputs, self.n_states))
         d = LinearOperator(d_func, shape=(self.n_outputs, self.n_inputs))
 

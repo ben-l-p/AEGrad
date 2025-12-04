@@ -10,8 +10,8 @@ jax.config.update("jax_debug_nans", True)
 
 u_inf = jnp.array((10.0, 0.0, 1.0))
 rho_inf = 1.225
-m = 1
-n = 1
+m = 2
+n = 4
 m_star = 8
 c_ref = 1.0
 b_ref = 1.0
