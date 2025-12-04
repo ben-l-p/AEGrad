@@ -17,7 +17,7 @@ class Structure:
         r"""
         Initialize Structure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
-        :param connectivity: Connectivity array of shape [n_elem, 2]
+        :param connectivity: Connectivity array of shapes [n_elem, 2]
         """
         check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
@@ -96,10 +96,10 @@ class Structure:
     def static_solve(self, g_ext: Array, prescribed_dofs: Array, prescribed_values: Array) -> Array:
         r"""
         Perform static solve of the structure under external loads
-        :param g_ext: External forces array of shape [n_nodes, 6]
+        :param g_ext: External forces array of shapes [n_nodes, 6]
         :param prescribed_dofs: Array of prescribed dof indices
         :param prescribed_values: Array of prescribed dof values
-        :return: Displacement array of shape [n_nodes, 6]
+        :return: Displacement array of shapes [n_nodes, 6]
         """
         pass
 

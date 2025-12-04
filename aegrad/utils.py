@@ -1,6 +1,7 @@
 from typing import Any, Sequence
 from typing import Callable, Protocol, TypeVar
 from jax import tree_util
+from dataclasses import fields, is_dataclass
 
 def replace_self(func: Callable[..., object]) -> Callable[..., None]:
     # the beauty and the pain behind this codebase
@@ -42,3 +43,9 @@ def check_type(obj: Any, type_: type | Sequence[type]) -> None:
             return
 
     raise TypeError(f"Expected {type_}, but got {obj}.")
+
+
+def shallow_asdict(obj):
+    if not is_dataclass(obj):
+        raise TypeError("object must be a dataclass")
+    return {f.name: getattr(obj, f.name) for f in fields(obj)}

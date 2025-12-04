@@ -3,7 +3,7 @@ from jax import Array
 def check_connectivity(connectivity: Array, num_nodes: int) -> None:
     r"""
     Check connectivity array for validity
-    :param connectivity: Connectivity array of shape [n_elem, 2]
+    :param connectivity: Connectivity array of shapes [n_elem, 2]
     :param num_nodes: Number of nodes in the structure
     """
     all_node_index = set(connectivity.ravel().tolist())

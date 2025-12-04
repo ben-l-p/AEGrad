@@ -4,15 +4,15 @@ from jax import numpy as jnp
 
 
 def check_arr_shape(arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]) -> None:
-    """Asserts that the shape of the given array matches the expected shape.
+    """Asserts that the shapes of the given array matches the expected shapes.
 
     Args:
-        arr (Array): The array whose shape is to be checked.
-        expected_shape (tuple[Optional[int], ...]): The expected shape of the array. Values of None allow for any size
+        arr (Array): The array whose shapes is to be checked.
+        expected_shape (tuple[Optional[int], ...]): The expected shapes of the array. Values of None allow for any size
         in that dimension.
 
     Raises:
-        ValueError: If the shape of the array does not match the expected shape.
+        ValueError: If the shapes of the array does not match the expected shapes.
     """
     actual_shape = arr.shape
     if len(actual_shape) == len(expected_shape):
@@ -24,7 +24,7 @@ def check_arr_shape(arr: Array, expected_shape: tuple[Optional[int], ...], name:
         else:
             return
 
-    message = f"Expected shape {expected_shape}, but got shape {actual_shape}."
+    message = f"Expected shapes {expected_shape}, but got shapes {actual_shape}."
     if name is not None:
         message += f"Issue with input '{name}'"
     raise ValueError(message)
@@ -95,7 +95,7 @@ def block_axis(arrs: Sequence[Sequence[Array]], axes: Sequence[int]) -> Array:
         raise ValueError("axes must be a sequence of two integers.")
 
     return jnp.concatenate(
-        [jnp.concatenate(arrs1, axis=axes[0]) for arrs1 in arrs], axis=axes[1]
+        [jnp.concatenate(arrs1, axis=axes[1]) for arrs1 in arrs], axis=axes[0]
     )
 
 

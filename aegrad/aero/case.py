@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 from functools import singledispatchmethod
 from warnings import warn
-
 from collections.abc import Sequence
 import jax.numpy as jnp
 from jax import Array, vmap
@@ -12,14 +10,16 @@ from os import PathLike
 from pathlib import Path
 
 from aegrad.utils import replace_self
+from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake
 from aegrad.aero.constants import HORSESHOE_LENGTH
-from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape
-from aegrad.aero.uvlm_utils import GridDiscretization, AeroSnapshot
+from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex
+from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, biot_savart
+from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon
 from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wake_influence, compute_aic_sys
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
+from aegrad.aero.linear import LinearAero
 
 
 class AeroCase:
@@ -27,7 +27,8 @@ class AeroCase:
                  n_tstep: int,
                  grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]] | GridDiscretization | tuple[int, int, int],
                  variable_wake_disc: bool,
-                 dof_mapping: Sequence[Array] | Array) -> None:
+                 dof_mapping: Sequence[Array] | Array,
+                 kernel: Optional[KernelFunction] = None) -> None:
         r"""
         Initialize AeroCase class with all non-design parameters
         :param grid_shapes: Chordwise, spanwise, and wake panel discretizations for each aerodynamic surface, [n_surf][3]
@@ -49,12 +50,12 @@ class AeroCase:
         for grid in grid_shapes:
             if isinstance(grid, Sequence):
                 if len(grid) != 3:
-                    raise ValueError("Grid shape tuple must have exactly three elements (m, n, m_star)")
+                    raise ValueError("Grid shapes tuple must have exactly three elements (m, n, m_star)")
                 grid_disc.append(GridDiscretization(*grid))
             elif isinstance(grid, GridDiscretization):
                 grid_disc.append(grid)
             else:
-                raise TypeError("Grid shape must be either a Sequence of three integers or a GridDiscretization instance")
+                raise TypeError("Grid shapes must be either a Sequence of three integers or a GridDiscretization instance")
         self.grid_disc: tuple[GridDiscretization] = tuple(grid_disc)
 
         # count of number of panels
@@ -89,8 +90,10 @@ class AeroCase:
         self._delta_w: Optional[Sequence[Array]] = None
 
         # kernel definitions per surface (seperate for wing and wake)
-        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [biot_savart]
-        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [biot_savart]
+        if kernel is None:
+            kernel = biot_savart_epsilon
+        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [kernel]
+        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [kernel]
 
         # surface names used for plotting
         self.surf_b_names: list[str] = [f"surf_{i}_bound" for i in range(self.n_surf)]
@@ -146,6 +149,9 @@ class AeroCase:
             raise ValueError("Wake displacement delta_w has not been set.")
         return self._delta_w
 
+    def linearise(self, i_ts: int) -> LinearAero:
+        return LinearAero(self, self[i_ts])
+
     def set_design_variables(self,
                              dt: float | Array,
                              flowfield: FlowField,
@@ -190,13 +196,14 @@ class AeroCase:
         self._delta_w = []
         if delta_w is not None:
             for i_surf, dw_ in enumerate(delta_w):
-                check_arr_shape(dw_, (self.grid_disc[i_surf].m_star, 3), "delta_w")
-                self._delta_w.append(jnp.concatenate((jnp.zeros((1, 3)), dw_), axis=0))
+                if dw_ is None:
+                    self._delta_w.append(None)
+                else:
+                    check_arr_shape(dw_, (self.grid_disc[i_surf].m_star, 3), "delta_w")
+                    self._delta_w.append(jnp.concatenate((jnp.zeros((1, 3)), dw_), axis=0))
         else:
             # auto compute delta_w based on freestream and dt
-            for i_surf in range(self.n_surf):
-                self._delta_w.append(jnp.outer(jnp.arange(self.grid_disc[i_surf].m_star + 1),
-                                               (self.flowfield.u_inf * self.dt)))
+            self._delta_w = self.n_surf * [None]
         self.initialise_wake()
 
     @replace_self
@@ -234,7 +241,7 @@ class AeroCase:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,
-            t=float(self.t[i_ts]),
+            t=self.t[i_ts],
             n_surf=self.n_surf
         )
 
@@ -243,17 +250,16 @@ class AeroCase:
         Compute the induced velocity at points x due to a system of vortex elements.
         :param x: Points at which to compute induced velocity, [..., 3]
         :param i_ts: Timestep index
-        :return: Induced velocity at points x, of shape [..., 3].
+        :return: Induced velocity at points x, of shapes [..., 3].
         """
 
-        x_flat = x.reshape(-1, 3)  # [n_x, 3]
         gamma_flat = self.get_gamma_vect(i_ts)
 
         aic = compute_aic_sys_assembled(
-            [x_flat],
+            [x],
             self.get_zeta(i_ts),
             [*self.kernels_b, *self.kernels_w],
-        )  # shape [n_x, n_gamma, 3]
+        )  # shapes [n_x, n_gamma, 3]
 
         return jnp.einsum("ijk,j->ik", aic, gamma_flat).reshape(x.shape)
 
@@ -261,18 +267,18 @@ class AeroCase:
         r"""
         Get background (freestream) velocity at specified points and time step
         :param i_ts: Timestep index
-        :param x: Points to evaluate background velocity at, [n_points, 3]
-        :return: Background velocity at points, [n_points, 3]
+        :param x: Points to evaluate background velocity at, [..., 3]
+        :return: Background velocity at points, [..., 3]
         """
-        return self.flowfield.vmap_call(x, self.t[i_ts])
+        return self.flowfield.vmap_call(x.reshape(-1, 3), self.t[i_ts]).reshape(x.shape)
 
 
     def get_v_tot(self, i_ts: int, x: Array) -> Array:
         r"""
         Get induced velocity at specified points and time step by the elements in the flow and the freesteam
         :param i_ts: Timestep index
-        :param x: Points to evaluate induced velocity at, [n_points, 3]
-        :return: Induced velocity at points, [n_points, 3]
+        :param x: Points to evaluate induced velocity at, [..., 3]
+        :return: Induced velocity at points, [..., 3]
         """
         return self.get_v_ind(x, i_ts) + self.get_v_background(i_ts, x)
 
@@ -351,13 +357,16 @@ class AeroCase:
         """
         return jnp.concatenate([gamma_[i_ts, ...].ravel() for gamma_ in self.gamma_b], axis=0)
 
+    def get_gamma_w(self, i_ts: int) -> Sequence[Array]:
+        return [gamma_[i_ts, ...] for gamma_ in self.gamma_w]
+
     def get_gamma_w_vect(self, i_ts: int) -> Array:
         r"""
         Get wake circulation strengths vector for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: Wake circulation strengths vector, [gamma_w_tot]
         """
-        return jnp.concatenate([gamma_[i_ts, ...].ravel() for gamma_ in self.gamma_w], axis=0)
+        return jnp.concatenate([gamma_.ravel() for gamma_ in self.get_gamma_w(i_ts)], axis=0)
 
     def get_gamma_vect(self, i_ts: int) -> Array:
         r"""
@@ -378,6 +387,9 @@ class AeroCase:
         for i_surf in range(self.n_surf):
             self.gamma_b[i_surf] = self.gamma_b[i_surf].at[i_ts, ...].set(gamma_vec[self.gamma_b_slice[i_surf]].reshape(self.grid_disc[i_surf].m, self.grid_disc[i_surf].n))
         return self
+
+    def get_gamma_b(self, i_ts: int) -> Sequence[Array]:
+        return [gamma_[i_ts, ...] for gamma_ in self.gamma_b]
 
     @replace_self
     def set_zeta_b(self, zeta_b: Sequence[Array], i_ts: int) -> Self:
@@ -472,152 +484,33 @@ class AeroCase:
         :param horseshoe_length:
         :return:
         """
-        zeta_te = self.get_zeta_te_surf(i_ts, i_surf)   # [zeta_n, 3]
-        wake_end = zeta_te + (self.flowfield.u_inf_dir * horseshoe_length)[None, :] # [zeta_n, 3]
-        return jnp.stack((zeta_te, wake_end), axis=0)
+        zeta_te = self.get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
+        if self.grid_disc[i_surf].m_star == 0:
+            warn("Horseshoe wake requested but m_star == 0, skipping.")
+            return zeta_te[None, :]
+        else:
 
-    @staticmethod
-    def get_surf_c_nc(zeta: Array) -> tuple[Array, Array]:
-        r"""
-        Compute the colocation points and normals for a given grid of points.
-        :param zeta: Grid of points, [zeta_m, zeta_n, 3]
-        :return: Colocation points and normals, [zeta_m-1, zeta_n-1, 3], [zeta_m-1, zeta_n-1, 3]
-        """
-        c = neighbour_average(zeta, axes=(0, 1))
-
-        # find area normal as the cross-product of the diagonals for each rectilinear panel
-        diag1 = zeta[1:, 1:, :] - zeta[:-1, :-1, :]  # [n_sx, n_cy, 3]
-        diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
-        nc = jnp.cross(diag1, diag2)
-        return c, nc
-
-    @staticmethod
-    def get_c_nc(zetas: Sequence[Array]) -> tuple[Sequence[Array], Sequence[Array]]:
-        r"""
-        Compute the colocation points and normals for a given list of grids of points.
-        :param zetas: List of grids of points, [n_surf][zeta_m, zeta_n, 3]
-        :return: List of colocation points and normals for each surface, [n_surf][zeta_m-1, zeta_n-1, 3], [n_surf][zeta_m-1, zeta_n-1, 3]
-        """
-        cs, ncs = [], []
-        for zeta in zetas:
-            c, nc = AeroCase.get_surf_c_nc(zeta)
-            cs.append(c)
-            ncs.append(nc)
-        return cs, ncs
+            wake_end = zeta_te + (self.flowfield.u_inf_dir * horseshoe_length)[None, :] # [zeta_n, 3]
+            return jnp.stack((zeta_te, wake_end), axis=0)
 
     @replace_self
-    def initialise_wake(self, zeta_te_input: Optional[Sequence[Array]] = None) -> Self:
+    def initialise_wake(self) -> Self:
         r"""
         Generate initial wake grid coordinates
-        :param zeta_te_input: Optional trailing edge coordinates to use instead of bound grid trailing edge, [n_surf][n+1, 3]
         Note that the wake grid does not include the trailing edge, assuming that delta_w[0, :] != 0
         """
 
         self._zeta0_w = []
         for i_surf, this_delta_w in enumerate(self.delta_w):
             # get bound grid coordinates
-            if zeta_te_input is not None:   # optional input for trailing edge, should ever be required
-                zeta_te = zeta_te_input[i_surf]   # [n+1, 3]
-                check_arr_shape(zeta_te, (self.grid_disc[i_surf].n + 1, 3), None)
-            else:
-                zeta_te = self.zeta0_b[i_surf][-1, :, :]   # [n+1, 3]
+            zeta_te = self.zeta0_b[i_surf][-1, :, :]   # [n+1, 3]
 
             # set wake grid coordinates as trailing edge + displacement
+            if this_delta_w is None:
+                this_delta_w = jnp.outer(jnp.arange(self.grid_disc[i_surf].m_star + 1), self.dt * self.flowfield.u_inf)  # [m_star+1, 3]
             self._zeta0_w.append(zeta_te[None, ...] + this_delta_w[:, None, :])
         return self
 
-    def propagate_surf_wake(self, i_ts: int, i_surf: int, free_wake: bool) -> tuple[Array, Array]:
-        r"""
-        Convect the wake at some given velocity. This step includes convection from the trailing edge and culling the
-        downstream data.
-        :param i_ts: Time step index
-        :param free_wake: Whether the wake is free or not. If False, the induced velocity is not added.
-        :param i_surf: Surface index
-        :return: New wake grid and circulation, [zeta_w_m, zeta_n, 3], [zeta_w_m-1, zeta_n]
-        """
-        zeta_te = self.get_zeta_te_surf(i_ts, i_surf)   # [zeta_n, 3]
-        gamma_te = self.get_gamma_te_surf(i_ts, i_surf)  # [zeta_n]
-
-        # variable wake discretisation also depends on the final element
-        if self.variable_wake_disc:
-            zeta_base = self.zeta_w[i_surf][i_ts - 1, ...]  # [zeta_w_m, zeta_n, 3]
-            gamma_base = self.gamma_w[i_surf][i_ts - 1, ...] # [gamma_w_m, gamma_n]
-        else:
-            zeta_base = self.zeta_w[i_surf][i_ts - 1, :-1, ...]  # [zeta_w_m-1, zeta_n, 3]
-            gamma_base = self.gamma_w[i_surf][i_ts - 1, :-1, ...]  # [gamma_w_m-1, gamma_n]
-
-        # values we wish to propagate
-        zeta_pre = jnp.concatenate(
-            (zeta_te[None, ...], zeta_base), axis=0
-        ) # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
-        gamma_pre = jnp.concatenate(
-            (gamma_te[None, ...], gamma_base), axis=0
-        )   # [gamma_w_m+1 | gamma_w_m, gamma_n]
-
-        # add the element induced velocity if the wake is free
-        if free_wake:
-            v = self.get_v_tot(i_ts - 1, zeta_pre)
-        else:
-            v = self.get_v_background(i_ts - 1, zeta_pre)
-
-        # find the integrated in time version
-        zeta_w_new = zeta_pre + self.dt * v
-        gamma_w_new = gamma_pre
-
-        if self.variable_wake_disc:
-            zeta_pre_redisc = jnp.concatenate((zeta_te[None, :], zeta_w_new), axis=0)  # [zeta_w_m+2, zeta_n, 3]
-            gamma_pre_redisc = jnp.concatenate((gamma_te[None, :], gamma_base), axis=0)  # [gamma_w_m+2, gamma_n]
-
-            # if the wake discretisation is variable, we need to rediscretize the wake
-            s_zeta = jnp.concatenate(
-                (
-                    jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
-                    jnp.cumsum(
-                        jnp.linalg.norm(zeta_pre_redisc[1:, ...] - zeta_pre_redisc[:-1, ...], axis=-1), # [zeta_w_m+1, zeta_n]
-                        axis=0,
-                    ),  # [zeta_w_m, zeta_n]
-                ),
-                axis=0,
-            )   # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
-
-            # consider gamma to be at midpoints of zeta
-            s_gamma = neighbour_average(s_zeta, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
-
-            # coordinates along desired discretized streamline, [zeta_w_m]
-            s_base = jnp.cumsum(jnp.linalg.norm(self.delta_w[i_surf], axis=-1), axis=0)
-
-            zeta_w_new = vmap(
-                vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
-                in_axes=(None, None, 2),
-                out_axes=2,
-            )(s_base, s_zeta, zeta_pre_redisc)
-
-            gamma_w_new = vmap(
-                vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
-                in_axes=(None, None, 2),
-                out_axes=2,
-            )(s_base, s_gamma, gamma_pre_redisc)
-
-        return zeta_w_new, gamma_w_new
-
-    @replace_self
-    def propagate_wake(self, i_ts: int, free_wake: bool) -> Self:
-        r"""
-        Convect the wake at some given velocity for all surfaces.
-        :param i_ts: Time step index
-        :param free_wake: Whether the wake is free or not. If False, the induced velocity is not added.
-        :return: New wake grid and circulation, [zeta_w_m, zeta_n, 3], [zeta_w_m-1, zeta_n]
-        """
-
-        for i_surf in range(self.n_surf):
-            zeta_w_surf, gamma_w_surf = self.propagate_surf_wake(
-                i_ts,
-                i_surf,
-                free_wake,
-            )
-            self.zeta_w[i_surf] = self.zeta_w[i_surf].at[i_ts, ...].set(zeta_w_surf)
-            self.gamma_w[i_surf] = self.gamma_w[i_surf].at[i_ts, ...].set(gamma_w_surf)
-        return self
 
     @replace_self
     def calculate_gamma_dot(self, i_ts: int) -> Self:
@@ -629,11 +522,65 @@ class AeroCase:
 
     @replace_self
     def calculate_steady_forcing(self, i_ts: int) -> Self:
+        for i_surf in range(self.n_surf):
+            self.f_steady[i_surf] = self.f_steady[i_surf].at[i_ts, ...].set(self.calculate_surf_steady_forcing(i_ts, i_surf))
         return self
 
+    def calculate_surf_steady_forcing(self, i_ts: int, i_surf: int) -> Array:
+        r"""
+        Calculate the steady aerodynamic forcing on a given surface at a given time step.
+        :param i_ts: Time step index
+        :param i_surf: Surface index
+        :return: Steady aerodynamic forcing, [f_steady_m+1, f_steady_n+1, 3]
+        """
+        zeta_b = self.zeta_b[i_surf][i_ts, ...]  # [gamma_m+1, gamma_n+1, 3]
+        zeta_dot_b = self.zeta_b_dot[i_surf][i_ts, ...]  # [gamma_m+1, gamma_n+1, 3]
+        gamma_b = self.gamma_b[i_surf][i_ts, ...]  # [gamma_m, gamma_n]
+
+        # compute midpoints
+        mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
+        mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
+
+        mp_dot_chordwise = neighbour_average(zeta_dot_b, axes=0)  # [gamma_m, gamma_n+1, 3]
+        mp_dot_spanwise = neighbour_average(zeta_dot_b, axes=1)  # [gamma_m+1, gamma_n, 3]
+
+        # relative flow velocities at midpoints
+        v_rel_chordwise = self.get_v_tot(i_ts, mp_chordwise) - mp_dot_chordwise  # [gamma_m, gamma_n+1, 3]
+        v_rel_spanwise = self.get_v_tot(i_ts, mp_spanwise) - mp_dot_spanwise  # [gamma_m+1, gamma_n, 3]
+
+        # equivelant strengths of filaments
+        gamma_chordwise = jnp.zeros(v_rel_chordwise.shape[:-1])  # [gamma_m, gamma_n+1, 3]
+        gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
+        gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
+        gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1]) # [gamma_m+1, gamma_n, 3]
+        gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
+        gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
+
+        # add first wake gamma
+        if self.grid_disc[i_surf].m_star:
+            gamma_w1 = self.gamma_w[i_surf][i_ts, 0, :]  # [gamma_n]
+            gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w1)
+
+        # filement vectors
+        r_chordwise = zeta_b[1:, :, :] - zeta_b[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
+        r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
+
+        # forces from each set of filaments
+        f_chordwise = self.flowfield.rho * jnp.einsum('ij,ijk->ijk', gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise))    # [gamma_m, gamma_n+1, 3]
+        f_spanwise = self.flowfield.rho * jnp.einsum('ij,ijk->ijk', gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise))  # [gamma_m+1, gamma_n, 3]
+
+        return split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1) # [gamma_m+1, gamma_n+1, 3]
+
     @replace_self
-    def calculate_unsteady_forcing(self, i_ts: int) -> Self:
+    def calculate_unsteady_forcing(self, i_ts: int, ncs: Sequence[Array]) -> Self:
+        for i_surf in range(self.n_surf):
+            self.f_unsteady[i_surf] = self.f_unsteady[i_surf].at[i_ts, ...].set(
+                self.calculate_surf_unsteady_forcing(i_ts, i_surf, ncs[i_surf])
+            )
         return self
+
+    def calculate_surf_unsteady_forcing(self, i_ts: int, i_surf: int, nc: Array) -> Array:
+        return split_to_vertex(self.flowfield.rho * self.gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)) # [gamma_m+1, gamma_n+1, 3]
 
     @replace_self
     def solve(
@@ -654,7 +601,8 @@ class AeroCase:
         zetas_b = self.zeta0_b if hg is None else self.hg_to_zeta(hg)
         self.set_zeta_b(zetas_b, i_ts)
 
-        cs, ncs = self.get_c_nc(zetas_b)
+        cs = get_c(zetas_b)
+        ncs = get_nc(zetas_b)
 
         if hg_dot is None:
             c_dot = [jnp.zeros_like(c) for c in cs]
@@ -680,18 +628,28 @@ class AeroCase:
                 # use initialised
                 zeta_ws = self.zeta0_w
         else:
-            # propagate wake
-            self.propagate_wake(i_ts, free_wake)
-            zeta_ws = self.get_zeta_w(i_ts)
+            def v_wake_prop(x_: Array) -> Array:
+                if free_wake:
+                    return self.get_v_tot(i_ts - 1, x_)
+                else:
+                    return self.get_v_background(i_ts - 1, x_)
 
-        if not horseshoe:
+            # propagate wake
+            zeta_ws, gamma_ws = propagate_wake(self.get_gamma_b(i_ts - 1),
+                                               self.get_zeta_b(i_ts - 1),
+                                               zetas_b,
+                                               self.get_zeta_w(i_ts - 1),
+                                               self.delta_w,
+                                               v_wake_prop,
+                                               self.dt,
+                                               frozen_wake=False
+                                               )
+
+            self.set_gamma_w(gamma_ws, i_ts)
             self.set_zeta_w(zeta_ws, i_ts)
-        else:
-            # set wake to look like a shortened version of the full horseshoe
-            zeta_w_stretched = self.zeta0_w
-            for i_surf in range(self.n_surf):
-                zeta_w_stretched[i_surf] = zeta_w_stretched[i_surf].at[:-1, ...].set(zeta_w_stretched[i_surf][0, ...])
-            self.set_zeta_w(zeta_w_stretched, i_ts)
+
+        # set wake grid coordinates
+        self.set_zeta_w(zeta_ws, i_ts) if not horseshoe else self.set_zeta_w(self.zeta0_w, i_ts)
 
         # compute AIC matrix for bound-bound interactions, [c_tot, gamma_b_tot]
         aic_blocks = compute_aic_sys(cs, zetas_b, self.kernels_b, ncs)
@@ -722,7 +680,7 @@ class AeroCase:
             self.set_gamma_w_static(i_ts)
         else:
             self.calculate_gamma_dot(i_ts)
-            self.calculate_unsteady_forcing(i_ts)
+            self.calculate_unsteady_forcing(i_ts, ncs)
         self.calculate_steady_forcing(i_ts)
 
         return self
@@ -738,7 +696,7 @@ class AeroCase:
         if hg_dot is not None:
             if hg.shape != hg_dot.shape:
                 raise ValueError(
-                    f"hg_dot must have the same shape as hg, got {hg_dot.shape} vs {hg.shape}"
+                    f"hg_dot must have the same shapes as hg, got {hg_dot.shape} vs {hg.shape}"
                 )
         n_tstep = hg.shape[0]
         return fori_loop(
@@ -756,17 +714,19 @@ class AeroCase:
             init_val=self,
         )
 
-    def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | Array] = None, plot_wake: bool = True) -> None:
+    def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep_tot)[index]
         elif isinstance(index, Sequence):
             index_ = jnp.array(index)
         elif isinstance(index, Array):
             index_ = index
+        elif isinstance(index, int):
+            index_ = (index, )
         elif index is None:
             index_ = jnp.arange(self.n_tstep_tot)
         else:
-            raise TypeError("index must be a slice, sequence of ints, or Array")
+            raise TypeError("index must be a slices, sequence of ints, or Array")
 
         for i_ts in index_:
             snapshot = self[i_ts]
@@ -785,7 +745,7 @@ class AeroCase:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,
-            t=0.0,
+            t=jnp.zeros(()),
             n_surf=self.n_surf
         )
 

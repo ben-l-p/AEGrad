@@ -141,12 +141,12 @@ hg_interp_line = hg_interp.reshape(-1, 4, 4)   # [n, 4, 4]
 x_sol = hg_interp_line[:, :3, 3]  # [n_node, 3]
 rmat_sol = hg_interp_line[:, :3, :3]  # [n_node, 3, 3]
 
-fig, ax = plt.subplots()
-ax.plot(x_sol[:, 0], x_sol[:, 1])
-ax.quiver(x_sol[:, 0], x_sol[:, 1], rmat_sol[:, 0, 0], rmat_sol[:, 1, 0], color='r')
-ax.quiver(x_sol[:, 0], x_sol[:, 1], rmat_sol[:, 0, 1], rmat_sol[:, 1, 1], color='b')
-ax.axis("equal")
-fig.show()
+# fig, ax = plt.subplots()
+# ax.plot(x_sol[:, 0], x_sol[:, 1])
+# ax.quiver(x_sol[:, 0], x_sol[:, 1], rmat_sol[:, 0, 0], rmat_sol[:, 1, 0], color='r')
+# ax.quiver(x_sol[:, 0], x_sol[:, 1], rmat_sol[:, 0, 1], rmat_sol[:, 1, 1], color='b')
+# ax.axis("equal")
+# fig.show()
 
 # resultant forces
 g_int = make_g_int(d_sol)

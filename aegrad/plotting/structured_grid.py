@@ -42,7 +42,7 @@ def plot_frame_to_vtk(
 ) -> Path:
     r"""
     Plot a single timestep of grid data
-    :param grid_arr: Structured grid array with shape (n_x, n_y, n_z, 2|3)
+    :param grid_arr: Structured grid array with shapes (n_x, n_y, n_z, 2|3)
     :param filename: Base filename, including directory. Information on the frame number will be
     appended to this.
     :param i_ts: Timestep to write

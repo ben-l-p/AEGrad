@@ -9,10 +9,10 @@ def check_if_so3_g(rmat: Array, raise_if_false: bool=True) -> bool:
     column_mags = jnp.linalg.norm(rmat, axis=0)
     row_mags = jnp.linalg.norm(rmat, axis=1)
 
-    # if not correct shape
+    # if not correct shapes
     if rmat.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not SO3 as shape is not (3, 3)")
+            raise ValueError("Matrix not SO3 as shapes is not (3, 3)")
         return False
 
     # if not unit magnitude
@@ -29,10 +29,10 @@ def check_if_so3_g(rmat: Array, raise_if_false: bool=True) -> bool:
     return True
 
 def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
-    # check shape
+    # check shapes
     if h_tilde.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not so3 as shape is not (3, 3)")
+            raise ValueError("Matrix not so3 as shapes is not (3, 3)")
         return False
 
     # check for nonzero diagonal elements
@@ -50,10 +50,10 @@ def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
 
 
 def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
-    # check shape
+    # check shapes
     if hg.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not SE3 as shape is not (4, 4)")
+            raise ValueError("Matrix not SE3 as shapes is not (4, 4)")
         return False
 
     # check rotational component
@@ -69,10 +69,10 @@ def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
 
 
 def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
-    # check shape
+    # check shapes
     if h_tilde.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not se3 as shape is not (4, 4)")
+            raise ValueError("Matrix not se3 as shapes is not (4, 4)")
         return False
 
     # check so3 component
@@ -140,7 +140,7 @@ def t_inv_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 
 def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     if (isinstance(coeffs, Array) and coeffs.shape != (6, )) or (isinstance(coeffs, Sequence) and len(coeffs) != 6):
-        raise ValueError("Coefficients array must be of shape (6, )")
+        raise ValueError("Coefficients array must be of shapes (6, )")
 
     if isinstance(l, Array) and not jnp.isscalar(l):
         raise ValueError("Length l must be a scalar value")

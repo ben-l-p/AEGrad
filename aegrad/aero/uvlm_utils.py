@@ -1,24 +1,8 @@
 from __future__ import annotations
-from jax import Array
-from typing import Sequence
-from dataclasses import dataclass
+from jax import Array, vmap
+from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
-from os import PathLike
-from pathlib import Path
-from aegrad.plotting.structured_grid import plot_frame_to_vtk
-
-
-@dataclass
-class GridDiscretization:
-    r"""
-    Data class to hold grid discretization parameters
-    - m: Number of panels in the chordwise direction
-    - n: Number of panels in the spanwise direction
-    - m_star: Number of wake panels in the chordwise direction
-    """
-    m: int
-    n: int
-    m_star: int
+from aegrad.array_utils import neighbour_average
 
 def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
     r"""
@@ -27,112 +11,158 @@ def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
     :param n: Number of panels in the spanwise direction
     :param chord: Total chord of the surface
     :param ea: Elastic axis location as fraction of chord
-    :return: Array of shape [m+1, n+1, 3] representing grid points in 3D space
+    :return: Array of shapes [m+1, n+1, 3] representing grid points in 3D space
     """
 
     grid = jnp.zeros((m+1, n+1, 3))
     return grid.at[..., 0].set((jnp.linspace(0.0, chord, m + 1) - ea * chord)[:, None])
 
+def get_surf_c(zeta: Array) -> Array:
+    r"""
+    Compute the colocation points for a given grid of points.
+    :param zeta: Grid of points, [zeta_m, zeta_n, 3]
+    :return: Colocation points [zeta_m-1, zeta_n-1, 3]
+    """
+    return neighbour_average(zeta, axes=(0, 1))
 
-class AeroSnapshot:
-    def __init__(self,
-                 zeta_b: Sequence[Array],
-                zeta_b_dot: Sequence[Array],
-                 zeta_w: Sequence[Array],
-                 gamma_b: Sequence[Array],
-                 gamma_w: Sequence[Array],
-                 f_steady: Sequence[Array],
-                 f_unsteady: Sequence[Array],
-                 surf_b_names: Sequence[str],
-                 surf_w_names: Sequence[str],
-                 i_ts: int,
-                 t: float,
-                 n_surf: int) -> None:
-        r"""
-        Snapshot of aerodynamic surface at a single time step
-        :param zeta_b: Bound grid coordinates, [n_surf][m+1, n+1, 3]
-        :param zeta_b_dot: Bound grid velocities, [n_surf][m+1, n+1, 3]
-        :param zeta_w: Wake grid coordinates, [n_surf][m_star+1, n+1, 3]
-        :param gamma_b: Bound circulation strengths, [n_surf][m, n]
-        :param gamma_w: Wake circulation strengths, [n_surf][m_star, n]
-        :param f_steady: Steady force contributions, [n_surf][m, n]
-        :param f_unsteady: Unsteady force contributions, [n_surf][m, n]
-        """
-        self.zeta_b: Sequence[Array] = zeta_b
-        self.zeta_b_dot: Sequence[Array] = zeta_b_dot
-        self.zeta_w: Sequence[Array] = zeta_w
-        self.gamma_b: Sequence[Array] = gamma_b
-        self.gamma_w: Sequence[Array] = gamma_w
-        self.f_steady: Sequence[Array] = f_steady
-        self.f_unsteady: Sequence[Array] = f_unsteady
-        self.surf_b_names:  Sequence[str] = surf_b_names
-        self.surf_w_names:  Sequence[str] = surf_w_names
-        self.i_ts: int = i_ts
-        self.t: float = t
-        self.n_surf: int = n_surf
 
-    def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:
-        if i_surf < 0 or i_surf >= self.n_surf:
-            raise IndexError("AeroSnapshot index out of range")
+def get_surf_nc(zeta: Array) -> Array:
+    diag1 = zeta[1:, 1:, :] - zeta[:-1, :-1, :]  # [n_sx, n_cy, 3]
+    diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
+    return jnp.cross(diag1, diag2)
 
-        return AeroSurfaceSnapshot(
-            zeta_b=self.zeta_b[i_surf],
-            zeta_b_dot=self.zeta_b_dot[i_surf],
-            zeta_w=self.zeta_w[i_surf],
-            gamma_b=self.gamma_b[i_surf],
-            gamma_w=self.gamma_w[i_surf],
-            f_steady=self.f_steady[i_surf],
-            f_unsteady=self.f_unsteady[i_surf],
-            surf_b_name=self.surf_b_names[i_surf],
-            surf_w_name=self.surf_w_names[i_surf],
-            i_ts=self.i_ts,
-            t=self.t,
+def get_c(zetas: Sequence[Array]) -> Sequence[Array]:
+    return [get_surf_c(zeta) for zeta in zetas]
+
+def get_nc(zetas: Sequence[Array]) -> Sequence[Array]:
+    return [get_surf_nc(zeta) for zeta in zetas]
+
+
+def propagate_surf_wake(gamma_b_n: Array,
+                        gamma_w_n: Array,
+                        zeta_b_np1: Array,
+                        zeta_w_n: Array,
+                        delta_w: Optional[Array],
+                        v_func: Callable[[Array], Array],
+                        dt: Array,
+                        frozen_wake: bool) -> tuple[Optional[Array], Array]:
+    r"""
+    Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
+    downstream data.
+    :param gamma_b_n: Bound circulation at time n, [m, n]
+    :param gamma_w_n: Wake circulation at time n, [m_star, n]
+    :param zeta_b_np1: Bound grid at time n+1, [zeta_m, zeta_n, 3]
+    :param zeta_w_n: Wake grid at time n, [zeta_w_m, zeta_n, 3]
+    :param delta_w: Desired wake discretisation, [zeta_w_m, 3] or None for uniform
+    :param v_func: Function that computes the velocity, [3] -> [3]
+    :param dt: Time step
+    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
+    :return: New wake grid and circulation, [zeta_w_m, zeta_n, 3], [zeta_w_m, zeta_n]
+    """
+    zeta_te = zeta_b_np1[-1, ...]  # [zeta_n, 3]
+    gamma_te = gamma_b_n[-1, ...] # [gamma_n]
+
+    # variable wake discretisation also depends on the final element
+    if delta_w is not None:
+        zeta_base = zeta_w_n
+        gamma_base = gamma_w_n
+    else:
+        zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m, zeta_n, 3]
+        gamma_base = gamma_w_n[:-1, ...]
+
+    # values we wish to propagate
+    zeta_pre = jnp.concatenate(
+        (zeta_te[None, ...], zeta_base), axis=0
+    ) # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
+    gamma_pre = jnp.concatenate(
+        (gamma_te[None, ...], gamma_base), axis=0
+    )   # [gamma_w_m+1 | gamma_w_m, gamma_n]
+
+    # if the wake is free, this should be embedded here
+    v = v_func(zeta_pre)
+
+    # find the integrated in time version - this will be the final version if no rediscretisation is needed
+    zeta_w_new = zeta_pre + dt * v
+
+    if delta_w is not None:
+        zeta_pre_redisc = jnp.concatenate((zeta_te[None, :], zeta_w_new), axis=0)  # [zeta_w_m+2, zeta_n, 3]
+        gamma_pre_redisc = jnp.concatenate((gamma_te[None, :], gamma_base), axis=0)  # [gamma_w_m+2, gamma_n]
+
+        # if the wake discretisation is variable, we need to rediscretize the wake
+        s_zeta = jnp.concatenate(
+            (
+                jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
+                jnp.cumsum(
+                    jnp.linalg.norm(zeta_pre_redisc[1:, ...] - zeta_pre_redisc[:-1, ...], axis=-1), # [zeta_w_m+1, zeta_n]
+                    axis=0,
+                ),  # [zeta_w_m, zeta_n]
+            ),
+            axis=0,
+        )   # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
+
+        # consider gamma to be at midpoints of zeta
+        s_gamma = neighbour_average(s_zeta, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
+
+        # coordinates along desired discretized streamline, [zeta_w_m]
+        s_base = jnp.cumsum(jnp.linalg.norm(delta_w, axis=-1), axis=0)
+
+        zeta_w_np1 = vmap(
+            vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
+            in_axes=(None, None, 2),
+            out_axes=2,
+        )(s_base, s_zeta, zeta_pre_redisc)
+
+        gamma_w_np1 = vmap(
+            vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
+            in_axes=(None, None, 2),
+            out_axes=2,
+        )(s_base, s_gamma, gamma_pre_redisc)
+    else:
+        zeta_w_np1 = zeta_w_new
+        gamma_w_np1 = gamma_pre
+
+    if frozen_wake:
+        return None, gamma_w_np1
+    else:
+        return zeta_w_np1, gamma_w_np1
+
+def propagate_wake(gamma_b_n: Sequence[Array],
+                    gamma_w_n: Sequence[Array],
+                    zeta_b_np1: Sequence[Array],
+                    zeta_w_n: Sequence[Array],
+                    delta_w: Optional[Sequence[Array]],
+                    v_func: Callable[[Array], Array],
+                    dt: Array,
+                   frozen_wake: bool) -> tuple[Sequence[Array], Sequence[Array]]:
+    r"""
+    Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
+    culling the downstream data.
+    :param gamma_b_n: Bound circulation at time n, [n_surf][m, n]
+    :param gamma_w_n: Wake circulation at time n, [n_surf][m_star, n]
+    :param zeta_b_np1: Bound grid at time n+1, [n_surf][zeta_m, zeta_n, 3]
+    :param zeta_w_n: Wake grid at time n, [n_surf][zeta_w_m, zeta_n, 3]
+    :param delta_w: Desired wake discretisation, [n_surf][zeta_w_m, 3] or None for uniform
+    :param v_func: Function that computes the velocity, [3] -> [3]
+    :param dt: Time step
+    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
+    :return: New wake grid and circulation, [n_surf][zeta_w_m, zeta_n, 3], [n_surf][zeta_w_m, zeta_n]
+    """
+
+    n_surf = len(gamma_b_n)
+    zeta_w_np1 = []
+    gamma_w_np1 = []
+
+    for i_surf in range(n_surf):
+        surf_zeta_w, surf_gamma_w = propagate_surf_wake(
+            gamma_b_n[i_surf],
+            gamma_w_n[i_surf],
+            zeta_b_np1[i_surf],
+            zeta_w_n[i_surf],
+            delta_w[i_surf],
+            v_func,
+            dt,
+            frozen_wake,
         )
-
-    def plot(self, directory: PathLike, plot_wake: bool = True) -> Sequence[Path]:
-        paths = []
-        for i_surf in range(self.n_surf):
-            paths.extend(self[i_surf].plot(directory, plot_bound=True, plot_wake=plot_wake))
-        return paths
-
-@dataclass
-class AeroSurfaceSnapshot:
-    def __init__(self,
-                 zeta_b: Array,
-                zeta_b_dot: Array,
-                 zeta_w: Array,
-                 gamma_b: Array,
-                 gamma_w: Array,
-                 f_steady: Array,
-                 f_unsteady: Array,
-                 surf_b_name: str,
-                 surf_w_name: str,
-                 i_ts: int,
-                 t: float) -> None:
-        self.zeta_b: Array = zeta_b
-        self.zeta_b_dot: Array = zeta_b_dot
-        self.zeta_w: Array = zeta_w
-        self.gamma_b: Array = gamma_b
-        self.gamma_w: Array = gamma_w
-        self.f_steady: Array = f_steady
-        self.f_unsteady: Array = f_unsteady
-        self.surf_b_name: str = surf_b_name
-        self.surf_w_name: str = surf_w_name
-        self.i_ts: int = i_ts
-        self.t: float = t
-
-    def plot(self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True) -> Sequence[Path]:
-        paths = []
-        if plot_bound:
-            bound_filename = Path(directory).joinpath(self.surf_b_name)
-            paths.append(plot_frame_to_vtk(self.zeta_b, bound_filename, self.i_ts,
-                              node_vector_data={'f_steady': self.f_steady, 'f_unsteady': self.f_unsteady,
-                                                'zeta_dot': self.zeta_b_dot},
-                              cell_scalar_data={'gamma': self.gamma_b},
-                              ))
-        if plot_wake:
-            wake_filename = Path(directory).joinpath(self.surf_w_name)
-            paths.append(plot_frame_to_vtk(self.zeta_w, wake_filename, self.i_ts,
-                              cell_scalar_data={'gamma': self.gamma_w},
-                              ))
-        return paths
+        zeta_w_np1.append(surf_zeta_w)
+        gamma_w_np1.append(surf_gamma_w)
+    return zeta_w_np1, gamma_w_np1

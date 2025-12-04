@@ -32,19 +32,22 @@ class LinearOperator:
             if mat.shape != shape:
                 raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {shape}.")
 
-        self.func = func if func is None else lambda x: jnp.zeros(shape[1])
-        self.mat: Optional[Array] = mat if func is not None else jnp.zeros(shape)
-        self.shape = shape  # shape of equivelent matrix
+        self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
+        self.mat: Optional[Array] = mat
+        self.shape = shape  # shapes of equivelent matrix
 
     def get_matrix(self) -> Array:
         if self.mat is not None:
             return self.mat
         else:
-            # the nan values should go away with it being linear
             # dL/dx at x at any point is the same, and should be independent of x
-            return jacobian(self.func)(jnp.full(self.shape[1], jnp.nan))
+            self.mat = jacobian(lambda x_: self.func(x_), argnums=0)(jnp.full(self.shape[1], 1.0))
+            return self.mat
 
     def __matmul__(self, rhs: Array) -> Array:
+        return self.func(rhs)
+
+    def __call__(self, rhs: Array) -> Array:
         return self.func(rhs)
 
 class BlockLinear:

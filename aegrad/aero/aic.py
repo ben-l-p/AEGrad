@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Unpack, Any, Sequence, Callable, Optional
+from typing import Sequence, Optional
 from aegrad.aero.kernels import KernelFunction
-from aegrad.array_utils import flatten_to_1d, block_axis
+from aegrad.array_utils import block_axis
 
 from jax import Array, vmap
 from jax import numpy as jnp
@@ -18,25 +18,25 @@ def compute_aic_grid(
     kernel: KernelFunction,
 ):
     """
-    Compute the aerodynamic influence coefficient (AIC) across grids of points. Returns array of shape
-    (c_m, c_n, e_m, e_n, 3).
+    Compute the aerodynamic influence coefficient (AIC) across grids of points. Returns array of shapes
+    (c_m, c_n, zeta_m, zeta_n, 3).
     """
 
     # create the AIC in the spanwise and chordwise directions, and combine later
-    # vectors in spanwise direction [n_gx-1, n_gy, 2, 3]
-    x_vect = jnp.stack((zeta[:-1, :, :], zeta[1:, :, :]), axis=-2)
+    # vectors in chordwise direction [zeta_m - 1, zeta_n, 2, 3]
+    m_vect = jnp.stack((zeta[:-1, :, :], zeta[1:, :, :]), axis=-2)
 
-    # [n_cx, n_cy, n_gx-1, n_gy, 3]
-    x_aic = aic_vmap(c, x_vect, kernel)
+    # vectors in spanwise directionc [zeta_m, zeta_n - 1, 2, 3]
+    n_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
 
-    # vectors in chordwise direction [n_gx, n_gy-1, 2, 3]
-    y_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
+    # AIC matrices have one entry per filament
+    # m_aic = jnp.nan_to_num(aic_vmap(c, m_vect, kernel), False, 0.0)     # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
+    # n_aic = jnp.nan_to_num(aic_vmap(c, n_vect, kernel), False, 0.0)     # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
 
-    # [n_cx, n_cy, n_gx, n_gy-1, 3]
-    y_aic = aic_vmap(c, y_vect, kernel)
+    m_aic = aic_vmap(c, m_vect, kernel)     # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
+    n_aic = aic_vmap(c, n_vect, kernel)     # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
 
-    return -jnp.diff(x_aic, axis=3) + jnp.diff(y_aic, axis=2)
-
+    return -jnp.diff(m_aic, axis=3) + jnp.diff(n_aic, axis=2)
 
 def compute_aic_sys(
     cs: Sequence[Array],
@@ -99,7 +99,7 @@ def add_wake_influence(
 def reshape_aic_sys(
         aic_mat: Array) -> Array:
     r"""
-    Reshape an AIC matrix of shape (c_m, c_n, zeta_m, zeta_n, 3) into a 2D matrix of shape (c_m*c_n, zeta_m*zeta_n, 3).
+    Reshape an AIC matrix of shapes (c_m, c_n, zeta_m, zeta_n, 3) into a 2D matrix of shapes (c_m*c_n, zeta_m*zeta_n, 3).
     Also works for projecting onto normals if the last dimension is absent.
     """
     shape = aic_mat.shape
@@ -151,7 +151,7 @@ def aic_vmap(
     kernel: KernelFunction,
 ) -> Array:
     """
-    General AIC computation for any grid. Will vmap across first two dimensions to give a shape of
+    General AIC computation for any grid. Will vmap across first two dimensions to give a shapes of
     (c_m, c_n, zeta_m, zeta_n, 3).
     """
 

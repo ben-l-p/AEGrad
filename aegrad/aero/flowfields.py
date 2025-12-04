@@ -18,7 +18,7 @@ class FlowField:
         **kwargs,
     ):
         if u_inf.shape != (3,):
-            raise ValueError("u_inf must have shape (3,)")
+            raise ValueError("u_inf must have shapes (3,)")
         self.u_inf: Array = u_inf
         self.rho: Array = jnp.array(rho)
         self.u_inf_mag: Array = jnp.linalg.norm(u_inf)
@@ -88,7 +88,7 @@ class OneMinusCosine(FlowField):
             "gust_travel_direction", self.u_inf
         )
         if self.gust_travel_direction.shape != (3,):
-            raise ValueError("gust_travel_direction must have shape (3,)")
+            raise ValueError("gust_travel_direction must have shapes (3,)")
         self.gust_travel_direction /= jnp.linalg.norm(
             self.gust_travel_direction
         )
@@ -98,7 +98,7 @@ class OneMinusCosine(FlowField):
             "gust_amplitude_direction", jnp.array((0.0, 0.0, 1.0))
         )
         if self.gust_amplitude_direction.shape != (3,):
-            raise ValueError("gust_amplitude_direction must have shape (3,)")
+            raise ValueError("gust_amplitude_direction must have shapes (3,)")
         self.gust_amplitude_direction /= jnp.linalg.norm(
             self.gust_amplitude_direction
         )
@@ -106,7 +106,7 @@ class OneMinusCosine(FlowField):
         # base coordinate at the start of the gust at t=0
         self.gust_x0: Array = kwargs.get("gust_x0", jnp.zeros(3))
         if self.gust_x0.shape != (3,):
-            raise ValueError("gust_x0 must have shape (3,)")
+            raise ValueError("gust_x0 must have shapes (3,)")
 
     def __call__(self, x: Array, t: Array) -> Array:
         """
@@ -136,5 +136,5 @@ class OneMinusCosine(FlowField):
         )
 
         if self.relative_motion:
-            u = u + self.u_inf
+            u += self.u_inf
         return u
