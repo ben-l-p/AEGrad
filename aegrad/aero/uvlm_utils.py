@@ -2,7 +2,7 @@ from __future__ import annotations
 from jax import Array, vmap
 from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
-from aegrad.array_utils import neighbour_average
+from aegrad.array_utils import neighbour_average, ArrayList
 
 def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
     r"""
@@ -31,11 +31,11 @@ def get_surf_nc(zeta: Array) -> Array:
     diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
     return jnp.cross(diag1, diag2)
 
-def get_c(zetas: Sequence[Array]) -> Sequence[Array]:
-    return [get_surf_c(zeta) for zeta in zetas]
+def get_c(zetas: ArrayList) -> ArrayList:
+    return ArrayList([get_surf_c(zeta) for zeta in zetas])
 
-def get_nc(zetas: Sequence[Array]) -> Sequence[Array]:
-    return [get_surf_nc(zeta) for zeta in zetas]
+def get_nc(zetas: ArrayList) -> ArrayList:
+    return ArrayList([get_surf_nc(zeta) for zeta in zetas])
 
 
 def propagate_surf_wake(gamma_b_n: Array,
@@ -126,14 +126,14 @@ def propagate_surf_wake(gamma_b_n: Array,
     else:
         return zeta_w_np1, gamma_w_np1
 
-def propagate_wake(gamma_b_n: Sequence[Array],
-                    gamma_w_n: Sequence[Array],
-                    zeta_b_np1: Sequence[Array],
-                    zeta_w_n: Sequence[Array],
-                    delta_w: Optional[Sequence[Array]],
+def propagate_wake(gamma_b_n: ArrayList,
+                    gamma_w_n: ArrayList,
+                    zeta_b_np1: ArrayList,
+                    zeta_w_n: ArrayList,
+                    delta_w: Sequence[Optional[Array]],
                     v_func: Callable[[Array], Array],
                     dt: Array,
-                   frozen_wake: bool) -> tuple[Sequence[Array], Sequence[Array]]:
+                   frozen_wake: bool) -> tuple[ArrayList, ArrayList]:
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
     culling the downstream data.
@@ -149,8 +149,8 @@ def propagate_wake(gamma_b_n: Sequence[Array],
     """
 
     n_surf = len(gamma_b_n)
-    zeta_w_np1 = []
-    gamma_w_np1 = []
+    zeta_w_np1 = ArrayList()
+    gamma_w_np1 = ArrayList()
 
     for i_surf in range(n_surf):
         surf_zeta_w, surf_gamma_w = propagate_surf_wake(

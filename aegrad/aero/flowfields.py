@@ -1,6 +1,7 @@
 import jax
 from jax import numpy as jnp
 from jax import Array
+from aegrad.array_utils import ArrayList
 
 
 class FlowField:
@@ -50,6 +51,14 @@ class FlowField:
         for i_dim in range(n_vmap):
             func = jax.vmap(func, in_axes=(i_dim, None), out_axes=i_dim)
         return func(x, t)
+
+    def surf_vmap_call(self, xs: ArrayList, t: Array) -> ArrayList:
+        """
+        :param xs: Spatial coordinates, [n_surf][..., 3]
+        :param t: Time. []
+        :return: Flow field values at the specified coordinates, [n_surf][..., 3]
+        """
+        return ArrayList([self.vmap_call(x, t) for x in xs])
 
 
 class Constant(FlowField):

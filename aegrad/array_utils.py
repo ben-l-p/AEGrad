@@ -1,6 +1,10 @@
+from __future__ import annotations
 from jax import Array
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 from jax import numpy as jnp
+from collections import UserList
+from aegrad.utils import make_pytree
+from functools import singledispatchmethod
 
 
 def check_arr_shape(arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]) -> None:
@@ -166,3 +170,89 @@ def split_to_vertex(arr: Array, axes: int | Sequence[int]) -> Array:
     for ax in axes if isinstance(axes, Sequence) else [axes]:
         arr = _single_split_to_vertex(arr, ax)
     return arr
+
+@make_pytree
+class ArrayList(UserList[Array]):
+    r"""
+    Class to hold a sequence of arrays, useful for handling multiple surfaces.
+    :param arrs: Sequence of arrays to hold.
+    """
+
+    def __init__(self, arrs: Sequence[Array]) -> None:
+        super().__init__(arrs)
+
+    def __add__(self, other: ArrayList) -> ArrayList:
+        return ArrayList([self[i] + other[i] for i in range(len(self))])
+
+    def __sub__(self, other: ArrayList) -> ArrayList:
+        return ArrayList([self[i] - other[i] for i in range(len(self))])
+
+    def __neg__(self) -> ArrayList:
+        return ArrayList([-self[i] for i in range(len(self))])
+
+    def __mul__(self, val: Array | float) -> ArrayList:
+        return ArrayList([self[i] * val for i in range(len(self))])
+
+    def __rdiv__(self, val: Array | float) -> ArrayList:
+        return ArrayList([self[i] / val for i in range(len(self))])
+
+    def __rmul__(self, val: Array | float) -> ArrayList:
+        return self.__mul__(val)
+
+    def __matmul__(self, other: ArrayList) -> ArrayList:
+        return ArrayList([self[i] @ other[i] for i in range(len(self))])
+
+    def at(self, idx: int) -> Array:
+        r"""
+        Get the array at the given index.
+        :param idx: Index of the array to get.
+        :return: Array at the given index.
+        """
+        return self.data[idx]
+
+    def combine(self, *other: ArrayList) -> ArrayList:
+        new_list = list(self)
+        for o_ in other:
+            new_list.extend(list(o_))
+        return ArrayList(new_list)
+
+    def flatten(self) -> Array:
+        r"""
+        Flatten the sequence of arrays into a single 1D array.
+        :return: Flattened 1D array.
+        """
+        return flatten_to_1d(self)
+
+    def index_all(self, idx: tuple[Union[int, slice, Ellipsis], ...] | slice | int) -> ArrayList:
+        r"""
+        Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(n).
+        """
+
+        return ArrayList([self[i][idx] for i in range(len(self))])
+
+    @staticmethod
+    def einsum(subscript: str, *operands: ArrayList) -> ArrayList:
+        r"""
+        Perform Einstein summation on sequences of arrays.
+        :param subscript: Subscript for Einstein summation. This does not include the indices for the sequence dimension.
+        :param operands: Sequences of arrays to perform Einstein summation on.
+        :return: Sequence of arrays resulting from Einstein summation.
+        """
+        n_arrays = len(operands[0])
+        for op in operands:
+            if len(op) != n_arrays:
+                raise ValueError("All ArrayLists must have the same length.")
+
+        return ArrayList([jnp.einsum(subscript, *(op[i] for op in operands)) for i in range(n_arrays)])
+
+
+    def flatten_func(self):
+        children = (self.data, )
+        aux_data = ()
+        return children, aux_data
+
+    @classmethod
+    def unflatten_func(cls, aux_data, children):
+        obj = object.__new__(cls)
+        obj.data = children[0]
+        return obj

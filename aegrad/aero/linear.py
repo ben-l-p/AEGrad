@@ -11,7 +11,7 @@ from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices,
                                          _SliceEntry, InputUnflattened, StateUnflattened, OutputUnflattened)
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake
 from aegrad.algebra.base import LinearOperator
-from aegrad.array_utils import flatten_to_1d
+from aegrad.array_utils import flatten_to_1d, ArrayList
 from aegrad.aero.aic import compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
@@ -47,15 +47,15 @@ class LinearAero:
 
         # reference state
         self.n_surf: int = reference.n_surf
-        self.zeta0_b: Sequence[Array] = reference.zeta_b
-        self.zeta0_b_dot: Sequence[Array] = reference.zeta_b_dot
-        self.zeta0_w: Sequence[Array] = reference.zeta_w
-        self.gamma0_b: Sequence[Array] = reference.gamma_b
-        self.gamma0_w: Sequence[Array] = reference.gamma_w
-        self.f_steady0: Sequence[Array] = reference.f_steady
-        self.f_unsteady0: Sequence[Array] = reference.f_unsteady
-        self.c0: Sequence[Array] = get_c(reference.zeta_b)
-        self.n0: Sequence[Array] = get_nc(reference.zeta_b)
+        self.zeta0_b: ArrayList = ArrayList(reference.zeta_b)
+        self.zeta0_b_dot: ArrayList = ArrayList(reference.zeta_b_dot)
+        self.zeta0_w: ArrayList = ArrayList(reference.zeta_w)
+        self.gamma0_b: ArrayList = ArrayList(reference.gamma_b)
+        self.gamma0_w: ArrayList = ArrayList(reference.gamma_w)
+        self.f_steady0: ArrayList = ArrayList(reference.f_steady)
+        self.f_unsteady0: ArrayList = ArrayList(reference.f_unsteady)
+        self.c0: ArrayList = get_c(reference.zeta_b)
+        self.n0: ArrayList = get_nc(reference.zeta_b)
         self.flowfield0: FlowField = case.flowfield
 
         # baseline shapes
@@ -219,8 +219,8 @@ class LinearAero:
     def get_zero_output(self) -> OutputUnflattened:
         return OutputUnflattened(**self._get_zero(shallow_asdict(self.output_slices)))
 
-    def unflatten_subvec(self, vec: Array, component: LinearComponent) -> Sequence[Array]:
-        arrs = []
+    def unflatten_subvec(self, vec: Array, component: LinearComponent) -> ArrayList:
+        arrs = ArrayList([])
         cnt = 0
         for i_surf in range(self.n_surf):
             size = reduce(mul, component.shapes[i_surf])
@@ -229,8 +229,7 @@ class LinearAero:
 
 
     def linearise(self) -> tuple[LinearOperator, LinearOperator, LinearOperator, LinearOperator]:
-
-        def make_e_mat(zeta_bs: Sequence[Array]) -> Array:
+        def make_e_mat(zeta_bs: ArrayList) -> Array:
             r"""
             Matrix for [A(zeta_c, zeta_b) \cdot n]^{-1}
             [n_surf][zeta_m, zeta_n, 3] -> [m_tot*n_tot, m_tot*n_tot]
@@ -241,10 +240,10 @@ class LinearAero:
                 zeta_cs, zeta_bs, self.kernels_b, ns)
             return jnp.linalg.inv(aic_sys)
 
-        def make_v_bc(zeta_bs: Sequence[Array],
-                   zeta_ws: Sequence[Array],
-                   gamma_ws: Sequence[Array],
-                   zeta_bs_dot: Sequence[Array]) -> Array:
+        def make_v_bc(zeta_bs: ArrayList,
+                   zeta_ws: ArrayList,
+                   gamma_ws: ArrayList,
+                   zeta_bs_dot: ArrayList) -> Array:
             r"""
             Boundary condition velocity at collocation points.
             :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
@@ -260,11 +259,12 @@ class LinearAero:
             ns = get_nc(zeta_bs)
             aic_w = compute_aic_sys_assembled(zeta_cs, zeta_ws, self.kernels_w, ns)  # [m_tot*n_tot, m_star_tot*n_tot]
 
-            v_zeta_n = [jnp.einsum('ijk,ijk->ij', (self.flowfield0.vmap_call(x_, jnp.array(self.t)) - x_dot), n_)
-                        for x_, x_dot, n_ in zip(zeta_cs, zeta_cs_dot, ns)]
+            v_zeta_n = ArrayList.einsum("ijk,ijk->ij",
+                                        self.flowfield0.surf_vmap_call(zeta_cs, jnp.array(self.t)) - zeta_cs_dot, ns)
+
             return aic_w @ flatten_to_1d(gamma_ws) + flatten_to_1d(v_zeta_n)
 
-        def propagate_linear_wake(u_n: InputUnflattened, x_n: StateUnflattened) -> tuple[Optional[Sequence[Array]], Sequence[Array]]:
+        def propagate_linear_wake(u_n: InputUnflattened, x_n: StateUnflattened) -> tuple[Optional[ArrayList], ArrayList]:
             u_n_tot = self.get_total_input(u_n)
             x_n_tot = self.get_total_state(x_n)
 
@@ -273,27 +273,10 @@ class LinearAero:
 
                 # optionally include circulation pertubations in the wake convection velocity
                 if self.free_wake:
-                    gamma_vec = jnp.concatenate(
-                        [
-                            x_n_tot.gamma_b[i_surf].ravel()
-                            for i_surf in range(self.n_surf)
-                        ]
-                        + [
-                            x_n_tot.gamma_w[i_surf].ravel()
-                            for i_surf in range(self.n_surf)
-                        ]
-                    )
+                    gamma_vec = jnp.concatenate([x_n_tot.gamma_b.flatten(), x_n_tot.gamma_w.flatten()])
                 else:
-                    gamma_vec = jnp.concatenate(
-                        [
-                            self.gamma0_b[i_surf].ravel()
-                            for i_surf in range(self.n_surf)
-                        ]
-                        + [
-                            self.gamma0_w[i_surf].ravel()
-                            for i_surf in range(self.n_surf)
-                        ]
-                    )
+                    gamma_vec = jnp.concatenate([self.gamma0_b.flatten(), self.gamma0_w.flatten()])
+
                 vertex_influence = compute_aic_sys_assembled([x],
                                                          [*x_n_tot.zeta_b, *x_n_tot.zeta_w],
                                                         [*self.kernels_b, *self.kernels_w],
@@ -303,8 +286,6 @@ class LinearAero:
                 v_x += jnp.einsum('ijk,j->ik', vertex_influence, gamma_vec).reshape(*x.shape)
 
                 return v_x
-
-
 
             # use wake propagation routines from nonlinear case, as they should be equivalent
             zeta_w_np1_tot, gamma_w_np1_tot = propagate_wake(
@@ -319,22 +300,19 @@ class LinearAero:
                            )
 
             # obtain the delta for the linear system
-            d_gamma_w_np1 = [new - base for new, base in zip(gamma_w_np1_tot, self.gamma0_w)]
-            d_zeta_w_np1 = [new - base for new, base in zip(zeta_w_np1_tot, self.zeta0_w)] if self.prescribed_wake else None
+            d_gamma_w_np1 = gamma_w_np1_tot - self.gamma0_w
+            d_zeta_w_np1 = zeta_w_np1_tot - self.zeta0_w if self.prescribed_wake else None
 
             # add pertubations from input velocities
-            if self.prescribed_wake:
-                for i_surf in range(self.n_surf):
-                    if u_n_tot.nu_w is not None:
-                        d_zeta_w_np1[i_surf] += u_n_tot.nu_w[i_surf] * self.dt
+            if self.prescribed_wake and self.wake_upwash:
+                d_zeta_w_np1 += u_n_tot.nu_w * self.dt
 
             return d_zeta_w_np1, d_gamma_w_np1
 
         def get_dn(d_zeta_b: Sequence[Array]) -> Sequence[Array]:
-            zeta_b_full = [d_zeta_b[i_surf] + self.zeta0_b[i_surf] for i_surf in range(self.n_surf)]
+            zeta_b_full = d_zeta_b + self.zeta0_b
             n_full = get_nc(zeta_b_full)
-            return [n_full[i_surf] + self.n0[i_surf] for i_surf in range(self.n_surf)]
-
+            return n_full - self.n0
 
         # boundary condition velocity and its derivatives [n_c]
         v_bc0 = make_v_bc(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
@@ -365,22 +343,16 @@ class LinearAero:
             d_gamma_bm1_np1 = x_n.gamma_b   # working
 
             # no contribution to bound grid
-            d_zeta_b_np1 = [jnp.zeros(shapes) for shapes in self.state_slices.zeta_b.shapes] if self.prescribed_wake else None
+            d_zeta_b_np1 = ArrayList([jnp.zeros(shapes) for shapes in self.state_slices.zeta_b.shapes]) if self.prescribed_wake else None
 
             # use wake routines to get new wake circulation, factoring in variable discretization
             d_zeta_w_np1, d_gamma_w_np1 = propagate_linear_wake(self.get_zero_input(), x_n)
 
             # influence of states on bound circulation
-            d_v_bc = jnp.concatenate([jnp.einsum('ijk,jk->i', d_v_bc_d_gamma_w[i_surf], d_gamma_w_np1[i_surf]) for i_surf in range(self.n_surf)])
+            d_v_bc = ArrayList.einsum("ijk,jk->i", d_v_bc_d_gamma_w, d_gamma_w_np1).flatten()
+
             if self.prescribed_wake:
-                d_v_bc += jnp.concatenate(
-                    [
-                        jnp.einsum(
-                            "ijkl,jkl->i", d_v_bc_d_zeta_w[i_surf], d_zeta_w_np1[i_surf]
-                        )
-                        for i_surf in range(self.n_surf)
-                    ]
-                )
+                d_v_bc += ArrayList.einsum("ijkl,jkl->i", d_v_bc_d_zeta_w, d_zeta_w_np1).flatten()
 
             # resulting bound circulation perturbation
             d_gamma_b_np1 = self.unflatten_subvec(-e0 @ d_v_bc, self.state_slices.gamma_b)
@@ -392,7 +364,7 @@ class LinearAero:
             u_np1 = self.unpack_input_vector(u_np1_vec)
 
             # influence of grid pertubations on wake influence
-            d_v_bc = jnp.concatenate([jnp.einsum('ijkl,jkl->i', d_v_bc_d_zeta_b[i_surf], u_np1.zeta_b[i_surf]) for i_surf in range(self.n_surf)])
+            d_v_bc = ArrayList.einsum("ijkl,jkl->i", d_v_bc_d_zeta_b, u_np1.zeta_b).flatten()
 
             # pertubations in flow and bound grid at zeta_b
             if self.bound_upwash:
@@ -401,15 +373,13 @@ class LinearAero:
                 d_zeta_dot_c = get_c(u_np1.zeta_b_dot)
                 zeta0_c_dot = get_c(self.zeta0_b_dot)
 
-                out = []
-                for i_surf in range(self.n_surf):
-                    out.append(jnp.einsum('ijk,ijk->ij', d_nu_c[i_surf] - d_zeta_dot_c[i_surf], self.n0[i_surf]))
-                    out[-1] += jnp.einsum('ijk,ijk->ij', -zeta0_c_dot[i_surf], d_n[i_surf])
-                d_v_bc += jnp.concatenate([mat.ravel() for mat in out])
+                d_v_bc += (ArrayList.einsum('ijk,ijk->ij', d_nu_c - d_zeta_dot_c, self.n0) + ArrayList.einsum('ijk,ijk->ij', -zeta0_c_dot, d_n)).flatten()
+
             d_gamma_b_np1_vec = -e0 @ d_v_bc
 
             # pertubations in E matrix [n_c, n_c]
-            d_e = sum([jnp.einsum('ijklm,klm->ij', d_e_d_zeta_b[i_surf], u_np1.zeta_b[i_surf]) for i_surf in range(self.n_surf)])
+            d_e = sum(ArrayList.einsum("ijklm,klm->ij", d_e_d_zeta_b, u_np1.zeta_b))
+
             d_gamma_b_np1_vec += -d_e @ v_bc0
 
             # pertubations in solve matrix
@@ -423,7 +393,7 @@ class LinearAero:
             state_np1 = StateUnflattened(
                 d_gamma_b_np1,
                 d_gamma_w_np1,
-                [jnp.zeros(shapes) for shapes in self.state_slices.gamma_bm1.shapes] if self.unsteady_force else None,
+                ArrayList([jnp.zeros(shapes) for shapes in self.state_slices.gamma_bm1.shapes]) if self.unsteady_force else None,
                 d_zeta_w_np1,
                 u_np1.zeta_b,
             )
@@ -432,7 +402,16 @@ class LinearAero:
         def c_func(x_n_vec: Array) -> Array:
             x_n = self.unpack_state_vector(x_n_vec)
 
-            pass
+            if self.unsteady_force:
+                d_f_unsteady_n = ArrayList.einsum("ij,ijk->ijk", (x_n.gamma_b - x_n.gamma_bm1) / self.dt, self.n0)
+
+            else:
+                d_f_unsteady_n = None
+
+            d_f_steady_n = None
+
+            output_n = OutputUnflattened(d_f_steady_n, d_f_unsteady_n)
+            return self.pack_output_vector(output_n)
 
         def d_func(u_n_vec: Array) -> Array:
             u_n = self.unpack_state_vector(u_n_vec)

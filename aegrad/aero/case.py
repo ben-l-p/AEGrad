@@ -12,7 +12,7 @@ from pathlib import Path
 from aegrad.utils import replace_self
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake
 from aegrad.aero.constants import HORSESHOE_LENGTH
-from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex
+from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon
@@ -27,10 +27,11 @@ class AeroCase:
                  n_tstep: int,
                  grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]] | GridDiscretization | tuple[int, int, int],
                  variable_wake_disc: bool,
-                 dof_mapping: Sequence[Array] | Array,
+                 dof_mapping: ArrayList | Sequence[Array] | Array,
                  kernel: Optional[KernelFunction] = None) -> None:
         r"""
         Initialize AeroCase class with all non-design parameters
+        Initialize AeroCase class with all non-design parametersA
         :param grid_shapes: Chordwise, spanwise, and wake panel discretizations for each aerodynamic surface, [n_surf][3]
         :param dof_mapping: Index mapping from aerodynamic surface nodes to global structure nodes, [n_surf][n]
         """
@@ -64,9 +65,9 @@ class AeroCase:
         self.n_panels_tot: int = sum(self.n_bound_panels) + sum(self.n_wake_panels)
 
         # placeholder for aerodynamic local grid coordinates, and global coordinates for wing and wake
-        self._x0_b: Optional[list[Array]] = None
-        self._zeta0_b: Optional[list[Array]] = None
-        self._zeta0_w: Optional[list[Array]] = None
+        self._x0_b: Optional[ArrayList] = None
+        self._zeta0_b: Optional[ArrayList] = None
+        self._zeta0_w: Optional[ArrayList] = None
 
         self.gamma_b_slice, self.gamma_w_slice = self.make_gamma_slices()
 
@@ -87,7 +88,7 @@ class AeroCase:
 
         # wake discretization parameters
         self.variable_wake_disc: bool = variable_wake_disc
-        self._delta_w: Optional[Sequence[Array]] = None
+        self._delta_w: Optional[Sequence[Optional[Array]]] = None
 
         # kernel definitions per surface (seperate for wing and wake)
         if kernel is None:
@@ -100,16 +101,16 @@ class AeroCase:
         self.surf_w_names: list[str] = [f"surf_{i}_wake" for i in range(self.n_surf)]
 
         # placeholder for time domain case
-        self.zeta_b: list[Array] = [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        self.zeta_b_dot: list[Array] = [
+        self.zeta_b: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc])
+        self.zeta_b_dot: ArrayList = ArrayList([
             jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc
-        ]
-        self.zeta_w: list[Array] = [jnp.zeros((n_tstep, gd.m_star + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        self.gamma_b: list[Array] = [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
-        self.gamma_b_dot: list[Array] = [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
-        self.gamma_w: list[Array] = [jnp.zeros((n_tstep, gd.m_star, gd.n)) for gd in self.grid_disc]
-        self.f_steady: list[Array] = [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        self.f_unsteady: list[Array] = [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+        ])
+        self.zeta_w: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m_star + 1, gd.n + 1, 3)) for gd in self.grid_disc])
+        self.gamma_b: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc])
+        self.gamma_b_dot: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc])
+        self.gamma_w: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m_star, gd.n)) for gd in self.grid_disc])
+        self.f_steady: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc])
+        self.f_unsteady: ArrayList = ArrayList([jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc])
         self.n_tstep_tot: int = n_tstep
         self.t: Array = jnp.zeros(n_tstep)
 
@@ -120,19 +121,19 @@ class AeroCase:
         return self._flowfield
 
     @property
-    def x0_b(self) -> list[Array]:
+    def x0_b(self) -> ArrayList:
         if self._x0_b is None:
             raise ValueError("Design variable x0_b has not been set.")
         return self._x0_b
 
     @property
-    def zeta0_b(self) -> list[Array]:
+    def zeta0_b(self) -> ArrayList:
         if self._zeta0_b is None:
             raise ValueError("Design variable zeta0_b has not been set.")
         return self._zeta0_b
 
     @property
-    def zeta0_w(self) -> list[Array]:
+    def zeta0_w(self) -> ArrayList:
         if self._zeta0_w is None:
             raise ValueError("Design variable zeta0_w has not been set.")
         return self._zeta0_w
@@ -156,7 +157,7 @@ class AeroCase:
                              dt: float | Array,
                              flowfield: FlowField,
                              delta_w: Optional[Sequence[Array] | Array],
-                             x0_aero: Sequence[Array] | Array,
+                             x0_aero: ArrayList | Sequence[Array] | Array,
                              hg0: Array) -> None:
         r"""
         Set aerodynamic design variables
@@ -167,6 +168,8 @@ class AeroCase:
             delta_w = [delta_w]
         if isinstance(x0_aero, Array):
             x0_aero = [x0_aero]
+        if isinstance(x0_aero, Sequence):
+            x0_aero = ArrayList(x0_aero)
 
         # set aerodynamic local coordinates
         if len(x0_aero) != self.n_surf:
@@ -231,13 +234,13 @@ class AeroCase:
             raise IndexError("Timestep index out of range")
 
         return AeroSnapshot(
-            zeta_b=[self.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            zeta_b_dot=[self.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            zeta_w=[self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            gamma_b=[self.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            gamma_w=[self.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            f_steady=[self.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
-            f_unsteady=[self.f_unsteady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)],
+            zeta_b=ArrayList([self.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            zeta_b_dot=ArrayList([self.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            zeta_w=ArrayList([self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            gamma_b=ArrayList([self.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            gamma_w=ArrayList([self.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            f_steady=ArrayList([self.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            f_unsteady=ArrayList([self.f_unsteady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,
@@ -302,32 +305,32 @@ class AeroCase:
         """
         return self.gamma_b[i_surf][i_ts, -1, :]
 
-    def get_zeta_b(self, i_ts: int) -> list[Array]:
+    def get_zeta_b(self, i_ts: int) -> ArrayList:
         r"""
         Get bound grid coordinates for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
         """
-        return [self.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
+        return self.zeta_b.index_all((i_ts, ...))
 
-    def get_zeta_w(self, i_ts: int) -> list[Array]:
+    def get_zeta_w(self, i_ts: int) -> ArrayList:
         r"""
         Get wake grid coordinates for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
         """
-        return [self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
+        return self.zeta_w.index_all((i_ts, ...))
 
-    def get_zeta(self, i_ts: int) -> list[Array]:
+    def get_zeta(self, i_ts: int) -> ArrayList:
         r"""
         Get full grid coordinates (bound, wake) for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: List of grid coordinates for each surface, [2 * n_surf][m_, n_, 3]
         """
-        return self.get_zeta_b(i_ts) + self.get_zeta_w(i_ts)
+        return self.get_zeta_b(i_ts).combine(self.get_zeta_w(i_ts))
 
-    def hg_to_zeta(self, hg: Array) -> Sequence[Array]:
-        zetas = []
+    def hg_to_zeta(self, hg: Array) -> ArrayList:
+        zetas = ArrayList([])
         for i_surf in range(self.n_surf):
             this_hg = jnp.take(hg, self.dof_mapping[i_surf], axis=0)   # [n, 4, 4]
             # zetas.append(vmap(vmap(se3_vect_product, (0, 1), 1), (None, 0), 0)(this_hg, self.x0_b[i_surf]))
@@ -338,8 +341,8 @@ class AeroCase:
             )
         return zetas
 
-    def hg_dot_to_zeta_dot(self, hg_dot: Array) -> Sequence[Array]:
-        zeta_dots = []
+    def hg_dot_to_zeta_dot(self, hg_dot: Array) -> ArrayList:
+        zeta_dots = ArrayList([])
         for i_surf in range(self.n_surf):
             this_hg_dot = jnp.take(hg_dot, self.dof_mapping[i_surf], axis=0)   # [n, 4, 4]
             zeta_dots.append(
@@ -349,16 +352,9 @@ class AeroCase:
             )
         return zeta_dots
 
-    def get_gamma_b_vect(self, i_ts: int) -> Array:
-        r"""
-        Get bound circulation strengths vector for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: Bound circulation strengths vector, [gamma_b_tot]
-        """
-        return jnp.concatenate([gamma_[i_ts, ...].ravel() for gamma_ in self.gamma_b], axis=0)
 
     def get_gamma_w(self, i_ts: int) -> Sequence[Array]:
-        return [gamma_[i_ts, ...] for gamma_ in self.gamma_w]
+        return self.gamma_w.index_all((i_ts, ...))
 
     def get_gamma_w_vect(self, i_ts: int) -> Array:
         r"""
@@ -366,7 +362,7 @@ class AeroCase:
         :param i_ts: Timestep index
         :return: Wake circulation strengths vector, [gamma_w_tot]
         """
-        return jnp.concatenate([gamma_.ravel() for gamma_ in self.get_gamma_w(i_ts)], axis=0)
+        return self.gamma_w.index_all((i_ts, ...)).flatten()
 
     def get_gamma_vect(self, i_ts: int) -> Array:
         r"""
@@ -388,11 +384,14 @@ class AeroCase:
             self.gamma_b[i_surf] = self.gamma_b[i_surf].at[i_ts, ...].set(gamma_vec[self.gamma_b_slice[i_surf]].reshape(self.grid_disc[i_surf].m, self.grid_disc[i_surf].n))
         return self
 
-    def get_gamma_b(self, i_ts: int) -> Sequence[Array]:
-        return [gamma_[i_ts, ...] for gamma_ in self.gamma_b]
+    def get_gamma_b(self, i_ts: int) -> ArrayList:
+        return self.gamma_b.index_all((i_ts, ...))
+
+    def get_gamma_b_vect(self, i_ts: int) -> Array:
+        return self.get_gamma_b(i_ts).flatten()
 
     @replace_self
-    def set_zeta_b(self, zeta_b: Sequence[Array], i_ts: int) -> Self:
+    def set_zeta_b(self, zeta_b: ArrayList, i_ts: int) -> Self:
         r"""
         Set bound grid coordinates from list of grid coordinates at specified time step
         :param zeta_b: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
@@ -403,7 +402,7 @@ class AeroCase:
         return self
 
     @replace_self
-    def set_zeta_b_dot(self, zeta_b_dot: Sequence[Array], i_ts: int) -> Self:
+    def set_zeta_b_dot(self, zeta_b_dot: ArrayList, i_ts: int) -> Self:
         r"""
         Set bound grid velocities from list of grid coordinates at specified time step
         :param zeta_b_dot: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
@@ -414,7 +413,7 @@ class AeroCase:
         return self
 
     @replace_self
-    def set_zeta_w(self, zeta_w: Sequence[Array], i_ts: int) -> Self:
+    def set_zeta_w(self, zeta_w: ArrayList, i_ts: int) -> Self:
         r"""
         Set bound grid coordinates from list of grid coordinates at specified time step
         :param zeta_w: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
@@ -500,7 +499,7 @@ class AeroCase:
         Note that the wake grid does not include the trailing edge, assuming that delta_w[0, :] != 0
         """
 
-        self._zeta0_w = []
+        self._zeta0_w = ArrayList([])
         for i_surf, this_delta_w in enumerate(self.delta_w):
             # get bound grid coordinates
             zeta_te = self.zeta0_b[i_surf][-1, :, :]   # [n+1, 3]
@@ -736,12 +735,12 @@ class AeroCase:
     def reference_snapshot(self) -> AeroSnapshot:
         return AeroSnapshot(
             zeta_b=self.zeta0_b,
-            zeta_b_dot=[jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc],
+            zeta_b_dot=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),
             zeta_w=self.zeta0_w,
-            gamma_b=[jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc],
-            gamma_w=[jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc],
-            f_steady=[jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc],
-            f_unsteady=[jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc],
+            gamma_b=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
+            gamma_w=ArrayList([jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc]),
+            f_steady=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),
+            f_unsteady=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,

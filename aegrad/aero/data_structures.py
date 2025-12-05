@@ -6,6 +6,7 @@ from os import PathLike
 from pathlib import Path
 from aegrad.plotting.structured_grid import plot_frame_to_vtk
 import warnings
+from aegrad.array_utils import ArrayList
 
 r"""
 Everybody loves a dataclass
@@ -57,34 +58,34 @@ class OutputSlices:
 
 @dataclass
 class InputUnflattened:
-    zeta_b: Sequence[Array]
-    zeta_b_dot: Sequence[Array]
-    nu_b: Optional[Sequence[Array]]
-    nu_w: Optional[Sequence[Array]]
+    zeta_b: ArrayList
+    zeta_b_dot: ArrayList
+    nu_b: Optional[ArrayList]
+    nu_w: Optional[ArrayList]
 
 @dataclass
 class StateUnflattened:
-    gamma_b: Sequence[Array]
-    gamma_w: Sequence[Array]
-    gamma_bm1: Optional[Sequence[Array]]
-    zeta_w: Optional[Sequence[Array]]
-    zeta_b: Optional[Sequence[Array]]
+    gamma_b: ArrayList
+    gamma_w: ArrayList
+    gamma_bm1: Optional[ArrayList]
+    zeta_w: Optional[ArrayList]
+    zeta_b: Optional[ArrayList]
 
 @dataclass
 class OutputUnflattened:
-    f_steady: Sequence[Array]
-    f_unsteady: Optional[Sequence[Array]]
+    f_steady: ArrayList
+    f_unsteady: Optional[ArrayList]
 
 
 class AeroSnapshot:
     def __init__(self,
-                 zeta_b: Sequence[Array],
-                zeta_b_dot: Sequence[Array],
-                 zeta_w: Sequence[Array],
-                 gamma_b: Sequence[Array],
-                 gamma_w: Sequence[Array],
-                 f_steady: Sequence[Array],
-                 f_unsteady: Sequence[Array],
+                 zeta_b: ArrayList,
+                zeta_b_dot: ArrayList,
+                 zeta_w: ArrayList,
+                 gamma_b: ArrayList,
+                 gamma_w: ArrayList,
+                 f_steady: ArrayList,
+                 f_unsteady: ArrayList,
                  surf_b_names: Sequence[str],
                  surf_w_names: Sequence[str],
                  i_ts: int,
@@ -100,13 +101,13 @@ class AeroSnapshot:
         :param f_steady: Steady force contributions, [n_surf][m, n]
         :param f_unsteady: Unsteady force contributions, [n_surf][m, n]
         """
-        self.zeta_b: Sequence[Array] = zeta_b
-        self.zeta_b_dot: Sequence[Array] = zeta_b_dot
-        self.zeta_w: Sequence[Array] = zeta_w
-        self.gamma_b: Sequence[Array] = gamma_b
-        self.gamma_w: Sequence[Array] = gamma_w
-        self.f_steady: Sequence[Array] = f_steady
-        self.f_unsteady: Sequence[Array] = f_unsteady
+        self.zeta_b: ArrayList = zeta_b
+        self.zeta_b_dot: ArrayList = zeta_b_dot
+        self.zeta_w: ArrayList = zeta_w
+        self.gamma_b: ArrayList = gamma_b
+        self.gamma_w: ArrayList = gamma_w
+        self.f_steady: ArrayList = f_steady
+        self.f_unsteady: ArrayList = f_unsteady
         self.surf_b_names:  Sequence[str] = surf_b_names
         self.surf_w_names:  Sequence[str] = surf_w_names
         self.i_ts: int = i_ts
