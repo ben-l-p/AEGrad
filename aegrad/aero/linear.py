@@ -2,20 +2,21 @@ from __future__ import annotations
 from jax import Array
 import jax
 import jax.numpy as jnp
-from typing import Sequence, TYPE_CHECKING, Optional
+from typing import Sequence, TYPE_CHECKING, Optional, Self
 from functools import reduce
 from operator import mul
 from enum import Enum
 
 from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices, OutputSlices, LinearComponent,
                                          _SliceEntry, InputUnflattened, StateUnflattened, OutputUnflattened)
-from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake
+from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.algebra.base import LinearOperator
-from aegrad.array_utils import flatten_to_1d, ArrayList
+from aegrad.array_utils import flatten_to_1d, ArrayList, split_to_vertex
 from aegrad.aero.aic import compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
-from aegrad.utils import shallow_asdict
+from aegrad.utils import shallow_asdict, replace_self
+from aegrad.print_output import print_with_time
 
 if TYPE_CHECKING:
     from aegrad.aero.case import AeroCase
@@ -33,7 +34,8 @@ class LinearAero:
                  wake_type: LinearWakeType = LinearWakeType.FREE,
                  bound_upwash: bool = True,
                  wake_upwash: bool = True,
-                 unsteady_force: bool = True):
+                 unsteady_force: bool = True,
+                 compute_matrices: bool = False):
 
         # options
         self.prescribed_wake, self.free_wake = wake_type.value
@@ -77,7 +79,11 @@ class LinearAero:
         self.delta_w: Sequence[Optional[Array]] = case.delta_w
 
         # linear operators for system
-        self._a_mat, self._b_mat, self._c_mat, self._d_mat = self.linearise()
+        self.a, self.b, self.c, self.d = self.linearise()
+
+        # optionally compute matrices
+        if compute_matrices:
+            self.compute_matrices()
 
     def get_reference_inputs(self) -> InputUnflattened:
         return InputUnflattened(self.zeta0_b, self.zeta0_b_dot,
@@ -86,7 +92,8 @@ class LinearAero:
 
     def get_reference_states(self) -> StateUnflattened:
         return StateUnflattened(
-            self.gamma0_b, self.gamma0_w, self.gamma0_b if self.unsteady_force else None,
+            self.gamma0_b, self.gamma0_w,
+            self.gamma0_b if self.unsteady_force else None,
             self.zeta0_w if self.prescribed_wake else None,
             self.zeta0_b if self.free_wake else None,
         )
@@ -140,13 +147,13 @@ class LinearAero:
             _SliceEntry("f_unsteady", *((True, self.zeta_b_shapes) if self.unsteady_force else (False, None))))
         return self._make_slices(slice_entries, OutputSlices)
 
-    def _unpack_vector(self, x: Array, slices: dict[str, LinearComponent]) -> dict[str, Optional[Sequence[Array]]]:
+    def _unpack_vector(self, x: Array, slices: dict[str, LinearComponent]) -> dict[str, Optional[ArrayList]]:
         out = {}
         for name, entry in slices.items():
             if not entry.enabled:
                 out[name] = None
             else:
-                out[name]  = [x[entry.slices[i_surf]].reshape(entry.shapes[i_surf]) for i_surf in range(self.n_surf)]
+                out[name]  = ArrayList([x[entry.slices[i_surf]].reshape(entry.shapes[i_surf]) for i_surf in range(self.n_surf)])
         return out
 
     def unpack_input_vector(self, u: Array) -> InputUnflattened:
@@ -158,7 +165,7 @@ class LinearAero:
     def unpack_output_vector(self, y: Array) -> OutputUnflattened:
         return OutputUnflattened(**self._unpack_vector(y, shallow_asdict(self.output_slices)))
 
-    def _pack_vector(self, slices: dict[str, LinearComponent], vec_length: int, arrs: dict[str, Optional[Sequence[Array]]]) -> Array:
+    def _pack_vector(self, slices: dict[str, LinearComponent], vec_length: int, arrs: dict[str, Optional[ArrayList]]) -> Array:
         vec = jnp.zeros(vec_length)
         for name, entry in slices.items():
             if entry.enabled:
@@ -183,7 +190,7 @@ class LinearAero:
             if entry is None:
                 out[name] = None
             else:
-                arrs = []
+                arrs = ArrayList([])
                 for i_surf in range(self.n_surf):
                     arrs.append(reference[name][i_surf] + input[name][i_surf])
                 out[name] = arrs
@@ -198,13 +205,13 @@ class LinearAero:
     def get_total_output(self, y: OutputUnflattened) -> OutputUnflattened:
         return OutputUnflattened(**self._get_total(shallow_asdict(y), shallow_asdict(self.get_reference_outputs())))
 
-    def _get_zero(self, slices: dict[str, LinearComponent]) -> dict[str, Optional[Sequence[Array]]]:
+    def _get_zero(self, slices: dict[str, LinearComponent]) -> dict[str, Optional[ArrayList]]:
         out = {}
         for name, entry in slices.items():
             if not entry.enabled:
                 out[name] = None
             else:
-                arrs = []
+                arrs = ArrayList([])
                 for i_surf in range(self.n_surf):
                     arrs.append(jnp.zeros(entry.shapes[i_surf]))
                 out[name] = arrs
@@ -227,7 +234,7 @@ class LinearAero:
             arrs.append(vec[cnt:cnt+size].reshape(component.shapes[i_surf]))
         return arrs
 
-
+    @print_with_time("Linearising aerodynamic system...", "Linearisation complete in {:.2f} seconds.")
     def linearise(self) -> tuple[LinearOperator, LinearOperator, LinearOperator, LinearOperator]:
         def make_e_mat(zeta_bs: ArrayList) -> Array:
             r"""
@@ -264,28 +271,37 @@ class LinearAero:
 
             return aic_w @ flatten_to_1d(gamma_ws) + flatten_to_1d(v_zeta_n)
 
+        def v_flow(x: Array,
+                    gamma_b: Optional[ArrayList],
+                    gamma_w: Optional[ArrayList],
+                    zeta_b: Optional[ArrayList],
+                    zeta_w: Optional[ArrayList]) -> Array:
+
+            # sample flowfield
+            v_x = self.flowfield0.vmap_call(x, jnp.array(self.t))
+
+            # add influence from elements if gamma is provided
+            if gamma_b is not None and gamma_w is not None:
+                vertex_influence = compute_aic_sys_assembled([x],
+                                                             [*zeta_b, *zeta_w],
+                                                             [*self.kernels_b, *self.kernels_w],
+                                                             None)
+
+                # add influence from panels
+                v_x += jnp.einsum('ijk,j->ik', vertex_influence,
+                                  jnp.concatenate([gamma_b.flatten(), gamma_w.flatten()])).reshape(*x.shape)
+            return v_x
+
         def propagate_linear_wake(u_n: InputUnflattened, x_n: StateUnflattened) -> tuple[Optional[ArrayList], ArrayList]:
             u_n_tot = self.get_total_input(u_n)
             x_n_tot = self.get_total_state(x_n)
 
             def v_wake_prop(x: Array) -> Array:
-                v_x = self.flowfield0.vmap_call(x, jnp.array(self.t))
-
-                # optionally include circulation pertubations in the wake convection velocity
-                if self.free_wake:
-                    gamma_vec = jnp.concatenate([x_n_tot.gamma_b.flatten(), x_n_tot.gamma_w.flatten()])
-                else:
-                    gamma_vec = jnp.concatenate([self.gamma0_b.flatten(), self.gamma0_w.flatten()])
-
-                vertex_influence = compute_aic_sys_assembled([x],
-                                                         [*x_n_tot.zeta_b, *x_n_tot.zeta_w],
-                                                        [*self.kernels_b, *self.kernels_w],
-                                                         None)
-
-                # add influence from panels
-                v_x += jnp.einsum('ijk,j->ik', vertex_influence, gamma_vec).reshape(*x.shape)
-
-                return v_x
+                return v_flow(x,
+                              x_n_tot.gamma_b if self.free_wake else None,
+                              x_n_tot.gamma_w if self.free_wake else None,
+                              u_n_tot.zeta_b if self.free_wake else None,
+                              x_n_tot.zeta_w if self.free_wake else None)
 
             # use wake propagation routines from nonlinear case, as they should be equivalent
             zeta_w_np1_tot, gamma_w_np1_tot = propagate_wake(
@@ -379,8 +395,7 @@ class LinearAero:
 
             # pertubations in E matrix [n_c, n_c]
             d_e = sum(ArrayList.einsum("ijklm,klm->ij", d_e_d_zeta_b, u_np1.zeta_b))
-
-            d_gamma_b_np1_vec += -d_e @ v_bc0
+            d_gamma_b_np1_vec -= d_e @ v_bc0
 
             # pertubations in solve matrix
             d_gamma_b_np1 = self.unflatten_subvec(d_gamma_b_np1_vec, self.state_slices.gamma_b)
@@ -401,26 +416,71 @@ class LinearAero:
 
         def c_func(x_n_vec: Array) -> Array:
             x_n = self.unpack_state_vector(x_n_vec)
+            x_n_tot = self.get_total_state(x_n)
 
             if self.unsteady_force:
-                d_f_unsteady_n = ArrayList.einsum("ij,ijk->ijk", (x_n.gamma_b - x_n.gamma_bm1) / self.dt, self.n0)
-
+                d_f_unsteady_n = split_to_vertex(ArrayList.einsum("ij,ijk->ijk", (x_n.gamma_b - x_n.gamma_bm1) / self.dt, self.n0), (0, 1))
             else:
                 d_f_unsteady_n = None
 
-            d_f_steady_n = None
+            def v_forcing(x: Array) -> Array:
+                return v_flow(x,
+                              x_n_tot.gamma_b,
+                              x_n_tot.gamma_w,
+                              self.zeta0_b,
+                              x_n_tot.zeta_w)
 
-            output_n = OutputUnflattened(d_f_steady_n, d_f_unsteady_n)
-            return self.pack_output_vector(output_n)
+            d_f_steady_n = steady_forcing(
+                    self.zeta0_b,
+                    self.zeta0_b_dot,
+                    x_n_tot.gamma_b,
+                    x_n_tot.gamma_w,
+                    v_forcing,
+                None,
+                    self.flowfield0.rho,
+                ) - self.f_steady0
+
+            return self.pack_output_vector(OutputUnflattened(d_f_steady_n, d_f_unsteady_n))
 
         def d_func(u_n_vec: Array) -> Array:
-            u_n = self.unpack_state_vector(u_n_vec)
+            u_n = self.unpack_input_vector(u_n_vec)
+            u_n_tot = self.get_total_input(u_n)
 
-            pass
+            def v_forcing(x: Array) -> Array:
+                return v_flow(x,
+                              self.gamma0_b,
+                              self.gamma0_w,
+                              u_n_tot.zeta_b,
+                              self.zeta0_w)
+
+            d_f_steady_n = (
+                steady_forcing(
+                    u_n_tot.zeta_b,
+                    u_n_tot.zeta_b_dot,
+                    self.gamma0_b,
+                    self.gamma0_w,
+                    v_forcing,
+                    u_n_tot.nu_b if self.bound_upwash else None,
+                    self.flowfield0.rho,
+                )
+                - self.f_steady0
+            )
+
+            return self.pack_output_vector(OutputUnflattened(d_f_steady_n, ArrayList.zeros_like(d_f_steady_n)))
+
 
         a = LinearOperator(jax.jit(a_func), shape=(self.n_states, self.n_states))
         b = LinearOperator(jax.jit(b_func), shape=(self.n_states, self.n_inputs))
-        c = LinearOperator(c_func, shape=(self.n_outputs, self.n_states))
-        d = LinearOperator(d_func, shape=(self.n_outputs, self.n_inputs))
+        c = LinearOperator(jax.jit(c_func), shape=(self.n_outputs, self.n_states))
+        d = LinearOperator(jax.jit(d_func), shape=(self.n_outputs, self.n_inputs))
 
         return a, b, c, d
+
+    @replace_self
+    @print_with_time("Computing linear system matrices...", "Matrix computation complete in {:.2f} seconds.")
+    def compute_matrices(self) -> Self:
+        self.a.to_matrix()
+        self.b.to_matrix()
+        self.c.to_matrix()
+        self.d.to_matrix()
+        return self

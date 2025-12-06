@@ -36,7 +36,7 @@ class LinearOperator:
         self.mat: Optional[Array] = mat
         self.shape = shape  # shapes of equivelent matrix
 
-    def get_matrix(self) -> Array:
+    def to_matrix(self) -> Array:
         if self.mat is not None:
             return self.mat
         else:
@@ -117,7 +117,7 @@ class BlockLinear:
             for i_block_col in range(self.n_block_col):
                 entry = self.entries[i_block_row][i_block_col]
                 if isinstance(entry, LinearOperator):
-                    arrs[-1].append(entry.get_matrix())
+                    arrs[-1].append(entry.to_matrix())
                 else:
                     arrs[-1].append(entry)
         blk = jnp.block(arrs)

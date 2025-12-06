@@ -10,7 +10,7 @@ from os import PathLike
 from pathlib import Path
 
 from aegrad.utils import replace_self
-from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake
+from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.aero.constants import HORSESHOE_LENGTH
 from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
@@ -19,7 +19,8 @@ from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon
 from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wake_influence, compute_aic_sys
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
-from aegrad.aero.linear import LinearAero
+from aegrad.aero.linear import LinearAero, LinearWakeType
+from aegrad.print_output import print_with_time
 
 
 class AeroCase:
@@ -150,8 +151,20 @@ class AeroCase:
             raise ValueError("Wake displacement delta_w has not been set.")
         return self._delta_w
 
-    def linearise(self, i_ts: int) -> LinearAero:
-        return LinearAero(self, self[i_ts])
+    def linearise(self,
+                  i_ts: int,
+                  compute_matrices: bool,
+                  wake_type: LinearWakeType = LinearWakeType.FREE,
+                  bound_upwash: bool = True,
+                  wake_upwash: bool = True,
+                  unsteady_force: bool = True) -> LinearAero:
+        return LinearAero(self,
+                          self[i_ts],
+                          wake_type=wake_type,
+                          bound_upwash=bound_upwash,
+                          wake_upwash=wake_upwash,
+                            unsteady_force=unsteady_force,
+                          compute_matrices=compute_matrices)
 
     def set_design_variables(self,
                              dt: float | Array,
@@ -313,6 +326,14 @@ class AeroCase:
         """
         return self.zeta_b.index_all((i_ts, ...))
 
+    def get_zeta_dot_b(self, i_ts: int) -> ArrayList:
+        r"""
+        Get bound grid velocities for all surfaces at specified time step
+        :param i_ts: Timestep index
+        :return: List of bound grid coordinates for each surface, [n_surf][m+1, n+1, 3]
+        """
+        return self.zeta_b_dot.index_all((i_ts, ...))
+
     def get_zeta_w(self, i_ts: int) -> ArrayList:
         r"""
         Get wake grid coordinates for all surfaces at specified time step
@@ -353,7 +374,7 @@ class AeroCase:
         return zeta_dots
 
 
-    def get_gamma_w(self, i_ts: int) -> Sequence[Array]:
+    def get_gamma_w(self, i_ts: int) -> ArrayList:
         return self.gamma_w.index_all((i_ts, ...))
 
     def get_gamma_w_vect(self, i_ts: int) -> Array:
@@ -512,63 +533,25 @@ class AeroCase:
 
 
     @replace_self
+    def calculate_steady_forcing(self, i_ts: int) -> Self:
+        f_steady = steady_forcing(self.get_zeta_b(i_ts),
+                           self.get_zeta_dot_b(i_ts),
+                           self.get_gamma_b(i_ts),
+                           self.get_gamma_w(i_ts),
+                           lambda x_: self.get_v_tot(i_ts, x_),
+                            None,
+                           self.flowfield.rho)
+        for i_surf in range(self.n_surf):
+            self.f_steady[i_surf] = self.f_steady[i_surf].at[i_ts, ...].set(f_steady[i_surf])
+        return self
+
+    @replace_self
     def calculate_gamma_dot(self, i_ts: int) -> Self:
         for i_surf in range(self.n_surf):
             self.gamma_b_dot[i_surf] = self.gamma_b_dot[i_surf].at[i_ts, ...].set(
                 finite_difference(i_ts, self.gamma_b[i_surf], self.dt, 0, order=1)
             )
         return self
-
-    @replace_self
-    def calculate_steady_forcing(self, i_ts: int) -> Self:
-        for i_surf in range(self.n_surf):
-            self.f_steady[i_surf] = self.f_steady[i_surf].at[i_ts, ...].set(self.calculate_surf_steady_forcing(i_ts, i_surf))
-        return self
-
-    def calculate_surf_steady_forcing(self, i_ts: int, i_surf: int) -> Array:
-        r"""
-        Calculate the steady aerodynamic forcing on a given surface at a given time step.
-        :param i_ts: Time step index
-        :param i_surf: Surface index
-        :return: Steady aerodynamic forcing, [f_steady_m+1, f_steady_n+1, 3]
-        """
-        zeta_b = self.zeta_b[i_surf][i_ts, ...]  # [gamma_m+1, gamma_n+1, 3]
-        zeta_dot_b = self.zeta_b_dot[i_surf][i_ts, ...]  # [gamma_m+1, gamma_n+1, 3]
-        gamma_b = self.gamma_b[i_surf][i_ts, ...]  # [gamma_m, gamma_n]
-
-        # compute midpoints
-        mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
-        mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
-
-        mp_dot_chordwise = neighbour_average(zeta_dot_b, axes=0)  # [gamma_m, gamma_n+1, 3]
-        mp_dot_spanwise = neighbour_average(zeta_dot_b, axes=1)  # [gamma_m+1, gamma_n, 3]
-
-        # relative flow velocities at midpoints
-        v_rel_chordwise = self.get_v_tot(i_ts, mp_chordwise) - mp_dot_chordwise  # [gamma_m, gamma_n+1, 3]
-        v_rel_spanwise = self.get_v_tot(i_ts, mp_spanwise) - mp_dot_spanwise  # [gamma_m+1, gamma_n, 3]
-
-        # equivelant strengths of filaments
-        gamma_chordwise = jnp.zeros(v_rel_chordwise.shape[:-1])  # [gamma_m, gamma_n+1, 3]
-        gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
-        gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
-        gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1]) # [gamma_m+1, gamma_n, 3]
-        gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
-        gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
-
-        # add first wake gamma
-        if self.grid_disc[i_surf].m_star:
-            gamma_w1 = self.gamma_w[i_surf][i_ts, 0, :]  # [gamma_n]
-            gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w1)
-
-        # filement vectors
-        r_chordwise = zeta_b[1:, :, :] - zeta_b[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
-        r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
-
-        # forces from each set of filaments
-        f_chordwise = self.flowfield.rho * jnp.einsum('ij,ijk->ijk', gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise))    # [gamma_m, gamma_n+1, 3]
-        f_spanwise = self.flowfield.rho * jnp.einsum('ij,ijk->ijk', gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise))  # [gamma_m+1, gamma_n, 3]
-
-        return split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1) # [gamma_m+1, gamma_n+1, 3]
 
     @replace_self
     def calculate_unsteady_forcing(self, i_ts: int, ncs: Sequence[Array]) -> Self:
@@ -685,6 +668,7 @@ class AeroCase:
         return self
 
     @replace_self
+    @print_with_time("Computing static solution...", "Static solution complete in {:.2f} seconds.")
     def solve_static(self, i_ts: int, hg: Optional[Array], horseshoe: bool) -> Self:
         self.solve(i_ts, hg, None, static=True, free_wake=False, horseshoe=horseshoe)
         return self

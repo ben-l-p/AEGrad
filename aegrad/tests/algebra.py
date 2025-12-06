@@ -17,7 +17,7 @@ class TestLinearOperator:
         Test obtaining the linear matrix from autograd
         """
         l = LinearOperator(lambda x: x, shape=(5, 5))
-        mat = l.get_matrix()
+        mat = l.to_matrix()
         assert jnp.allclose(mat, jnp.eye(5)), f"Expected identity matrix, but got {mat}"
 
     @staticmethod
@@ -26,7 +26,7 @@ class TestLinearOperator:
         Test obtaining the linear matrix from input
         """
         l = LinearOperator(lambda x: x, shape=(5, 5), mat=jnp.eye(5))
-        mat = l.get_matrix()
+        mat = l.to_matrix()
         assert jnp.allclose(mat, jnp.eye(5)), f"Expected identity matrix, but got {mat}"
 
 class TestBlockLinear:

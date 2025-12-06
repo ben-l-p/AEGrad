@@ -2,7 +2,7 @@ from __future__ import annotations
 from jax import Array, vmap
 from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
-from aegrad.array_utils import neighbour_average, ArrayList
+from aegrad.array_utils import neighbour_average, ArrayList, split_to_vertex
 
 def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
     r"""
@@ -149,8 +149,8 @@ def propagate_wake(gamma_b_n: ArrayList,
     """
 
     n_surf = len(gamma_b_n)
-    zeta_w_np1 = ArrayList()
-    gamma_w_np1 = ArrayList()
+    zeta_w_np1 = ArrayList([])
+    gamma_w_np1 = ArrayList([])
 
     for i_surf in range(n_surf):
         surf_zeta_w, surf_gamma_w = propagate_surf_wake(
@@ -166,3 +166,69 @@ def propagate_wake(gamma_b_n: ArrayList,
         zeta_w_np1.append(surf_zeta_w)
         gamma_w_np1.append(surf_gamma_w)
     return zeta_w_np1, gamma_w_np1
+
+
+def steady_forcing(zeta_b: ArrayList,
+                             zeta_dot_b: ArrayList,
+                             gamma_b: ArrayList,
+                             gamma_w: ArrayList,
+                             v_func: Callable[[Array], Array],
+                             v_input: Optional[ArrayList],
+                             rho: Array) -> ArrayList:
+    f_steady = ArrayList([])
+    for i_surf in range(len(zeta_b)):
+       f_steady.append(surf_steady_forcing(zeta_b[i_surf],
+                                           zeta_dot_b[i_surf],
+                                           gamma_b[i_surf],
+                                           gamma_w[i_surf],
+                                           v_func,
+                                           v_input[i_surf] if v_input is not None else None,
+                                           rho))
+    return f_steady
+
+
+def surf_steady_forcing(zeta_b: Array,
+                                  zeta_dot_b: Array,
+                                  gamma_b: Array,
+                                  gamma_w: Array,
+                                  v_func: Callable[[Array], Array],
+                                  v_input: Optional[Array],
+                                  rho: Array) -> Array:
+
+    # compute midpoints
+    mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
+    mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
+
+    mp_dot_chordwise = neighbour_average(zeta_dot_b, axes=0)  # [gamma_m, gamma_n+1, 3]
+    mp_dot_spanwise = neighbour_average(zeta_dot_b, axes=1)  # [gamma_m+1, gamma_n, 3]
+
+    # relative flow velocities at midpoints
+    v_rel_chordwise = v_func(mp_chordwise) - mp_dot_chordwise  # [gamma_m, gamma_n+1, 3]
+    v_rel_spanwise = v_func(mp_spanwise) - mp_dot_spanwise  # [gamma_m+1, gamma_n, 3]
+
+    # add any input velocities
+    if v_input is not None:
+        v_rel_chordwise += neighbour_average(v_input, axes=0)
+        v_rel_spanwise += neighbour_average(v_input, axes=1)
+
+    # equivelant strengths of filaments
+    gamma_chordwise = jnp.zeros(v_rel_chordwise.shape[:-1])  # [gamma_m, gamma_n+1, 3]
+    gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
+    gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
+    gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1]) # [gamma_m+1, gamma_n, 3]
+    gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
+    gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
+
+    # add first wake gamma
+    if gamma_w.shape[0] > 0:
+        gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w[0, :])
+
+    # filement vectors
+    r_chordwise = zeta_b[1:, :, :] - zeta_b[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
+    r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
+
+    # forces from each set of filaments
+    f_chordwise = rho * jnp.einsum('ij,ijk->ijk', gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise))    # [gamma_m, gamma_n+1, 3]
+    f_spanwise = rho * jnp.einsum('ij,ijk->ijk', gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise))  # [gamma_m+1, gamma_n, 3]
+
+    return split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1) # [gamma_m+1, gamma_n+1, 3]

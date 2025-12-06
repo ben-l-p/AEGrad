@@ -1,11 +1,12 @@
 from aegrad.aero.uvlm_utils import make_rectangular_grid
 from aegrad.aero.data_structures import GridDiscretization
 from jax import numpy as jnp
-from jax.scipy.spatial.transform import Rotation as R
+from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
 import jax
 from pathlib import Path
+import numpy as np
 jax.config.update("jax_debug_nans", True)
 
 u_inf = jnp.array((10.0, 0.0, 1.0))
@@ -26,7 +27,7 @@ x_grid = make_rectangular_grid(m, n, c_ref, ea)
 
 beam_coords = jnp.zeros((n + 1, 3))
 beam_coords = beam_coords.at[:, 1].set(jnp.linspace(0.0, b_ref, n + 1))
-rmat = R.from_euler('xyz', jnp.array((0.0, alpha, 0.0))).as_matrix()
+rmat = rot.from_euler('xyz', jnp.array((0.0, alpha, 0.0))).as_matrix()
 
 hg = jnp.zeros((n + 1, 4, 4))
 hg = hg.at[:, :3, :3].set(rmat[None, :, :])
@@ -45,7 +46,12 @@ case.solve_static(0, None, True)
 
 case.plot(plot_path, None)
 
-case.linearise(0)
+linear_model = case.linearise(0, compute_matrices=True)
+
+amat = np.array(linear_model.a.to_matrix())
+bmat = np.array(linear_model.b.to_matrix())
+cmat = np.array(linear_model.c.to_matrix())
+dmat = np.array(linear_model.d.to_matrix())
 
 # case.plot(plot_path)
 
