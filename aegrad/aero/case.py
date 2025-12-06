@@ -12,7 +12,7 @@ from pathlib import Path
 from aegrad.utils import replace_self
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.aero.constants import HORSESHOE_LENGTH
-from aegrad.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
+from aegrad.algebra.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon

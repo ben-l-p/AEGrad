@@ -2,7 +2,7 @@ from __future__ import annotations
 from jax import Array
 import jax
 import jax.numpy as jnp
-from typing import Sequence, TYPE_CHECKING, Optional, Self
+from typing import Sequence, TYPE_CHECKING, Optional
 from functools import reduce
 from operator import mul
 from enum import Enum
@@ -10,12 +10,12 @@ from enum import Enum
 from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices, OutputSlices, LinearComponent,
                                          _SliceEntry, InputUnflattened, StateUnflattened, OutputUnflattened)
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
-from aegrad.algebra.base import LinearOperator
-from aegrad.array_utils import flatten_to_1d, ArrayList, split_to_vertex
+from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
+from aegrad.algebra.array_utils import flatten_to_1d, ArrayList, split_to_vertex
 from aegrad.aero.aic import compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
-from aegrad.utils import shallow_asdict, replace_self
+from aegrad.utils import shallow_asdict
 from aegrad.print_output import print_with_time
 
 if TYPE_CHECKING:
@@ -79,11 +79,11 @@ class LinearAero:
         self.delta_w: Sequence[Optional[Array]] = case.delta_w
 
         # linear operators for system
-        self.a, self.b, self.c, self.d = self.linearise()
+        self.base_sys: LinearSystem = self.linearise()
 
-        # optionally compute matrices
-        if compute_matrices:
-            self.compute_matrices()
+        # final system - this is overwritten for updating models
+        self.sys: LinearSystem = self.base_sys
+
 
     def get_reference_inputs(self) -> InputUnflattened:
         return InputUnflattened(self.zeta0_b, self.zeta0_b_dot,
@@ -235,7 +235,7 @@ class LinearAero:
         return arrs
 
     @print_with_time("Linearising aerodynamic system...", "Linearisation complete in {:.2f} seconds.")
-    def linearise(self) -> tuple[LinearOperator, LinearOperator, LinearOperator, LinearOperator]:
+    def linearise(self) -> LinearSystem:
         def make_e_mat(zeta_bs: ArrayList) -> Array:
             r"""
             Matrix for [A(zeta_c, zeta_b) \cdot n]^{-1}
@@ -474,13 +474,15 @@ class LinearAero:
         c = LinearOperator(jax.jit(c_func), shape=(self.n_outputs, self.n_states))
         d = LinearOperator(jax.jit(d_func), shape=(self.n_outputs, self.n_inputs))
 
-        return a, b, c, d
+        return LinearSystem(a, b, c, d)
 
-    @replace_self
-    @print_with_time("Computing linear system matrices...", "Matrix computation complete in {:.2f} seconds.")
-    def compute_matrices(self) -> Self:
-        self.a.to_matrix()
-        self.b.to_matrix()
-        self.c.to_matrix()
-        self.d.to_matrix()
-        return self
+    def run(self, u: InputUnflattened, x0: StateUnflattened) -> tuple[StateUnflattened, OutputUnflattened]:
+        r"""
+        Run the linear system for one time step.
+        :param u: Input perturbations at time=n+1
+        :param x0: State perturbations at time=n
+        :return: Output perturbations at time=n+1
+        """
+        x0_vec = self.pack_state_vector(x0)
+        u_vec = self.pack_input_vector(u)
+        raise NotImplementedError

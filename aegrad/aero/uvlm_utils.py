@@ -2,7 +2,7 @@ from __future__ import annotations
 from jax import Array, vmap
 from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
-from aegrad.array_utils import neighbour_average, ArrayList, split_to_vertex
+from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
 
 def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
     r"""

@@ -1,5 +1,6 @@
 from jax import numpy as jnp
-from aegrad.algebra.base import LinearOperator, BlockLinear
+from aegrad.algebra.linear_operators import LinearOperator, BlockLinear
+
 
 class TestLinearOperator:
     @staticmethod

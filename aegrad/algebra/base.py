@@ -1,7 +1,7 @@
+from __future__ import annotations
 from jax import numpy as jnp
-from jax import Array, jacobian
+from jax import Array
 from jax.lax import cond
-from typing import Callable, Sequence, Optional
 
 
 def matrix2(mat: Array) -> Array:
@@ -16,113 +16,6 @@ def chi(rmat: Array) -> Array:
     # [3, 3] -> [6, 6]
     return jnp.block([[rmat, jnp.zeros((3, 3))], [jnp.zeros((3, 3)), rmat]])
 
-class LinearOperator:
-    r"""
-    Linear operator represented by a function, either as A(x) or Ax
-    If the function is set to none, the zero matrix is assumed.
-    """
-    def __init__(
-        self,
-        func: Optional[Callable[[Array], Array]],
-        shape: tuple[int, int],
-        mat: Optional[Array] = None,
-    ):
-
-        if mat is not None:
-            if mat.shape != shape:
-                raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {shape}.")
-
-        self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
-        self.mat: Optional[Array] = mat
-        self.shape = shape  # shapes of equivelent matrix
-
-    def to_matrix(self) -> Array:
-        if self.mat is not None:
-            return self.mat
-        else:
-            # dL/dx at x at any point is the same, and should be independent of x
-            self.mat = jacobian(lambda x_: self.func(x_), argnums=0)(jnp.full(self.shape[1], 1.0))
-            return self.mat
-
-    def __matmul__(self, rhs: Array) -> Array:
-        return self.func(rhs)
-
-    def __call__(self, rhs: Array) -> Array:
-        return self.func(rhs)
-
-class BlockLinear:
-    r"""
-    Block linear operator represented by a function, supporting matmul
-    """
-    def __init__(self, entries: Sequence[Sequence[LinearOperator | Array]], mat: Optional[Array] = None):
-        if not all(len(row) == len(entries[0]) for row in entries):
-            raise ValueError("All rows in BlockLinear must have the same number of columns.")
-
-        shapes: list[list[tuple[int, ...]]] = [[e.shape for e in row] for row in entries]    # [][][...]
-
-        if any([any([len(e) != 2 for e in row]) for row in shapes]):
-            raise ValueError("All entries in BlockLinear must be 2D arrays or linear operators.")
-
-        shapes_arr = jnp.array(shapes, dtype=int)   # [n_block_row, n_block_col, 2]
-        self.n_block_row: int = shapes_arr.shape[0]
-        self.n_block_col: int = shapes_arr.shape[1]
-
-        # every row must have equal column sizes and every column must have equal row sizes
-        if not jnp.all(shapes_arr[..., 0] == shapes_arr[:, [0], 0]):
-            raise ValueError("All columns in BlockLinear must have the same number of rows.")
-        if not jnp.all(shapes_arr[..., 1] == shapes_arr[[0], :, 1]):
-            raise ValueError("All rows in BlockLinear must have the same number of columns.")
-
-        self.entries = entries
-
-        # number of blocks in each dimension
-        self.block_heights: Array = shapes_arr[:, 0, 0]   # [n_block_row]
-        self.block_widths: Array = shapes_arr[0, :, 1]    # [n_block_col]
-        self.shape: tuple[int, int] = (int(jnp.sum(self.block_heights)), int(jnp.sum(self.block_widths)))
-
-        # index of entries for each block in the full matrix
-        height_index = []
-        i_start = 0
-        for i_block_row in range(self.n_block_row):
-            height_index.append(jnp.arange(i_start, i_start := i_start + self.block_heights[i_block_row]))
-        self.height_index: tuple[Array, ...] = tuple(height_index)
-
-        width_index = []
-        i_start = 0
-        for i_block_col in range(self.n_block_col):
-            width_index.append(
-                jnp.arange(
-                    i_start, i_start := i_start + self.block_widths[i_block_col]
-                )
-            )
-        self.width_index: tuple[Array, ...] = tuple(width_index)
-
-        if mat is not None:
-            if mat.shape != self.shape:
-                raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {self.shape}.")
-        self.mat = mat
-
-    def __matmul__(self, rhs: Array) -> Array:
-        out = jnp.zeros(self.shape[0])
-        for i_block_col in range(self.n_block_col):
-            this_rhs = rhs[self.width_index[i_block_col]]
-            for i_block_row in range(self.n_block_row):
-                out = out.at[self.height_index[i_block_row]].add(self.entries[i_block_row][i_block_col] @ this_rhs)
-        return out
-
-    def get_matrix(self) -> Array:
-        arrs = []
-        for i_block_row in range(self.n_block_row):
-            arrs.append([])
-            for i_block_col in range(self.n_block_col):
-                entry = self.entries[i_block_row][i_block_col]
-                if isinstance(entry, LinearOperator):
-                    arrs[-1].append(entry.to_matrix())
-                else:
-                    arrs[-1].append(entry)
-        blk = jnp.block(arrs)
-        self.mat = blk
-        return blk
 
 def finite_difference(
     i_: int, data: Array, delta: Array, axis: int, order: int = 1

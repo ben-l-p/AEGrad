@@ -48,10 +48,12 @@ case.plot(plot_path, None)
 
 linear_model = case.linearise(0, compute_matrices=True)
 
-amat = np.array(linear_model.a.to_matrix())
-bmat = np.array(linear_model.b.to_matrix())
-cmat = np.array(linear_model.c.to_matrix())
-dmat = np.array(linear_model.d.to_matrix())
+linear_model.sys.compute_matrices()
+
+amat = np.array(linear_model.sys.a.to_matrix())
+bmat = np.array(linear_model.sys.b.to_matrix())
+cmat = np.array(linear_model.sys.c.to_matrix())
+dmat = np.array(linear_model.sys.d.to_matrix())
 
 # case.plot(plot_path)
 

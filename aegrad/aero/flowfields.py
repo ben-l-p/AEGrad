@@ -1,7 +1,7 @@
 import jax
 from jax import numpy as jnp
 from jax import Array
-from aegrad.array_utils import ArrayList
+from aegrad.algebra.array_utils import ArrayList
 
 
 class FlowField:

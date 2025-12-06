@@ -72,7 +72,6 @@ if __name__ == "__main__":
     zeta = jnp.stack(jnp.meshgrid(jnp.linspace(-1.0, 1.0, 2), jnp.linspace(-1.0, 1.0, 2)), axis=-1)
     zeta = jnp.concatenate((zeta, jnp.zeros_like(zeta[..., [0]])), axis=-1)
 
-    from aegrad.array_utils import neighbour_average
     from aegrad.aero.aic import compute_aic_grid
     import jax
     jax.config.update("jax_debug_nans", True)

@@ -2,7 +2,7 @@ from jax import numpy as jnp
 from jax import Array, vmap
 from aegrad.utils import check_type
 from aegrad.structure.utils import check_connectivity
-from aegrad.array_utils import check_arr_shape, check_arr_dtype
+from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.algebra.base import chi
 from aegrad.algebra.se3 import p, k_tg_entry
 from typing import Optional

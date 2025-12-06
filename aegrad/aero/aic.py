@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Sequence, Optional
 from aegrad.aero.kernels import KernelFunction
-from aegrad.array_utils import block_axis
+from aegrad.algebra.array_utils import block_axis
 
 from jax import Array, vmap
 from jax import numpy as jnp

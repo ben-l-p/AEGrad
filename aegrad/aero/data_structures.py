@@ -6,7 +6,8 @@ from os import PathLike
 from pathlib import Path
 from aegrad.plotting.structured_grid import plot_frame_to_vtk
 import warnings
-from aegrad.array_utils import ArrayList
+from aegrad.algebra.array_utils import ArrayList
+from aegrad.algebra.linear_operators import LinearOperator
 
 r"""
 Everybody loves a dataclass

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from aegrad.aero.case import AeroCase
-from aegrad.array_utils import neighbour_average
+from aegrad.algebra.array_utils import neighbour_average
 
 def calculate_f_steady(case: AeroCase, i_ts: int) -> AeroCase:
     for i_surf in range(case.n_surf):
