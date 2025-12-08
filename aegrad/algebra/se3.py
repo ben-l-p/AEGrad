@@ -151,3 +151,4 @@ def k_tg_entry(d: Array, eps: Array, k: Array) -> Array:
 def vect_product(hg: Array, x: Array) -> Array:
     # [4, 4], [3] -> [3]
     return hg[:3, :3] @ x + hg[:3, 3]
+

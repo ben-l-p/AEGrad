@@ -1,6 +1,7 @@
 import time
 from functools import wraps
 from enum import Enum
+from warnings import warn
 
 class Colour(Enum):
     RED = 31
@@ -15,6 +16,8 @@ def make_color(text: str, color: Colour) -> str:
     # info on coloring from https://vascosim.medium.com/how-to-print-colored-text-in-python-52f6244e2e30
     return f'\033[{color.value}m{text}\033[0m'
 
+def warn(message: str) -> None:
+    print(make_color(f"Warning: {message}", Colour.YELLOW))
 
 def print_with_time(init_message: str, final_message: str):
     def decorator(func):

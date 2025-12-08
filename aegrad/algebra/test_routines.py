@@ -1,11 +1,11 @@
-from jax import Array
+from jax import Array, vmap
 import jax.numpy as jnp
 from math import factorial
 from jax.scipy.special import bernoulli
 from aegrad.algebra.constants import BASE_SUMMATION_ORDER
 from typing import Sequence
 
-def check_if_so3_g(rmat: Array, raise_if_false: bool=True) -> bool:
+def check_if_so3_g(rmat: Array, raise_if_false: bool=True, jitable: bool=False) -> bool:
     column_mags = jnp.linalg.norm(rmat, axis=0)
     row_mags = jnp.linalg.norm(rmat, axis=1)
 
@@ -48,7 +48,6 @@ def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
         return False
     return True
 
-
 def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
     # check shapes
     if hg.shape != (4, 4):
@@ -66,6 +65,40 @@ def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
             raise ValueError("Matrix not SE3 as last row is not [0, 0, 0, 1]")
         return False
     return True
+
+def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
+    # checks if all matrices in hgs are se3 elements, assuming a shape [..., 4, 4]
+    # check shape
+    if hgs.shape[-2:] != (4, 4):
+        if raise_if_false:
+            raise ValueError("Input not se3 as last two dimensions are not (4, 4)")
+        return False
+
+    def check_if_so3_g_jittable(rmat: Array) -> Array:
+        column_mags = jnp.linalg.norm(rmat, axis=0)
+        row_mags = jnp.linalg.norm(rmat, axis=1)
+
+        # check if unit magnitude
+        out = jnp.all(jnp.allclose(jnp.concatenate((column_mags, row_mags)), 1.0))
+
+        # check if orthogonal
+        out &= jnp.all(jnp.allclose(rmat.T @ rmat, jnp.eye(3)))
+        out &= jnp.all(jnp.allclose(rmat @ rmat.T, jnp.eye(3)))
+        return out
+
+    hgs_flat = hgs.reshape(-1, 4, 4)
+
+    results = jnp.all(vmap(check_if_so3_g_jittable, in_axes=0, out_axes=0)(hgs_flat[:, :3, :3]))
+    results &= jnp.all(jnp.allclose(hgs_flat[:, 3, :3], 0.0))
+    results &= jnp.all(jnp.allclose(hgs_flat[:, 3, 3], 1.0))
+
+    if not results:
+        if raise_if_false:
+            raise ValueError("Not all matrices are se3 elements")
+        return False
+    return True
+
+
 
 
 def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:

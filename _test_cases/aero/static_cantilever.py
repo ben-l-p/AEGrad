@@ -46,8 +46,9 @@ case.solve_static(0, None, True)
 
 case.plot(plot_path, None)
 
-linear_model = case.linearise(0, compute_matrices=True)
+linear_model = case.linearise(0)
 
+linear_model.sys.remove_u_np1()
 linear_model.sys.compute_matrices()
 
 amat = np.array(linear_model.sys.a.to_matrix())

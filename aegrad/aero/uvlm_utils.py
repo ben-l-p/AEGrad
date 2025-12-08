@@ -59,41 +59,37 @@ def propagate_surf_wake(gamma_b_n: Array,
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
     :return: New wake grid and circulation, [zeta_w_m, zeta_n, 3], [zeta_w_m, zeta_n]
     """
+
+    # trailing edge positions and circulations
     zeta_te = zeta_b_np1[-1, ...]  # [zeta_n, 3]
     gamma_te = gamma_b_n[-1, ...] # [gamma_n]
 
     # variable wake discretisation also depends on the final element
     if delta_w is not None:
-        zeta_base = zeta_w_n
-        gamma_base = gamma_w_n
+        zeta_base = zeta_w_n    # [zeta_w_m, zeta_n, 3]
+        gamma_base = gamma_w_n  # [gamma_w_m, gamma_n]
     else:
-        zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m, zeta_n, 3]
-        gamma_base = gamma_w_n[:-1, ...]
+        zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
+        gamma_base = gamma_w_n[:-1, ...]    # [gamma_w_m - 1, gamma_n]
 
-    # values we wish to propagate
-    zeta_pre = jnp.concatenate(
-        (zeta_te[None, ...], zeta_base), axis=0
-    ) # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
-    gamma_pre = jnp.concatenate(
+    # values at t=n+1 before rediscretisation
+    gamma_w_np1 = jnp.concatenate(
         (gamma_te[None, ...], gamma_base), axis=0
     )   # [gamma_w_m+1 | gamma_w_m, gamma_n]
 
     # if the wake is free, this should be embedded here
-    v = v_func(zeta_pre)
+    v = v_func(zeta_base)   # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
 
-    # find the integrated in time version - this will be the final version if no rediscretisation is needed
-    zeta_w_new = zeta_pre + dt * v
+    # wake coordinates at t=n+1 before rediscretisation
+    zeta_w_np1 = jnp.concatenate((zeta_te[None, :, :], zeta_base + dt * v), axis=0)     # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
 
     if delta_w is not None:
-        zeta_pre_redisc = jnp.concatenate((zeta_te[None, :], zeta_w_new), axis=0)  # [zeta_w_m+2, zeta_n, 3]
-        gamma_pre_redisc = jnp.concatenate((gamma_te[None, :], gamma_base), axis=0)  # [gamma_w_m+2, gamma_n]
-
-        # if the wake discretisation is variable, we need to rediscretize the wake
-        s_zeta = jnp.concatenate(
+        # streamline coordinates before rediscretisation
+        s_zeta_w = jnp.concatenate(
             (
                 jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
                 jnp.cumsum(
-                    jnp.linalg.norm(zeta_pre_redisc[1:, ...] - zeta_pre_redisc[:-1, ...], axis=-1), # [zeta_w_m+1, zeta_n]
+                    jnp.linalg.norm(zeta_w_np1[1:, ...] - zeta_w_np1[:-1, ...], axis=-1), # [zeta_w_m+1, zeta_n]
                     axis=0,
                 ),  # [zeta_w_m, zeta_n]
             ),
@@ -101,25 +97,22 @@ def propagate_surf_wake(gamma_b_n: Array,
         )   # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
 
         # consider gamma to be at midpoints of zeta
-        s_gamma = neighbour_average(s_zeta, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
+        s_gamma_w = neighbour_average(s_zeta_w, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
 
-        # coordinates along desired discretized streamline, [zeta_w_m]
-        s_base = jnp.cumsum(jnp.linalg.norm(delta_w, axis=-1), axis=0)
+        # vertex coordinates along desired discretized streamline, [m_star + 1]
+        s_zeta_w_redisc = delta_w
 
+        # midpoint coordinates along desired discretized streamline, [m_star]
+        s_gamma_w_redisc = neighbour_average(s_zeta_w_redisc, axes=(0,))
+
+        # rediscretise coordinates onto desired grid
         zeta_w_np1 = vmap(
-            vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
-            in_axes=(None, None, 2),
-            out_axes=2,
-        )(s_base, s_zeta, zeta_pre_redisc)
+            vmap(jnp.interp,
+             in_axes=(None, 0, 0), out_axes=1),
+            in_axes=(None, None, 1), out_axes=2)(s_zeta_w_redisc, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0)))    # [zeta_w_m, zeta_n, 3]
 
-        gamma_w_np1 = vmap(
-            vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=0),
-            in_axes=(None, None, 2),
-            out_axes=2,
-        )(s_base, s_gamma, gamma_pre_redisc)
-    else:
-        zeta_w_np1 = zeta_w_new
-        gamma_w_np1 = gamma_pre
+        # rediscretise gamma onto desired grid
+        gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(s_gamma_w_redisc, s_gamma_w.T, gamma_w_np1.T) # [zeta_w_m, zeta_n, 3]
 
     if frozen_wake:
         return None, gamma_w_np1

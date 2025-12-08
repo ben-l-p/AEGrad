@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 from aegrad.plotting.structured_grid import plot_frame_to_vtk
-import warnings
+from aegrad.print_output import warn
 from aegrad.algebra.array_utils import ArrayList
-from aegrad.algebra.linear_operators import LinearOperator
+
 
 r"""
 Everybody loves a dataclass
@@ -176,7 +176,7 @@ class AeroSurfaceSnapshot:
                               ))
         if plot_wake:
             if self.gamma_w.shape[0] == 0:
-                warnings.warn("No wake panels to plot, skipping.")
+                warn("No wake panels to plot, skipping.")
             else:
                 wake_filename = Path(directory).joinpath(self.surf_w_name)
                 paths.append(plot_frame_to_vtk(self.zeta_w, wake_filename, self.i_ts,

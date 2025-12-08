@@ -1,4 +1,5 @@
-from aegrad.aero.uvlm_utils import make_rectangular_grid, GridDiscretization
+from aegrad.aero.uvlm_utils import make_rectangular_grid
+from aegrad.aero.data_structures import GridDiscretization
 from jax import numpy as jnp
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant

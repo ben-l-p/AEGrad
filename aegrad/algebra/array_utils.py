@@ -232,16 +232,13 @@ class ArrayList(UserList[Array]):
         return ArrayList([jnp.zeros_like(a) for a in arr])
 
 
-    def flatten_func(self):
-        children = (self.data, )
-        aux_data = ()
-        return children, aux_data
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()
 
-    @classmethod
-    def unflatten_func(cls, aux_data, children):
-        obj = object.__new__(cls)
-        obj.data = children[0]
-        return obj
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return ("data", )
 
 
 @singledispatch

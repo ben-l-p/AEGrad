@@ -2,6 +2,8 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 from aegrad.algebra.array_utils import ArrayList
+from aegrad.utils import make_pytree
+from typing import Sequence
 
 
 class FlowField:
@@ -60,7 +62,22 @@ class FlowField:
         """
         return ArrayList([self.vmap_call(x, t) for x in xs])
 
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return []
 
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return (
+            "u_inf",
+            "rho",
+            "u_inf_mag",
+            "u_inf_dir",
+            "q_inf",
+            "relative_motion",
+        )
+
+@make_pytree
 class Constant(FlowField):
     r"""
     Constant velocity flow field:
@@ -72,7 +89,7 @@ class Constant(FlowField):
         else:
             return jnp.zeros(3)
 
-
+@make_pytree
 class OneMinusCosine(FlowField):
     r"""
     One minus cosine flow field.
@@ -147,3 +164,14 @@ class OneMinusCosine(FlowField):
         if self.relative_motion:
             u += self.u_inf
         return u
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return (
+            *super()._static_names(),
+            "gust_amplitude",
+            "gust_length",
+            "gust_travel_direction",
+            "gust_amplitude_direction",
+            "gust_x0",
+        )

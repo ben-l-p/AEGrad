@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from functools import singledispatchmethod
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable, Sequence, TypeVar
+
+from aegrad.aero.data_structures import InputUnflattened, StateUnflattened, OutputUnflattened
 from aegrad.algebra.array_utils import check_arr_shape
-import warnings
+from aegrad.print_output import print_with_time, warn
 
 import jax
 from jax import Array, numpy as jnp, jacobian
@@ -27,7 +29,7 @@ class LinearOperator:
 
         self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
         self.mat: Optional[Array] = mat
-        self.shape = shape  # shapes of equivelent matrix
+        self.shape = shape  # shapes of equivalent matrix
 
     def to_matrix(self) -> Array:
         if self.mat is not None:
@@ -37,42 +39,44 @@ class LinearOperator:
             self.mat = jacobian(lambda x_: self.func(x_), argnums=0)(jnp.full(self.shape[1], 1.0))
             return self.mat
 
-    @singledispatchmethod
-    def __call__(self, rhs: Array) -> Array:
-        return self.func(rhs)
+    def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
+        if isinstance(rhs, LinearOperator):
+            def new_func(x: Array) -> Array:
+                return self.func(rhs.func(x))
 
-    @__call__.register
-    def _(self, rhs: LinearOperator) -> LinearOperator:
-        def new_func(x: Array) -> Array:
-            return self.func(rhs.func(x))
-
-        shape = (self.shape[0], rhs.shape[1])
-        if self.mat is not None and rhs.mat is not None:
-            new_mat = self.mat @ rhs.mat
+            shape = (self.shape[0], rhs.shape[1])
+            if self.mat is not None and rhs.mat is not None:
+                new_mat = self.mat @ rhs.mat
+            else:
+                new_mat = None
+            return LinearOperator(new_func, shape, new_mat)
+        elif isinstance(rhs, Array):
+            return self.func(rhs)
         else:
-            new_mat = None
-        return LinearOperator(new_func, shape, new_mat)
+            raise TypeError("Incompatible type for multiplication with LinearOperator.")
 
     def __matmul__[T](self, rhs: T) -> T:
         return self(rhs)
 
-    @singledispatchmethod
-    def __add__(self, rhs: Array) -> Callable[[Array], Array]:
-        def new_func(x: Array) -> Array:
-            return self.func(x) + rhs
-        return new_func
-
-    @__add__.register
-    def _(self, rhs: LinearOperator) -> LinearOperator:
-        if self.shape != rhs.shape:
-            raise ValueError("Cannot add LinearOperators with different shapes.")
-        def new_func(x: Array) -> Array:
-            return self.func(x) + rhs.func(x)
-        if self.mat is not None and rhs.mat is not None:
-            new_mat = self.mat + rhs.mat
+    def __add__(self, rhs: "Array | LinearOperator") -> "Callable[[Array], Array] | LinearOperator":
+        # runtime dispatch for addition as well
+        if isinstance(rhs, LinearOperator):
+            if self.shape != rhs.shape:
+                raise ValueError("Cannot add LinearOperators with different shapes.")
+            def new_func(x: Array) -> Array:
+                return self.func(x) + rhs.func(x)
+            if self.mat is not None and rhs.mat is not None:
+                new_mat = self.mat + rhs.mat
+            else:
+                new_mat = None
+            return LinearOperator(new_func, self.shape, new_mat)
+        elif isinstance(rhs, Array):
+            def new_func(x: Array) -> Array:
+                return self.func(x) + rhs
+            return new_func
         else:
-            new_mat = None
-        return LinearOperator(new_func, self.shape, new_mat)
+            raise TypeError("Incompatible type for addition with LinearOperator.")
+
 
 
 class BlockLinear:
@@ -166,23 +170,28 @@ class LinearSystem:
         self.n_outputs: int = c.shape[1]
         self.removed_u_np1: bool = removed_u_np1
 
+    @print_with_time("Computing matrices for linear system...",
+                     "Computed matrices for linear system in {:.2f} seconds.")
     def compute_matrices(self) -> None:
-        self.a = self.a.to_matrix()
-        self.b = self.b.to_matrix()
-        self.c = self.c.to_matrix()
-        self.d = self.d.to_matrix()
+        self.a.to_matrix()
+        self.b.to_matrix()
+        self.c.to_matrix()
+        self.d.to_matrix()
 
+    @print_with_time("Removing u_np1 from linear system...",
+                     "Removed u_np1 from linear system in {:.2f} seconds.")
     def remove_u_np1(self) -> None:
         if self.removed_u_np1:
-            warnings.warn("u_np1 has already been removed from the system. Skipping.")
+            warn("u_np1 has already been removed from the system. Skipping.")
         else:
             self.d = (self.c @ self.b) + self.d
             self.b = self.a @ self.b
             self.removed_u_np1 = True
 
+    @singledispatchmethod
     def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
         if not self.removed_u_np1:
-            warnings.warn("u_np1 has not been removed from the system. This may lead to undesired behaviour.")
+            self.remove_u_np1()
 
         if x0 is not None:
             check_arr_shape(x0, (None, self.n_states), "x0")
@@ -203,4 +212,8 @@ class LinearSystem:
         y = jnp.zeros((n_tstep, self.n_outputs))
         y = jax.lax.fori_loop(0, n_tstep, output_func, y)
         return x, y
+
+    @run.register
+    def _(self, u: InputUnflattened, x0: Optional[StateUnflattened] = None) -> tuple[StateUnflattened, OutputUnflattened]:
+        pass
 

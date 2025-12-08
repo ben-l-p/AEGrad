@@ -1,15 +1,16 @@
 from __future__ import annotations
 from functools import singledispatchmethod
-from warnings import warn
 from collections.abc import Sequence
 import jax.numpy as jnp
+import jax
 from jax import Array, vmap
 from jax.lax import fori_loop
 from typing import Optional, Self
 from os import PathLike
 from pathlib import Path
 
-from aegrad.utils import replace_self
+from aegrad.utils import replace_self, make_pytree
+from aegrad.algebra.test_routines import check_if_all_se3_g
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.aero.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
@@ -20,9 +21,9 @@ from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wak
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.linear import LinearAero, LinearWakeType
-from aegrad.print_output import print_with_time
+from aegrad.print_output import print_with_time, warn
 
-
+@make_pytree
 class AeroCase:
     def __init__(self,
                  n_tstep: int,
@@ -115,6 +116,8 @@ class AeroCase:
         self.n_tstep_tot: int = n_tstep
         self.t: Array = jnp.zeros(n_tstep)
 
+        self._last_ts: int = -1  # used to store the last step where a solution was computed
+
     @property
     def flowfield(self) -> FlowField:
         if self._flowfield is None:
@@ -153,7 +156,7 @@ class AeroCase:
 
     def linearise(self,
                   i_ts: int,
-                  compute_matrices: bool,
+                  compute_matrices: bool = False,
                   wake_type: LinearWakeType = LinearWakeType.FREE,
                   bound_upwash: bool = True,
                   wake_upwash: bool = True,
@@ -215,8 +218,8 @@ class AeroCase:
                 if dw_ is None:
                     self._delta_w.append(None)
                 else:
-                    check_arr_shape(dw_, (self.grid_disc[i_surf].m_star, 3), "delta_w")
-                    self._delta_w.append(jnp.concatenate((jnp.zeros((1, 3)), dw_), axis=0))
+                    check_arr_shape(dw_, (self.grid_disc[i_surf].m_star, ), "delta_w")
+                    self._delta_w.append(jnp.concatenate((jnp.zeros(1), dw_), axis=0))
         else:
             # auto compute delta_w based on freestream and dt
             self._delta_w = self.n_surf * [None]
@@ -354,7 +357,7 @@ class AeroCase:
         zetas = ArrayList([])
         for i_surf in range(self.n_surf):
             this_hg = jnp.take(hg, self.dof_mapping[i_surf], axis=0)   # [n, 4, 4]
-            # zetas.append(vmap(vmap(se3_vect_product, (0, 1), 1), (None, 0), 0)(this_hg, self.x0_b[i_surf]))
+
             zetas.append(
                 vmap(vmap(se3_vect_product, (None, 0), 0), (0, 1), 1)(
                     this_hg, self.x0_b[i_surf]
@@ -383,7 +386,7 @@ class AeroCase:
         :param i_ts: Timestep index
         :return: Wake circulation strengths vector, [gamma_w_tot]
         """
-        return self.gamma_w.index_all((i_ts, ...)).flatten()
+        return self.get_gamma_w(i_ts).flatten()
 
     def get_gamma_vect(self, i_ts: int) -> Array:
         r"""
@@ -527,8 +530,9 @@ class AeroCase:
 
             # set wake grid coordinates as trailing edge + displacement
             if this_delta_w is None:
-                this_delta_w = jnp.outer(jnp.arange(self.grid_disc[i_surf].m_star + 1), self.dt * self.flowfield.u_inf)  # [m_star+1, 3]
-            self._zeta0_w.append(zeta_te[None, ...] + this_delta_w[:, None, :])
+                this_delta_w = jnp.arange(self.grid_disc[i_surf].m_star + 1) * self.dt * self.flowfield.u_inf_mag
+
+            self._zeta0_w.append(zeta_te[None, :, :] + jnp.outer(this_delta_w, self.flowfield.u_inf_dir)[:, None, :])
         return self
 
 
@@ -618,7 +622,7 @@ class AeroCase:
 
             # propagate wake
             zeta_ws, gamma_ws = propagate_wake(self.get_gamma_b(i_ts - 1),
-                                               self.get_zeta_b(i_ts - 1),
+                                               self.get_gamma_w(i_ts - 1),
                                                zetas_b,
                                                self.get_zeta_w(i_ts - 1),
                                                self.delta_w,
@@ -649,11 +653,12 @@ class AeroCase:
         c_dot_vector = jnp.concatenate([cd.reshape(-1, 3) for cd in c_dot], axis=0)
         v_bc = c_dot_vector - self.get_v_background(i_ts, cs_vector)
 
-        if not static:
-            aic_w = assemble_aic_sys(aic_w_blocks)
-            v_bc -= aic_w @ self.get_gamma_w_vect(i_ts)
         n_vect = jnp.concatenate([nc.reshape(-1, 3) for nc in ncs], axis=0)
         v_bc_n = jnp.einsum('ij,ij->i', v_bc, n_vect)
+
+        if not static:
+            aic_w = assemble_aic_sys(aic_w_blocks)
+            v_bc_n -= aic_w @ self.get_gamma_w_vect(i_ts)
 
         gamma_b_vect: Array = jnp.linalg.solve(aic, v_bc_n)
         self.set_gamma_b(gamma_b_vect, i_ts)
@@ -669,31 +674,61 @@ class AeroCase:
 
     @replace_self
     @print_with_time("Computing static solution...", "Static solution complete in {:.2f} seconds.")
-    def solve_static(self, i_ts: int, hg: Optional[Array], horseshoe: bool) -> Self:
-        self.solve(i_ts, hg, None, static=True, free_wake=False, horseshoe=horseshoe)
+    # TODO: add free wake
+    def solve_static(self,
+                     i_ts: Optional[int] = None,
+                     hg: Optional[Array] = None,
+                     horseshoe: bool = False) -> Self:
+        if i_ts is None:
+            i_ts = self._last_ts + 1
+        self._last_ts = i_ts    # update last solved timestep
+
+        self.solve(i_ts,
+                   hg, None, static=True, free_wake=False, horseshoe=horseshoe)
+
         return self
 
     @replace_self
-    def solve_prescribed_dynamic(self, i_ts_start: int, hg: Array, hg_dot: Array, free_wake: bool) -> Self:
-        check_arr_shape(hg, (None, None, 4, 4), "hg")
-        if hg_dot is not None:
-            if hg.shape != hg_dot.shape:
+    @print_with_time(
+        "Computing prescribed dynamic solution...",
+        "Prescribed dynamic solution complete in {:.2f} seconds."
+    )
+    def solve_prescribed_dynamic(self,
+                                 hg_t: Array,
+                                 hg_dot_t: Array,
+                                 free_wake: bool = False,
+                                 i_ts_start: Optional[int] = None) -> Self:
+
+        check_arr_shape(hg_t, (None, None, 4, 4), "hg")
+        check_if_all_se3_g(hg_t, True)
+        if hg_dot_t is not None:
+            if hg_t.shape != hg_dot_t.shape:
                 raise ValueError(
-                    f"hg_dot must have the same shapes as hg, got {hg_dot.shape} vs {hg.shape}"
+                    f"hg_dot must have the same shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
                 )
-        n_tstep = hg.shape[0]
-        return fori_loop(
-            i_ts_start,
-            i_ts_start + n_tstep,
-            lambda i_ts, case: AeroCase.solve(
-                case,
-                i_ts,
-                hg,
-                hg_dot,
+
+        n_tstep = hg_t.shape[0]
+
+        if i_ts_start is None:
+            i_ts_start = self._last_ts + 1
+        self._last_ts = i_ts_start + n_tstep    # update last solved timestep
+
+        def step_func(i_ts_: int, case: AeroCase) -> AeroCase:
+            case.solve(
+                i_ts_,
+                hg_t[i_ts_, ...],
+                hg_dot_t[i_ts_, ...],
                 static=False,
                 free_wake=free_wake,
                 horseshoe=False,
-            ),
+            )
+            jax.debug.print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
+            return case
+
+        return fori_loop(
+            i_ts_start,
+            i_ts_start + n_tstep,
+            step_func,
             init_val=self,
         )
 
@@ -740,4 +775,42 @@ class AeroCase:
         """
         return self.reference_snapshot().plot(directory, plot_wake=plot_wake)
 
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return (
+            "n_surf",
+            "grid_disc",
+            "n_bound_panels",
+            "n_wake_panels",
+            "n_panels_tot",
+            "gamma_b_slice",
+            "gamma_w_slice",
+            "dof_mapping",
+            "variable_wake_disc",
+            "kernels_b",
+            "kernels_w",
+            "surf_b_names",
+            "surf_w_names",
+        )
 
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return (
+            "_x0_b",
+            "_zeta0_b",
+            "_zeta0_w",
+            "_dt",
+            "_flowfield",
+            "_delta_w",
+            "zeta_b",
+            "zeta_b_dot",
+            "zeta_w",
+            "gamma_b",
+            "gamma_b_dot",
+            "gamma_w",
+            "f_steady",
+            "f_unsteady",
+            "n_tstep_tot",
+            "t",
+            "_last_ts",
+        )

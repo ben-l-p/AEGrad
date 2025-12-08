@@ -15,21 +15,31 @@ def replace_self(func: Callable[..., object]) -> Callable[..., None]:
 
 
 class SupportsPytree(Protocol):
-    def flatten_func(self) -> tuple[tuple[Any], tuple[Any]]: ...
-
-    @classmethod
-    def unflatten_func(cls, aux_data: tuple[Any], children: tuple[Any]) -> object: ...
+    def _dynamic_names(self) -> Sequence[str]: ...
+    def _static_names(self) -> Sequence[str]: ...
 
 
 T = TypeVar("T", bound=SupportsPytree)
-
 
 def make_pytree(cls: type[T]) -> type[T]:
     """
     Convert an object to a pytree structure.
     :param cls: Class to be converted to a pytree.
     """
-    tree_util.register_pytree_node(cls, cls.flatten_func, cls.unflatten_func)
+    def flatten_func(self: T) -> tuple[tuple[Any], tuple[Any]]:
+        children = tuple(getattr(self, field) for field in self._dynamic_names())
+        aux_data = tuple(getattr(self, field) for field in self._static_names())
+        return children, aux_data
+
+    def unflatten_func(aux_data: tuple[Any], children: tuple[Any]) -> T:
+        obj = cls.__new__(cls)  # Create an uninitialized instance
+        for field_name, value in zip(cls._dynamic_names(), children):
+            setattr(obj, field_name, value)
+        for field_name, value in zip(cls._static_names(), aux_data):
+            setattr(obj, field_name, value)
+        return obj
+
+    tree_util.register_pytree_node(cls, flatten_func, unflatten_func)
     return cls
 
 
