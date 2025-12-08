@@ -2,10 +2,12 @@ from __future__ import annotations
 from jax import Array
 import jax
 import jax.numpy as jnp
-from typing import Sequence, TYPE_CHECKING, Optional
-from functools import reduce, singledispatchmethod
+from typing import Sequence, TYPE_CHECKING, Optional, Self
+from functools import reduce
 from operator import mul
 from enum import Enum
+from os import PathLike
+from pathlib import Path
 
 from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices, OutputSlices, LinearComponent,
                                          _SliceEntry, InputUnflattened, StateUnflattened, OutputUnflattened)
@@ -15,7 +17,7 @@ from aegrad.algebra.array_utils import flatten_to_1d, ArrayList, split_to_vertex
 from aegrad.aero.aic import compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
-from aegrad.utils import shallow_asdict
+from aegrad.utils import shallow_asdict, replace_self
 from aegrad.print_output import print_with_time
 
 if TYPE_CHECKING:
@@ -34,8 +36,7 @@ class LinearAero:
                  wake_type: LinearWakeType = LinearWakeType.FREE,
                  bound_upwash: bool = True,
                  wake_upwash: bool = True,
-                 unsteady_force: bool = True,
-                 compute_matrices: bool = False):
+                 unsteady_force: bool = True):
 
         # options
         self.prescribed_wake, self.free_wake = wake_type.value
@@ -43,9 +44,13 @@ class LinearAero:
         self.bound_upwash: bool = bound_upwash
         self.wake_upwash: bool = wake_upwash
 
+        # save names from case
+        self.surf_b_names: Sequence[str] = case.surf_b_names
+        self.surf_w_names: Sequence[str] = case.surf_w_names
+
         # time info
         self.dt: Array = case.dt
-        self.t: Array = reference.t
+        self.t0: Array = reference.t
 
         # reference state
         self.n_surf: int = reference.n_surf
@@ -83,6 +88,43 @@ class LinearAero:
 
         # final system - this is overwritten for updating models
         self.sys: LinearSystem = self.base_sys
+
+        # system results, if simulated
+        self._u_t: Optional[InputUnflattened] = None
+        self._x_t: Optional[StateUnflattened] = None
+        self._y_t: Optional[OutputUnflattened] = None
+        self._n_tstep: Optional[int] = None
+        self._t: Optional[Array] = None
+
+    @property
+    def u_t(self):
+        if self._u_t is None:
+            raise ValueError("No input results available. Run a linear system first.")
+        return self._u_t
+
+    @property
+    def x_t(self):
+        if self._x_t is None:
+            raise ValueError("No state results available. Run a linear system first.")
+        return self._x_t
+
+    @property
+    def y_t(self):
+        if self._y_t is None:
+            raise ValueError("No output results available. Run a linear system first.")
+        return self._y_t
+
+    @property
+    def n_tstep_tot(self) -> int:
+        if self._n_tstep is None:
+            raise ValueError("No solution available. Run a linear system first.")
+        return self._n_tstep
+
+    @property
+    def t(self) -> Array:
+        if self._t is None:
+            raise ValueError("No time available. Run a linear system first.")
+        return self._t
 
 
     def get_reference_inputs(self) -> InputUnflattened:
@@ -304,7 +346,7 @@ class LinearAero:
             aic_w = compute_aic_sys_assembled(zeta_cs, zeta_ws, self.kernels_w, ns)  # [m_tot*n_tot, m_star_tot*n_tot]
 
             v_zeta_n = ArrayList.einsum("ijk,ijk->ij",
-                                        self.flowfield0.surf_vmap_call(zeta_cs, jnp.array(self.t)) - zeta_cs_dot, ns)
+                                        self.flowfield0.surf_vmap_call(zeta_cs, jnp.array(self.t0)) - zeta_cs_dot, ns)
 
             return aic_w @ flatten_to_1d(gamma_ws) + flatten_to_1d(v_zeta_n)
 
@@ -315,7 +357,7 @@ class LinearAero:
                     zeta_w: Optional[ArrayList]) -> Array:
 
             # sample flowfield
-            v_x = self.flowfield0.vmap_call(x, jnp.array(self.t))
+            v_x = self.flowfield0.vmap_call(x, jnp.array(self.t0))
 
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
@@ -513,18 +555,8 @@ class LinearAero:
 
         return LinearSystem(a, b, c, d)
 
-    @singledispatchmethod
-    def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
-        r"""
-        Run the linear system for one time step.
-        :param u: Input perturbations at time=n+1
-        :param x0: State perturbations at time=n
-        :return: Output perturbations at time=n+1
-        """
-        return self.sys.run(u, x0)
-
-    @run.register
-    def run(self, u: InputUnflattened, x0: Optional[StateUnflattened] = None) -> tuple[StateUnflattened, OutputUnflattened]:
+    @replace_self
+    def run(self, u: InputUnflattened, x0: Optional[StateUnflattened] = None) -> Self:
         r"""
         Run the linear system for one time step.
         :param u: Input perturbations at time=n+1
@@ -537,5 +569,104 @@ class LinearAero:
             x0_vec = self.pack_state_vector_t(x0)
 
         u_vec = self.pack_input_vector_t(u)
-        x_vec, y_vec = self.sys.run(u_vec, x0_vec)
-        return self.unpack_state_vector_t(x_vec), self.unpack_output_vector_t(y_vec)
+        self._n_tstep = u_vec.shape[0]  # set the number of time steps, should it be useful later
+        self._t = self.t0 + jnp.arange(0, self._n_tstep) * self.dt   # time vector
+
+        # run linear system
+        x_t, y_t = self.sys.run(u_vec, x0_vec)
+
+        # save results to object
+        self._u_t = u
+        self._x_t = self.unpack_state_vector_t(x_t)
+        self._y_t = self.unpack_output_vector_t(y_t)
+        return self
+
+    def __getitem__(self, i_ts: int) -> AeroSnapshot:
+        r"""
+        Get snapshot of aerodynamic surface at a single time step
+        :param i_ts: Timestep index
+        :return: AeroSnapshot at specified time step
+        """
+
+        if i_ts < 0 or i_ts >= self._n_tstep:
+            raise IndexError("Timestep index out of range")
+
+        zeta_b_tot = ArrayList([self.zeta0_b[i_surf] + self.u_t.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        zeta_b_dot_tot = ArrayList([self.zeta0_b_dot[i_surf] + self.u_t.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        gamma_b_tot = ArrayList([self.gamma0_b[i_surf] + self.x_t.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        gamma_w_tot = ArrayList([self.gamma0_w[i_surf] + self.x_t.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        f_steady_tot = ArrayList([self.f_steady0[i_surf] + self.y_t.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+
+        if self.prescribed_wake:
+            zeta_w_tot = ArrayList([self.zeta0_w[i_surf] + self.x_t.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        else:
+            zeta_w_tot = self.zeta0_w
+
+        if self.unsteady_force:
+            f_unsteady_tot = ArrayList([self.f_unsteady0[i_surf] + self.y_t.f_unsteady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)])
+        else:
+            f_unsteady_tot = self.f_unsteady0
+
+        return AeroSnapshot(
+            zeta_b=zeta_b_tot,
+            zeta_b_dot=zeta_b_dot_tot,
+            zeta_w=zeta_w_tot,
+            gamma_b=gamma_b_tot,
+            gamma_w=gamma_w_tot,
+            f_steady=f_steady_tot,
+            f_unsteady=f_unsteady_tot,
+            surf_b_names=self.surf_b_names,
+            surf_w_names=self.surf_w_names,
+            i_ts=i_ts,
+            t=self.t[i_ts],
+            n_surf=self.n_surf
+        )
+
+    def reference_snapshot(self) -> AeroSnapshot:
+        return AeroSnapshot(
+            zeta_b=self.zeta0_b,
+            zeta_b_dot=self.zeta0_b_dot,
+            zeta_w=self.zeta0_w,
+            gamma_b=self.gamma0_b,
+            gamma_w=self.gamma0_w,
+            f_steady=self.f_steady0,
+            f_unsteady=self.f_unsteady0,
+            surf_b_names=self.surf_b_names,
+            surf_w_names=self.surf_w_names,
+            i_ts=-1,
+            t=jnp.zeros(()),
+            n_surf=self.n_surf
+        )
+
+    @print_with_time(
+        "Plotting linear aerodynamic grid...",
+        "Linear aerodynamic grid plotted in {:.2f} seconds.",
+    )
+    def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
+        if isinstance(index, slice):
+            index_ = jnp.arange(self.n_tstep_tot)[index]
+        elif isinstance(index, Sequence):
+            index_ = jnp.array(index)
+        elif isinstance(index, Array):
+            index_ = index
+        elif isinstance(index, int):
+            index_ = (index, )
+        elif index is None:
+            index_ = jnp.arange(self.n_tstep_tot)
+        else:
+            raise TypeError("index must be a slices, sequence of ints, or Array")
+
+        for i_ts in index_:
+            snapshot = self[i_ts]
+            # TODO: add PVD writer
+            paths = snapshot.plot(directory, plot_wake=plot_wake)
+
+    @print_with_time("Plotting linear reference aerodynamic grid...",
+                     "Reference aerodynamic grid plotted in {:.2f} seconds.")
+    def plot_reference(self, directory: PathLike, plot_wake: bool = True) -> Sequence[Path]:
+        r"""
+        Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        :param directory: File path to save the plots to
+        :param plot_wake: If True, plot the wake grid
+        """
+        return self.reference_snapshot().plot(directory, plot_wake=plot_wake)

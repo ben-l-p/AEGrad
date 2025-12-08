@@ -62,11 +62,13 @@ case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
 case.plot(path_nl)
 
 # linear case
+case.surf_b_names = ["linear_surf_0"]
+case.surf_w_names = ["linear_wake_0"]
+
 path_lin = Path("./plot_heaving_lin")
 path_lin.mkdir(parents=True, exist_ok=True)
 linear_model = (case.
                 linearise(0,
-              False,
               LinearWakeType.PRESCRIBED,
               bound_upwash=False,
               wake_upwash=False,
@@ -78,6 +80,8 @@ u_linear = InputUnflattened(zeta_b=delta_zeta_b,
                             nu_b=None,
                             nu_w=None,
 )
-x, y = linear_model.run(u_linear)
+
+linear_model.run(u_linear)
+linear_model.plot(path_lin)
 
 pass

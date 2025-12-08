@@ -156,7 +156,6 @@ class AeroCase:
 
     def linearise(self,
                   i_ts: int,
-                  compute_matrices: bool = False,
                   wake_type: LinearWakeType = LinearWakeType.FREE,
                   bound_upwash: bool = True,
                   wake_upwash: bool = True,
@@ -166,8 +165,7 @@ class AeroCase:
                           wake_type=wake_type,
                           bound_upwash=bound_upwash,
                           wake_upwash=wake_upwash,
-                            unsteady_force=unsteady_force,
-                          compute_matrices=compute_matrices)
+                            unsteady_force=unsteady_force)
 
     def set_design_variables(self,
                              dt: float | Array,
@@ -733,6 +731,10 @@ class AeroCase:
             init_val=self,
         )
 
+    @print_with_time(
+        "Plotting aerodynamic grid...",
+        "Aerodynamic grid plotted in {:.2f} seconds.",
+    )
     def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep_tot)[index]
@@ -768,6 +770,10 @@ class AeroCase:
             n_surf=self.n_surf
         )
 
+    @print_with_time(
+        "Plotting reference aerodynamic grid...",
+        "Reference aerodynamic grid plotted in {:.2f} seconds.",
+    )
     def plot_reference(self, directory: PathLike, plot_wake: bool = True) -> Sequence[Path]:
         r"""
         Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.

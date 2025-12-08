@@ -1,9 +1,5 @@
 from __future__ import annotations
-
-from functools import singledispatchmethod
-from typing import Optional, Callable, Sequence, TypeVar
-
-from aegrad.aero.data_structures import InputUnflattened, StateUnflattened, OutputUnflattened
+from typing import Optional, Callable, Sequence
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.print_output import print_with_time, warn
 
@@ -76,8 +72,6 @@ class LinearOperator:
             return new_func
         else:
             raise TypeError("Incompatible type for addition with LinearOperator.")
-
-
 
 class BlockLinear:
     r"""
