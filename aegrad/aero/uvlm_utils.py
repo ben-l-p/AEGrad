@@ -100,7 +100,7 @@ def propagate_surf_wake(gamma_b_n: Array,
         s_gamma_w = neighbour_average(s_zeta_w, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
 
         # vertex coordinates along desired discretized streamline, [m_star + 1]
-        s_zeta_w_redisc = delta_w
+        s_zeta_w_redisc = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
 
         # midpoint coordinates along desired discretized streamline, [m_star]
         s_gamma_w_redisc = neighbour_average(s_zeta_w_redisc, axes=(0,))

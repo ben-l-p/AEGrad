@@ -219,7 +219,7 @@ class AeroCase:
                     self._delta_w.append(None)
                 else:
                     check_arr_shape(dw_, (self.grid_disc[i_surf].m_star, ), "delta_w")
-                    self._delta_w.append(jnp.concatenate((jnp.zeros(1), dw_), axis=0))
+                    self._delta_w.append(dw_)
         else:
             # auto compute delta_w based on freestream and dt
             self._delta_w = self.n_surf * [None]
@@ -530,9 +530,10 @@ class AeroCase:
 
             # set wake grid coordinates as trailing edge + displacement
             if this_delta_w is None:
-                this_delta_w = jnp.arange(self.grid_disc[i_surf].m_star + 1) * self.dt * self.flowfield.u_inf_mag
+                this_delta_w = jnp.ones(self.grid_disc[i_surf].m_star) * self.dt * self.flowfield.u_inf_mag
+            grid_s = jnp.concatenate((jnp.zeros(1), jnp.cumsum(this_delta_w)))
 
-            self._zeta0_w.append(zeta_te[None, :, :] + jnp.outer(this_delta_w, self.flowfield.u_inf_dir)[:, None, :])
+            self._zeta0_w.append(zeta_te[None, :, :] + jnp.outer(grid_s, self.flowfield.u_inf_dir)[:, None, :])
         return self
 
 
@@ -722,7 +723,7 @@ class AeroCase:
                 free_wake=free_wake,
                 horseshoe=False,
             )
-            jax.debug.print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
+            # jax.debug.print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
             return case
 
         return fori_loop(

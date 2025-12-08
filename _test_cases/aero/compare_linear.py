@@ -1,5 +1,7 @@
 from aegrad.aero.uvlm_utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization
+from aegrad.aero.data_structures import GridDiscretization, InputUnflattened
+from aegrad.algebra.array_utils import ArrayList
+from aegrad.aero.linear import LinearWakeType
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
@@ -8,10 +10,9 @@ from pathlib import Path
 
 u_inf = jnp.array((10.0, 0.0, 0.0))
 rho_inf = 1.225
-m = 6
-n = 12
-m_star_base = 40
-m_star_var = 40
+m = 4
+n = 8
+m_star = 10
 c_ref = 1.0
 b_ref = 5.0
 alpha = jnp.deg2rad(0.0)
@@ -21,6 +22,7 @@ physical_time = 6.0  # seconds
 flowfield = Constant(u_inf, rho_inf, True)
 dt = c_ref / (m * flowfield.u_inf_mag)
 n_tstep = int(jnp.ceil(physical_time / dt))
+disc = GridDiscretization(m, n, m_star)
 
 x_grid = make_rectangular_grid(m, n, c_ref, ea)
 
@@ -50,23 +52,32 @@ hg_t = hg_t.at[:, :, 2, 3].add(z_t[:, None])
 hg_dot_t = jnp.zeros_like(hg_t)
 hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
 
-# wake discretization for variable wake model
-delta_w_var = jnp.logspace(0.0, 0.7, m_star_var) * dt * flowfield.u_inf_mag
+# nonlinear case
+path_nl = Path("./plot_heaving_nl")
+path_nl.mkdir(parents=True, exist_ok=True)
+case = AeroCase(n_tstep, disc, False, jnp.arange(0, n + 1))
+case.set_design_variables(dt, flowfield, None, x_grid, hg)
+case.solve_static()
+case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
+case.plot(path_nl)
 
-for delta_w_, m_star in [(delta_w_var, m_star_var), (None, m_star_base)]:
-    variable_wake = delta_w_ is not None
-    disc = GridDiscretization(m, n, m_star)
+# linear case
+path_lin = Path("./plot_heaving_lin")
+path_lin.mkdir(parents=True, exist_ok=True)
+linear_model = (case.
+                linearise(0,
+              False,
+              LinearWakeType.PRESCRIBED,
+              bound_upwash=False,
+              wake_upwash=False,
+              unsteady_force=True))
 
-    path = Path(f"./plot_variable_wake_{'on' if variable_wake else 'off'}")
-    path.mkdir(parents=True, exist_ok=True)
+delta_zeta_b = case.zeta_b - ArrayList([zeta[None, ...] for zeta in linear_model.zeta0_b])
+u_linear = InputUnflattened(zeta_b=delta_zeta_b,
+                            zeta_b_dot=case.zeta_b_dot,
+                            nu_b=None,
+                            nu_w=None,
+)
+x, y = linear_model.run(u_linear)
 
-    case = AeroCase(n_tstep, disc, variable_wake, jnp.arange(0, n + 1))
-
-    case.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
-
-    case.solve_static()
-
-    case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
-
-    case.plot(path)
-
+pass

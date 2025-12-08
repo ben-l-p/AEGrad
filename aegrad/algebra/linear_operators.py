@@ -165,9 +165,9 @@ class LinearSystem:
         self.b: LinearOperator = b
         self.c: LinearOperator = c
         self.d: LinearOperator = d
-        self.n_inputs: int = b.shape[0]
+        self.n_inputs: int = b.shape[1]
         self.n_states: int = a.shape[0]
-        self.n_outputs: int = c.shape[1]
+        self.n_outputs: int = c.shape[0]
         self.removed_u_np1: bool = removed_u_np1
 
     @print_with_time("Computing matrices for linear system...",
@@ -188,7 +188,10 @@ class LinearSystem:
             self.b = self.a @ self.b
             self.removed_u_np1 = True
 
-    @singledispatchmethod
+    @print_with_time(
+        "Running linear system...",
+        "Ran linear system in {:.2f} seconds.",
+    )
     def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
         if not self.removed_u_np1:
             self.remove_u_np1()
@@ -199,6 +202,7 @@ class LinearSystem:
         n_tstep = u.shape[0]
 
         def state_func(i_ts: int, x_: Array) -> Array:
+            # jax.debug.print("Linear UVLM state step {i_ts}", i_ts=i_ts)
             return x_.at[i_ts, ...].set(self.a @ x_[i_ts - 1, ...] + self.b @ u[i_ts - 1, ...])
 
         x = jnp.zeros((n_tstep, self.n_states))
@@ -207,13 +211,9 @@ class LinearSystem:
         x = jax.lax.fori_loop(1, n_tstep, state_func, x)
 
         def output_func(i_ts: int, y_: Array) -> Array:
+            # jax.debug.print("Linear UVLM output step {i_ts}", i_ts=i_ts)
             return y_.at[i_ts, ...].set(self.c @ x[i_ts, ...] + self.d @ u[i_ts, ...])
 
         y = jnp.zeros((n_tstep, self.n_outputs))
         y = jax.lax.fori_loop(0, n_tstep, output_func, y)
         return x, y
-
-    @run.register
-    def _(self, u: InputUnflattened, x0: Optional[StateUnflattened] = None) -> tuple[StateUnflattened, OutputUnflattened]:
-        pass
-

@@ -3,7 +3,7 @@ from jax import Array
 import jax
 import jax.numpy as jnp
 from typing import Sequence, TYPE_CHECKING, Optional
-from functools import reduce
+from functools import reduce, singledispatchmethod
 from operator import mul
 from enum import Enum
 
@@ -86,7 +86,8 @@ class LinearAero:
 
 
     def get_reference_inputs(self) -> InputUnflattened:
-        return InputUnflattened(self.zeta0_b, self.zeta0_b_dot,
+        return InputUnflattened(self.zeta0_b,
+                                self.zeta0_b_dot,
                                 [jnp.zeros_like(arr) for arr in self.zeta0_b] if self.bound_upwash else None,
                                 [jnp.zeros_like(arr) for arr in self.zeta0_w] if self.wake_upwash else None)
 
@@ -95,7 +96,7 @@ class LinearAero:
             self.gamma0_b, self.gamma0_w,
             self.gamma0_b if self.unsteady_force else None,
             self.zeta0_w if self.prescribed_wake else None,
-            self.zeta0_b if self.free_wake else None,
+            self.zeta0_b if self.prescribed_wake else None,
         )
 
     def get_reference_outputs(self) -> OutputUnflattened:
@@ -138,7 +139,7 @@ class LinearAero:
             _SliceEntry("gamma_w", True, self.gamma_w_shapes),
             _SliceEntry("gamma_bm1", *((True, self.gamma_b_shapes) if self.unsteady_force else (False, None))),
             _SliceEntry("zeta_w", *((True, self.zeta_w_shapes) if self.prescribed_wake else (False, None))),
-            _SliceEntry("zeta_b", *((True, self.zeta_b_shapes) if self.free_wake else (False, None))))
+            _SliceEntry("zeta_b", *((True, self.zeta_b_shapes) if self.prescribed_wake else (False, None))))
         return self._make_slices(slice_entries, StateSlices)
 
     def make_output_slices(self) -> tuple[OutputSlices, int]:
@@ -165,6 +166,24 @@ class LinearAero:
     def unpack_output_vector(self, y: Array) -> OutputUnflattened:
         return OutputUnflattened(**self._unpack_vector(y, shallow_asdict(self.output_slices)))
 
+    def _unpack_vector_t(self, x_t: Array, slices: dict[str, LinearComponent]) -> dict[str, Optional[ArrayList]]:
+        out = {}
+        for name, entry in slices.items():
+            if not entry.enabled:
+                out[name] = None
+            else:
+                out[name]  = ArrayList([x_t[:, entry.slices[i_surf]].reshape(-1, *entry.shapes[i_surf]) for i_surf in range(self.n_surf)])
+        return out
+
+    def unpack_input_vector_t(self, u_t: Array) -> InputUnflattened:
+        return InputUnflattened(**self._unpack_vector_t(u_t, shallow_asdict(self.input_slices)))
+
+    def unpack_state_vector_t(self, x_t: Array) -> StateUnflattened:
+        return StateUnflattened(**self._unpack_vector_t(x_t, shallow_asdict(self.state_slices)))
+
+    def unpack_output_vector_t(self, y_t: Array) -> OutputUnflattened:
+        return OutputUnflattened(**self._unpack_vector_t(y_t, shallow_asdict(self.output_slices)))
+
     def _pack_vector(self, slices: dict[str, LinearComponent], vec_length: int, arrs: dict[str, Optional[ArrayList]]) -> Array:
         vec = jnp.zeros(vec_length)
         for name, entry in slices.items():
@@ -181,6 +200,24 @@ class LinearAero:
 
     def pack_output_vector(self, y_output: OutputUnflattened) -> Array:
         return self._pack_vector(shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output))
+
+    def _pack_vector_t(self, slices: dict[str, LinearComponent], vec_length: int, arrs: dict[str, Optional[ArrayList]]) -> Array:
+        n_tstep = list(arrs.values())[0][0].shape[0]    # find number of timesteps from first surface, first entry
+        vec_t = jnp.zeros((n_tstep, vec_length))
+        for name, entry in slices.items():
+            if entry.enabled:
+                for i_surf in range(self.n_surf):
+                    vec_t = vec_t.at[:, entry.slices[i_surf]].set(arrs[name][i_surf].reshape(n_tstep, -1))
+        return vec_t
+
+    def pack_input_vector_t(self, u_input: InputUnflattened) -> Array:
+        return self._pack_vector_t(shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input))
+
+    def pack_state_vector_t(self, x_state: StateUnflattened) -> Array:
+        return self._pack_vector_t(shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state))
+
+    def pack_output_vector_t(self, y_output: OutputUnflattened) -> Array:
+        return self._pack_vector_t(shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output))
 
     def _get_total(self,
                    input: dict[str, Optional[Sequence[Array]]],
@@ -476,13 +513,29 @@ class LinearAero:
 
         return LinearSystem(a, b, c, d)
 
-    def run(self, u: InputUnflattened, x0: StateUnflattened) -> tuple[StateUnflattened, OutputUnflattened]:
+    @singledispatchmethod
+    def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
         r"""
         Run the linear system for one time step.
         :param u: Input perturbations at time=n+1
         :param x0: State perturbations at time=n
         :return: Output perturbations at time=n+1
         """
-        x0_vec = self.pack_state_vector(x0)
-        u_vec = self.pack_input_vector(u)
-        raise NotImplementedError
+        return self.sys.run(u, x0)
+
+    @run.register
+    def run(self, u: InputUnflattened, x0: Optional[StateUnflattened] = None) -> tuple[StateUnflattened, OutputUnflattened]:
+        r"""
+        Run the linear system for one time step.
+        :param u: Input perturbations at time=n+1
+        :param x0: State perturbations at time=n
+        :return: Output perturbations at time=n+1
+        """
+        if x0 is None:
+            x0_vec = None
+        else:
+            x0_vec = self.pack_state_vector_t(x0)
+
+        u_vec = self.pack_input_vector_t(u)
+        x_vec, y_vec = self.sys.run(u_vec, x0_vec)
+        return self.unpack_state_vector_t(x_vec), self.unpack_output_vector_t(y_vec)
