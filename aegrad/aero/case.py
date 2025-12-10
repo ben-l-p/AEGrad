@@ -2,7 +2,6 @@ from __future__ import annotations
 from functools import singledispatchmethod
 from collections.abc import Sequence
 import jax.numpy as jnp
-import jax
 from jax import Array, vmap
 from jax.lax import fori_loop
 from typing import Optional, Self
@@ -21,7 +20,7 @@ from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wak
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.linear import LinearAero, LinearWakeType
-from aegrad.print_output import print_with_time, warn
+from aegrad.print_output import print_with_time, warn, jax_print
 
 @make_pytree
 class AeroCase:
@@ -90,7 +89,7 @@ class AeroCase:
 
         # wake discretization parameters
         self.variable_wake_disc: bool = variable_wake_disc
-        self._delta_w: Optional[Sequence[Optional[Array]]] = None
+        self._delta_w: Optional[list[Optional[Array]]] = None
 
         # kernel definitions per surface (seperate for wing and wake)
         if kernel is None:
@@ -159,13 +158,15 @@ class AeroCase:
                   wake_type: LinearWakeType = LinearWakeType.FREE,
                   bound_upwash: bool = True,
                   wake_upwash: bool = True,
-                  unsteady_force: bool = True) -> LinearAero:
+                  unsteady_force: bool = True,
+                  gamma_dot_state: bool = True) -> LinearAero:
         return LinearAero(self,
                           self[i_ts],
                           wake_type=wake_type,
                           bound_upwash=bound_upwash,
                           wake_upwash=wake_upwash,
-                            unsteady_force=unsteady_force)
+                            unsteady_force=unsteady_force,
+                          gamma_dot_state=gamma_dot_state)
 
     def set_design_variables(self,
                              dt: float | Array,
@@ -252,6 +253,7 @@ class AeroCase:
             zeta_b_dot=ArrayList([self.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             zeta_w=ArrayList([self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             gamma_b=ArrayList([self.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
+            gamma_b_dot=ArrayList([self.gamma_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             gamma_w=ArrayList([self.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             f_steady=ArrayList([self.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
             f_unsteady=ArrayList([self.f_unsteady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]),
@@ -721,7 +723,7 @@ class AeroCase:
                 free_wake=free_wake,
                 horseshoe=False,
             )
-            # jax.debug.print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
+            jax_print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
             return case
 
         return fori_loop(
@@ -760,6 +762,7 @@ class AeroCase:
             zeta_b_dot=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),
             zeta_w=self.zeta0_w,
             gamma_b=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
+            gamma_b_dot=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
             gamma_w=ArrayList([jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc]),
             f_steady=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),
             f_unsteady=ArrayList([jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]),

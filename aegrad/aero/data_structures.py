@@ -49,6 +49,7 @@ class StateSlices:
     gamma_b: LinearComponent
     gamma_w: LinearComponent
     gamma_bm1: LinearComponent
+    gamma_b_dot: LinearComponent
     zeta_w: LinearComponent
     zeta_b: LinearComponent
 
@@ -69,6 +70,7 @@ class StateUnflattened:
     gamma_b: ArrayList
     gamma_w: ArrayList
     gamma_bm1: Optional[ArrayList]
+    gamma_b_dot: Optional[ArrayList]
     zeta_w: Optional[ArrayList]
     zeta_b: Optional[ArrayList]
 
@@ -84,6 +86,7 @@ class AeroSnapshot:
                 zeta_b_dot: ArrayList,
                  zeta_w: ArrayList,
                  gamma_b: ArrayList,
+                 gamma_b_dot: ArrayList,
                  gamma_w: ArrayList,
                  f_steady: ArrayList,
                  f_unsteady: ArrayList,
@@ -106,6 +109,7 @@ class AeroSnapshot:
         self.zeta_b_dot: ArrayList = zeta_b_dot
         self.zeta_w: ArrayList = zeta_w
         self.gamma_b: ArrayList = gamma_b
+        self.gamma_b_dot: ArrayList = gamma_b_dot
         self.gamma_w: ArrayList = gamma_w
         self.f_steady: ArrayList = f_steady
         self.f_unsteady: ArrayList = f_unsteady
@@ -124,6 +128,7 @@ class AeroSnapshot:
             zeta_b_dot=self.zeta_b_dot[i_surf],
             zeta_w=self.zeta_w[i_surf],
             gamma_b=self.gamma_b[i_surf],
+            gamma_b_dot=self.gamma_b_dot[i_surf],
             gamma_w=self.gamma_w[i_surf],
             f_steady=self.f_steady[i_surf],
             f_unsteady=self.f_unsteady[i_surf],
@@ -146,6 +151,7 @@ class AeroSurfaceSnapshot:
                 zeta_b_dot: Array,
                  zeta_w: Array,
                  gamma_b: Array,
+                 gamma_b_dot: Array,
                  gamma_w: Array,
                  f_steady: Array,
                  f_unsteady: Array,
@@ -157,6 +163,7 @@ class AeroSurfaceSnapshot:
         self.zeta_b_dot: Array = zeta_b_dot
         self.zeta_w: Array = zeta_w
         self.gamma_b: Array = gamma_b
+        self.gamma_b_dot: Array = gamma_b_dot
         self.gamma_w: Array = gamma_w
         self.f_steady: Array = f_steady
         self.f_unsteady: Array = f_unsteady
@@ -172,7 +179,7 @@ class AeroSurfaceSnapshot:
             paths.append(plot_frame_to_vtk(self.zeta_b, bound_filename, self.i_ts,
                               node_vector_data={'f_steady': self.f_steady, 'f_unsteady': self.f_unsteady,
                                                 'zeta_dot': self.zeta_b_dot},
-                              cell_scalar_data={'gamma': self.gamma_b},
+                              cell_scalar_data={'gamma': self.gamma_b, 'gamma_dot': self.gamma_b_dot},
                               ))
         if plot_wake:
             if self.gamma_w.shape[0] == 0:

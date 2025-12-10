@@ -1,3 +1,5 @@
+import jax
+
 from aegrad.aero.uvlm_utils import make_rectangular_grid
 from aegrad.aero.data_structures import GridDiscretization, InputUnflattened
 from aegrad.algebra.array_utils import ArrayList
@@ -6,9 +8,14 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
+from aegrad.print_output import set_verbosity, VerbosityLevel
 from pathlib import Path
 
-u_inf = jnp.array((10.0, 0.0, 0.0))
+set_verbosity(VerbosityLevel.NORMAL)
+
+jax.disable_jit()
+
+u_inf = jnp.array((10.0, 0.0, 1.0))
 rho_inf = 1.225
 m = 4
 n = 8
@@ -17,7 +24,7 @@ c_ref = 1.0
 b_ref = 5.0
 alpha = jnp.deg2rad(0.0)
 ea = 0.0
-physical_time = 6.0  # seconds
+physical_time = 4.0  # seconds
 
 flowfield = Constant(u_inf, rho_inf, True)
 dt = c_ref / (m * flowfield.u_inf_mag)
@@ -62,17 +69,13 @@ case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
 case.plot(path_nl)
 
 # linear case
-case.surf_b_names = ["linear_surf_0"]
-case.surf_w_names = ["linear_wake_0"]
-
 path_lin = Path("./plot_heaving_lin")
 path_lin.mkdir(parents=True, exist_ok=True)
-linear_model = (case.
-                linearise(0,
+linear_model = case.linearise(0,
               LinearWakeType.PRESCRIBED,
               bound_upwash=False,
               wake_upwash=False,
-              unsteady_force=True))
+              unsteady_force=True)
 
 delta_zeta_b = case.zeta_b - ArrayList([zeta[None, ...] for zeta in linear_model.zeta0_b])
 u_linear = InputUnflattened(zeta_b=delta_zeta_b,
@@ -81,7 +84,7 @@ u_linear = InputUnflattened(zeta_b=delta_zeta_b,
                             nu_w=None,
 )
 
-linear_model.run(u_linear)
+linear_model.run(u_linear, use_matrix=False)
 linear_model.plot(path_lin)
 
 pass

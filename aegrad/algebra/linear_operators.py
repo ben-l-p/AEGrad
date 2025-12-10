@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable, Sequence, Self
 from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.print_output import print_with_time, warn
+from aegrad.print_output import print_with_time, warn, jax_print
+from aegrad.utils import make_pytree, replace_self
 
 import jax
 from jax import Array, numpy as jnp, jacobian
 
-
+@make_pytree
 class LinearOperator:
     r"""
     Linear operator represented by a function, either as A(x) or Ax
@@ -24,16 +25,22 @@ class LinearOperator:
                 raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {shape}.")
 
         self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
-        self.mat: Optional[Array] = mat
+        self._matrix: Optional[Array] = mat
         self.shape = shape  # shapes of equivalent matrix
 
-    def to_matrix(self) -> Array:
-        if self.mat is not None:
-            return self.mat
-        else:
-            # dL/dx at x at any point is the same, and should be independent of x
-            self.mat = jacobian(lambda x_: self.func(x_), argnums=0)(jnp.full(self.shape[1], 1.0))
-            return self.mat
+    @property
+    def matrix(self) -> Array:
+        if self._matrix is None:
+            self.generate_matrix()
+        return self._matrix
+
+    @replace_self
+    def generate_matrix(self) -> Self:
+        # dL/dx at x at any point is the same, and should be independent of x
+        self._matrix = jacobian(lambda x_: self.func(x_), argnums=0)(
+            jnp.full(self.shape[1], 1.0)
+        )
+        return self
 
     def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
         if isinstance(rhs, LinearOperator):
@@ -41,8 +48,8 @@ class LinearOperator:
                 return self.func(rhs.func(x))
 
             shape = (self.shape[0], rhs.shape[1])
-            if self.mat is not None and rhs.mat is not None:
-                new_mat = self.mat @ rhs.mat
+            if self._matrix is not None and rhs._matrix is not None:
+                new_mat = self._matrix @ rhs._matrix
             else:
                 new_mat = None
             return LinearOperator(new_func, shape, new_mat)
@@ -61,8 +68,8 @@ class LinearOperator:
                 raise ValueError("Cannot add LinearOperators with different shapes.")
             def new_func(x: Array) -> Array:
                 return self.func(x) + rhs.func(x)
-            if self.mat is not None and rhs.mat is not None:
-                new_mat = self.mat + rhs.mat
+            if self._matrix is not None and rhs._matrix is not None:
+                new_mat = self._matrix + rhs._matrix
             else:
                 new_mat = None
             return LinearOperator(new_func, self.shape, new_mat)
@@ -72,6 +79,15 @@ class LinearOperator:
             return new_func
         else:
             raise TypeError("Incompatible type for addition with LinearOperator.")
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ("shape",)
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "func", "_matrix"
+
 
 class BlockLinear:
     r"""
@@ -140,7 +156,7 @@ class BlockLinear:
             for i_block_col in range(self.n_block_col):
                 entry = self.entries[i_block_row][i_block_col]
                 if isinstance(entry, LinearOperator):
-                    arrs[-1].append(entry.to_matrix())
+                    arrs[-1].append(entry.matrix)
                 else:
                     arrs[-1].append(entry)
         blk = jnp.block(arrs)
@@ -167,10 +183,10 @@ class LinearSystem:
     @print_with_time("Computing matrices for linear system...",
                      "Computed matrices for linear system in {:.2f} seconds.")
     def compute_matrices(self) -> None:
-        self.a.to_matrix()
-        self.b.to_matrix()
-        self.c.to_matrix()
-        self.d.to_matrix()
+        self.a.generate_matrix()
+        self.b.generate_matrix()
+        self.c.generate_matrix()
+        self.d.generate_matrix()
 
     @print_with_time("Removing u_np1 from linear system...",
                      "Removed u_np1 from linear system in {:.2f} seconds.")
@@ -186,18 +202,22 @@ class LinearSystem:
         "Running linear system...",
         "Ran linear system in {:.2f} seconds.",
     )
-    def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
-        if not self.removed_u_np1:
-            self.remove_u_np1()
+    def run(self, u: Array, x0: Optional[Array] = None, use_matrix=False) -> tuple[Array, Array]:
 
         if x0 is not None:
             check_arr_shape(x0, (None, self.n_states), "x0")
         check_arr_shape(u, (None, self.n_inputs), "u")
         n_tstep = u.shape[0]
 
+        if use_matrix:
+            a, b, c, d = self.a.matrix, self.b.matrix, self.c.matrix, self.d.matrix
+        else:
+            a, b, c, d = self.a, self.b, self.c, self.d
+
         def state_func(i_ts: int, x_: Array) -> Array:
-            # jax.debug.print("Linear UVLM state step {i_ts}", i_ts=i_ts)
-            return x_.at[i_ts, ...].set(self.a @ x_[i_ts - 1, ...] + self.b @ u[i_ts - 1, ...])
+            jax_print("Linear UVLM state step {i_ts}", i_ts=i_ts)
+            this_u = u[i_ts - 1, ...] if self.removed_u_np1 else u[i_ts, ...]
+            return x_.at[i_ts, ...].set(a @ x_[i_ts - 1, ...] + b @ this_u)
 
         x = jnp.zeros((n_tstep, self.n_states))
         if x0 is not None:
@@ -205,8 +225,8 @@ class LinearSystem:
         x = jax.lax.fori_loop(1, n_tstep, state_func, x)
 
         def output_func(i_ts: int, y_: Array) -> Array:
-            # jax.debug.print("Linear UVLM output step {i_ts}", i_ts=i_ts)
-            return y_.at[i_ts, ...].set(self.c @ x[i_ts, ...] + self.d @ u[i_ts, ...])
+            jax_print("Linear UVLM output step {i_ts}", i_ts=i_ts)
+            return y_.at[i_ts, ...].set(c @ x[i_ts, ...] + d @ u[i_ts, ...])
 
         y = jnp.zeros((n_tstep, self.n_outputs))
         y = jax.lax.fori_loop(0, n_tstep, output_func, y)

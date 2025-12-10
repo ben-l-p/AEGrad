@@ -9,7 +9,7 @@ x: Node coordinate, [3]
 rmat: Rotation matrix, [3, 3]
 omega: Rotation vector, [3]
 vec: General vector, [...]
-mat: General matrix, [..., ...]
+_matrix: General matrix, [..., ...]
 skew: Skew symmetric matrix, [3, 3]
 log_: Logarithm operator, SE|SO -> se|so
 exp_: Exponential operator, se|so -> SE|SO

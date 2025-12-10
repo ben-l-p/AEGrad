@@ -4,10 +4,13 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
+from aegrad.print_output import set_verbosity, VerbosityLevel
 
 class TestVarWakeDisc:
     @staticmethod
     def test_var_wake_disc():
+        set_verbosity(VerbosityLevel.SILENT)
+
         u_inf = jnp.array((10.0, 0.0, 0.0))
         rho_inf = 1.225
         m = 6

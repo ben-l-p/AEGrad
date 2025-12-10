@@ -162,12 +162,12 @@ def propagate_wake(gamma_b_n: ArrayList,
 
 
 def steady_forcing(zeta_b: ArrayList,
-                             zeta_dot_b: ArrayList,
-                             gamma_b: ArrayList,
-                             gamma_w: ArrayList,
-                             v_func: Callable[[Array], Array],
-                             v_input: Optional[ArrayList],
-                             rho: Array) -> ArrayList:
+                     zeta_dot_b: ArrayList,
+                     gamma_b: ArrayList,
+                     gamma_w: ArrayList,
+                     v_func: Callable[[Array], Array],
+                     v_input: Optional[ArrayList],
+                     rho: Array) -> ArrayList:
     f_steady = ArrayList([])
     for i_surf in range(len(zeta_b)):
        f_steady.append(surf_steady_forcing(zeta_b[i_surf],
@@ -199,7 +199,7 @@ def surf_steady_forcing(zeta_b: Array,
     v_rel_chordwise = v_func(mp_chordwise) - mp_dot_chordwise  # [gamma_m, gamma_n+1, 3]
     v_rel_spanwise = v_func(mp_spanwise) - mp_dot_spanwise  # [gamma_m+1, gamma_n, 3]
 
-    # add any input velocities
+    # add any input_ velocities
     if v_input is not None:
         v_rel_chordwise += neighbour_average(v_input, axes=0)
         v_rel_spanwise += neighbour_average(v_input, axes=1)
