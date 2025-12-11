@@ -4,7 +4,7 @@ from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
 from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
 
-def make_rectangular_grid(m: int, n: int, chord: float, ea: float) -> Array:
+def make_rectangular_grid(m: int, n: int, chord: Array | float, ea: Array | float) -> Array:
     r"""
     Create a rectangular grid of points in the yz-plane
     :param m: Number of panels in the chordwise direction
@@ -165,7 +165,7 @@ def steady_forcing(zeta_b: ArrayList,
                      zeta_dot_b: ArrayList,
                      gamma_b: ArrayList,
                      gamma_w: ArrayList,
-                     v_func: Callable[[Array], Array],
+                     v_func: Callable[[Array, int], Array],
                      v_input: Optional[ArrayList],
                      rho: Array) -> ArrayList:
     f_steady = ArrayList([])
@@ -174,7 +174,7 @@ def steady_forcing(zeta_b: ArrayList,
                                            zeta_dot_b[i_surf],
                                            gamma_b[i_surf],
                                            gamma_w[i_surf],
-                                           v_func,
+                                           lambda x_: v_func(x_, i_surf),
                                            v_input[i_surf] if v_input is not None else None,
                                            rho))
     return f_steady

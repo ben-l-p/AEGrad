@@ -5,7 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
     "jax==0.8.0",
-    "matplotlib==3.10.7",
     "pytest==9.0.1",
     "vtk==9.5.2",
+    "xprof==2.21.3",
 ]

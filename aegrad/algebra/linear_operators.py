@@ -163,7 +163,7 @@ class BlockLinear:
         self.mat = blk
         return blk
 
-
+@make_pytree
 class LinearSystem:
     def __init__(self,
                  a: LinearOperator,
@@ -231,3 +231,11 @@ class LinearSystem:
         y = jnp.zeros((n_tstep, self.n_outputs))
         y = jax.lax.fori_loop(0, n_tstep, output_func, y)
         return x, y
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "n_inputs", "n_states", "n_outputs"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "a", "b", "c", "d", "removed_u_np1"

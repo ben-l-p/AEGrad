@@ -8,9 +8,9 @@ from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 
-class TestLinearOperator:
+class TestLinearHeavingWing:
     @staticmethod
-    def test_rot_invariance_no_wake():
+    def test_linear_heaving_wing():
         set_verbosity(VerbosityLevel.SILENT)
 
         u_inf = jnp.array((10.0, 0.0, 1.0))

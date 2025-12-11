@@ -15,7 +15,7 @@ from aegrad.aero.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon
+from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon, biot_savart
 from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wake_influence, compute_aic_sys
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
@@ -94,6 +94,7 @@ class AeroCase:
         # kernel definitions per surface (seperate for wing and wake)
         if kernel is None:
             kernel = biot_savart_epsilon
+            # kernel = biot_savart
         self.kernels_b: Sequence[KernelFunction] = self.n_surf * [kernel]
         self.kernels_w: Sequence[KernelFunction] = self.n_surf * [kernel]
 
@@ -543,7 +544,7 @@ class AeroCase:
                            self.get_zeta_dot_b(i_ts),
                            self.get_gamma_b(i_ts),
                            self.get_gamma_w(i_ts),
-                           lambda x_: self.get_v_tot(i_ts, x_),
+                           lambda x_, _: self.get_v_tot(i_ts, x_),
                             None,
                            self.flowfield.rho)
         for i_surf in range(self.n_surf):

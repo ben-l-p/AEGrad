@@ -16,6 +16,7 @@ def compute_aic_grid(
     c: Array,
     zeta: Array,
     kernel: KernelFunction,
+    remove_te_singularity: Array = jnp.zeros((), dtype=bool)
 ):
     """
     Compute the aerodynamic influence coefficient (AIC) across grids of points. Returns array of shapes
@@ -30,11 +31,14 @@ def compute_aic_grid(
     n_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
 
     # AIC matrices have one entry per filament
-    # m_aic = jnp.nan_to_num(aic_vmap(c, m_vect, kernel), False, 0.0)     # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
-    # n_aic = jnp.nan_to_num(aic_vmap(c, n_vect, kernel), False, 0.0)     # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
-
     m_aic = aic_vmap(c, m_vect, kernel)     # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
     n_aic = aic_vmap(c, n_vect, kernel)     # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
+
+    # zero out influence of zeta[0, :, :] on c[-1, :, :]
+    # this is used on for the linearized model to prevent very large velocities when the bound and wake trailing edge
+    # are no longer perfectly coincident
+    ix_ = jnp.arange(n_aic.shape[1])
+    n_aic = n_aic.at[-1, ix_, 0, ix_, :].multiply(jnp.logical_not(remove_te_singularity))
 
     return -jnp.diff(m_aic, axis=3) + jnp.diff(n_aic, axis=2)
 
@@ -43,6 +47,7 @@ def compute_aic_sys(
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
     ns: Optional[Sequence[Array]] = None,
+    remove_te_singularity: Optional[Array] = None
 ) -> list[list[Array]]:
     """
     Compute the AIC matrix for a system of elements. Returns a list of AIC matrices, one for each element.
@@ -69,13 +74,13 @@ def compute_aic_sys(
     aic_mats = []
     for i_c, c in enumerate(cs):
         aic_mats.append([])
-        for zeta, kernel in zip(zetas, kernels):
+        for i_z, zeta, kernel in zip(range(len(zetas)), zetas, kernels):
             # compute the AIC matrix, [n_cx, n_cy, n_ex, n_ey, 3]
             aic_ = compute_aic_grid(
                 c,
                 zeta,
-                kernel
-
+                kernel,
+                remove_te_singularity[i_c, i_z] if remove_te_singularity is not None else False,
             )
             if ns is not None:
                 aic_ = jnp.einsum('ijklm,ijm->ijkl', aic_, ns[i_c]) # project onto normals
@@ -126,6 +131,7 @@ def compute_aic_sys_assembled(
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
     ns: Optional[Sequence[Array]] = None,
+    remove_te_singularity: Optional[Array] = None
 ) -> Array:
     """
     Compute the assembled AIC matrix for a system of elements. Returns an AIC matrix.
@@ -136,7 +142,7 @@ def compute_aic_sys_assembled(
     onto these normals.
     :return: Full AIC matrix, [c_tot, zeta_tot, 3], or [c_tot, zeta_tot] if projected onto normals.
     """
-    aic_mats = compute_aic_sys(cs, zetas, kernels, ns)
+    aic_mats = compute_aic_sys(cs, zetas, kernels, ns, remove_te_singularity)
 
     aic_mats_reshaped = [
         [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats

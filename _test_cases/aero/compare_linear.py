@@ -11,15 +11,16 @@ from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 from pathlib import Path
 
+# jax.profiler.start_trace("./profile_linear/", create_perfetto_trace=True)
+# xprof --port 8791 _test_cases/aero/profile_linear/
+
 set_verbosity(VerbosityLevel.NORMAL)
 
-jax.disable_jit()
-
 u_inf = jnp.array((10.0, 0.0, 1.0))
-rho_inf = 1.225
+rho_inf = 2.5
 m = 4
 n = 8
-m_star = 10
+m_star = 20
 c_ref = 1.0
 b_ref = 5.0
 alpha = jnp.deg2rad(0.0)
@@ -86,5 +87,8 @@ u_linear = InputUnflattened(zeta_b=delta_zeta_b,
 
 linear_model.run(u_linear, use_matrix=False)
 linear_model.plot(path_lin)
+
+# jax.profiler.stop_trace()
+
 
 pass

@@ -14,7 +14,7 @@ from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices,
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
 from aegrad.algebra.array_utils import flatten_to_1d, ArrayList, split_to_vertex
-from aegrad.aero.aic import compute_aic_sys_assembled
+from aegrad.aero.aic import compute_aic_sys_assembled, compute_aic_sys
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
 from aegrad.utils import shallow_asdict, replace_self
@@ -230,7 +230,8 @@ class LinearAero:
                 out[name] = None
             else:
                 if add_t:
-                    out[name] = ArrayList([x[:, entry.slices[i_surf]].reshape(-1, *entry.shapes[i_surf]) for i_surf in
+                    n_tstep = x.shape[0]
+                    out[name] = ArrayList([x[:, entry.slices[i_surf]].reshape(n_tstep, *entry.shapes[i_surf]) for i_surf in
                                            range(self.n_surf)])
                 else:
                     out[name]  = ArrayList([x[entry.slices[i_surf]].reshape(entry.shapes[i_surf]) for i_surf in range(self.n_surf)])
@@ -398,17 +399,26 @@ class LinearAero:
                     gamma_b: Optional[ArrayList],
                     gamma_w: Optional[ArrayList],
                     zeta_b: Optional[ArrayList],
-                    zeta_w: Optional[ArrayList]) -> Array:
+                    zeta_w: Optional[ArrayList],
+                    i_surf: Optional[int] = None) -> Array:
 
             # sample flowfield
             v_x = self.flowfield0.vmap_call(x, jnp.array(self.t0))
 
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
+                # remove singularity due to the front of the wake not coinciding with the bound trailing edge
+                if i_surf is None:
+                    remove_te_singularity = None
+                else:
+                    remove_te_singularity = jnp.zeros((1, 2 * self.n_surf), dtype=bool)
+                    remove_te_singularity = remove_te_singularity.at[0, self.n_surf + i_surf].set(True)
+
                 vertex_influence = compute_aic_sys_assembled([x],
                                                              [*zeta_b, *zeta_w],
                                                              [*self.kernels_b, *self.kernels_w],
-                                                             None)
+                                                             None,
+                                                             remove_te_singularity)
 
                 # add influence from panels
                 v_x += jnp.einsum('ijk,j->ik', vertex_influence,
@@ -459,24 +469,26 @@ class LinearAero:
         # boundary condition velocity and its derivatives [n_c]
         v_bc0 = _make_v_bc(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
+        jac_func = jax.jacfwd
+
         # [n_surf][n_c, zeta_b_m, zeta_b_n, 3]
-        d_v_bc_d_zeta_b = jax.jacobian(_make_v_bc, argnums=0)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+        d_v_bc_d_zeta_b = jac_func(_make_v_bc, argnums=0)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
         # [n_surf][n_c, zeta_w_m, zeta_b_n, 3]
         if self.prescribed_wake:
-            d_v_bc_d_zeta_w = jax.jacobian(_make_v_bc, argnums=1)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+            d_v_bc_d_zeta_w = jac_func(_make_v_bc, argnums=1)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
         else:
             d_v_bc_d_zeta_w = None
 
         # [n_surf][n_c, m_star, n]
-        d_v_bc_d_gamma_w = jax.jacobian(_make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+        d_v_bc_d_gamma_w = jac_func(_make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
         # e matrix and its derivative
         # [n_c, n_c]
         e0 = _make_e_mat(self.zeta0_b)
 
         # [n_surf][n_c, n_c, zeta_b_m, zeta_b_n, 3]
-        d_e_d_zeta_b = jax.jacobian(_make_e_mat, argnums=0)(self.zeta0_b)
+        d_e_d_zeta_b = jac_func(_make_e_mat, argnums=0)(self.zeta0_b)
 
         def _a_func(x_n_vec: Array) -> Array:
             x_n = self._unpack_state_vector(x_n_vec)
@@ -559,16 +571,18 @@ class LinearAero:
 
             if self.unsteady_force:
                 d_gamma_dot_n = x_n.gamma_b_dot if self.gamma_dot_state else (x_n.gamma_b - x_n.gamma_bm1) / self.dt
-                d_f_unsteady_n = split_to_vertex(ArrayList.einsum("ij,ijk->ijk", d_gamma_dot_n, self.n0), (0, 1))
+                d_f_unsteady_n = self.flowfield0.rho * ArrayList([split_to_vertex(arr, (0, 1))
+                                                                  for arr in ArrayList.einsum("ij,ijk->ijk", d_gamma_dot_n, self.n0)])
             else:
                 d_f_unsteady_n = None
 
-            def _v_forcing(x: Array) -> Array:
+            def _v_forcing(x: Array, i_surf: int) -> Array:
                 return _v_flow(x,
                               x_n_tot.gamma_b,
                               x_n_tot.gamma_w,
                               self.zeta0_b,
-                              x_n_tot.zeta_w)
+                              x_n_tot.zeta_w,
+                              i_surf)
 
             d_f_steady_n = steady_forcing(
                     self.zeta0_b,
@@ -586,12 +600,13 @@ class LinearAero:
             u_n = self._unpack_input_vector(u_n_vec)
             u_n_tot = self.get_total_input(u_n)
 
-            def _v_forcing(x: Array) -> Array:
+            def _v_forcing(x: Array, i_surf: int) -> Array:
                 return _v_flow(x,
                               self.gamma0_b,
                               self.gamma0_w,
                               u_n_tot.zeta_b,
-                              self.zeta0_w)
+                              self.zeta0_w,
+                               i_surf)
 
             d_f_steady_n = (
                 steady_forcing(
