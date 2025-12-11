@@ -19,6 +19,7 @@ from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction
 from aegrad.utils import shallow_asdict, replace_self
 from aegrad.print_output import print_with_time, warn
+from aegrad.plotting.pvd import write_pvd
 
 if TYPE_CHECKING:
     from aegrad.aero.case import AeroCase
@@ -633,16 +634,18 @@ class LinearAero:
                                i_surf)
 
             d_f_steady_n = (
-                steady_forcing(
-                    u_n_tot.zeta_b,
-                    u_n_tot.zeta_b_dot,
-                    self.gamma0_b,
-                    self.gamma0_w,
-                    _v_forcing,
-                    u_n_tot.nu_b if self.bound_upwash else None,
-                    self.flowfield0.rho,
-                )
-                - self.f_steady0
+                # TODO: restore
+                # steady_forcing(
+                #     u_n_tot.zeta_b,
+                #     u_n_tot.zeta_b_dot,
+                #     self.gamma0_b,
+                #     self.gamma0_w,
+                #     _v_forcing,
+                #     u_n_tot.nu_b if self.bound_upwash else None,
+                #     self.flowfield0.rho,
+                # )
+                # - self.f_steady0
+                ArrayList.zeros_like(self.f_steady0)
             )
 
             if self.unsteady_force:
@@ -697,12 +700,16 @@ class LinearAero:
 
     @print_with_time("Computing eigenvalues of linear system...",
                      "Eigenvalues computed in {:.2f} seconds.")
-    def eigenvalues(self) -> Array:
+    def eigenvalues(self, to_components: bool = True) -> Array:
         r"""
         Compute stability eigenvalues of the linear system A matrix.
         :return: Eigenvalues of the A matrix
         """
-        return jnp.linalg.eigvals(self.sys.a.matrix)
+        evals = jnp.linalg.eigvals(self.sys.a.matrix)
+        if to_components:
+            return jnp.stack((evals.real, evals.imag), axis=-1)
+        else:
+            return evals
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
@@ -777,10 +784,18 @@ class LinearAero:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
+        paths: list[Sequence[Path]] = []
         for i_ts in index_:
             snapshot = self[i_ts]
-            # TODO: add PVD writer
-            paths = snapshot.plot(directory, plot_wake=plot_wake)
+            paths.append(snapshot.plot(directory, plot_wake=plot_wake))
+
+        for i_surf in range(2 * self.n_surf):
+            try:
+                surf_paths = [paths[i][i_surf] for i in range(len(index_))]
+                name = ((self.surf_b_names + self.surf_w_names)[i_surf] + "_ts")
+                write_pvd(directory, name, surf_paths, list(self.t[index_]))
+            except IndexError:
+                pass
 
     @print_with_time("Plotting linear reference aerodynamic grid...",
                      "Reference aerodynamic grid plotted in {:.2f} seconds.")

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/aegrad/tests/plotting/test_pvd.py">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/aegrad/tests/plotting/test_pvd.py" />
+              <option name="updatedContent" value="from __future__ import annotations&#10;from pathlib import Path&#10;import xml.etree.ElementTree as ET&#10;import pytest&#10;&#10;from aegrad.plotting.pvd import write_pvd&#10;&#10;&#10;def _read_pvd(path: Path):&#10;    tree = ET.parse(path)&#10;    root = tree.getroot()&#10;    coll = root.find(&quot;Collection&quot;)&#10;    datasets = coll.findall(&quot;DataSet&quot;)&#10;    return [(ds.get(&quot;timestep&quot;), ds.get(&quot;file&quot;)) for ds in datasets]&#10;&#10;&#10;def test_write_pvd_basic(tmp_path: Path):&#10;    files = [tmp_path / f&quot;frame_{i}.vts&quot; for i in range(3)]&#10;    # create dummy files&#10;    for f in files:&#10;        f.write_text(&quot;dummy&quot;)&#10;&#10;    times = [0.0, 0.1, 0.2]&#10;    pvd_path = write_pvd(tmp_path, files, times)&#10;&#10;    assert pvd_path.exists()&#10;    entries = _read_pvd(pvd_path)&#10;    assert len(entries) == 3&#10;    for i, (t, f) in enumerate(entries):&#10;        assert float(t) == pytest.approx(times[i])&#10;        # since use_relative_paths default True, expect filename to be the basename or relative&#10;        assert f.endswith(f&quot;frame_{i}.vts&quot;)&#10;&#10;&#10;def test_write_pvd_mismatch_length(tmp_path: Path):&#10;    files = [tmp_path / &quot;a.vts&quot;, tmp_path / &quot;b.vts&quot;]&#10;    for f in files:&#10;        f.write_text(&quot;d&quot;)&#10;    with pytest.raises(ValueError):&#10;        write_pvd(tmp_path, files, [0.0])&#10;&#10;&#10;def test_write_pvd_empty(tmp_path: Path):&#10;    with pytest.raises(ValueError):&#10;        write_pvd(tmp_path, [], [])&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

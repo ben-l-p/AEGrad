@@ -40,6 +40,17 @@ def compute_aic_grid(
     ix_ = jnp.arange(n_aic.shape[1])
     n_aic = n_aic.at[-1, ix_, 0, ix_, :].multiply(jnp.logical_not(remove_te_singularity))
 
+    # # # TODO: remove this testing code
+    # if m_aic.shape[0] == m_aic.shape[2]:
+    #     for ixm_m in range(m_aic.shape[0]):
+    #         for ixm_n in range(m_aic.shape[1]):
+    #             m_aic = m_aic.at[ixm_m, ixm_n, ixm_m, ixm_n, :].set(0.0)
+    #
+    # if n_aic.shape[1] == n_aic.shape[3]:
+    #     for ixn_m in range(n_aic.shape[0]):
+    #         for ixn_n in range(n_aic.shape[1]):
+    #             n_aic = n_aic.at[ixn_m, ixn_n, ixn_m, ixn_n, :].set(0.0)
+
     return -jnp.diff(m_aic, axis=3) + jnp.diff(n_aic, axis=2)
 
 def compute_aic_sys(

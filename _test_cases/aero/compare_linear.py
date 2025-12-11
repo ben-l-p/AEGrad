@@ -15,13 +15,13 @@ from pathlib import Path
 # jax.profiler.start_trace("./profile_linear/", create_perfetto_trace=True)
 # xprof --port 8791 _test_cases/aero/profile_linear/
 
-set_verbosity(VerbosityLevel.VERBOSE)
+set_verbosity(VerbosityLevel.NORMAL)
 
 u_inf = jnp.array((10.0, 0.0, 1.0))
 rho_inf = 2.5
-m = 8
-n = 20
-m_star = 100
+m = 4
+n = 8
+m_star = 15
 c_ref = 1.0
 b_ref = 5.0
 alpha = jnp.deg2rad(0.0)
@@ -67,7 +67,7 @@ path_nl.mkdir(parents=True, exist_ok=True)
 case = AeroCase(n_tstep, disc, False, jnp.arange(0, n + 1))
 case.set_design_variables(dt, flowfield, None, x_grid, hg)
 case.solve_static()
-case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
+case.solve_prescribed_dynamic(hg_t, hg_dot_t)
 case.plot(path_nl)
 
 # linear case
@@ -86,7 +86,7 @@ u_linear = InputUnflattened(zeta_b=delta_zeta_b,
                             nu_w=None,
 )
 
-linear_model.run(u_linear, use_matrix=False)
+linear_model.run(u_linear, use_matrix=True)
 linear_model.plot(path_lin)
 
 # jax.profiler.stop_trace()

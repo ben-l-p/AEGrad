@@ -23,6 +23,7 @@ from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.linear import LinearAero, LinearWakeType
 from aegrad.print_output import print_with_time, warn, jax_print
+from aegrad.plotting.pvd import write_pvd
 
 @make_pytree
 class AeroCase:
@@ -588,6 +589,12 @@ class AeroCase:
             )
             horseshoe = False
 
+        # set the current time step
+        if static:
+            self.t = self.t.at[i_ts].set(jax.lax.select(i_ts, self.t[i_ts - 1], 0.0))
+        else:
+            self.t = self.t.at[i_ts].set(jax.lax.select(i_ts, self.t[i_ts - 1] + self.dt, 0.0))
+
         zetas_b = self.zeta0_b if hg is None else self.hg_to_zeta(hg)
         self.set_zeta_b(zetas_b, i_ts)
 
@@ -742,7 +749,7 @@ class AeroCase:
         "Plotting aerodynamic grid...",
         "Aerodynamic grid plotted in {:.2f} seconds.",
     )
-    def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
+    def plot(self, directory: Path, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep_tot)[index]
         elif isinstance(index, Sequence):
@@ -756,10 +763,18 @@ class AeroCase:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
+        paths: list[Sequence[Path]] = []
         for i_ts in index_:
             snapshot = self[i_ts]
-            # TODO: add PVD writer
-            paths = snapshot.plot(directory, plot_wake=plot_wake)
+            paths.append(snapshot.plot(directory, plot_wake=plot_wake))
+
+        for i_surf in range(2 * self.n_surf):
+            try:
+                surf_paths = [paths[i][i_surf] for i in range(len(index_))]
+                name = ((self.surf_b_names + self.surf_w_names)[i_surf] + "_ts")
+                write_pvd(directory, name, surf_paths, list(self.t[index_]))
+            except IndexError:
+                pass
 
     def reference_snapshot(self) -> AeroSnapshot:
         return AeroSnapshot(
