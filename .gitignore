@@ -3,3 +3,10 @@
 *.vtp
 *.vtu
 *.pvd
+
+# profiling files
+*.pb
+*.gz
+*.SSTABLE
+*.cached_tools.json
+cache_version.txt

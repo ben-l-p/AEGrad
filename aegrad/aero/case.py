@@ -1,6 +1,8 @@
 from __future__ import annotations
 from functools import singledispatchmethod
 from collections.abc import Sequence
+
+import jax
 import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
@@ -727,12 +729,14 @@ class AeroCase:
             jax_print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
             return case
 
-        return fori_loop(
+        obj = fori_loop(
             i_ts_start,
             i_ts_start + n_tstep,
             step_func,
             init_val=self,
         )
+        jax.block_until_ready(obj)
+        return obj
 
     @print_with_time(
         "Plotting aerodynamic grid...",

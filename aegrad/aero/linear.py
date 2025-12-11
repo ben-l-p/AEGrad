@@ -471,24 +471,38 @@ class LinearAero:
 
         jac_func = jax.jacfwd
 
-        # [n_surf][n_c, zeta_b_m, zeta_b_n, 3]
-        d_v_bc_d_zeta_b = jac_func(_make_v_bc, argnums=0)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+        def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> ArrayList:
+            # [n_surf][n_c, zeta_b_m, zeta_b_n, 3]
+            jacobian = jac_func(_make_v_bc, argnums=0)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
-        # [n_surf][n_c, zeta_w_m, zeta_b_n, 3]
-        if self.prescribed_wake:
-            d_v_bc_d_zeta_w = jac_func(_make_v_bc, argnums=1)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
-        else:
-            d_v_bc_d_zeta_w = None
+            # [n_surf][n_c]
+            return ArrayList.einsum('ijkl,jkl->i', jacobian, d_zeta_b)
 
-        # [n_surf][n_c, m_star, n]
-        d_v_bc_d_gamma_w = jac_func(_make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+
+        def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> ArrayList:
+            # [n_surf][n_c, zeta_w_m, zeta_b_n, 3]
+            jacobian = jac_func(_make_v_bc, argnums=1)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+
+            # [n_surf][n_c]
+            return ArrayList.einsum('ijkl,jkl->i', jacobian, d_zeta_w)
+
+        def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> ArrayList:
+            # [n_surf][n_c, m_star, n]
+            jacobian = jac_func(_make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+
+            # [n_surf][n_c]
+            return ArrayList.einsum('ijk,jk->i', jacobian, d_gamma_w)
 
         # e matrix and its derivative
         # [n_c, n_c]
         e0 = _make_e_mat(self.zeta0_b)
 
-        # [n_surf][n_c, n_c, zeta_b_m, zeta_b_n, 3]
-        d_e_d_zeta_b = jac_func(_make_e_mat, argnums=0)(self.zeta0_b)
+        def d_e_d_zeta_b(zeta_b: ArrayList) -> Array:
+            # [n_surf][n_c, n_c, zeta_b_m, zeta_b_n, 3]
+            jacobian = jac_func(_make_e_mat, argnums=0)(self.zeta0_b)
+
+            # [n_c, n_c]
+            return sum(ArrayList.einsum('ijklm,klm->ij', jacobian, zeta_b))
 
         def _a_func(x_n_vec: Array) -> Array:
             x_n = self._unpack_state_vector(x_n_vec)
@@ -503,10 +517,10 @@ class LinearAero:
             d_zeta_w_np1, d_gamma_w_np1 = _propagate_linear_wake(self.get_zero_input(), x_n)
 
             # influence of states on bound circulation
-            d_v_bc = ArrayList.einsum("ijk,jk->i", d_v_bc_d_gamma_w, d_gamma_w_np1).flatten()
+            d_v_bc = d_v_bc_d_gamma_w(d_gamma_w_np1).flatten()
 
             if self.prescribed_wake:
-                d_v_bc += ArrayList.einsum("ijkl,jkl->i", d_v_bc_d_zeta_w, d_zeta_w_np1).flatten()
+                d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1).flatten()
 
             # resulting bound circulation perturbation
             d_gamma_b_np1 = self._unflatten_subvec(-e0 @ d_v_bc, self.state_slices.gamma_b)
@@ -520,7 +534,7 @@ class LinearAero:
             u_np1 = self._unpack_input_vector(u_np1_vec)
 
             # influence of grid perturbations on wake influence
-            d_v_bc = ArrayList.einsum("ijkl,jkl->i", d_v_bc_d_zeta_b, u_np1.zeta_b).flatten()
+            d_v_bc = d_v_bc_d_zeta_b(u_np1.zeta_b).flatten()
 
             # perturbations in flow and bound grid at zeta_b
             d_n = _get_dn(u_np1.zeta_b)
@@ -542,7 +556,7 @@ class LinearAero:
             d_gamma_b_np1_vec = -e0 @ d_v_bc
 
             # pertubations in E matrix [n_c, n_c]
-            d_e = sum(ArrayList.einsum("ijklm,klm->ij", d_e_d_zeta_b, u_np1.zeta_b))
+            d_e = d_e_d_zeta_b(u_np1.zeta_b)
             d_gamma_b_np1_vec -= d_e @ v_bc0
 
             # pertubations in solve matrix
@@ -668,6 +682,7 @@ class LinearAero:
         self._x_t_tot = self.get_total_state_t(self._x_t)
         self._y_t_tot = self.get_total_output_t(self._y_t)
 
+        jax.block_until_ready(self)
         return self
 
     @print_with_time("Computing eigenvalues of linear system...",

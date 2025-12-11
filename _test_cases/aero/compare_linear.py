@@ -14,18 +14,18 @@ from pathlib import Path
 # jax.profiler.start_trace("./profile_linear/", create_perfetto_trace=True)
 # xprof --port 8791 _test_cases/aero/profile_linear/
 
-set_verbosity(VerbosityLevel.NORMAL)
+set_verbosity(VerbosityLevel.VERBOSE)
 
 u_inf = jnp.array((10.0, 0.0, 1.0))
 rho_inf = 2.5
-m = 4
-n = 8
-m_star = 20
+m = 16
+n = 40
+m_star = 60
 c_ref = 1.0
 b_ref = 5.0
 alpha = jnp.deg2rad(0.0)
 ea = 0.0
-physical_time = 4.0  # seconds
+physical_time = 0.1  # seconds
 
 flowfield = Constant(u_inf, rho_inf, True)
 dt = c_ref / (m * flowfield.u_inf_mag)
