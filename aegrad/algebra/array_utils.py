@@ -179,6 +179,13 @@ class ArrayList(UserList[Array]):
     def __matmul__(self, other: ArrayList) -> ArrayList:
         return ArrayList([self[i] @ other[i] for i in range(len(self))])
 
+    def to_list(self) -> list[Array]:
+        r"""
+        Convert the ArrayList to a standard Python list of arrays.
+        :return: List of arrays.
+        """
+        return list(self.data)
+
     def at(self, idx: int) -> Array:
         r"""
         Get the array at the given index.

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from jax import Array
+from jax import Array, jit
 import jax
 import jax.numpy as jnp
 from typing import Sequence, TYPE_CHECKING, Optional, Self
@@ -393,7 +393,7 @@ class LinearAero:
             v_zeta_n = ArrayList.einsum("ijk,ijk->ij",
                                         self.flowfield0.surf_vmap_call(zeta_cs, jnp.array(self.t0)) - zeta_cs_dot, ns)
 
-            return aic_w @ flatten_to_1d(gamma_ws) + flatten_to_1d(v_zeta_n)
+            return aic_w @ gamma_ws.flatten() + v_zeta_n.flatten()
 
         def _v_flow(x: Array,
                     gamma_b: Optional[ArrayList],
@@ -469,41 +469,48 @@ class LinearAero:
         # boundary condition velocity and its derivatives [n_c]
         v_bc0 = _make_v_bc(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
-        jac_func = jax.jacfwd
+        def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> Array:
 
-        def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> ArrayList:
-            # [n_surf][n_c, zeta_b_m, zeta_b_n, 3]
-            jacobian = jac_func(_make_v_bc, argnums=0)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+            def func(dzb_: ArrayList) -> Array:
+                return _make_v_bc(ArrayList(dzb_), self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+            primals, tangents = jax.jvp(
+                func,
+                [self.zeta0_b],
+                [d_zeta_b])
+            return ArrayList(tangents).flatten()
 
-            # [n_surf][n_c]
-            return ArrayList.einsum('ijkl,jkl->i', jacobian, d_zeta_b)
+        def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> Array:
+            def func(dzw_: ArrayList) -> Array:
+                return _make_v_bc(self.zeta0_b, dzw_, self.gamma0_w, self.zeta0_b_dot)
+            primals, tangents = jax.jvp(
+                func,
+                [self.zeta0_w],
+                [d_zeta_w])
+            return ArrayList(tangents).flatten()
 
-
-        def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> ArrayList:
-            # [n_surf][n_c, zeta_w_m, zeta_b_n, 3]
-            jacobian = jac_func(_make_v_bc, argnums=1)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
-
-            # [n_surf][n_c]
-            return ArrayList.einsum('ijkl,jkl->i', jacobian, d_zeta_w)
-
-        def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> ArrayList:
-            # [n_surf][n_c, m_star, n]
-            jacobian = jac_func(_make_v_bc, argnums=2)(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
-
-            # [n_surf][n_c]
-            return ArrayList.einsum('ijk,jk->i', jacobian, d_gamma_w)
+        def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> Array:
+            def func(dgw_: ArrayList) -> Array:
+                return _make_v_bc(self.zeta0_b, self.zeta0_w, dgw_, self.zeta0_b_dot)
+            primals, tangents = jax.jvp(
+                func,
+                [self.gamma0_w],
+                [d_gamma_w])
+            return ArrayList(tangents).flatten()
 
         # e matrix and its derivative
         # [n_c, n_c]
         e0 = _make_e_mat(self.zeta0_b)
 
-        def d_e_d_zeta_b(zeta_b: ArrayList) -> Array:
-            # [n_surf][n_c, n_c, zeta_b_m, zeta_b_n, 3]
-            jacobian = jac_func(_make_e_mat, argnums=0)(self.zeta0_b)
+        def d_e_d_zeta_b(d_zeta_b: ArrayList) -> Array:
+            def func(dzb_: ArrayList) -> Array:
+                return _make_e_mat(ArrayList(dzb_))
+            primals, tangents = jax.jvp(
+                func,
+                [self.zeta0_b],
+                [d_zeta_b])
+            return sum(tangents)
 
-            # [n_c, n_c]
-            return sum(ArrayList.einsum('ijklm,klm->ij', jacobian, zeta_b))
-
+        @jit
         def _a_func(x_n_vec: Array) -> Array:
             x_n = self._unpack_state_vector(x_n_vec)
 
@@ -517,10 +524,10 @@ class LinearAero:
             d_zeta_w_np1, d_gamma_w_np1 = _propagate_linear_wake(self.get_zero_input(), x_n)
 
             # influence of states on bound circulation
-            d_v_bc = d_v_bc_d_gamma_w(d_gamma_w_np1).flatten()
+            d_v_bc = d_v_bc_d_gamma_w(d_gamma_w_np1)
 
             if self.prescribed_wake:
-                d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1).flatten()
+                d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1)
 
             # resulting bound circulation perturbation
             d_gamma_b_np1 = self._unflatten_subvec(-e0 @ d_v_bc, self.state_slices.gamma_b)
@@ -530,11 +537,12 @@ class LinearAero:
             state_np1 = StateUnflattened(d_gamma_b_np1, d_gamma_w_np1, d_gamma_bm1_np1, d_gamma_b_dot_np1, d_zeta_w_np1, d_zeta_b_np1)
             return self._pack_state_vector(state_np1)
 
+        @jit
         def _b_func(u_np1_vec: Array) -> Array:
             u_np1 = self._unpack_input_vector(u_np1_vec)
 
             # influence of grid perturbations on wake influence
-            d_v_bc = d_v_bc_d_zeta_b(u_np1.zeta_b).flatten()
+            d_v_bc = d_v_bc_d_zeta_b(u_np1.zeta_b)
 
             # perturbations in flow and bound grid at zeta_b
             d_n = _get_dn(u_np1.zeta_b)
@@ -579,6 +587,7 @@ class LinearAero:
 
             return self._pack_state_vector(state_np1)
 
+        @jit
         def _c_func(x_n_vec: Array) -> Array:
             x_n = self._unpack_state_vector(x_n_vec)
             x_n_tot = self.get_total_state(x_n)
@@ -610,6 +619,7 @@ class LinearAero:
 
             return self._pack_output_vector(OutputUnflattened(d_f_steady_n, d_f_unsteady_n))
 
+        @jit
         def _d_func(u_n_vec: Array) -> Array:
             u_n = self._unpack_input_vector(u_n_vec)
             u_n_tot = self.get_total_input(u_n)
@@ -644,10 +654,10 @@ class LinearAero:
             return self._pack_output_vector(OutputUnflattened(d_f_steady_n, d_f_unsteady_n))
 
 
-        a = LinearOperator(jax.jit(_a_func), shape=(self.n_states, self.n_states))
-        b = LinearOperator(jax.jit(_b_func), shape=(self.n_states, self.n_inputs))
-        c = LinearOperator(jax.jit(_c_func), shape=(self.n_outputs, self.n_states))
-        d = LinearOperator(jax.jit(_d_func), shape=(self.n_outputs, self.n_inputs))
+        a = LinearOperator(_a_func, shape=(self.n_states, self.n_states))
+        b = LinearOperator(_b_func, shape=(self.n_states, self.n_inputs))
+        c = LinearOperator(_c_func, shape=(self.n_outputs, self.n_states))
+        d = LinearOperator(_d_func, shape=(self.n_outputs, self.n_inputs))
 
         return LinearSystem(a, b, c, d)
 
