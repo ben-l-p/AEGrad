@@ -13,10 +13,10 @@ from aegrad.aero.data_structures import (AeroSnapshot, InputSlices, StateSlices,
                                          _SliceEntry, InputUnflattened, StateUnflattened, OutputUnflattened)
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
-from aegrad.algebra.array_utils import flatten_to_1d, ArrayList, split_to_vertex
-from aegrad.aero.aic import compute_aic_sys_assembled, compute_aic_sys
+from aegrad.algebra.array_utils import ArrayList, split_to_vertex
+from aegrad.aero.aic import compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction
+from aegrad.aero.kernels import KernelFunction, biot_savart_cutoff
 from aegrad.utils import shallow_asdict, replace_self
 from aegrad.print_output import print_with_time, warn
 from aegrad.plotting.pvd import write_pvd
@@ -48,8 +48,8 @@ class LinearAero:
         self.gamma_dot_state: bool = gamma_dot_state
 
         # save names from case
-        self.surf_b_names: Sequence[str] = [f"linear_{name}" for name in case.surf_b_names]
-        self.surf_w_names: Sequence[str] = [f"linear_{name}" for name in case.surf_w_names]
+        self.surf_b_names: list[str] = [f"linear_{name}" for name in case.surf_b_names]
+        self.surf_w_names: list[str] = [f"linear_{name}" for name in case.surf_w_names]
 
         # time info
         self.dt: Array = case.dt
@@ -400,26 +400,17 @@ class LinearAero:
                     gamma_b: Optional[ArrayList],
                     gamma_w: Optional[ArrayList],
                     zeta_b: Optional[ArrayList],
-                    zeta_w: Optional[ArrayList],
-                    i_surf: Optional[int] = None) -> Array:
+                    zeta_w: Optional[ArrayList]) -> Array:
 
             # sample flowfield
             v_x = self.flowfield0.vmap_call(x, jnp.array(self.t0))
 
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
-                # remove singularity due to the front of the wake not coinciding with the bound trailing edge
-                if i_surf is None:
-                    remove_te_singularity = None
-                else:
-                    remove_te_singularity = jnp.zeros((1, 2 * self.n_surf), dtype=bool)
-                    remove_te_singularity = remove_te_singularity.at[0, self.n_surf + i_surf].set(True)
-
                 vertex_influence = compute_aic_sys_assembled([x],
                                                              [*zeta_b, *zeta_w],
                                                              [*self.kernels_b, *self.kernels_w],
-                                                             None,
-                                                             remove_te_singularity)
+                                                             None)
 
                 # add influence from panels
                 v_x += jnp.einsum('ijk,j->ik', vertex_influence,
@@ -600,13 +591,12 @@ class LinearAero:
             else:
                 d_f_unsteady_n = None
 
-            def _v_forcing(x: Array, i_surf: int) -> Array:
+            def _v_forcing(x: Array) -> Array:
                 return _v_flow(x,
                               x_n_tot.gamma_b,
                               x_n_tot.gamma_w,
                               self.zeta0_b,
-                              x_n_tot.zeta_w,
-                              i_surf)
+                              x_n_tot.zeta_w)
 
             d_f_steady_n = steady_forcing(
                     self.zeta0_b,
@@ -625,27 +615,24 @@ class LinearAero:
             u_n = self._unpack_input_vector(u_n_vec)
             u_n_tot = self.get_total_input(u_n)
 
-            def _v_forcing(x: Array, i_surf: int) -> Array:
+            def _v_forcing(x: Array) -> Array:
                 return _v_flow(x,
                               self.gamma0_b,
                               self.gamma0_w,
                               u_n_tot.zeta_b,
-                              self.zeta0_w,
-                               i_surf)
+                              self.zeta0_w)
 
             d_f_steady_n = (
-                # TODO: restore
-                # steady_forcing(
-                #     u_n_tot.zeta_b,
-                #     u_n_tot.zeta_b_dot,
-                #     self.gamma0_b,
-                #     self.gamma0_w,
-                #     _v_forcing,
-                #     u_n_tot.nu_b if self.bound_upwash else None,
-                #     self.flowfield0.rho,
-                # )
-                # - self.f_steady0
-                ArrayList.zeros_like(self.f_steady0)
+                steady_forcing(
+                    u_n_tot.zeta_b,
+                    u_n_tot.zeta_b_dot,
+                    self.gamma0_b,
+                    self.gamma0_w,
+                    _v_forcing,
+                    u_n_tot.nu_b if self.bound_upwash else None,
+                    self.flowfield0.rho,
+                )
+                - self.f_steady0
             )
 
             if self.unsteady_force:

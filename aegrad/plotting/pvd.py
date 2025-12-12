@@ -2,8 +2,9 @@ from __future__ import annotations
 from typing import Sequence
 from pathlib import Path
 import xml.etree.ElementTree as Et
+from os import PathLike
 
-def write_pvd(directory: Path,
+def write_pvd(directory: PathLike,
               name: str,
               filedirs: Sequence[Path],
               times: Sequence[float],
@@ -38,7 +39,6 @@ def write_pvd(directory: Path,
             "file": filedir.name,
         })
 
-    # Pretty print: et.indent available in Python 3.9+
     Et.indent(vtkfile, space="  ")
     tree = Et.ElementTree(vtkfile)
     tree.write(pvd_path, encoding="utf-8", xml_declaration=True)

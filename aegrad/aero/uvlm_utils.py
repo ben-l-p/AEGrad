@@ -165,7 +165,7 @@ def steady_forcing(zeta_b: ArrayList,
                      zeta_dot_b: ArrayList,
                      gamma_b: ArrayList,
                      gamma_w: ArrayList,
-                     v_func: Callable[[Array, int], Array],
+                     v_func: Callable[[Array], Array],
                      v_input: Optional[ArrayList],
                      rho: Array) -> ArrayList:
     f_steady = ArrayList([])
@@ -174,7 +174,7 @@ def steady_forcing(zeta_b: ArrayList,
                                            zeta_dot_b[i_surf],
                                            gamma_b[i_surf],
                                            gamma_w[i_surf],
-                                           lambda x_: v_func(x_, i_surf),
+                                           v_func,
                                            v_input[i_surf] if v_input is not None else None,
                                            rho))
     return f_steady

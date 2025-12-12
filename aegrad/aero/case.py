@@ -164,6 +164,19 @@ class AeroCase:
                   wake_upwash: bool = True,
                   unsteady_force: bool = True,
                   gamma_dot_state: bool = True) -> LinearAero:
+        r"""
+        Create linearised aerodynamic model at specified time step
+         0: steady horseshoe wake
+         1: prescribed wake (from nonlinear case)
+         2: free wake (from nonlinear case)
+        :param i_ts: Time step index to linearise about
+        :param wake_type: Type of wake model to use in linearisation (frozen, prescribed, or free)
+        :param bound_upwash: If true, linearise for flowfield pertubations at the bound vortex vertex
+        :param wake_upwash: If true, linearise for flowfield pertubations at the wake vortex vertex
+        :param unsteady_force: If true, include unsteady force terms in linearisation
+        :param gamma_dot_state: If true, include gamma dot as a state in the linear model
+        :return: LinearAero model linearised at specified time step
+        """
         return LinearAero(self,
                           self[i_ts],
                           wake_type=wake_type,
@@ -179,7 +192,11 @@ class AeroCase:
                              x0_aero: ArrayList | Sequence[Array] | Array,
                              hg0: Array) -> None:
         r"""
-        Set aerodynamic design variables
+        Set aerodynamic design variables for solution.
+        :param dt: Time step length
+        :param flowfield: FlowField object defining the background flow in space and time
+        :param delta_w: Vector to define segment lengths of a variable wake discretisation per surface. If None, this
+        will use a uniform discretisation, as in the canonical UVLM.
         :param x0_aero: Aerodynamic local grid coordinates, [n_surf][m+1, n+1, 3]
         :param hg0: Beam global grid coordinates, [n, 4, 4]
         """
@@ -231,11 +248,11 @@ class AeroCase:
     @replace_self
     def extend_n_tstep(self, n_tstep: int) -> Self:
         r"""
-        Extend the time domain self arrays byto the specified number of time steps
-        :param n_tstep: Number of time steps to extend to
+        Extend the time domain arrays in the case object by the specified number of time steps
+        :param n_tstep: Number of time steps to extend by
         """
-        warn("Extending number of timesteps may be slow")
-        for var in (self.zeta_b, self.zeta_b_dot, self.zeta_w, self.gamma_b, self.gamma_w, self.f_steady, self.f_unsteady, self.t):
+        for var in (self.zeta_b, self.zeta_b_dot, self.zeta_w, self.gamma_b, self.gamma_b_dot, self.gamma_w,
+                    self.f_steady, self.f_unsteady, self.t):
             for i_surf in range(self.n_surf):
                 curr_val = var[i_surf]
                 var[i_surf] = jnp.concatenate((curr_val, jnp.zeros((n_tstep, *curr_val.shape[1:]))))
@@ -547,7 +564,7 @@ class AeroCase:
                            self.get_zeta_dot_b(i_ts),
                            self.get_gamma_b(i_ts),
                            self.get_gamma_w(i_ts),
-                           lambda x_, _: self.get_v_tot(i_ts, x_),
+                           lambda x_: self.get_v_tot(i_ts, x_),
                             None,
                            self.flowfield.rho)
         for i_surf in range(self.n_surf):
@@ -749,7 +766,7 @@ class AeroCase:
         "Plotting aerodynamic grid...",
         "Aerodynamic grid plotted in {:.2f} seconds.",
     )
-    def plot(self, directory: Path, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
+    def plot(self, directory: PathLike, index: Optional[slice | Sequence[int] | int | Array] = None, plot_wake: bool = True) -> None:
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep_tot)[index]
         elif isinstance(index, Sequence):
@@ -763,6 +780,7 @@ class AeroCase:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
+        directory = Path(directory)
         paths: list[Sequence[Path]] = []
         for i_ts in index_:
             snapshot = self[i_ts]
