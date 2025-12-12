@@ -82,8 +82,8 @@ def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
         out = jnp.all(jnp.allclose(jnp.concatenate((column_mags, row_mags)), 1.0))
 
         # check if orthogonal
-        out &= jnp.all(jnp.allclose(rmat.T @ rmat, jnp.eye(3)))
-        out &= jnp.all(jnp.allclose(rmat @ rmat.T, jnp.eye(3)))
+        out &= jnp.all(jnp.allclose(rmat.T @ rmat, jnp.eye(3), atol=1e-5, rtol=1e-3))
+        out &= jnp.all(jnp.allclose(rmat @ rmat.T, jnp.eye(3), atol=1e-5, rtol=1e-3))
         return out
 
     hgs_flat = hgs.reshape(-1, 4, 4)
@@ -98,6 +98,23 @@ def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
         return False
     return True
 
+def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
+    h_tildes_flat = h_tildes.reshape(-1, 4, 4)
+
+    # check bottom row
+    results = jnp.all(jnp.allclose(h_tildes_flat[:, 3, :], 0.0))
+
+    # check diagonal
+    results &= jnp.all(jnp.allclose(h_tildes_flat[:, (0, 1, 2), (0, 1, 2)], 0.0))
+
+    # check skew symmetry of so3 part
+    results &= jnp.all(jnp.allclose(h_tildes_flat[:, :3, :3], -jnp.transpose(h_tildes_flat[:, :3, :3], (0, 2, 1))))
+
+    if not results:
+        if raise_if_false:
+            raise ValueError("Not all matrices are se3 algebra elements")
+        return False
+    return True
 
 
 

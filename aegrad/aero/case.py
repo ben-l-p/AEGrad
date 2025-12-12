@@ -11,7 +11,7 @@ from os import PathLike
 from pathlib import Path
 
 from aegrad.utils import replace_self, make_pytree
-from aegrad.algebra.test_routines import check_if_all_se3_g
+from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
 from aegrad.aero.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
@@ -734,6 +734,7 @@ class AeroCase:
                 raise ValueError(
                     f"hg_dot must have the same shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
                 )
+        check_if_all_se3_a(hg_dot_t, True)
 
         n_tstep = hg_t.shape[0]
 

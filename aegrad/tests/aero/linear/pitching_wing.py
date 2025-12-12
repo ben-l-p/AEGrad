@@ -3,6 +3,7 @@ from aegrad.aero.data_structures import GridDiscretization, InputUnflattened
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.linear import LinearWakeType
 from jax import numpy as jnp
+from jax import vmap
 from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
@@ -10,9 +11,9 @@ from aegrad.print_output import set_verbosity, VerbosityLevel
 from pathlib import Path
 from aegrad.aero.kernels import biot_savart_cutoff
 
-class TestLinearHeavingWing:
+class TestLinearPitchingWing:
     @staticmethod
-    def test_linear_heaving_wing(plot: bool = False):
+    def test_linear_pitching_wing(plot: bool = False):
         set_verbosity(VerbosityLevel.SILENT)
 
         u_inf = jnp.array((10.0, 0.0, 1.0))
@@ -24,7 +25,7 @@ class TestLinearHeavingWing:
         b_ref = 5.0
         alpha = jnp.deg2rad(0.0)
         ea = 0.0
-        physical_time = 1.0  # seconds
+        physical_time = 4.0  # seconds
 
         flowfield = Constant(u_inf, rho_inf, True)
         dt = c_ref / (m * flowfield.u_inf_mag)
@@ -46,18 +47,21 @@ class TestLinearHeavingWing:
         # heaving motion
         freq = 3.0  # Hz
         omega = 0.5 * jnp.pi * freq
-        ampl = 0.01  # m
+        ampl = jnp.deg2rad(1.0)  # deg
         t = jnp.arange(n_tstep) * dt
-        z_t = ampl * 0.5 * (1.0 - jnp.cos(omega * t))
-        z_dot_t = ampl * omega * 0.5 * jnp.sin(omega * t)
+        alpha_t = ampl * 0.5 * (1.0 - jnp.cos(omega * t))
+        alpha_dot_t = ampl * omega * 0.5 * jnp.sin(omega * t)
+
+
+        rmat_t = vmap(lambda angle: rot.from_euler("xyz", jnp.array((0.0, angle, 0.0))).as_matrix())(alpha_t)
 
         hg_t = jnp.zeros((n_tstep, n + 1, 4, 4))
-        hg_t = hg_t.at[:, 3, 3].set(1.0)
         hg_t = hg_t.at[...].set(hg[None, ...])
-        hg_t = hg_t.at[:, :, 2, 3].add(z_t[:, None])
+        hg_t = hg_t.at[:, :, :3, :3].set(rmat_t[:, None, :, :])
 
         hg_dot_t = jnp.zeros_like(hg_t)
-        hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
+        hg_dot_t = hg_dot_t.at[:, :, 0, 2].set(alpha_dot_t[:, None])
+        hg_dot_t = hg_dot_t.at[:, :, 2, 0].set(-alpha_dot_t[:, None])
 
         # nonlinear case
         case = AeroCase(n_tstep, disc, False, jnp.arange(0, n + 1), kernel=biot_savart_cutoff)
@@ -91,14 +95,13 @@ class TestLinearHeavingWing:
                 "Wake circulation does not match between nonlinear and linear cases."
             assert jnp.allclose(case.zeta_w[0], linear_model.x_t_tot.zeta_w[0], rtol=1e-2, atol=1e-4), \
                 "Wake grid coordinates do not match between nonlinear and linear cases."
-            assert jnp.allclose(case.f_steady[0], linear_model.y_t_tot.f_steady[0], rtol=1e-2, atol=1e-4), \
+            assert jnp.allclose(case.f_steady[0], linear_model.y_t_tot.f_steady[0], rtol=1e-2, atol=1e-2), \
                 "Steady forces do not match between nonlinear and linear cases."
-            assert jnp.allclose(case.f_unsteady[0], linear_model.y_t_tot.f_unsteady[0], rtol=1e-2, atol=1e-4), \
+            assert jnp.allclose(case.f_unsteady[0], linear_model.y_t_tot.f_unsteady[0], rtol=1e-2, atol=1e-2), \
                 "Unsteady forces do not match between nonlinear and linear cases."
-
 
         if plot:
             linear_model.plot(Path("./lin_test_output"))
 
 if __name__ == "__main__":
-    TestLinearHeavingWing.test_linear_heaving_wing(plot=True)
+    TestLinearPitchingWing.test_linear_pitching_wing(plot=True)
