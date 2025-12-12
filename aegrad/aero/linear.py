@@ -87,8 +87,8 @@ class LinearAero:
         self.output_slices, self.n_outputs = self._make_output_slices()
 
         # kernels
-        self.kernels_b: Sequence[KernelFunction] = case.kernels_b
-        self.kernels_w: Sequence[KernelFunction] = case.kernels_w
+        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [biot_savart_cutoff]
+        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [biot_savart_cutoff]
 
         # wake propagation deltas
         self.delta_w: Sequence[Optional[Array]] = case.delta_w
@@ -582,7 +582,6 @@ class LinearAero:
         @jit
         def _c_func(x_n_vec: Array) -> Array:
             x_n = self._unpack_state_vector(x_n_vec)
-            x_n_tot = self.get_total_state(x_n)
 
             if self.unsteady_force:
                 d_gamma_dot_n = x_n.gamma_b_dot if self.gamma_dot_state else (x_n.gamma_b - x_n.gamma_bm1) / self.dt
@@ -591,49 +590,60 @@ class LinearAero:
             else:
                 d_f_unsteady_n = None
 
-            def _v_forcing(x: Array) -> Array:
-                return _v_flow(x,
-                              x_n_tot.gamma_b,
-                              x_n_tot.gamma_w,
-                              self.zeta0_b,
-                              x_n_tot.zeta_w)
+            def steady_forcing_c(gamma_b, gamma_w, zeta_w):
+                def _v_forcing(x: Array) -> Array:
+                    return _v_flow(x,
+                                   gamma_b,
+                                   gamma_w,
+                                   self.zeta0_b,
+                                   zeta_w)
 
-            d_f_steady_n = steady_forcing(
+                return steady_forcing(
                     self.zeta0_b,
                     self.zeta0_b_dot,
-                    x_n_tot.gamma_b,
-                    x_n_tot.gamma_w,
+                    gamma_b,
+                    gamma_w,
                     _v_forcing,
-                None,
+                    None,
                     self.flowfield0.rho,
-                ) - self.f_steady0
+                )
+
+            d_f_steady_n = jax.jvp(steady_forcing_c,
+                                        [self.gamma0_b, self.gamma0_w, self.zeta0_w],
+                                        [x_n.gamma_b, x_n.gamma_w, x_n.zeta_w])[1]
 
             return self._pack_output_vector(OutputUnflattened(d_f_steady_n, d_f_unsteady_n))
 
         @jit
         def _d_func(u_n_vec: Array) -> Array:
             u_n = self._unpack_input_vector(u_n_vec)
-            u_n_tot = self.get_total_input(u_n)
 
-            def _v_forcing(x: Array) -> Array:
-                return _v_flow(x,
-                              self.gamma0_b,
-                              self.gamma0_w,
-                              u_n_tot.zeta_b,
-                              self.zeta0_w)
+            def steady_forcing_d(zeta_b: ArrayList, zeta_b_dot: ArrayList, nu_b: Optional[ArrayList]) -> ArrayList:
+                def _v_forcing(x: Array) -> Array:
+                    return _v_flow(x,
+                                   self.gamma0_b,
+                                   self.gamma0_w,
+                                   zeta_b,
+                                   self.zeta0_w)
 
-            d_f_steady_n = (
-                steady_forcing(
-                    u_n_tot.zeta_b,
-                    u_n_tot.zeta_b_dot,
+                return steady_forcing(
+                    zeta_b,
+                    zeta_b_dot,
                     self.gamma0_b,
                     self.gamma0_w,
                     _v_forcing,
-                    u_n_tot.nu_b if self.bound_upwash else None,
+                    nu_b,
                     self.flowfield0.rho,
                 )
-                - self.f_steady0
-            )
+
+
+            if self.bound_upwash:
+                d_f_steady_n = jax.jvp(steady_forcing_d, [self.zeta0_b, self.zeta0_b_dot, ArrayList.zeros_like(self.zeta0_b)],
+                                       [u_n.zeta_b, u_n.zeta_b_dot, u_n.nu_b])[1]
+            else:
+                d_f_steady_n = jax.jvp(lambda zb, zbd: steady_forcing_d(zb, zbd, None), [self.zeta0_b, self.zeta0_b_dot],
+                                       [u_n.zeta_b, u_n.zeta_b_dot])[1]
+
 
             if self.unsteady_force:
                 # no contribution from input_ to unsteady forces, assuming that gamma0_b_dot is zero
@@ -771,6 +781,9 @@ class LinearAero:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
+        directory = Path(directory).resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+
         paths: list[Sequence[Path]] = []
         for i_ts in index_:
             snapshot = self[i_ts]
@@ -792,4 +805,4 @@ class LinearAero:
         :param directory: File path to save the plots to
         :param plot_wake: If True, plot the wake grid
         """
-        return self.reference_snapshot().plot(directory, plot_wake=plot_wake)
+        return self.reference_snapshot().plot(Path(directory).resolve(), plot_wake=plot_wake)

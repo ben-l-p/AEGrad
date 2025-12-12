@@ -1,4 +1,5 @@
 from aegrad.aero.kernels import biot_savart, biot_savart_epsilon, biot_savart_cutoff
+from aegrad.aero.constants import R_CUTOFF
 
 from jax import numpy as jnp
 
@@ -59,14 +60,19 @@ class TestLinearOperator:
         y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         assert jnp.allclose(bs := biot_savart_cutoff(x, y), 0.0), f"Expected zero, but got {bs}"
 
-        # collinear influnence should be zero
+        # collinear influence should be zero
         x = jnp.array([0.0, 1.0, 0.0])
         y = jnp.array([[0.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
         assert jnp.allclose(bs := biot_savart_cutoff(x, y), 0.0), f"Expected zero, but got {bs}"
 
-        # defined influnence when not on the filament line should match baseline
-        x = jnp.array([0.1, 0.0, 0.0])
+        # defined influence when not on the filament line should match baseline
+        x = jnp.array([1.01 * R_CUTOFF, 0.0, 0.0])
         y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         bs = biot_savart(x, y)
         bsc = biot_savart_cutoff(x, y)
         assert jnp.allclose(bs, bsc), f"Returned {bsc}, but expected {bs} from baseline kernel"
+
+        # influence within cutoff radius should be zero
+        x = jnp.array([0.99 * R_CUTOFF, 0.0, 0.0])
+        y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
+        assert jnp.allclose(bsc := biot_savart_cutoff(x, y), 0.0), f"Returned {bsc}, but expected zero"

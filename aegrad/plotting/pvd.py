@@ -32,11 +32,12 @@ def write_pvd(directory: PathLike,
     pvd_path = dirpath.joinpath(name)
 
     for filedir, t in zip(filedirs, times):
+        rel_filedir = filedir.relative_to(dirpath)
         Et.SubElement(collection, "DataSet", {
             "timestep": f"{float(t):.04f}",
             "group": "",
             "part": "0",
-            "file": filedir.name,
+            "file": str(rel_filedir.as_posix()),
         })
 
     Et.indent(vtkfile, space="  ")

@@ -51,6 +51,7 @@ def plot_frame_to_vtk(
     :param cell_scalar_data: Dictionary of cell scalar data
     :param cell_vector_data: Dictionary of cell vector data
     """
+    filename = Path(filename)
 
     # planar grid should have 3 dimensions, while volume grid should have 4 dimensions
     match grid_arr.ndim:
@@ -112,11 +113,13 @@ def plot_frame_to_vtk(
             sg.GetPointData().AddArray(dsa.numpyTovtkDataArray(vectors, name))
 
     # write to file
-    filename_full = (
-        f"{filename}_ts_{i_ts}.vts" if i_ts is not None else f"{filename}.vts"
-    )
+    name = filename.name
+    if i_ts is not None:
+        name += f"_ts_{i_ts}"
+    filename_full = Path(filename.parent).joinpath(name).with_suffix(".vts")
+
     writer = vtk.vtkXMLStructuredGridWriter()
-    writer.SetFileName(filename_full)
+    writer.SetFileName(str(filename_full))
     writer.SetInputData(sg)
     writer.Write()
 

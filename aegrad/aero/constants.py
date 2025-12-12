@@ -5,4 +5,4 @@ HORSESHOE_LENGTH = 1e3
 EPSILON = 1e-7
 
 # cutoff radius for Biot-Savart kernel
-R_CUTOFF = 1e-3
+R_CUTOFF = 1e-4

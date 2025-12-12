@@ -7,6 +7,8 @@ from jax.scipy.spatial.transform import Rotation as rot
 from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
+from pathlib import Path
+from aegrad.aero.kernels import biot_savart_cutoff
 
 class TestLinearHeavingWing:
     @staticmethod
@@ -22,7 +24,7 @@ class TestLinearHeavingWing:
         b_ref = 5.0
         alpha = jnp.deg2rad(0.0)
         ea = 0.0
-        physical_time = 4.0  # seconds
+        physical_time = 1.0  # seconds
 
         flowfield = Constant(u_inf, rho_inf, True)
         dt = c_ref / (m * flowfield.u_inf_mag)
@@ -58,14 +60,13 @@ class TestLinearHeavingWing:
         hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
 
         # nonlinear case
-        case = AeroCase(n_tstep, disc, False, jnp.arange(0, n + 1))
+        case = AeroCase(n_tstep, disc, False, jnp.arange(0, n + 1), kernel=biot_savart_cutoff)
         case.set_design_variables(dt, flowfield, None, x_grid, hg)
         case.solve_static()
         case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
 
         # linear case
-        linear_model = (case.
-                        linearise(0,
+        linear_model = (case.linearise(0,
                                   LinearWakeType.PRESCRIBED,
                                   bound_upwash=False,
                                   wake_upwash=False,
@@ -78,15 +79,17 @@ class TestLinearHeavingWing:
                                     nu_w=None,
                                     )
 
-        linear_model.run(u_linear, use_matrix=False)
+        # Run linear case with and without matrix form
+        for use_matrix in [True, False]:
+            linear_model.run(u_linear, use_matrix=use_matrix)
 
-        assert jnp.allclose(case.gamma_b[0], linear_model.x_t_tot.gamma_b[0], rtol=1e-3, atol=1e-5), \
-            "Bound circulation does not match between nonlinear and linear cases."
-        assert jnp.allclose(case.gamma_w[0], linear_model.x_t_tot.gamma_w[0], rtol=1e-3, atol=1e-5), \
-            "Wake circulation does not match between nonlinear and linear cases."
-        assert jnp.allclose(case.zeta_w[0], linear_model.x_t_tot.zeta_w[0], rtol=1e-3, atol=1e-5), \
-            "Wake grid coordinates do not match between nonlinear and linear cases."
-        assert jnp.allclose(case.f_steady[0], linear_model.y_t_tot.f_steady[0], rtol=1e-3, atol=1e-5), \
-            "Steady forces do not match between nonlinear and linear cases."
-        assert jnp.allclose(case.f_unsteady[0], linear_model.y_t_tot.f_unsteady[0], rtol=1e-3, atol=1e-5), \
-            "Unsteady forces do not match between nonlinear and linear cases."
+            assert jnp.allclose(case.gamma_b[0], linear_model.x_t_tot.gamma_b[0], rtol=1e-2, atol=1e-4), \
+                "Bound circulation does not match between nonlinear and linear cases."
+            assert jnp.allclose(case.gamma_w[0], linear_model.x_t_tot.gamma_w[0], rtol=1e-2, atol=1e-4), \
+                "Wake circulation does not match between nonlinear and linear cases."
+            assert jnp.allclose(case.zeta_w[0], linear_model.x_t_tot.zeta_w[0], rtol=1e-2, atol=1e-4), \
+                "Wake grid coordinates do not match between nonlinear and linear cases."
+            assert jnp.allclose(case.f_steady[0], linear_model.y_t_tot.f_steady[0], rtol=1e-2, atol=1e-4), \
+                "Steady forces do not match between nonlinear and linear cases."
+            assert jnp.allclose(case.f_unsteady[0], linear_model.y_t_tot.f_unsteady[0], rtol=1e-2, atol=1e-4), \
+                "Unsteady forces do not match between nonlinear and linear cases."

@@ -86,7 +86,7 @@ u_linear = InputUnflattened(zeta_b=delta_zeta_b,
                             nu_w=None,
 )
 
-linear_model.run(u_linear, use_matrix=True)
+linear_model.run(u_linear, use_matrix=False)
 linear_model.plot(path_lin)
 
 # jax.profiler.stop_trace()

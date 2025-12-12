@@ -48,15 +48,15 @@ def biot_savart_cutoff(x: Array, y: Array) -> Array:
     r0 = y[1, :] - y[0, :]
     r1 = x - y[0, :]
     r2 = x - y[1, :]
-    r1_x_r2 = jnp.cross(r1, r2)
-    r_norm = jnp.linalg.norm(r1_x_r2)
+
+    sm = jnp.inner(r0, r1) / jnp.inner(r0, y[1, :] - y[0, :])
+    m = y[0, :] + sm * (y[1, :] - y[0, :])
+    r = jnp.linalg.norm(x - m)  # radial distance
 
     def _kernel_value() -> Array:
+        r1_x_r2 = jnp.cross(r1, r2)
+        r1_x_r2_unit2 = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2))
         diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
+        return r1_x_r2_unit2 / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
-        return (
-            r1_x_r2
-            / (r_norm ** 2 * 4.0 * jnp.pi)
-            * jnp.dot(r0, diff_r)
-        )
-    return cond((r_norm > R_CUTOFF), _kernel_value, lambda: jnp.zeros(3))
+    return cond((r > R_CUTOFF), _kernel_value, lambda: jnp.zeros(3))

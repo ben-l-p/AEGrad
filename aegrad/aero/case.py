@@ -17,7 +17,7 @@ from aegrad.aero.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import check_arr_dtype, neighbour_average, check_arr_shape, split_to_vertex, ArrayList
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon, biot_savart
+from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon, biot_savart, biot_savart_cutoff
 from aegrad.aero.aic import compute_aic_sys_assembled, assemble_aic_sys, add_wake_influence, compute_aic_sys
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
@@ -780,7 +780,9 @@ class AeroCase:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
-        directory = Path(directory)
+        directory = Path(directory).resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+
         paths: list[Sequence[Path]] = []
         for i_ts in index_:
             snapshot = self[i_ts]
@@ -821,7 +823,7 @@ class AeroCase:
         :param directory: File path to save the plots to
         :param plot_wake: If True, plot the wake grid
         """
-        return self.reference_snapshot().plot(directory, plot_wake=plot_wake)
+        return self.reference_snapshot().plot(Path(directory).resolve(), plot_wake=plot_wake)
 
     @staticmethod
     def _static_names() -> Sequence[str]:

@@ -182,7 +182,7 @@ class AeroSurfaceSnapshot:
                               cell_scalar_data={'gamma': self.gamma_b, 'gamma_dot': self.gamma_b_dot},
                               ))
         if plot_wake:
-            if self.gamma_w.shape[0] == 0:
+            if not self.gamma_w.shape[0]:
                 warn("No wake panels to plot, skipping.")
             else:
                 wake_filename = Path(directory).joinpath(self.surf_w_name)
