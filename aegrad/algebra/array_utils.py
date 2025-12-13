@@ -7,7 +7,9 @@ from aegrad.utils import make_pytree
 from functools import singledispatch
 
 
-def check_arr_shape(arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]) -> None:
+def check_arr_shape(
+    arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
+) -> None:
     """Asserts that the shapes of the given array matches the expected shapes.
 
     Args:
@@ -134,6 +136,7 @@ def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
     else:
         raise TypeError("Axis must be an int or a sequence of ints.")
 
+
 @make_pytree
 class ArrayList(UserList[Array]):
     r"""
@@ -172,7 +175,6 @@ class ArrayList(UserList[Array]):
     def __rtruediv__(self, val: Array | float) -> ArrayList:
         return ArrayList([val / self[i] for i in range(len(self))])
 
-
     def __rmul__(self, val: Array | float) -> ArrayList:
         return self.__mul__(val)
 
@@ -207,7 +209,9 @@ class ArrayList(UserList[Array]):
         """
         return flatten_to_1d(self)
 
-    def index_all(self, idx: tuple[Union[int, slice, Ellipsis], ...] | slice | int) -> ArrayList:
+    def index_all(
+        self, idx: tuple[Union[int, slice, Ellipsis], ...] | slice | int
+    ) -> ArrayList:
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(n).
         """
@@ -227,7 +231,12 @@ class ArrayList(UserList[Array]):
             if len(op) != n_arrays:
                 raise ValueError("All ArrayLists must have the same length.")
 
-        return ArrayList([jnp.einsum(subscript, *(op[i] for op in operands)) for i in range(n_arrays)])
+        return ArrayList(
+            [
+                jnp.einsum(subscript, *(op[i] for op in operands))
+                for i in range(n_arrays)
+            ]
+        )
 
     @staticmethod
     def zeros_like(arr: ArrayList) -> ArrayList:
@@ -238,14 +247,13 @@ class ArrayList(UserList[Array]):
         """
         return ArrayList([jnp.zeros_like(a) for a in arr])
 
-
     @staticmethod
     def _static_names() -> Sequence[str]:
         return ()
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return ("data", )
+        return ("data",)
 
 
 @singledispatch
@@ -284,6 +292,7 @@ def split_to_vertex(arr: Array, axes: int | Sequence[int]) -> Array:
     for ax in axes if isinstance(axes, Sequence) else [axes]:
         arr = _single_split_to_vertex(arr, ax)
     return arr
+
 
 @split_to_vertex.register
 def _(arrs: ArrayList, axes: int | Sequence[int]) -> ArrayList:

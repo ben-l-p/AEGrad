@@ -9,16 +9,16 @@ class TestLinearOperator:
         Test using a linear operator
         """
         vec = jnp.linspace(2.0, 6.0, 5)
-        l = LinearOperator(lambda x: x, shape=(5, 5))
-        assert jnp.allclose(out := l @ vec, vec), f"Expected {vec}, but got {out}"
+        linop = LinearOperator(lambda x: x, shape=(5, 5))
+        assert jnp.allclose(out := linop @ vec, vec), f"Expected {vec}, but got {out}"
 
     @staticmethod
     def test_obtain_mat_jac():
         r"""
         Test obtaining the linear matrix from autograd
         """
-        l = LinearOperator(lambda x: x, shape=(5, 5))
-        mat = l.matrix()
+        linop = LinearOperator(lambda x: x, shape=(5, 5))
+        mat = linop.matrix
         assert jnp.allclose(mat, jnp.eye(5)), f"Expected identity matrix, but got {mat}"
 
     @staticmethod
@@ -26,22 +26,22 @@ class TestLinearOperator:
         r"""
         Test obtaining the linear matrix from input_
         """
-        l = LinearOperator(lambda x: x, shape=(5, 5), mat=jnp.eye(5))
-        mat = l.matrix()
+        linop = LinearOperator(lambda x: x, shape=(5, 5), mat=jnp.eye(5))
+        mat = linop.matrix
         assert jnp.allclose(mat, jnp.eye(5)), f"Expected identity matrix, but got {mat}"
+
 
 class TestBlockLinear:
     @staticmethod
     def test_incorrect_block_shapes():
         try:
-            BlockLinear([
-                [jnp.eye(2), jnp.eye(3)],
-                [jnp.eye(2), jnp.eye(2)]
-            ])
+            BlockLinear([[jnp.eye(2), jnp.eye(3)], [jnp.eye(2), jnp.eye(2)]])
         except ValueError:
             pass
         else:
-            raise AssertionError("Expected ValueError due to incorrect block shapes, but none was raised.")
+            raise AssertionError(
+                "Expected ValueError due to incorrect block shapes, but none was raised."
+            )
 
     @staticmethod
     def test_internal_shapes():
@@ -52,14 +52,22 @@ class TestBlockLinear:
 
         blk = BlockLinear(input_)
 
-        assert (blk.n_block_row == 2), f"Expected 2 block rows, but got {blk.n_block_row}"
-        assert (blk.n_block_col == 2), f"Expected 2 block columns, but got {blk.n_block_col}"
+        assert blk.n_block_row == 2, f"Expected 2 block rows, but got {blk.n_block_row}"
+        assert blk.n_block_col == 2, (
+            f"Expected 2 block columns, but got {blk.n_block_col}"
+        )
 
-        assert jnp.allclose(blk.block_heights, jnp.array([2, 5])), f"Expected block heights [2, 5], but got {blk.block_heights}"
-        assert jnp.allclose(blk.block_widths, jnp.array([1, 4])), f"Expected block widths [1, 4], but got {blk.block_widths}"
+        assert jnp.allclose(blk.block_heights, jnp.array([2, 5])), (
+            f"Expected block heights [2, 5], but got {blk.block_heights}"
+        )
+        assert jnp.allclose(blk.block_widths, jnp.array([1, 4])), (
+            f"Expected block widths [1, 4], but got {blk.block_widths}"
+        )
 
         exp = (jnp.arange(2), jnp.arange(2, 7))
-        assert all([jnp.allclose(i, j) for i, j in zip(blk.height_index, exp)]), f"Unexpected height index, expected {exp}, returned {blk.height_index}"
+        assert all([jnp.allclose(i, j) for i, j in zip(blk.height_index, exp)]), (
+            f"Unexpected height index, expected {exp}, returned {blk.height_index}"
+        )
 
         exp = (jnp.arange(1), jnp.arange(1, 5))
         assert all([jnp.allclose(i, j) for i, j in zip(blk.width_index, exp)]), (
@@ -70,8 +78,7 @@ class TestBlockLinear:
 
     @staticmethod
     def test_matmul():
-        input_ = [[jnp.eye(3), jnp.zeros((3, 5))],
-                  [jnp.zeros((5, 3)), jnp.eye(5)]]
+        input_ = [[jnp.eye(3), jnp.zeros((3, 5))], [jnp.zeros((5, 3)), jnp.eye(5)]]
 
         blk = BlockLinear(input_)
         vec = jnp.linspace(2.0, 6.0, 8)
@@ -92,7 +99,9 @@ class TestBlockLinear:
         blk = BlockLinear(input_)
         vec = jnp.linspace(2.0, 6.0, 8)
         assert jnp.allclose(out := blk @ vec, vec), f"Expected {vec}, but got {out}"
-        assert jnp.allclose(blk.get_matrix(), jnp.eye(8)), f"Expected identity matrix, but got {blk.get_matrix()}"
+        assert jnp.allclose(blk.get_matrix(), jnp.eye(8)), (
+            f"Expected identity matrix, but got {blk.get_matrix()}"
+        )
 
     @staticmethod
     def test_mixed():
@@ -116,23 +125,14 @@ class TestBlockLinear:
 
     @staticmethod
     def test_rectangular():
-
         full_arr = jnp.arange(24, dtype=float).reshape((4, 6))
         arr1 = full_arr[:1, :4]  # [1, 4]
         arr2 = full_arr[:1, 4:]  # [1, 2]
-        arr3 = full_arr[1:, :4] # [3, 4]
-        arr4 = full_arr[1:, 4:] # [3, 2]
+        arr3 = full_arr[1:, :4]  # [3, 4]
+        arr4 = full_arr[1:, 4:]  # [3, 2]
 
-        blk = BlockLinear([[arr1, arr2],
-                           [arr3, arr4]])
+        blk = BlockLinear([[arr1, arr2], [arr3, arr4]])
         vec = jnp.linspace(8.0, 9.0, 6)
 
         exp = full_arr @ vec
         assert jnp.allclose(out := blk @ vec, exp), f"Expected {exp}, but got {out}"
-
-
-
-
-
-
-

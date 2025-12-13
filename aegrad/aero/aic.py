@@ -30,10 +30,11 @@ def compute_aic_grid(
     n_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
 
     # AIC matrices have one entry per filament
-    m_aic = aic_vmap(c, m_vect, kernel)     # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
-    n_aic = aic_vmap(c, n_vect, kernel)     # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
+    m_aic = aic_vmap(c, m_vect, kernel)  # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
+    n_aic = aic_vmap(c, n_vect, kernel)  # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
 
     return -jnp.diff(m_aic, axis=3) + jnp.diff(n_aic, axis=2)
+
 
 def compute_aic_sys(
     cs: Sequence[Array],
@@ -74,13 +75,16 @@ def compute_aic_sys(
                 kernel,
             )
             if ns is not None:
-                aic_ = jnp.einsum('ijklm,ijm->ijkl', aic_, ns[i_c]) # project onto normals
+                aic_ = jnp.einsum(
+                    "ijklm,ijm->ijkl", aic_, ns[i_c]
+                )  # project onto normals
             aic_mats[-1].append(aic_)
     return aic_mats
 
+
 def add_wake_influence(
-        aic_bs: list[list[Array]],
-        aic_ws: list[list[Array]]) -> list[list[Array]]:
+    aic_bs: list[list[Array]], aic_ws: list[list[Array]]
+) -> list[list[Array]]:
     r"""
     Lump the wake influence onto the last column of the bound AIC matrices.
     :param aic_bs: Bound influence matrices.
@@ -89,24 +93,25 @@ def add_wake_influence(
     """
     for i in range(len(aic_bs)):
         for j in range(len(aic_bs[i])):
-            aic_bs[i][j] = aic_bs[i][j].at[:, :, -1, :].add(jnp.sum(aic_ws[i][j], axis=2))
+            aic_bs[i][j] = (
+                aic_bs[i][j].at[:, :, -1, :].add(jnp.sum(aic_ws[i][j], axis=2))
+            )
     return aic_bs
 
-def reshape_aic_sys(
-        aic_mat: Array) -> Array:
+
+def reshape_aic_sys(aic_mat: Array) -> Array:
     r"""
     Reshape an AIC matrix of shapes (c_m, c_n, zeta_m, zeta_n, 3) into a 2D matrix of shapes (c_m*c_n, zeta_m*zeta_n, 3).
     Also works for projecting onto normals if the last dimension is absent.
     """
     shape = aic_mat.shape
-    new_shape = [shape[0]*shape[1], shape[2]*shape[3]]
+    new_shape = [shape[0] * shape[1], shape[2] * shape[3]]
     if len(shape) == 5:
         new_shape.append(shape[4])
     return aic_mat.reshape(new_shape)
 
-def assemble_aic_sys(
-        aic_mats: Sequence[Sequence[Array]]
-) -> Array:
+
+def assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
     r"""
     Assemble a nested sequence of AIC matrices into a single AIC matrix.
     :param aic_mats: Nested sequence of AIC matrices.
@@ -116,6 +121,7 @@ def assemble_aic_sys(
         [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
     ]
     return block_axis(aic_mats_reshaped, axes=(0, 1))
+
 
 def compute_aic_sys_assembled(
     cs: Sequence[Array],
@@ -151,9 +157,6 @@ def aic_vmap(
     (c_m, c_n, zeta_m, zeta_n, 3).
     """
 
-    return vmap(vmap(vmap(vmap(
-        kernel,
-        (0, None), 0),
-        (1, None), 1),
-        (None, 0), 2),
-        (None, 1), 3)(c, zeta)
+    return vmap(
+        vmap(vmap(vmap(kernel, (0, None), 0), (1, None), 1), (None, 0), 2), (None, 1), 3
+    )(c, zeta)

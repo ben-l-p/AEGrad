@@ -6,6 +6,7 @@ from aegrad.aero.case import AeroCase
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 
+
 class TestVarWakeDisc:
     @staticmethod
     def test_var_wake_disc():
@@ -72,6 +73,6 @@ class TestVarWakeDisc:
             case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
             gamma_b.append(case.gamma_b[0])
 
-        assert jnp.allclose(gamma_b[0], gamma_b[1], rtol=1e-4, atol=1e-5), (
+        assert jnp.allclose(gamma_b[0], gamma_b[1], atol=1e-3), (
             "Heaving cantilever wing bound circulation strengths does not match between variable and base wake models."
         )

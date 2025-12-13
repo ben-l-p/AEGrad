@@ -5,7 +5,10 @@ from jax.scipy.special import bernoulli
 from aegrad.algebra.constants import BASE_SUMMATION_ORDER
 from typing import Sequence
 
-def check_if_so3_g(rmat: Array, raise_if_false: bool=True, jitable: bool=False) -> bool:
+
+def check_if_so3_g(
+    rmat: Array, raise_if_false: bool = True, jitable: bool = False
+) -> bool:
     column_mags = jnp.linalg.norm(rmat, axis=0)
     row_mags = jnp.linalg.norm(rmat, axis=1)
 
@@ -18,15 +21,21 @@ def check_if_so3_g(rmat: Array, raise_if_false: bool=True, jitable: bool=False) 
     # if not unit magnitude
     if not jnp.allclose(jnp.concatenate((column_mags, row_mags)), 1.0):
         if raise_if_false:
-            raise ValueError("Matrix is not SO3 as rows or columns are not of unit magnitude")
+            raise ValueError(
+                "Matrix is not SO3 as rows or columns are not of unit magnitude"
+            )
         return False
 
     # if not othogonal
-    if not (jnp.allclose(rmat.T @ rmat, jnp.eye(3)) and jnp.allclose(rmat @ rmat.T, jnp.eye(3))):
+    if not (
+        jnp.allclose(rmat.T @ rmat, jnp.eye(3))
+        and jnp.allclose(rmat @ rmat.T, jnp.eye(3))
+    ):
         if raise_if_false:
             raise ValueError("Matrix is not SO3 as it is not orthogonal")
         return False
     return True
+
 
 def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
     # check shapes
@@ -48,7 +57,8 @@ def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
         return False
     return True
 
-def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
+
+def check_if_se3_g(hg: Array, raise_if_false: bool = True) -> bool:
     # check shapes
     if hg.shape != (4, 4):
         if raise_if_false:
@@ -65,6 +75,7 @@ def check_if_se3_g(hg: Array, raise_if_false: bool=True) -> bool:
             raise ValueError("Matrix not SE3 as last row is not [0, 0, 0, 1]")
         return False
     return True
+
 
 def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
     # checks if all matrices in hgs are se3 elements, assuming a shape [..., 4, 4]
@@ -88,7 +99,9 @@ def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
 
     hgs_flat = hgs.reshape(-1, 4, 4)
 
-    results = jnp.all(vmap(check_if_so3_g_jittable, in_axes=0, out_axes=0)(hgs_flat[:, :3, :3]))
+    results = jnp.all(
+        vmap(check_if_so3_g_jittable, in_axes=0, out_axes=0)(hgs_flat[:, :3, :3])
+    )
     results &= jnp.all(jnp.allclose(hgs_flat[:, 3, :3], 0.0))
     results &= jnp.all(jnp.allclose(hgs_flat[:, 3, 3], 1.0))
 
@@ -97,6 +110,7 @@ def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
             raise ValueError("Not all matrices are se3 elements")
         return False
     return True
+
 
 def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
     h_tildes_flat = h_tildes.reshape(-1, 4, 4)
@@ -108,14 +122,18 @@ def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
     results &= jnp.all(jnp.allclose(h_tildes_flat[:, (0, 1, 2), (0, 1, 2)], 0.0))
 
     # check skew symmetry of so3 part
-    results &= jnp.all(jnp.allclose(h_tildes_flat[:, :3, :3], -jnp.transpose(h_tildes_flat[:, :3, :3], (0, 2, 1))))
+    results &= jnp.all(
+        jnp.allclose(
+            h_tildes_flat[:, :3, :3],
+            -jnp.transpose(h_tildes_flat[:, :3, :3], (0, 2, 1)),
+        )
+    )
 
     if not results:
         if raise_if_false:
             raise ValueError("Not all matrices are se3 algebra elements")
         return False
     return True
-
 
 
 def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
@@ -162,6 +180,7 @@ def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
         result += (-1.0) ** (i + 1) * jnp.linalg.matrix_power(g_e, i) / i
     return result
 
+
 def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     # compute t(a) using truncated summation, where a is an adjoint action matrix
 
@@ -189,7 +208,9 @@ def t_inv_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 
 
 def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
-    if (isinstance(coeffs, Array) and coeffs.shape != (6, )) or (isinstance(coeffs, Sequence) and len(coeffs) != 6):
+    if (isinstance(coeffs, Array) and coeffs.shape != (6,)) or (
+        isinstance(coeffs, Sequence) and len(coeffs) != 6
+    ):
         raise ValueError("Coefficients array must be of shapes (6, )")
 
     if isinstance(l, Array) and not jnp.isscalar(l):
@@ -197,23 +218,27 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
 
     eax, gay, gaz, gjx, eiy, eiz = coeffs
 
-    k_upper_left = jnp.array([
-        [eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.0, 12.0 * eiz / l ** 3, 0.0, 0.0, 0.0, 6.0 * eiz / l ** 2],
-        [0.0, 0.0, 12.0 * eiy / l ** 3, 0.0, -6.0 * eiy / l ** 2, 0.0],
-        [0.0, 0.0, 0.0, gjx / l, 0.0, 0.0],
-        [0.0, 0.0, -6.0 * eiy / l ** 2, 0.0, 4.0 * eiy / l, 0.0],
-        [0.0, 6.0 * eiz / l ** 2, 0.0, 0.0, 0.0, 4.0 * eiz / l]
-    ])
+    k_upper_left = jnp.array(
+        [
+            [eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
+            [0.0, 0.0, 12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
+            [0.0, 0.0, 0.0, gjx / l, 0.0, 0.0],
+            [0.0, 0.0, -6.0 * eiy / l**2, 0.0, 4.0 * eiy / l, 0.0],
+            [0.0, 6.0 * eiz / l**2, 0.0, 0.0, 0.0, 4.0 * eiz / l],
+        ]
+    )
 
-    k_upper_right = jnp.array([
-        [-eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.0, -12.0 * eiz / l ** 3, 0.0, 0.0, 0.0, 6.0 * eiz / l ** 2],
-        [0.0, 0.0, -12.0 * eiy / l ** 3, 0.0, -6.0 * eiy / l ** 2, 0.0],
-        [0.0, 0.0, 0.0, -gjx / l, 0.0, 0.0],
-        [0.0, 0.0, 6.0 * eiy / l ** 2, 0.0, 2.0 * eiy / l, 0.0],
-        [0.0, -6.0 * eiz / l ** 2, 0.0, 0.0, 0.0, 2.0 * eiz / l]
-    ])
+    k_upper_right = jnp.array(
+        [
+            [-eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, -12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
+            [0.0, 0.0, -12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
+            [0.0, 0.0, 0.0, -gjx / l, 0.0, 0.0],
+            [0.0, 0.0, 6.0 * eiy / l**2, 0.0, 2.0 * eiy / l, 0.0],
+            [0.0, -6.0 * eiz / l**2, 0.0, 0.0, 0.0, 2.0 * eiz / l],
+        ]
+    )
 
     k_lower_left = k_upper_right.T
 
@@ -221,7 +246,4 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     k_lower_right = k_lower_right.at[1:3, 4:6].mul(-1.0)
     k_lower_right = k_lower_right.at[4:6, 1:3].mul(-1.0)
 
-    return jnp.block([
-        [k_upper_left, k_upper_right],
-        [k_lower_left, k_lower_right]
-    ])
+    return jnp.block([[k_upper_left, k_upper_right], [k_lower_left, k_lower_right]])

@@ -7,22 +7,25 @@ from aegrad.utils import make_pytree, replace_self
 import jax
 from jax import Array, numpy as jnp, jacobian
 
+
 @make_pytree
 class LinearOperator:
     r"""
     Linear operator represented by a function, either as A(x) or Ax
     If the function is set to none, the zero matrix is assumed.
     """
+
     def __init__(
         self,
         func: Optional[Callable[[Array], Array]],
         shape: tuple[int, int],
         mat: Optional[Array] = None,
     ):
-
         if mat is not None:
             if mat.shape != shape:
-                raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {shape}.")
+                raise ValueError(
+                    f"Provided matrix has shape {mat.shape}, but expected shape {shape}."
+                )
 
         self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
         self._matrix: Optional[Array] = mat
@@ -44,6 +47,7 @@ class LinearOperator:
 
     def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
         if isinstance(rhs, LinearOperator):
+
             def new_func(x: Array) -> Array:
                 return self.func(rhs.func(x))
 
@@ -61,21 +65,27 @@ class LinearOperator:
     def __matmul__[T](self, rhs: T) -> T:
         return self(rhs)
 
-    def __add__(self, rhs: "Array | LinearOperator") -> "Callable[[Array], Array] | LinearOperator":
+    def __add__(
+        self, rhs: "Array | LinearOperator"
+    ) -> "Callable[[Array], Array] | LinearOperator":
         # runtime dispatch for addition as well
         if isinstance(rhs, LinearOperator):
             if self.shape != rhs.shape:
                 raise ValueError("Cannot add LinearOperators with different shapes.")
+
             def new_func(x: Array) -> Array:
                 return self.func(x) + rhs.func(x)
+
             if self._matrix is not None and rhs._matrix is not None:
                 new_mat = self._matrix + rhs._matrix
             else:
                 new_mat = None
             return LinearOperator(new_func, self.shape, new_mat)
         elif isinstance(rhs, Array):
+
             def new_func(x: Array) -> Array:
                 return self.func(x) + rhs
+
             return new_func
         else:
             raise TypeError("Incompatible type for addition with LinearOperator.")
@@ -93,52 +103,74 @@ class BlockLinear:
     r"""
     Block linear operator represented by a function, supporting matmul
     """
-    def __init__(self, entries: Sequence[Sequence[LinearOperator | Array]], mat: Optional[Array] = None):
-        if not all(len(row) == len(entries[0]) for row in entries):
-            raise ValueError("All rows in BlockLinear must have the same number of columns.")
 
-        shapes: list[list[tuple[int, ...]]] = [[e.shape for e in row] for row in entries]    # [][][...]
+    def __init__(
+        self,
+        entries: Sequence[Sequence[LinearOperator | Array]],
+        mat: Optional[Array] = None,
+    ):
+        if not all(len(row) == len(entries[0]) for row in entries):
+            raise ValueError(
+                "All rows in BlockLinear must have the same number of columns."
+            )
+
+        shapes: list[list[tuple[int, ...]]] = [
+            [e.shape for e in row] for row in entries
+        ]  # [][][...]
 
         if any([any([len(e) != 2 for e in row]) for row in shapes]):
-            raise ValueError("All entries in BlockLinear must be 2D arrays or linear operators.")
+            raise ValueError(
+                "All entries in BlockLinear must be 2D arrays or linear operators."
+            )
 
-        shapes_arr = jnp.array(shapes, dtype=int)   # [n_block_row, n_block_col, 2]
+        shapes_arr = jnp.array(shapes, dtype=int)  # [n_block_row, n_block_col, 2]
         self.n_block_row: int = shapes_arr.shape[0]
         self.n_block_col: int = shapes_arr.shape[1]
 
         # every row must have equal column sizes and every column must have equal row sizes
         if not jnp.all(shapes_arr[..., 0] == shapes_arr[:, [0], 0]):
-            raise ValueError("All columns in BlockLinear must have the same number of rows.")
+            raise ValueError(
+                "All columns in BlockLinear must have the same number of rows."
+            )
         if not jnp.all(shapes_arr[..., 1] == shapes_arr[[0], :, 1]):
-            raise ValueError("All rows in BlockLinear must have the same number of columns.")
+            raise ValueError(
+                "All rows in BlockLinear must have the same number of columns."
+            )
 
         self.entries = entries
 
         # number of blocks in each dimension
-        self.block_heights: Array = shapes_arr[:, 0, 0]   # [n_block_row]
-        self.block_widths: Array = shapes_arr[0, :, 1]    # [n_block_col]
-        self.shape: tuple[int, int] = (int(jnp.sum(self.block_heights)), int(jnp.sum(self.block_widths)))
+        self.block_heights: Array = shapes_arr[:, 0, 0]  # [n_block_row]
+        self.block_widths: Array = shapes_arr[0, :, 1]  # [n_block_col]
+        self.shape: tuple[int, int] = (
+            int(jnp.sum(self.block_heights)),
+            int(jnp.sum(self.block_widths)),
+        )
 
         # index of entries for each block in the full matrix
         height_index = []
         i_start = 0
         for i_block_row in range(self.n_block_row):
-            height_index.append(jnp.arange(i_start, i_start := i_start + self.block_heights[i_block_row]))
+            height_index.append(
+                jnp.arange(
+                    i_start, i_start := i_start + self.block_heights[i_block_row]
+                )
+            )
         self.height_index: tuple[Array, ...] = tuple(height_index)
 
         width_index = []
         i_start = 0
         for i_block_col in range(self.n_block_col):
             width_index.append(
-                jnp.arange(
-                    i_start, i_start := i_start + self.block_widths[i_block_col]
-                )
+                jnp.arange(i_start, i_start := i_start + self.block_widths[i_block_col])
             )
         self.width_index: tuple[Array, ...] = tuple(width_index)
 
         if mat is not None:
             if mat.shape != self.shape:
-                raise ValueError(f"Provided matrix has shape {mat.shape}, but expected shape {self.shape}.")
+                raise ValueError(
+                    f"Provided matrix has shape {mat.shape}, but expected shape {self.shape}."
+                )
         self.mat = mat
 
     def __matmul__(self, rhs: Array) -> Array:
@@ -146,7 +178,9 @@ class BlockLinear:
         for i_block_col in range(self.n_block_col):
             this_rhs = rhs[self.width_index[i_block_col]]
             for i_block_row in range(self.n_block_row):
-                out = out.at[self.height_index[i_block_row]].add(self.entries[i_block_row][i_block_col] @ this_rhs)
+                out = out.at[self.height_index[i_block_row]].add(
+                    self.entries[i_block_row][i_block_col] @ this_rhs
+                )
         return out
 
     def get_matrix(self) -> Array:
@@ -163,14 +197,17 @@ class BlockLinear:
         self.mat = blk
         return blk
 
+
 @make_pytree
 class LinearSystem:
-    def __init__(self,
-                 a: LinearOperator,
-                 b: LinearOperator,
-                 c: LinearOperator,
-                 d: LinearOperator,
-                 removed_u_np1: bool = False) -> None:
+    def __init__(
+        self,
+        a: LinearOperator,
+        b: LinearOperator,
+        c: LinearOperator,
+        d: LinearOperator,
+        removed_u_np1: bool = False,
+    ) -> None:
         self.a: LinearOperator = a
         self.b: LinearOperator = b
         self.c: LinearOperator = c
@@ -180,16 +217,20 @@ class LinearSystem:
         self.n_outputs: int = c.shape[0]
         self.removed_u_np1: bool = removed_u_np1
 
-    @print_with_time("Computing matrices for linear system...",
-                     "Computed matrices for linear system in {:.2f} seconds.")
+    @print_with_time(
+        "Computing matrices for linear system...",
+        "Computed matrices for linear system in {:.2f} seconds.",
+    )
     def compute_matrices(self) -> None:
         self.a.generate_matrix()
         self.b.generate_matrix()
         self.c.generate_matrix()
         self.d.generate_matrix()
 
-    @print_with_time("Removing u_np1 from linear system...",
-                     "Removed u_np1 from linear system in {:.2f} seconds.")
+    @print_with_time(
+        "Removing u_np1 from linear system...",
+        "Removed u_np1 from linear system in {:.2f} seconds.",
+    )
     def remove_u_np1(self) -> None:
         if self.removed_u_np1:
             warn("u_np1 has already been removed from the system. Skipping.")
@@ -202,8 +243,9 @@ class LinearSystem:
         "Running linear system...",
         "Ran linear system in {:.2f} seconds.",
     )
-    def run(self, u: Array, x0: Optional[Array] = None, use_matrix=False) -> tuple[Array, Array]:
-
+    def run(
+        self, u: Array, x0: Optional[Array] = None, use_matrix=False
+    ) -> tuple[Array, Array]:
         if x0 is not None:
             check_arr_shape(x0, (None, self.n_states), "x0")
         check_arr_shape(u, (None, self.n_inputs), "u")

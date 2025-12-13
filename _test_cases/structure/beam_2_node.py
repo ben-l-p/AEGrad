@@ -7,7 +7,7 @@ n_nodes: int = 2
 n_elem: int = n_nodes - 1
 l_beam: float = 1.0
 
-conn = jnp.zeros((n_elem, 2), dtype=int)    # [n_elem, 2]
+conn = jnp.zeros((n_elem, 2), dtype=int)  # [n_elem, 2]
 conn = conn.at[:, 0].set(jnp.arange(0, n_elem))
 conn = conn.at[:, 1].set(jnp.arange(1, n_elem + 1))
 
@@ -17,14 +17,14 @@ normal_vector = normal_vector.at[:, 2].set(1.0)
 # create data structure
 struct = Structure(n_nodes, conn, normal_vector)
 
-x0 = jnp.zeros((n_nodes, 3)) # [n_node, 3]
+x0 = jnp.zeros((n_nodes, 3))  # [n_node, 3]
 x0 = x0.at[:, 0].set(jnp.linspace(0, l_beam, n_nodes))
 
 # stiffness
 eax, gay, gaz = 1.0, 0.0, 0.0
 gjx, eiy, eiz = 1.0, 0.0, 0.0
 k_diag = jnp.array((eax, gay, gaz, gjx, eiy, eiz))
-k_cs = jnp.diag(k_diag)    # [6, 6]
+k_cs = jnp.diag(k_diag)  # [6, 6]
 
 # add design variables
 struct.set_design_variables(x0, k_cs, None)

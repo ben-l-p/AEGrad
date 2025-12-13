@@ -7,10 +7,12 @@ from jax.lax import cond
 def matrix2(mat: Array) -> Array:
     return mat @ mat
 
+
 def clip_to_pi(val: Array):
     # [] -> []
     # clips a value to be within [-pi, pi]
     return jnp.arctan2(jnp.sin(val), jnp.cos(val))
+
 
 def chi(rmat: Array) -> Array:
     # [3, 3] -> [6, 6]
@@ -60,7 +62,5 @@ def finite_difference(
     return cond(
         order == 0,
         _order0,
-        lambda: cond(
-            order == 1, _order1, lambda: cond(order == 2, _order2, _err)
-        ),
+        lambda: cond(order == 1, _order1, lambda: cond(order == 2, _order2, _err)),
     )

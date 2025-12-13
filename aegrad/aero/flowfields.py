@@ -77,6 +77,7 @@ class FlowField:
             "relative_motion",
         )
 
+
 @make_pytree
 class Constant(FlowField):
     r"""
@@ -88,6 +89,7 @@ class Constant(FlowField):
             return self.u_inf
         else:
             return jnp.zeros(3)
+
 
 @make_pytree
 class OneMinusCosine(FlowField):
@@ -101,12 +103,19 @@ class OneMinusCosine(FlowField):
     gust_x0: Base coordinate at the start of the gust at t=0, [3]
     """
 
-    def __init__(self, u_inf_base: Array, **kwargs):
-        super().__init__(u_inf_base, **kwargs)
+    def __init__(
+        self, u_inf: Array, rho: float | Array, relative_motion: bool, **kwargs
+    ):
+        super().__init__(u_inf, rho, relative_motion, **kwargs)
 
         # base gust parameters
-        self.gust_amplitude: Array = kwargs["gust_amplitude"]
-        self.gust_length: Array = kwargs["gust_length"]
+        try:
+            self.gust_amplitude: Array = kwargs["gust_amplitude"]
+            self.gust_length: Array = kwargs["gust_length"]
+        except KeyError:
+            raise ValueError(
+                "gust_amplitude and gust_length must be provided as keyword arguments."
+            )
 
         # direction of travel for the gust - use background flow direction as default
         # even for a gust frozen in place, this defines the orientation of the ridge
@@ -115,9 +124,7 @@ class OneMinusCosine(FlowField):
         )
         if self.gust_travel_direction.shape != (3,):
             raise ValueError("gust_travel_direction must have shapes (3,)")
-        self.gust_travel_direction /= jnp.linalg.norm(
-            self.gust_travel_direction
-        )
+        self.gust_travel_direction /= jnp.linalg.norm(self.gust_travel_direction)
 
         # lateral direction of the gust (direction in which the gust acts), default is in Z
         self.gust_amplitude_direction: Array = kwargs.get(
@@ -125,9 +132,7 @@ class OneMinusCosine(FlowField):
         )
         if self.gust_amplitude_direction.shape != (3,):
             raise ValueError("gust_amplitude_direction must have shapes (3,)")
-        self.gust_amplitude_direction /= jnp.linalg.norm(
-            self.gust_amplitude_direction
-        )
+        self.gust_amplitude_direction /= jnp.linalg.norm(self.gust_amplitude_direction)
 
         # base coordinate at the start of the gust at t=0
         self.gust_x0: Array = kwargs.get("gust_x0", jnp.zeros(3))
@@ -144,19 +149,20 @@ class OneMinusCosine(FlowField):
         """
         rel_x = x - self.gust_x0  # position relative to the gust start
         if self.relative_motion:
-            rel_x += self.u_inf * t  # add relative motion if applicable
+            rel_x -= self.u_inf * t  # add relative motion if applicable
 
         gust_x = jnp.dot(rel_x, self.gust_travel_direction)
 
         def _one_minus_cos(x_: Array) -> Array:
             return (
                 self.gust_amplitude_direction
+                * self.gust_amplitude
                 * 0.5
                 * (1.0 - jnp.cos(jnp.pi * x_ / self.gust_length))
             )
 
         u = jax.lax.select(
-            gust_x > 0 & gust_x < 2.0 * self.gust_length,
+            (gust_x > 0) & (gust_x < 2.0 * self.gust_length),
             _one_minus_cos(gust_x),
             jnp.zeros(3),
         )
@@ -168,7 +174,7 @@ class OneMinusCosine(FlowField):
     @staticmethod
     def _static_names() -> Sequence[str]:
         return (
-            *super()._static_names(),
+            *FlowField._static_names(),
             "gust_amplitude",
             "gust_length",
             "gust_travel_direction",

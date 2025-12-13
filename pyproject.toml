@@ -4,8 +4,15 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "jax==0.8.0",
-    "pytest==9.0.1",
+    "jax==0.8.1",
+    "pytest==9.0.2",
+    "ruff>=0.14.9",
     "vtk==9.5.2",
     "xprof==2.21.3",
 ]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["./tests"]
+python_files = ["test*.py"] # run all files ending with .py
+addopts = "-q --tb=short"

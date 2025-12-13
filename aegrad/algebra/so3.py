@@ -6,15 +6,18 @@ from math import factorial
 from aegrad.algebra.base import clip_to_pi, matrix2
 from aegrad.algebra.constants import ZERO_ANG_THRESH, SMALL_ANG_THRESH
 
+
 def vec_to_skew(vec: Array) -> Array:
     # [3] -> [3, 3]
-    return jnp.array(((0.0, -vec[2], vec[1]),
-                     (vec[2], 0.0, -vec[0]),
-                     (-vec[1], vec[0], 0.0)))
+    return jnp.array(
+        ((0.0, -vec[2], vec[1]), (vec[2], 0.0, -vec[0]), (-vec[1], vec[0], 0.0))
+    )
+
 
 def skew_to_vec(mat: Array) -> Array:
     # [3, 3] -> [3]
     return jnp.array((mat[2, 1], mat[0, 2], mat[1, 0]))
+
 
 def alpha(b: Array) -> Array:
     # [3] -> []
@@ -35,6 +38,7 @@ def beta(b: Array) -> Array:
         return 2.0 * (1.0 - jnp.cos(b_norm)) / b_norm2
 
     return cond(b_norm > ZERO_ANG_THRESH, beta_full, lambda: 1.0)
+
 
 def bound_h_omega(h_omega: Array) -> Array:
     # [3] -> [3]
@@ -58,6 +62,7 @@ def bracket_so3(vec1: Array, vec2: Array) -> Array:
 
     return mat1 @ mat2 - mat2 @ mat1
 
+
 def bracket_neg_so3(vec1: Array, vec2: Array) -> Array:
     mat1 = vec_to_skew(vec1)
     mat2 = vec_to_skew(vec2)
@@ -68,8 +73,13 @@ def bracket_neg_so3(vec1: Array, vec2: Array) -> Array:
 def t_so3(ha_omega: Array) -> Array:
     # [3] -> [3, 3]
     def t_so3_full() -> Array:
-        return (jnp.eye(3) - 0.5 * beta(ha_omega) * vec_to_skew(ha_omega)
-                + (1.0 - alpha(ha_omega)) / jnp.inner(ha_omega, ha_omega) * matrix2(vec_to_skew(ha_omega)))
+        return (
+            jnp.eye(3)
+            - 0.5 * beta(ha_omega) * vec_to_skew(ha_omega)
+            + (1.0 - alpha(ha_omega))
+            / jnp.inner(ha_omega, ha_omega)
+            * matrix2(vec_to_skew(ha_omega))
+        )
 
     def t_so3_small_angle() -> Array:
         order: int = 2
@@ -82,12 +92,18 @@ def t_so3(ha_omega: Array) -> Array:
     ang_mag2 = jnp.inner(ha_omega, ha_omega)
     return cond(ang_mag2 > SMALL_ANG_THRESH, t_so3_full, t_so3_small_angle)
 
+
 def t_inv_so3(ha_omega: Array) -> Array:
     # [3] -> [3, 3]
 
     def t_inv_so3_full() -> Array:
-        return (jnp.eye(3) + 0.5 * vec_to_skew(ha_omega)
-            + (1.0 - alpha(ha_omega) / beta(ha_omega)) / jnp.inner(ha_omega, ha_omega) * matrix2(vec_to_skew(ha_omega)))
+        return (
+            jnp.eye(3)
+            + 0.5 * vec_to_skew(ha_omega)
+            + (1.0 - alpha(ha_omega) / beta(ha_omega))
+            / jnp.inner(ha_omega, ha_omega)
+            * matrix2(vec_to_skew(ha_omega))
+        )
 
     def t_inv_so3_small_angle() -> Array:
         order: int = 2
@@ -107,15 +123,18 @@ def exp_so3(ha_omega: Array) -> Array:
     def exp_so3_full() -> Array:
         # has a singularity as ha_omega -> 0
         ang = jnp.linalg.norm(ha_omega)
-        return jnp.eye(3) + jnp.sin(ang) / ang * vec_to_skew(ha_omega) + (1.0 - jnp.cos(ang)) / ang ** 2 * matrix2(vec_to_skew(ha_omega))
+        return (
+            jnp.eye(3)
+            + jnp.sin(ang) / ang * vec_to_skew(ha_omega)
+            + (1.0 - jnp.cos(ang)) / ang**2 * matrix2(vec_to_skew(ha_omega))
+        )
 
     def exp_so3_small_angle() -> Array:
         return jnp.eye(3) + vec_to_skew(ha_omega) + 0.5 * matrix2(vec_to_skew(ha_omega))
 
     ang_mag2 = jnp.inner(ha_omega, ha_omega)
-    return cond(ang_mag2 > SMALL_ANG_THRESH,
-                exp_so3_full,
-                exp_so3_small_angle)
+    return cond(ang_mag2 > SMALL_ANG_THRESH, exp_so3_full, exp_so3_small_angle)
+
 
 def log_so3(rmat: Array) -> Array:
     # [3, 3] -> [3]
@@ -128,7 +147,11 @@ def log_so3(rmat: Array) -> Array:
         order: int = 1
         out = jnp.zeros((3, 3))
         for i in range(1, order):
-            out += (-1.0) ** (i + 1) * jnp.linalg.matrix_power((rmat - jnp.eye(3)), i) / i
+            out += (
+                (-1.0) ** (i + 1) * jnp.linalg.matrix_power((rmat - jnp.eye(3)), i) / i
+            )
         return skew_to_vec(out)
 
-    return bound_h_omega(cond(theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle))
+    return bound_h_omega(
+        cond(theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)
+    )

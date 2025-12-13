@@ -13,6 +13,7 @@ r"""
 Everybody loves a dataclass
 """
 
+
 @dataclass
 class GridDiscretization:
     r"""
@@ -21,9 +22,11 @@ class GridDiscretization:
     - n: Number of panels in the spanwise direction
     - m_star: Number of wake panels in the chordwise direction
     """
+
     m: int
     n: int
     m_star: int
+
 
 @dataclass
 class LinearComponent:
@@ -31,11 +34,13 @@ class LinearComponent:
     slices: Optional[Sequence[slice]]
     shapes: Optional[Sequence[tuple[int]]]
 
+
 @dataclass
 class _SliceEntry:
     name: str
     enabled: bool
     shapes: Optional[Sequence[tuple[int, ...]]]
+
 
 @dataclass
 class InputSlices:
@@ -43,6 +48,7 @@ class InputSlices:
     zeta_b_dot: LinearComponent
     nu_b: LinearComponent
     nu_w: LinearComponent
+
 
 @dataclass
 class StateSlices:
@@ -53,10 +59,12 @@ class StateSlices:
     zeta_w: LinearComponent
     zeta_b: LinearComponent
 
+
 @dataclass
 class OutputSlices:
     f_steady: LinearComponent
     f_unsteady: LinearComponent
+
 
 @dataclass
 class InputUnflattened:
@@ -64,6 +72,7 @@ class InputUnflattened:
     zeta_b_dot: ArrayList
     nu_b: Optional[ArrayList]
     nu_w: Optional[ArrayList]
+
 
 @dataclass
 class StateUnflattened:
@@ -74,6 +83,7 @@ class StateUnflattened:
     zeta_w: Optional[ArrayList]
     zeta_b: Optional[ArrayList]
 
+
 @dataclass
 class OutputUnflattened:
     f_steady: ArrayList
@@ -81,20 +91,22 @@ class OutputUnflattened:
 
 
 class AeroSnapshot:
-    def __init__(self,
-                 zeta_b: ArrayList,
-                zeta_b_dot: ArrayList,
-                 zeta_w: ArrayList,
-                 gamma_b: ArrayList,
-                 gamma_b_dot: ArrayList,
-                 gamma_w: ArrayList,
-                 f_steady: ArrayList,
-                 f_unsteady: ArrayList,
-                 surf_b_names: Sequence[str],
-                 surf_w_names: Sequence[str],
-                 i_ts: int,
-                 t: Array,
-                 n_surf: int) -> None:
+    def __init__(
+        self,
+        zeta_b: ArrayList,
+        zeta_b_dot: ArrayList,
+        zeta_w: ArrayList,
+        gamma_b: ArrayList,
+        gamma_b_dot: ArrayList,
+        gamma_w: ArrayList,
+        f_steady: ArrayList,
+        f_unsteady: ArrayList,
+        surf_b_names: Sequence[str],
+        surf_w_names: Sequence[str],
+        i_ts: int,
+        t: Array,
+        n_surf: int,
+    ) -> None:
         r"""
         Snapshot of aerodynamic surface at a single time step
         :param zeta_b: Bound grid coordinates, [n_surf][m+1, n+1, 3]
@@ -113,8 +125,8 @@ class AeroSnapshot:
         self.gamma_w: ArrayList = gamma_w
         self.f_steady: ArrayList = f_steady
         self.f_unsteady: ArrayList = f_unsteady
-        self.surf_b_names:  Sequence[str] = surf_b_names
-        self.surf_w_names:  Sequence[str] = surf_w_names
+        self.surf_b_names: Sequence[str] = surf_b_names
+        self.surf_w_names: Sequence[str] = surf_w_names
         self.i_ts: int = i_ts
         self.t: Array = t
         self.n_surf: int = n_surf
@@ -141,24 +153,29 @@ class AeroSnapshot:
     def plot(self, directory: PathLike, plot_wake: bool = True) -> Sequence[Path]:
         paths = []
         for i_surf in range(self.n_surf):
-            paths.extend(self[i_surf].plot(directory, plot_bound=True, plot_wake=plot_wake))
+            paths.extend(
+                self[i_surf].plot(directory, plot_bound=True, plot_wake=plot_wake)
+            )
         return paths
+
 
 @dataclass
 class AeroSurfaceSnapshot:
-    def __init__(self,
-                 zeta_b: Array,
-                zeta_b_dot: Array,
-                 zeta_w: Array,
-                 gamma_b: Array,
-                 gamma_b_dot: Array,
-                 gamma_w: Array,
-                 f_steady: Array,
-                 f_unsteady: Array,
-                 surf_b_name: str,
-                 surf_w_name: str,
-                 i_ts: int,
-                 t: Array) -> None:
+    def __init__(
+        self,
+        zeta_b: Array,
+        zeta_b_dot: Array,
+        zeta_w: Array,
+        gamma_b: Array,
+        gamma_b_dot: Array,
+        gamma_w: Array,
+        f_steady: Array,
+        f_unsteady: Array,
+        surf_b_name: str,
+        surf_w_name: str,
+        i_ts: int,
+        t: Array,
+    ) -> None:
         self.zeta_b: Array = zeta_b
         self.zeta_b_dot: Array = zeta_b_dot
         self.zeta_w: Array = zeta_w
@@ -172,21 +189,39 @@ class AeroSurfaceSnapshot:
         self.i_ts: int = i_ts
         self.t: Array = t
 
-    def plot(self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True) -> Sequence[Path]:
+    def plot(
+        self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True
+    ) -> Sequence[Path]:
         paths = []
         if plot_bound:
             bound_filename = Path(directory).joinpath(self.surf_b_name)
-            paths.append(plot_frame_to_vtk(self.zeta_b, bound_filename, self.i_ts,
-                              node_vector_data={'f_steady': self.f_steady, 'f_unsteady': self.f_unsteady,
-                                                'zeta_dot': self.zeta_b_dot},
-                              cell_scalar_data={'gamma': self.gamma_b, 'gamma_dot': self.gamma_b_dot},
-                              ))
+            paths.append(
+                plot_frame_to_vtk(
+                    self.zeta_b,
+                    bound_filename,
+                    self.i_ts,
+                    node_vector_data={
+                        "f_steady": self.f_steady,
+                        "f_unsteady": self.f_unsteady,
+                        "zeta_dot": self.zeta_b_dot,
+                    },
+                    cell_scalar_data={
+                        "gamma": self.gamma_b,
+                        "gamma_dot": self.gamma_b_dot,
+                    },
+                )
+            )
         if plot_wake:
             if not self.gamma_w.shape[0]:
                 warn("No wake panels to plot, skipping.")
             else:
                 wake_filename = Path(directory).joinpath(self.surf_w_name)
-                paths.append(plot_frame_to_vtk(self.zeta_w, wake_filename, self.i_ts,
-                                  cell_scalar_data={'gamma': self.gamma_w},
-                                  ))
+                paths.append(
+                    plot_frame_to_vtk(
+                        self.zeta_w,
+                        wake_filename,
+                        self.i_ts,
+                        cell_scalar_data={"gamma": self.gamma_w},
+                    )
+                )
         return paths

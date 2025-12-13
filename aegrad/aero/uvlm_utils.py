@@ -4,7 +4,10 @@ from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
 from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
 
-def make_rectangular_grid(m: int, n: int, chord: Array | float, ea: Array | float) -> Array:
+
+def make_rectangular_grid(
+    m: int, n: int, chord: Array | float, ea: Array | float
+) -> Array:
     r"""
     Create a rectangular grid of points in the yz-plane
     :param m: Number of panels in the chordwise direction
@@ -14,8 +17,9 @@ def make_rectangular_grid(m: int, n: int, chord: Array | float, ea: Array | floa
     :return: Array of shapes [m+1, n+1, 3] representing grid points in 3D space
     """
 
-    grid = jnp.zeros((m+1, n+1, 3))
+    grid = jnp.zeros((m + 1, n + 1, 3))
     return grid.at[..., 0].set((jnp.linspace(0.0, chord, m + 1) - ea * chord)[:, None])
+
 
 def get_surf_c(zeta: Array) -> Array:
     r"""
@@ -31,21 +35,25 @@ def get_surf_nc(zeta: Array) -> Array:
     diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
     return jnp.cross(diag1, diag2)
 
+
 def get_c(zetas: ArrayList) -> ArrayList:
     return ArrayList([get_surf_c(zeta) for zeta in zetas])
+
 
 def get_nc(zetas: ArrayList) -> ArrayList:
     return ArrayList([get_surf_nc(zeta) for zeta in zetas])
 
 
-def propagate_surf_wake(gamma_b_n: Array,
-                        gamma_w_n: Array,
-                        zeta_b_np1: Array,
-                        zeta_w_n: Array,
-                        delta_w: Optional[Array],
-                        v_func: Callable[[Array], Array],
-                        dt: Array,
-                        frozen_wake: bool) -> tuple[Optional[Array], Array]:
+def propagate_surf_wake(
+    gamma_b_n: Array,
+    gamma_w_n: Array,
+    zeta_b_np1: Array,
+    zeta_w_n: Array,
+    delta_w: Optional[Array],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: bool,
+) -> tuple[Optional[Array], Array]:
     r"""
     Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
     downstream data.
@@ -62,26 +70,28 @@ def propagate_surf_wake(gamma_b_n: Array,
 
     # trailing edge positions and circulations
     zeta_te = zeta_b_np1[-1, ...]  # [zeta_n, 3]
-    gamma_te = gamma_b_n[-1, ...] # [gamma_n]
+    gamma_te = gamma_b_n[-1, ...]  # [gamma_n]
 
     # variable wake discretisation also depends on the final element
     if delta_w is not None:
-        zeta_base = zeta_w_n    # [zeta_w_m, zeta_n, 3]
+        zeta_base = zeta_w_n  # [zeta_w_m, zeta_n, 3]
         gamma_base = gamma_w_n  # [gamma_w_m, gamma_n]
     else:
         zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
-        gamma_base = gamma_w_n[:-1, ...]    # [gamma_w_m - 1, gamma_n]
+        gamma_base = gamma_w_n[:-1, ...]  # [gamma_w_m - 1, gamma_n]
 
     # values at t=n+1 before rediscretisation
     gamma_w_np1 = jnp.concatenate(
         (gamma_te[None, ...], gamma_base), axis=0
-    )   # [gamma_w_m+1 | gamma_w_m, gamma_n]
+    )  # [gamma_w_m+1 | gamma_w_m, gamma_n]
 
     # if the wake is free, this should be embedded here
-    v = v_func(zeta_base)   # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
+    v = v_func(zeta_base)  # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
 
     # wake coordinates at t=n+1 before rediscretisation
-    zeta_w_np1 = jnp.concatenate((zeta_te[None, :, :], zeta_base + dt * v), axis=0)     # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
+    zeta_w_np1 = jnp.concatenate(
+        (zeta_te[None, :, :], zeta_base + dt * v), axis=0
+    )  # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
 
     if delta_w is not None:
         # streamline coordinates before rediscretisation
@@ -89,15 +99,19 @@ def propagate_surf_wake(gamma_b_n: Array,
             (
                 jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
                 jnp.cumsum(
-                    jnp.linalg.norm(zeta_w_np1[1:, ...] - zeta_w_np1[:-1, ...], axis=-1), # [zeta_w_m+1, zeta_n]
+                    jnp.linalg.norm(
+                        zeta_w_np1[1:, ...] - zeta_w_np1[:-1, ...], axis=-1
+                    ),  # [zeta_w_m+1, zeta_n]
                     axis=0,
                 ),  # [zeta_w_m, zeta_n]
             ),
             axis=0,
-        )   # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
+        )  # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
 
         # consider gamma to be at midpoints of zeta
-        s_gamma_w = neighbour_average(s_zeta_w, axes=(0, 1)) # [gamma_w_m + 1, gamma_w_n]
+        s_gamma_w = neighbour_average(
+            s_zeta_w, axes=(0, 1)
+        )  # [gamma_w_m + 1, gamma_w_n]
 
         # vertex coordinates along desired discretized streamline, [m_star + 1]
         s_zeta_w_redisc = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
@@ -107,26 +121,34 @@ def propagate_surf_wake(gamma_b_n: Array,
 
         # rediscretise coordinates onto desired grid
         zeta_w_np1 = vmap(
-            vmap(jnp.interp,
-             in_axes=(None, 0, 0), out_axes=1),
-            in_axes=(None, None, 1), out_axes=2)(s_zeta_w_redisc, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0)))    # [zeta_w_m, zeta_n, 3]
+            vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1),
+            in_axes=(None, None, 1),
+            out_axes=2,
+        )(
+            s_zeta_w_redisc, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0))
+        )  # [zeta_w_m, zeta_n, 3]
 
         # rediscretise gamma onto desired grid
-        gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(s_gamma_w_redisc, s_gamma_w.T, gamma_w_np1.T) # [zeta_w_m, zeta_n, 3]
+        gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(
+            s_gamma_w_redisc, s_gamma_w.T, gamma_w_np1.T
+        )  # [zeta_w_m, zeta_n, 3]
 
     if frozen_wake:
         return None, gamma_w_np1
     else:
         return zeta_w_np1, gamma_w_np1
 
-def propagate_wake(gamma_b_n: ArrayList,
-                    gamma_w_n: ArrayList,
-                    zeta_b_np1: ArrayList,
-                    zeta_w_n: ArrayList,
-                    delta_w: Sequence[Optional[Array]],
-                    v_func: Callable[[Array], Array],
-                    dt: Array,
-                   frozen_wake: bool) -> tuple[ArrayList, ArrayList]:
+
+def propagate_wake(
+    gamma_b_n: ArrayList,
+    gamma_w_n: ArrayList,
+    zeta_b_np1: ArrayList,
+    zeta_w_n: ArrayList,
+    delta_w: Sequence[Optional[Array]],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: bool,
+) -> tuple[ArrayList, ArrayList]:
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
     culling the downstream data.
@@ -161,33 +183,40 @@ def propagate_wake(gamma_b_n: ArrayList,
     return zeta_w_np1, gamma_w_np1
 
 
-def steady_forcing(zeta_b: ArrayList,
-                     zeta_dot_b: ArrayList,
-                     gamma_b: ArrayList,
-                     gamma_w: ArrayList,
-                     v_func: Callable[[Array], Array],
-                     v_input: Optional[ArrayList],
-                     rho: Array) -> ArrayList:
+def steady_forcing(
+    zeta_b: ArrayList,
+    zeta_dot_b: ArrayList,
+    gamma_b: ArrayList,
+    gamma_w: ArrayList,
+    v_func: Callable[[Array], Array],
+    v_input: Optional[ArrayList],
+    rho: Array,
+) -> ArrayList:
     f_steady = ArrayList([])
     for i_surf in range(len(zeta_b)):
-       f_steady.append(surf_steady_forcing(zeta_b[i_surf],
-                                           zeta_dot_b[i_surf],
-                                           gamma_b[i_surf],
-                                           gamma_w[i_surf],
-                                           v_func,
-                                           v_input[i_surf] if v_input is not None else None,
-                                           rho))
+        f_steady.append(
+            surf_steady_forcing(
+                zeta_b[i_surf],
+                zeta_dot_b[i_surf],
+                gamma_b[i_surf],
+                gamma_w[i_surf],
+                v_func,
+                v_input[i_surf] if v_input is not None else None,
+                rho,
+            )
+        )
     return f_steady
 
 
-def surf_steady_forcing(zeta_b: Array,
-                                  zeta_dot_b: Array,
-                                  gamma_b: Array,
-                                  gamma_w: Array,
-                                  v_func: Callable[[Array], Array],
-                                  v_input: Optional[Array],
-                                  rho: Array) -> Array:
-
+def surf_steady_forcing(
+    zeta_b: Array,
+    zeta_dot_b: Array,
+    gamma_b: Array,
+    gamma_w: Array,
+    v_func: Callable[[Array], Array],
+    v_input: Optional[Array],
+    rho: Array,
+) -> Array:
     # compute midpoints
     mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
     mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
@@ -208,7 +237,7 @@ def surf_steady_forcing(zeta_b: Array,
     gamma_chordwise = jnp.zeros(v_rel_chordwise.shape[:-1])  # [gamma_m, gamma_n+1, 3]
     gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
     gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
-    gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1]) # [gamma_m+1, gamma_n, 3]
+    gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1])  # [gamma_m+1, gamma_n, 3]
     gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
     gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
 
@@ -221,7 +250,13 @@ def surf_steady_forcing(zeta_b: Array,
     r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
 
     # forces from each set of filaments
-    f_chordwise = rho * jnp.einsum('ij,ijk->ijk', gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise))    # [gamma_m, gamma_n+1, 3]
-    f_spanwise = rho * jnp.einsum('ij,ijk->ijk', gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise))  # [gamma_m+1, gamma_n, 3]
+    f_chordwise = rho * jnp.einsum(
+        "ij,ijk->ijk", gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise)
+    )  # [gamma_m, gamma_n+1, 3]
+    f_spanwise = rho * jnp.einsum(
+        "ij,ijk->ijk", gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise)
+    )  # [gamma_m+1, gamma_n, 3]
 
-    return split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1) # [gamma_m+1, gamma_n+1, 3]
+    return split_to_vertex(f_chordwise, 0) + split_to_vertex(
+        f_spanwise, 1
+    )  # [gamma_m+1, gamma_n+1, 3]

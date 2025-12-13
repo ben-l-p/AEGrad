@@ -6,7 +6,7 @@ from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 
 
-class TestLinearOperator:
+class TestRotInvariance:
     @staticmethod
     def test_rot_invariance_no_wake():
         r"""
@@ -28,18 +28,32 @@ class TestLinearOperator:
 
         case = AeroCase(2, disc, False, jnp.arange(0, mn + 1))
 
-        for i_u_inf, u_inf in enumerate([jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]):
+        for i_u_inf, u_inf in enumerate(
+            [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
+        ):
             flowfield = Constant(u_inf, 1.225, True)
             case.set_design_variables(1.0, flowfield, None, x_grid, hg)
             case.solve_static(i_u_inf, None, False)
 
         if not jnp.allclose(case.gamma_b[0][0, ...], case.gamma_b[0][1, ...]):
-            raise ValueError("Gamma distribution is not equal for both flow directions in no-wake case.")
+            raise ValueError(
+                "Gamma distribution is not equal for both flow directions in no-wake case."
+            )
 
-        if not jnp.allclose(f_tot := jnp.sum(case.f_steady[0][0, ...], axis=(0, 1)), 0.0, atol=1e-5, rtol=1e-4):
+        if not jnp.allclose(
+            f_tot := jnp.sum(case.f_steady[0][0, ...], axis=(0, 1)),
+            0.0,
+            atol=1e-5,
+            rtol=1e-4,
+        ):
             raise ValueError(f"Total force in flow is not zero: {f_tot}")
 
-        if not jnp.allclose(case.f_steady[0][0, ...],
-                            jnp.transpose(case.f_steady[0][1, ...], (1, 0, 2))[..., (1, 0, 2)],
-                            atol=1e-5, rtol=1e-4):
-            raise ValueError("Steady force distribution is not equal in both flow directions in no-wake case.")
+        if not jnp.allclose(
+            case.f_steady[0][0, ...],
+            jnp.transpose(case.f_steady[0][1, ...], (1, 0, 2))[..., (1, 0, 2)],
+            atol=1e-5,
+            rtol=1e-4,
+        ):
+            raise ValueError(
+                "Steady force distribution is not equal in both flow directions in no-wake case."
+            )
