@@ -16,27 +16,46 @@ from aegrad.algebra.so3 import (
 from aegrad.algebra.constants import SMALL_ANG_THRESH
 
 
-def bracket_se3(vec1: Array, vec2: Array) -> Array:
-    mat1 = ha_to_ha_tilde(vec1)
-    mat2 = ha_to_ha_tilde(vec2)
+def bracket_so3(a_vec: Array, b_vec: Array) -> Array:
+    r"""
+    Computes the Lie bracket of two so(3) elements, :math:`\tilde{a}\tilde{b} - \tilde{b}\tilde{a}`.
+    :param a_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
+    :param b_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
+    :return: Lie bracket, [3, 3].
+    """
+    mat1 = ha_to_ha_tilde(a_vec)
+    mat2 = ha_to_ha_tilde(b_vec)
 
     return mat1 @ mat2 - mat2 @ mat1
 
 
-def bracket_neg_se3(vec1: Array, vec2: Array) -> Array:
-    mat1 = ha_to_ha_tilde(vec1)
-    mat2 = ha_to_ha_tilde(vec2)
+def bracket_neg_se3(a_vec: Array, b_vec: Array) -> Array:
+    r"""
+    Computes the negative Lie bracket of two so(3) elements, :math:`\tilde{a}\tilde{b} + \tilde{b}\tilde{a}`.
+    :param a_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
+    :param b_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
+    :return: Lie bracket, [3, 3].
+    """
+    mat1 = ha_to_ha_tilde(a_vec)
+    mat2 = ha_to_ha_tilde(b_vec)
 
     return mat1 @ mat2 + mat2 @ mat1
 
 
 def t_u_omega_plus(ha: Array) -> Array:
+    r"""
+    Computes the :math:`\mathbf{T}_{U \omega+}` matrix, used for computing the tangent application for SE(3). Formulation
+    from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.12
+    :param ha: Vector in se(3), [6].
+    :return: Operator, [3, 3].
+    """
     # [6] -> [3, 3]
     a = ha[:3]
     b = ha[3:]
     b_norm2 = jnp.inner(b, b)
 
     def t_u_omega_plus_full() -> Array:
+        # Full computation of :math:`\mathbf{T}_{U \omega+}` for non-small angles.
         alpha_ = alpha(b)
         beta_ = beta(b)
 
@@ -53,6 +72,7 @@ def t_u_omega_plus(ha: Array) -> Array:
         )
 
     def t_u_omega_plus_small_angle() -> Array:
+        # Computation of :math:`\mathbf{T}_{U \omega+}` when the rotation angle is small.
         return -0.5 * vec_to_skew(a)
 
     return cond(
@@ -61,32 +81,59 @@ def t_u_omega_plus(ha: Array) -> Array:
 
 
 def t_u_omega_minus(ha: Array) -> Array:
-    # [6] -> [3, 3]
+    r"""
+    Computes the :math:`\mathbf{T}_{U \omega-}` matrix, used for computing the inverse tangent application for se(3).
+    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by
+    Sonneville et al., 2013, Eq A.14. This can be represented in terms of :math:`\mathbf{T}_{U \omega+}` and the
+    inverse of the SO(3) tangent operator.
+    :param ha: Vector in se(3), [6].
+    :return: Operator, [3, 3].
+    """
 
     t_inv_ = t_inv_so3(ha[3:])
     return -t_inv_ @ t_u_omega_plus(ha) @ t_inv_
 
 
 def t_se3(ha: Array) -> Array:
-    # [6] -> [6, 6]
+    r"""
+    Computes the tangent operator for se(3). Formulation from Geometrically exact beam finite element formulated on the
+    special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.11.
+    :param ha: se(3) vector, [6].
+    :return: Tangent operator, [6, 6].
+    """
     t_ = t_so3(ha[3:])
     return jnp.block([[t_, t_u_omega_plus(ha)], [jnp.zeros((3, 3)), t_]])
 
 
 def t_inv_se3(ha: Array) -> Array:
-    # [6] -> [6, 6]
+    r"""
+    Computes the inverse tangent operator for se(3). Formulation from Geometrically exact beam finite element formulated
+    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.13.
+    :param ha: se(3) algebra vector, [6].
+    :return: Inverse angent operator, [6, 6].
+    """
     t_ = t_inv_so3(ha[3:])
     return jnp.block([[t_, t_u_omega_minus(ha)], [jnp.zeros((3, 3)), t_]])
 
 
 def log_se3(hg: Array) -> Array:
-    # [4, 4] -> [6]
+    r"""
+    Computes the logarithm map from SE(3) to se(3). Formulation from Geometrically exact beam finite element formulated
+    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.15.
+    :param hg: SE(3) group element, [4, 4].
+    :return: se(3) algebra vector, [6].
+    """
     omega = log_so3(hg[:3, :3])
     return jnp.concatenate((t_inv_so3(omega).T @ hg[:3, 3], omega))
 
 
 def exp_se3(ha: Array) -> Array:
-    # [6] -> [4, 4]
+    r"""
+    Computes the exponential map from se(3) to SE(3). Formulation from Geometrically exact beam finite element formulated
+    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.
+    :param ha: se(3) algebra vector, [6].
+    :return: SE(3) group element, [4, 4].
+    """
     return jnp.block(
         [
             [exp_so3(ha[3:]), (t_so3(ha[3:]).T @ ha[:3])[:, None]],
@@ -96,17 +143,40 @@ def exp_se3(ha: Array) -> Array:
 
 
 def x_rmat_to_hg(x: Array, rmat: Array) -> Array:
-    # [3], [3, 3] -> [4, 4]
+    r"""
+    Combines a translation vector and rotation matrix into an element of the SE(3) group.
+    :param x: Translation vector, [3].
+    :param rmat: Rotation matrix, [3, 3].
+    :return: SE(3) group element, [4, 4].
+    """
     return jnp.block([[rmat, x[:, None]], [jnp.zeros((1, 3)), jnp.ones((1, 1))]])
 
 
 def hg_to_x_rmat(hg: Array) -> tuple[Array, Array]:
-    # [4, 4] -> [3], [3, 3]
+    r"""
+    Decomposes an SE(3) group element into a translation vector and rotation matrix.
+    :param hg: SE(3) group element, [4, 4].
+    :return: Translation vector, [3], and rotation matrix, [3, 3].
+    """
     return hg[:3, 3], hg[:3, :3]
 
 
+def vect_product(hg: Array, x: Array) -> Array:
+    r"""
+    Computes the resulting vector of an SE(3) group element and a 3D translation vector.
+    :param hg: SE(3) group element, [4, 4].
+    :param x: Translation vector, [3].
+    :return: Resulting translation vector, [3].
+    """
+    return hg[:3, :3] @ x + hg[:3, 3]
+
+
 def hg_inv(hg: Array) -> Array:
-    # [4, 4] -> [4, 4]
+    r"""
+    Computes the inverse of an SE(3) group element.
+    :param hg: SE(3) group element, [4, 4].
+    :return: Inverse SE(3) group element, [4, 4].
+    """
     x, rmat = hg_to_x_rmat(hg)
     return jnp.block(
         [[rmat.T, -(rmat.T @ x)[:, None]], [jnp.zeros((1, 3)), jnp.ones((1, 1))]]
@@ -114,19 +184,32 @@ def hg_inv(hg: Array) -> Array:
 
 
 def ha_to_ha_tilde(ha: Array) -> Array:
-    # [6] -> [4, 4]
+    r"""
+    Converts a se(3) vector into its matrix representation.
+    :param ha: se(3) algebra vector, [6].
+    :return: se(3) algebra element in matrix form, [4, 4].
+    """
     return jnp.block([[vec_to_skew(ha[3:]), ha[:3, None]], [jnp.zeros((1, 4))]])
 
 
 def ha_tilde_to_ha(ha_tilde: Array) -> Array:
-    # [4, 4] -> 6
+    r"""
+    Converts a se(3) element matrix into its vector representation.
+    :param: ha_tilde: se(3) algebra element in matrix form, [4, 4].
+    :return: se(3) algebra vector, [6].
+    """
     ha_u = ha_tilde[:3, 3]
     ha_omega = skew_to_vec(ha_tilde[:3, :3])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
 
 def ha_to_ha_hat(ha: Array) -> Array:
-    # [6] -> [6, 6]
+    r"""
+    Converts a se(3) vector into its hat matrix representation. Formulation from Geometrically exact beam finite element
+    formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 15.
+    :param ha: se(3) algebra vector, [6].
+    :return: Hat matrix representation, [6, 6].
+    """
     return jnp.block(
         [
             [vec_to_skew(ha[3:]), vec_to_skew(ha[:3])],
@@ -135,15 +218,25 @@ def ha_to_ha_hat(ha: Array) -> Array:
     )
 
 
-def ha_hat_to_ha(ha: Array) -> Array:
-    # [6, 6] -> [6]
-    ha_u = skew_to_vec(ha[:3, 3:])
-    ha_omega = skew_to_vec(ha[:3, :3])
+def ha_hat_to_ha(ha_hat: Array) -> Array:
+    r"""
+    Converts a se(3) hat matrix representation into an se(3) vector. Formulation from Geometrically exact beam finite
+    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 15.
+    :param ha_hat: Hat matrix representation, [6, 6].
+    :return: se(3) vector, [6].
+    """
+    ha_u = skew_to_vec(ha_hat[:3, 3:])
+    ha_omega = skew_to_vec(ha_hat[:3, :3])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
 
 def ha_to_ha_check(ha: Array) -> Array:
-    # [6] -> [6, 6]
+    r"""
+    Converts a se(3) vector into its check matrix representation. Formulation from Geometrically exact beam finite
+    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 16.
+    :param ha: se(3) algebra vector, [6].
+    :return: Check matrix representation, [6, 6].
+    """
     return jnp.block(
         [
             [jnp.zeros((3, 3)), vec_to_skew(ha[:3])],
@@ -152,45 +245,99 @@ def ha_to_ha_check(ha: Array) -> Array:
     )
 
 
-def ha_check_to_ha(ha: Array) -> Array:
-    # [6, 6] -> [6]
-    ha_u = skew_to_vec(ha[:3, 3:])
-    ha_omega = skew_to_vec(ha[3:, 3:])
+def ha_check_to_ha(ha_check: Array) -> Array:
+    r"""
+    Converts a se(3) hat matrix representation into an se(3) vector. Formulation from Geometrically exact beam finite
+    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 16.
+    :param ha_check: Check matrix representation, [6, 6].
+    :return: se(3) vector, [6].
+    """
+    ha_u = skew_to_vec(ha_check[:3, 3:])
+    ha_omega = skew_to_vec(ha_check[3:, 3:])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
 
 def hg_to_d(hg1: Array, hg2: Array) -> Array:
-    # [4, 4], [4, 4] -> [6]
+    r"""
+    Obtains the relative configuration vector between two SE(3) group elements. Formulation from Geometrically exact
+    beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 56.
+    :param hg1: Base SE(3) group element at s=0, [4, 4].
+    :param hg2: Tip SE(3) group element at s=L, [4, 4].
+    :return: se(3) relative configuration vector, [6].
+    """
     return log_se3(hg_inv(hg1) @ hg2)
 
 
 def p(d: Array) -> Array:
-    # [6] -> [6, 12]
+    r"""
+    Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation
+    from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,
+    2013, Eq 66.
+    :param d: Relative se(3) configuration vector, [6].
+    :return: Matrix, [6, 12].
+    """
     return jnp.concatenate((-t_inv_se3(-d), t_inv_se3(d)), axis=-1)
 
 
 def t_star(s_l: Array, d: Array) -> Array:
-    # [], [6] -> [6, 6]
+    r"""
+    Matrix which described perturbations in the algebra element along an element with respect to the algebra elements at
+    both ends of the element, :math:`T^*(s, \mathbf{d}) = \frac{d \mathbf{h}(s)}{d \mathbf{h}_A}` or
+    :math:`\frac{d \mathbf{h}(s)}{d \mathbf{h}_B}`. Formulation from Geometrically exact beam finite element
+    formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.
+    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param d: Relative se(3) configuration vector, [6].
+    :return::math:`T^*(s, \mathbf{d})` matrix, [6, 6].
+    """
     return s_l * t_se3(s_l * d) @ t_inv_se3(d)
 
 
 def q(s_l: Array, d: Array) -> Array:
-    # [6] -> [6, 12]
+    r"""
+    Matrix which described pertubations in the algebra element along an element with respect to the algebra elements at
+    both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &
+    T^*(s, \mathbf{d})]`. Formulation from Geometrically exact beam finite element formulated on the special
+    Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.
+    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param d: Relative se(3) configuration vector, [6].
+    :return::math:`Q(s, \mathbf{d})` matrix, [6, 12].
+    """
     t_star_ = t_star(s_l, d)
     return jnp.stack((jnp.eye(6) - t_star_, t_star_), axis=-1)
 
 
-def k_tg_entry(d: Array, eps: Array, k: Array) -> Array:
-    def e_mat() -> Array:
-        # [6] -> [12, 6, 12]
+def k_entry(
+    d: Array,
+    l: Array,
+    eps: Array,
+    k: Array,
+    include_material: bool = True,
+    include_geometric: bool = True,
+) -> Array:
+    r"""
+    Computes a stiffness matrix entry between two degrees of freedom. Formulation from Geometrically exact beam finite
+    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 76.
+    :param d: Relative se(3) configuration vector, [6].
+    :param l: Element length, [].
+    :param eps: Beam strain vector, [6].
+    :param k: Beam cross-sectional stiffness matrix, [6, 6].
+    :param include_material: Whether to include material stiffness contribution, bool.
+    :param include_geometric: Whether to include geometric stiffness contribution, bool.
+    :return: Stiffness matrix entry, [12, 12].
+    """
 
-        d_pdt_dd = jacobian(lambda d_: p(d_).T)(d)  # [12, 6, 6]
-        dd_dhab = p(d)  # [6, 12]
-        return jnp.einsum("ijk,kl->ijl", d_pdt_dd, dd_dhab)  # [12, 6, 12]
+    p_d = p(d)  # d{d}/d{h_{AB}}, [6, 12]
+    if include_material:
+        # contribution from perturbations in the strain
+        k_t = jnp.einsum("ij,jk,kl->il", p_d.T, k, p_d) / l  # [12, 12]
+    else:
+        k_t = jnp.zeros((12, 12))
 
-    return jnp.einsum("ijk,jl,l->ik", e_mat(), k, eps)
+    if include_geometric:
+        # contribution from perturbations in P(d)
+        def func(d_: Array) -> Array:
+            # returns internal forces as a function of configuration vector d, where the strain is not a function of d
+            return jnp.einsum("ij,jk,l->i", p(d_).T, k, eps)  # [12]
 
-
-def vect_product(hg: Array, x: Array) -> Array:
-    # [4, 4], [3] -> [3]
-    return hg[:3, :3] @ x + hg[:3, 3]
+        k_t += jacobian(func)(d) @ p_d
+    return k_t

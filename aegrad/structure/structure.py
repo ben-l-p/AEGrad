@@ -4,7 +4,7 @@ from aegrad.utils import check_type
 from aegrad.structure.utils import check_connectivity
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.algebra.base import chi
-from aegrad.algebra.se3 import p, k_tg_entry
+from aegrad.algebra.se3 import k_entry
 from typing import Optional
 
 
@@ -23,8 +23,8 @@ class Structure:
         self.n_nodes: int = num_nodes
         self.n_dof: int = num_nodes * 6
 
-        check_arr_shape(connectivity, (None, 2))
-        check_arr_dtype(connectivity, int)
+        check_arr_shape(connectivity, (None, 2), "connectivity")
+        check_arr_dtype(connectivity, int, "connectivity")
         check_connectivity(connectivity, num_nodes)
         self.connectivity: Array = connectivity  # [n_elem, 2]
         self.n_elem: int = connectivity.shape[0]
@@ -37,7 +37,7 @@ class Structure:
             6 * self.connectivity[:, [1]] + jnp.arange(6)[None, :]
         )
 
-        check_arr_shape(normal_vector, (self.n_elem, 3))
+        check_arr_shape(normal_vector, (self.n_elem, 3), "normal_vector")
         self.plane_vector: Array = normal_vector
 
         # initialize design variables with default values
@@ -47,7 +47,7 @@ class Structure:
         self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
         self.k_cs: Array = jnp.zeros((self.n_elem, 6, 6))
 
-        # initialise auxillary arrays
+        # initialise auxiliary arrays
         self.o0: Array = jnp.zeros((self.n_elem, 3, 3))
         self.l0: Array = jnp.zeros(self.n_elem)
         self.d0: Array = jnp.zeros((self.n_elem, 6))
@@ -88,18 +88,28 @@ class Structure:
             jnp.einsum("ijk,ikl,iml->ijm", chi0, self.m_cs, chi0)
         )
 
-    def make_k_t(self, d: Array, include_geometric: bool = True) -> Array:
-        pd = vmap(p, 0, 0)(d)  # [n_elem, 6, 12]
-        pd_l = pd / self.l0[:, None, None]  # [n_elem, 6, 12]
-        k_t_entries = jnp.einsum(
-            "ikj,ikl,ilm->ijm", pd, self.k, pd_l
-        )  # [n_elem, 12, 12]
-
-        if include_geometric:
-            eps = (d - self.d0) / self.l0[:, None]
-            k_t_entries += vmap(k_tg_entry, (0, 0, 0), 0)(
-                d, eps, self.k
-            )  # [n_elem, 12, 12]
+    def make_k(
+        self, d: Array, include_material: bool = True, include_geometric: bool = True
+    ) -> Array:
+        r"""
+        Assemble global stiffness matrix as a function of the element relative configuration vectors
+        :param d: Element relative configuration, [n_elem, 6]
+        :param include_material: Whether to include material stiffness, defaults to True
+        :param include_geometric: Whether to include geometric stiffness, defaults to True
+        :return: Global stiffness matrix, [n_dof, n_dof]
+        """
+        k_t_entries = vmap(
+            lambda d_, l_, eps_, k_: k_entry(
+                d_,
+                l_,
+                eps_,
+                k_,
+                include_material=include_material,
+                include_geometric=include_geometric,
+            ),
+            (0, 0, 0, 0),
+            0,
+        )(d, self.l0, self.d0, self.k)  # [n_elem, 12, 12]
 
         k_t = jnp.zeros((self.n_dof, self.n_dof))
         for i_elem in range(self.n_elem):
@@ -118,4 +128,24 @@ class Structure:
         :param prescribed_values: Array of prescribed dof values
         :return: Displacement array of shapes [n_nodes, 6]
         """
+
         pass
+
+        # def newton_raphson(
+        #     func: Callable[[Array], Array],
+        #     jac: Callable[[Array], Array],
+        #     x_init: Array,
+        #     free_dof: slice,
+        # ) -> Array:
+        #     n_iter = 10
+        #
+        #     def update(_, x_km1: Array) -> Array:
+        #         f = func(x_km1)[free_dof]  # [m - n_cnst]
+        #         j = jac(x_km1)[free_dof, free_dof]  # [m - n_cnst, m - n_cnst]
+        #         dx = jnp.linalg.solve(j, f)  # [m - n_cnst]
+        #         return x_km1.at[free_dof].add(-dx)
+        #
+        #     return jax.lax.fori_loop(0, n_iter, update, x_init)
+        #     # return update(0, x_init)
+        #
+        # return newton_raphson(g_ext)

@@ -1,6 +1,6 @@
 r"""
 Naming conventions:
-ha, d: Lie algebra vector for SE(3), [6]
+ha_hat, d: Lie algebra vector for SE(3), [6]
 ha_u, ha_omega: Lie algebra vector linear and rotational components, [3], [3]
 ha_tilde: Lie algebra element, [4, 4]
 ha_hat: Adjoint representation, [6, 6]
