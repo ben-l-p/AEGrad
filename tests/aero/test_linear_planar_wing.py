@@ -5,7 +5,7 @@ from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.linear import LinearWakeType
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
-from aegrad.aero.case import AeroCase
+from aegrad.aero.case import UVLM
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
 from aegrad.print_output import set_verbosity, VerbosityLevel
 from pathlib import Path
@@ -21,7 +21,7 @@ class TestLinearAero:
     def make_planar_wing(
         flowfield: FlowField,
         ea: float = 0.0,
-    ) -> tuple[AeroCase, Array]:
+    ) -> tuple[UVLM, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
         """
@@ -50,7 +50,7 @@ class TestLinearAero:
         hg = hg.at[:, :3, 3].set(beam_coords)
 
         # nonlinear case
-        case = AeroCase(
+        case = UVLM(
             n_tstep, disc, False, jnp.arange(0, n + 1), kernel=biot_savart_cutoff
         )
         case.set_design_variables(dt, flowfield, None, x_grid, hg)

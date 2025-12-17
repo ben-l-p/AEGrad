@@ -306,7 +306,7 @@ def q(s_l: Array, d: Array) -> Array:
     return jnp.stack((jnp.eye(6) - t_star_, t_star_), axis=-1)
 
 
-def k_entry(
+def k_t_entry(
     d: Array,
     l: Array,
     eps: Array,
@@ -325,19 +325,19 @@ def k_entry(
     :param include_geometric: Whether to include geometric stiffness contribution, bool.
     :return: Stiffness matrix entry, [12, 12].
     """
+    if not include_material and not include_geometric:
+        raise ValueError(
+            "At least one of include_material or include_geometric must be True."
+        )
 
     p_d = p(d)  # d{d}/d{h_{AB}}, [6, 12]
     if include_material:
         # contribution from perturbations in the strain
-        k_t = jnp.einsum("ij,jk,kl->il", p_d.T, k, p_d) / l  # [12, 12]
+        k_t = p_d.T @ k @ p_d / l  # [12, 12]
     else:
         k_t = jnp.zeros((12, 12))
 
     if include_geometric:
         # contribution from perturbations in P(d)
-        def func(d_: Array) -> Array:
-            # returns internal forces as a function of configuration vector d, where the strain is not a function of d
-            return jnp.einsum("ij,jk,l->i", p(d_).T, k, eps)  # [12]
-
-        k_t += jacobian(func)(d) @ p_d
+        k_t += jacobian(lambda d_: p(d_).T @ k @ eps)(d) @ p_d
     return k_t

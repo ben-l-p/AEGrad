@@ -4,8 +4,9 @@ from aegrad.utils import check_type
 from aegrad.structure.utils import check_connectivity
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.algebra.base import chi
-from aegrad.algebra.se3 import k_entry
+from aegrad.algebra.se3 import k_t_entry
 from typing import Optional
+from functools import partial
 
 
 class Structure:
@@ -99,11 +100,8 @@ class Structure:
         :return: Global stiffness matrix, [n_dof, n_dof]
         """
         k_t_entries = vmap(
-            lambda d_, l_, eps_, k_: k_entry(
-                d_,
-                l_,
-                eps_,
-                k_,
+            partial(
+                k_t_entry,
                 include_material=include_material,
                 include_geometric=include_geometric,
             ),

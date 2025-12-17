@@ -18,8 +18,11 @@ def compute_aic_grid(
     kernel: KernelFunction,
 ):
     """
-    Compute the aerodynamic influence coefficient (AIC) across grids of points. Returns array of shapes
-    (c_m, c_n, zeta_m, zeta_n, 3).
+    Compute the aerodynamic influence coefficient (AIC) across grids of points.
+    :param c: Collocation points, [c_m, c_n, 3].
+    :param zeta: Grid points, [zeta_m, zeta_n, 3].
+    :param kernel: Kernel function to compute the influence.
+    :return: AIC matrix, [c_m, c_n, zeta_m, zeta_n, 3].
     """
 
     # create the AIC in the spanwise and chordwise directions, and combine later
@@ -49,7 +52,7 @@ def compute_aic_sys(
     :param kernels: List of kernel functions for each element.
     :param ns: Optional list of normal vectors for each element, [][c_m, c_n, 3]. If provided, the AICs will be projected
     onto these normals.
-    :return: Nested sequences of AIC matrices.
+    :return: Nested sequences of AIC matrices, [][][c_m, c_n, zeta_m, zeta_n, 3], or [][][c_m, c_n, zeta_m, zeta_n] if projected onto normals.
     """
     if len(zetas) != len(kernels):
         raise ValueError(
@@ -63,7 +66,6 @@ def compute_aic_sys(
             f"Got {len(ns)} normals and {len(kernels)} kernels."
         )
 
-    # this is the default list for AICs, and is for just the bound panels in the split case
     aic_mats = []
     for i_c, c in enumerate(cs):
         aic_mats.append([])
@@ -87,9 +89,9 @@ def add_wake_influence(
 ) -> list[list[Array]]:
     r"""
     Lump the wake influence onto the last column of the bound AIC matrices.
-    :param aic_bs: Bound influence matrices.
-    :param aic_ws: Wake influence matrices.
-    :return: Updated bound influence matrices.
+    :param aic_bs: Bound influence matrices, [][][c_m, c_n, zeta_m, zeta_n, 3].
+    :param aic_ws: Wake influence matrices, [][][c_m, c_n, zeta_m_star, zeta_n, 3].
+    :return: Updated bound influence matrices, [][][c_m, c_n, zeta_m, zeta_n, 3].
     """
     for i in range(len(aic_bs)):
         for j in range(len(aic_bs[i])):
@@ -101,8 +103,9 @@ def add_wake_influence(
 
 def reshape_aic_sys(aic_mat: Array) -> Array:
     r"""
-    Reshape an AIC matrix of shapes (c_m, c_n, zeta_m, zeta_n, 3) into a 2D matrix of shapes (c_m*c_n, zeta_m*zeta_n, 3).
-    Also works for projecting onto normals if the last dimension is absent.
+    Reshape an AIC matrix such that the source and target dimensions are flattened.
+    :param aic_mat: Input AIC matrix, [c_m, c_n, zeta_m, zeta_n] or [c_m, c_n, zeta_m, zeta_n, 3].
+    :return: Reshaped AIC matrix, [c_m*c_n, zeta_m*zeta_n] or [c_m*c_n, zeta_m*zeta_n, 3].
     """
     shape = aic_mat.shape
     new_shape = [shape[0] * shape[1], shape[2] * shape[3]]
@@ -114,8 +117,8 @@ def reshape_aic_sys(aic_mat: Array) -> Array:
 def assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
     r"""
     Assemble a nested sequence of AIC matrices into a single AIC matrix.
-    :param aic_mats: Nested sequence of AIC matrices.
-    :return: Assembled AIC matrix.
+    :param aic_mats: Nested sequence of AIC matrices, [][][c_m, c_n, zeta_m, zeta_n] or [][][c_m, c_n, zeta_m, zeta_n, 3].
+    :return: Assembled AIC matrix. [c_tot, zeta_tot] or [c_tot, zeta_tot, 3].
     """
     aic_mats_reshaped = [
         [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
@@ -130,7 +133,7 @@ def compute_aic_sys_assembled(
     ns: Optional[Sequence[Array]] = None,
 ) -> Array:
     """
-    Compute the assembled AIC matrix for a system of elements. Returns an AIC matrix.
+    Compute the assembled AIC matrix for a system of elements.
     :param cs: List of collocation points, [][c_m, c_n, 3].
     :param zetas: List of grids, [][zeta_m, zeta_n, 3].
     :param kernels: List of kernel functions for each element.
@@ -153,8 +156,11 @@ def aic_vmap(
     kernel: KernelFunction,
 ) -> Array:
     """
-    General AIC computation for any grid. Will vmap across first two dimensions to give a shapes of
-    (c_m, c_n, zeta_m, zeta_n, 3).
+    General AIC computation for any grid. Will vmap across first two dimensions.
+    :param c: Collocation points, [c_m, c_n, 3].
+    :param zeta: Grid points, [zeta_m, zeta_n, 3].
+    :param kernel: Kernel function to compute the influence.
+    :return: AIC matrix, [c_m, c_n, zeta_m, zeta_n, 3].
     """
 
     return vmap(

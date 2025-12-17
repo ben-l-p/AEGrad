@@ -2,7 +2,7 @@ from aegrad.aero.uvlm_utils import make_rectangular_grid
 from aegrad.aero.data_structures import GridDiscretization
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
-from aegrad.aero.case import AeroCase
+from aegrad.aero.case import UVLM
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 
@@ -64,7 +64,7 @@ class TestVarWakeDisc:
             variable_wake = delta_w_ is not None
             disc = GridDiscretization(m, n, m_star)
 
-            case = AeroCase(n_tstep, disc, variable_wake, jnp.arange(0, n + 1))
+            case = UVLM(n_tstep, disc, variable_wake, jnp.arange(0, n + 1))
 
             case.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
 

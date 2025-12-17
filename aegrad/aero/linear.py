@@ -14,7 +14,7 @@ from aegrad.aero.data_structures import (
     InputSlices,
     StateSlices,
     OutputSlices,
-    LinearComponent,
+    _LinearComponent,
     _SliceEntry,
     InputUnflattened,
     StateUnflattened,
@@ -31,7 +31,7 @@ from aegrad.print_output import print_with_time, warn
 from aegrad.plotting.pvd import write_pvd
 
 if TYPE_CHECKING:
-    from aegrad.aero.case import AeroCase
+    from aegrad.aero.case import UVLM
 
 
 class LinearWakeType(Enum):
@@ -44,7 +44,7 @@ class LinearWakeType(Enum):
 class LinearAero:
     def __init__(
         self,
-        case: AeroCase,
+        case: UVLM,
         reference: AeroSnapshot,
         wake_type: LinearWakeType = LinearWakeType.FREE,
         bound_upwash: bool = True,
@@ -225,13 +225,13 @@ class LinearAero:
         out_dict = {}
         for entry in slice_entries:
             if not entry.enabled:  # if disabled
-                out_dict[entry.name] = LinearComponent(False, None, None)
+                out_dict[entry.name] = _LinearComponent(False, None, None)
             else:
                 slices = []
                 for size in [reduce(mul, shape) for shape in entry.shapes]:
                     slices.append(slice(cnt, cnt + size))
                     cnt += size
-                out_dict[entry.name] = LinearComponent(True, slices, entry.shapes)
+                out_dict[entry.name] = _LinearComponent(True, slices, entry.shapes)
         return cls(**out_dict), cnt
 
     def _make_input_slices(self) -> tuple[InputSlices, int]:
@@ -299,7 +299,7 @@ class LinearAero:
         return self._make_slices(slice_entries, OutputSlices)
 
     def _unpack_vector(
-        self, x: Array, slices: dict[str, LinearComponent], add_t: bool = False
+        self, x: Array, slices: dict[str, _LinearComponent], add_t: bool = False
     ) -> dict[str, Optional[ArrayList]]:
         out = {}
         for name, entry in slices.items():
@@ -357,7 +357,7 @@ class LinearAero:
 
     def _pack_vector(
         self,
-        slices: dict[str, LinearComponent],
+        slices: dict[str, _LinearComponent],
         vec_length: int,
         arrs: dict[str, Optional[ArrayList]],
     ) -> Array:
@@ -385,7 +385,7 @@ class LinearAero:
 
     def _pack_vector_t(
         self,
-        slices: dict[str, LinearComponent],
+        slices: dict[str, _LinearComponent],
         vec_length: int,
         arrs: dict[str, Optional[ArrayList]],
     ) -> Array:
@@ -487,7 +487,7 @@ class LinearAero:
         )
 
     def _get_zero(
-        self, slices: dict[str, LinearComponent]
+        self, slices: dict[str, _LinearComponent]
     ) -> dict[str, Optional[ArrayList]]:
         out = {}
         for name, entry in slices.items():
@@ -509,7 +509,7 @@ class LinearAero:
     def get_zero_output(self) -> OutputUnflattened:
         return OutputUnflattened(**self._get_zero(shallow_asdict(self.output_slices)))
 
-    def _unflatten_subvec(self, vec: Array, component: LinearComponent) -> ArrayList:
+    def _unflatten_subvec(self, vec: Array, component: _LinearComponent) -> ArrayList:
         arrs = ArrayList([])
         cnt = 0
         for i_surf in range(self.n_surf):

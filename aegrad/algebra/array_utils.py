@@ -11,14 +11,11 @@ def check_arr_shape(
     arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
 ) -> None:
     """Asserts that the shapes of the given array matches the expected shapes.
-
-    Args:
-        arr (Array): The array whose shapes is to be checked.
-        expected_shape (tuple[Optional[int], ...]): The expected shapes of the array. Values of None allow for any size
-        in that dimension.
-
-    Raises:
-        ValueError: If the shapes of the array does not match the expected shapes.
+    :param arr: Input array to check.
+    :param expected_shape: Expected shape of the array, as a tuple of integers, with None used for dimensions that can
+    be of any size.
+    :param name: Name of the input array. This is used to provide more informative error messages.
+    :raises ValueError: If the shape of the array does not match the expected shape.
     """
     actual_shape = arr.shape
     if len(actual_shape) == len(expected_shape):
@@ -38,13 +35,10 @@ def check_arr_shape(
 
 def check_arr_ndim(arr: Array, expected_ndim: int, name: Optional[str]) -> None:
     """Asserts that the number of dimensions of the given array matches the expected number.
-
-    Args:
-        arr (Array): The array whose number of dimensions is to be checked.
-        expected_ndim (int): The expected number of dimensions.
-
-    Raises:
-        ValueError: If the number of dimensions of the array does not match the expected number.
+    :param arr: Input array to check.
+    :param expected_ndim: Expected number of dimensions of the array.
+    :param name: Name of the input array. This is used to provide more informative error messages.
+    :raises ValueError: If the number of dimensions of the array does not match the expected value.
     """
     actual_ndim = arr.ndim
     if actual_ndim != expected_ndim:
@@ -55,14 +49,11 @@ def check_arr_ndim(arr: Array, expected_ndim: int, name: Optional[str]) -> None:
 
 
 def check_arr_dtype(arr: Array, expected_dtype: type, name: Optional[str]) -> None:
-    """Asserts that the data type of the given array matches the expected data type.
-
-    Args:
-        arr (Array): The array whose data type is to be checked.
-        expected_dtype (type): The expected data type.
-
-    Raises:
-        ValueError: If the data type of the array does not match the expected data type.
+    """Asserts that the data type of the given array matches the expected type.
+    :param arr: Input array to check.
+    :param expected_dtype: Expected underlying data type of the array.
+    :param name: Name of the input array. This is used to provide more informative error messages.
+    :raises ValueError: If the data type of the array does not match the expected type.
     """
 
     if expected_dtype is int:
@@ -92,9 +83,9 @@ def flatten_to_1d(arrs: Sequence[Array]) -> Array:
 def block_axis(arrs: Sequence[Sequence[Array]], axes: Sequence[int]) -> Array:
     r"""
     Form a block matrix along two given axes
-    :param arrs: Double nested sequence of arrays
+    :param arrs: Double nested sequence of arrays [][][n, m]
     :param axes: Axes along which to concatenate the arrays
-    :return: Block matrix
+    :return: Block matrix, [n_total, m_total]
     """
     # obtain the number of levels in the nested sequence
     if len(axes) != 2:
@@ -107,7 +98,7 @@ def block_axis(arrs: Sequence[Sequence[Array]], axes: Sequence[int]) -> Array:
 
 def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
     r"""
-    Average the values of the array along the specified axes.
+    Find the pairwise average of the array along the specified axes.
     :param arr: Input array to average.
     :param axes: Axis or axes along which to average.
     :return: Averaged array.
@@ -140,7 +131,8 @@ def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
 @make_pytree
 class ArrayList(UserList[Array]):
     r"""
-    Class to hold a sequence of arrays, useful for handling multiple surfaces.
+    Class to hold a sequence of arrays, with overloaded arithmetic operations. This allows for more elegeant handling of
+    non-uniform arrays in various calculations.
     :param arrs: Sequence of arrays to hold.
     """
 
