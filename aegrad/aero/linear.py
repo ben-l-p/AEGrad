@@ -41,7 +41,11 @@ class LinearWakeType(Enum):
     FREE = (True, True)
 
 
-class LinearAero:
+class LinearUVLM:
+    r"""
+    Class to represent a linearised UVLM aerodynamic system about a reference state.
+    """
+
     def __init__(
         self,
         case: UVLM,
@@ -52,6 +56,17 @@ class LinearAero:
         unsteady_force: bool = True,
         gamma_dot_state: bool = False,
     ):
+        r"""
+        Initialize linear UVLM system about a reference state.
+        :param case: UVLM case object to linearise.
+        :param reference: AeroSnapshot representing the reference state for linearisation.
+        :param wake_type: Instance of LinearWakeType enum to specify wake treatment.
+        :param bound_upwash: If true, include bound surface upwash velocities as inputs.
+        :param wake_upwash: If true, include wake surface upwash velocities as inputs.
+        :param unsteady_force: If true, include unsteady force.
+        :param gamma_dot_state: If true, include bound circulation time derivative as a state.
+        """
+
         # options
         self.prescribed_wake, self.free_wake = wake_type.value
         self.unsteady_force: bool = unsteady_force
@@ -67,6 +82,10 @@ class LinearAero:
         self.dt: Array = case.dt
         self.t0: Array = reference.t
 
+        # check that the reference state is steady
+        # whilst linearisation can be performed about unsteady states, the current implementation omits some terms
+        # required for this, however, cannot see a practical use case for such a model. Warn the user if the reference
+        # state appears unsteady.
         if max([jnp.abs(zbd).max() for zbd in reference.zeta_b_dot]) > 1e-6:
             warn(
                 "Reference bound surface velocities are non-zero. Ensure that the reference state is steady for linearisation."
@@ -134,60 +153,108 @@ class LinearAero:
         self._t: Optional[Array] = None
 
     @property
-    def u_t(self):
+    def u_t(self) -> InputUnflattened:
+        r"""
+        Get the time history of the system input perturbations.
+        :return: InputUnflattened object representing the time history.
+        :raises ValueError: If input history is not available, likely because the linear system has not been run.
+        """
         if self._u_t is None:
-            raise ValueError("No input_ results available. Run a linear system first.")
+            raise ValueError(
+                "No input time history available. Run a linear system first."
+            )
         return self._u_t
 
     @property
-    def x_t(self):
+    def x_t(self) -> StateUnflattened:
+        r"""
+        Get the time history of the system state perturbations.
+        :return: StateUnflattened object representing the time history.
+        :raises ValueError: If state history is not available, likely because the linear system has not been run.
+        """
         if self._x_t is None:
-            raise ValueError("No state results available. Run a linear system first.")
+            raise ValueError(
+                "No state time history available. Run a linear system first."
+            )
         return self._x_t
 
     @property
     def y_t(self):
+        r"""
+        Get the time history of the system output perturbations.
+        :return: OutputUnflattened object representing the time history.
+        :raises ValueError: If output history is not available, likely because the linear system has not been run.
+        """
         if self._y_t is None:
-            raise ValueError("No output results available. Run a linear system first.")
+            raise ValueError(
+                "No output time history available. Run a linear system first."
+            )
         return self._y_t
 
     @property
     def u_t_tot(self):
+        r"""
+        Get the time history of the total system inputs (reference plus perturbation).
+        :return: InputUnflattened object representing the time history.
+        :raises ValueError: If input history is not available, likely because the linear system has not been run.
+        """
         if self._u_t_tot is None:
             raise ValueError(
-                "No total input_ results available. Run a linear system first."
+                "No total input time history available. Run a linear system first."
             )
         return self._u_t_tot
 
     @property
     def x_t_tot(self):
+        r"""
+        Get the time history of the total system states (reference plus perturbation).
+        :return: StateUnflattened object representing the time history.
+        :raises ValueError: If state history is not available, likely because the linear system has not been run.
+        """
         if self._x_t_tot is None:
             raise ValueError(
-                "No total state results available. Run a linear system first."
+                "No total state time history available. Run a linear system first."
             )
         return self._x_t_tot
 
     @property
     def y_t_tot(self):
+        r"""
+        Get the time history of the total system outputs (reference plus perturbation).
+        :return: OutputUnflattened object representing the time history.
+        :raises ValueError: If output history is not available, likely because the linear system has not been run.
+        """
         if self._y_t_tot is None:
             raise ValueError(
-                "No total output results available. Run a linear system first."
+                "No total output time history available. Run a linear system first."
             )
         return self._y_t_tot
 
     @property
     def n_tstep_tot(self) -> int:
+        r"""
+        Get the number of timesteps in the time history.
+        :return: Number of timesteps.
+        """
         if self._n_tstep is None:
             raise ValueError("No solution available. Run a linear system first.")
         return self._n_tstep
 
     @property
     def t(self) -> Array:
+        r"""
+        Get the time array for the time history.
+        :return: Time array, [n_tstep]
+        """
         if self._t is None:
             raise ValueError("No time available. Run a linear system first.")
         return self._t
 
     def get_reference_inputs(self) -> InputUnflattened:
+        r"""
+        Get the reference input state about which the system is linearised.
+        :return: InputUnflattened object representing the reference inputs.
+        """
         return InputUnflattened(
             self.zeta0_b,
             self.zeta0_b_dot,
@@ -198,6 +265,10 @@ class LinearAero:
         )
 
     def get_reference_states(self) -> StateUnflattened:
+        r"""
+        Get the reference state about which the system is linearised.
+        :return: StateUnflattened object representing the reference states.
+        """
         return StateUnflattened(
             self.gamma0_b,
             self.gamma0_w,
@@ -208,6 +279,10 @@ class LinearAero:
         )
 
     def get_reference_outputs(self) -> OutputUnflattened:
+        r"""
+        Get the reference outputs about which the system is linearised.
+        :return: OutputUnflattened object representing the reference outputs.
+        """
         return OutputUnflattened(
             self.f_steady0, self.f_unsteady0 if self.unsteady_force else None
         )
@@ -219,6 +294,9 @@ class LinearAero:
         r"""
         Helper function to create slices classes for the vectors, and count the number of elements.
         Blocks should be passed in the order they are in the dataclass.
+        :param slice_entries: Sequence of _SliceEntry objects defining the slices.
+        :param cls: The class type to instantiate for the slices, e.g. InputSlices.
+        :return: Tuple of (slices class instance, total number of elements).
         """
         # make slices
         cnt = 0
@@ -235,6 +313,10 @@ class LinearAero:
         return cls(**out_dict), cnt
 
     def _make_input_slices(self) -> tuple[InputSlices, int]:
+        r"""
+        Create input slices for the input vector.
+        :return: InputSlices instance and total number of input elements.
+        """
         slice_entries = (
             _SliceEntry("zeta_b", True, self.zeta_b_shapes),
             _SliceEntry("zeta_b_dot", True, self.zeta_b_shapes),
@@ -250,6 +332,10 @@ class LinearAero:
         return self._make_slices(slice_entries, InputSlices)
 
     def _make_state_slices(self) -> tuple[StateSlices, int]:
+        r"""
+        Create state slices for the state vector.
+        :return: StateSlices instance and total number of state elements.
+        """
         slice_entries = (
             _SliceEntry("gamma_b", True, self.gamma_b_shapes),
             _SliceEntry("gamma_w", True, self.gamma_w_shapes),
@@ -289,6 +375,10 @@ class LinearAero:
         return self._make_slices(slice_entries, StateSlices)
 
     def _make_output_slices(self) -> tuple[OutputSlices, int]:
+        r"""
+        Create output slices for the output vector.
+        :return: OutputSlices instance and total number of output elements.
+        """
         slice_entries = (
             _SliceEntry("f_steady", True, self.zeta_b_shapes),
             _SliceEntry(
@@ -301,6 +391,13 @@ class LinearAero:
     def _unpack_vector(
         self, x: Array, slices: dict[str, _LinearComponent], add_t: bool = False
     ) -> dict[str, Optional[ArrayList]]:
+        r"""
+        Unpack a vector into its components based on the provided slices.
+        :param x: Vector to unpack, [n_elements] or [n_tstep, n_elements]
+        :param slices: Slice name and linear component mapping.
+        :param add_t: If true, the first dimension of x is time steps.
+        :return: Dictionary mapping of names to unpacked ArrayLists.
+        """
         out = {}
         for name, entry in slices.items():
             if not entry.enabled:
@@ -326,31 +423,61 @@ class LinearAero:
         return out
 
     def _unpack_input_vector(self, u: Array) -> InputUnflattened:
+        r"""
+        Unpack an input vector into its components.
+        :param u: Input vector, [n_inputs]
+        :return: InputUnflattened object.
+        """
         return InputUnflattened(
             **self._unpack_vector(u, shallow_asdict(self.input_slices))
         )
 
     def _unpack_state_vector(self, x: Array) -> StateUnflattened:
+        r"""
+        Unpack a state vector into its components.
+        :param x: State vector, [n_states]
+        :return: StateUnflattened object.
+        """
         return StateUnflattened(
             **self._unpack_vector(x, shallow_asdict(self.state_slices))
         )
 
     def _unpack_output_vector(self, y: Array) -> OutputUnflattened:
+        r"""
+        Unpack an output vector into its components.
+        :param y: Output vector, [n_outputs]
+        :return: OutputUnflattened object.
+        """
         return OutputUnflattened(
             **self._unpack_vector(y, shallow_asdict(self.output_slices))
         )
 
     def _unpack_input_vector_t(self, u_t: Array) -> InputUnflattened:
+        r"""
+        Unpack a time history of input vectors into its components.
+        :param u_t: Input vector time history, [n_tstep, n_inputs]
+        :return: InputUnflattened object.
+        """
         return InputUnflattened(
             **self._unpack_vector(u_t, shallow_asdict(self.input_slices), add_t=True)
         )
 
     def _unpack_state_vector_t(self, x_t: Array) -> StateUnflattened:
+        r"""
+        Unpack a time history of state vectors into its components.
+        :param x_t: State vector time history, [n_tstep, n_states]
+        :return: StateUnflattened object.
+        """
         return StateUnflattened(
             **self._unpack_vector(x_t, shallow_asdict(self.state_slices), add_t=True)
         )
 
     def _unpack_output_vector_t(self, y_t: Array) -> OutputUnflattened:
+        r"""
+        Unpack a time history of output vectors into its components.
+        :param y_t: Output vector time history, [n_tstep, n_outputs]
+        :return: OutputUnflattened object.
+        """
         return OutputUnflattened(
             **self._unpack_vector(y_t, shallow_asdict(self.output_slices), add_t=True)
         )
@@ -361,6 +488,13 @@ class LinearAero:
         vec_length: int,
         arrs: dict[str, Optional[ArrayList]],
     ) -> Array:
+        r"""
+        Pack an unflattened object into a vector based on the provided slices.
+        :param slices: Mapping of names to linear components.
+        :param vec_length: Size of the output vector.
+        :param arrs: Mapping of names to ArrayLists to pack.
+        :return: Vector, [vec_length]
+        """
         vec = jnp.zeros(vec_length)
         for name, entry in slices.items():
             if entry.enabled:
@@ -369,16 +503,31 @@ class LinearAero:
         return vec
 
     def _pack_input_vector(self, u_input: InputUnflattened) -> Array:
+        r"""
+        Pack an input unflattened object into a vector.
+        :param u_input: InputUnflattened object.
+        :return: Input vector, [n_inputs]
+        """
         return self._pack_vector(
             shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
         )
 
     def _pack_state_vector(self, x_state: StateUnflattened) -> Array:
+        r"""
+        Pack a state unflattened object into a vector.
+        :param x_state: StateUnflattened object.
+        :return: State vector, [n_states]
+        """
         return self._pack_vector(
             shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
         )
 
     def _pack_output_vector(self, y_output: OutputUnflattened) -> Array:
+        r"""
+        Pack an output unflattened object into a vector.
+        :param y_output: OutputUnflattened object.
+        :return: Output vector, [n_outputs]
+        """
         return self._pack_vector(
             shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output)
         )
@@ -389,6 +538,13 @@ class LinearAero:
         vec_length: int,
         arrs: dict[str, Optional[ArrayList]],
     ) -> Array:
+        r"""
+        Pack a time history of unflattened objects into a time history of vectors.
+        :param slices: Dictionary mapping names to linear components.
+        :param vec_length: Length of the output vector.
+        :param arrs: Dictionary mapping names to ArrayLists to pack.
+        :return: Array, [n_tstep, vec_length]
+        """
         n_tstep = list(arrs.values())[0][0].shape[
             0
         ]  # find number of timesteps from first surface, first entry
@@ -402,26 +558,48 @@ class LinearAero:
         return vec_t
 
     def _pack_input_vector_t(self, u_input: InputUnflattened) -> Array:
+        r"""
+        Pack a time history of input unflattened objects into a time history of input vectors.
+        :param u_input: InputUnflattened object.
+        :return: Input vector time history, [n_tstep, n_inputs]
+        """
         return self._pack_vector_t(
             shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
         )
 
     def _pack_state_vector_t(self, x_state: StateUnflattened) -> Array:
+        r"""
+        Pack a time history of state unflattened objects into a time history of state vectors.
+        :param x_state: StateUnflattened object.
+        :return: State vector time history, [n_tstep, n_states]
+        """
         return self._pack_vector_t(
             shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
         )
 
     def _pack_output_vector_t(self, y_output: OutputUnflattened) -> Array:
+        r"""
+        Pack a time history of output unflattened objects into a time history of output vectors.
+        :param y_output: OutputUnflattened object.
+        :return: Output vector time history, [n_tstep, n_outputs]
+        """
         return self._pack_vector_t(
             shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output)
         )
 
     def _get_total(
         self,
-        input_: dict[str, Optional[Sequence[Array]]],
-        reference: dict[str, Optional[Sequence[Array]]],
+        input_: dict[str, Optional[ArrayList]],
+        reference: dict[str, Optional[ArrayList]],
         add_t: bool = False,
-    ) -> dict[str, Optional[Sequence[Array]]]:
+    ) -> dict[str, Optional[ArrayList]]:
+        r"""
+        Get the total value by adding the reference to the input perturbation.
+        :param input_: Dictionary mapping of names to ArrayList perturbation entries
+        :param reference: Dictionary mapping of names to ArrayList reference entries
+        :param add_t: If true, the first dimension of the arrays is time steps.
+        :return: Dictionary mapping of names to total ArrayList entries.
+        """
         out = {}
         for name, entry in reference.items():
             if entry is None:
@@ -439,6 +617,11 @@ class LinearAero:
         return out
 
     def get_total_input(self, u: InputUnflattened) -> InputUnflattened:
+        r"""
+        Get the total input by adding the reference to the input perturbation.
+        :param u: InputUnflattened perturbation object.
+        :return: InputUnflattened total object.
+        """
         return InputUnflattened(
             **self._get_total(
                 shallow_asdict(u), shallow_asdict(self.get_reference_inputs())
@@ -446,6 +629,11 @@ class LinearAero:
         )
 
     def get_total_state(self, x: StateUnflattened) -> StateUnflattened:
+        r"""
+        Get the total state by adding the reference to the state perturbation.
+        :param x: StateUnflattened perturbation object.
+        :return: StateUnflattened total object.
+        """
         return StateUnflattened(
             **self._get_total(
                 shallow_asdict(x), shallow_asdict(self.get_reference_states())
@@ -453,6 +641,11 @@ class LinearAero:
         )
 
     def get_total_output(self, y: OutputUnflattened) -> OutputUnflattened:
+        r"""
+        Get the total output by adding the reference to the output perturbation.
+        :param y: OutputUnflattened perturbation object.
+        :return: OutputUnflattened total object.
+        """
         return OutputUnflattened(
             **self._get_total(
                 shallow_asdict(y), shallow_asdict(self.get_reference_outputs())
@@ -460,6 +653,11 @@ class LinearAero:
         )
 
     def get_total_input_t(self, u_t: InputUnflattened) -> InputUnflattened:
+        r"""
+        Get the total input time history by adding the reference to the input perturbation time history.
+        :param u_t: InputUnflattened perturbation time history object.
+        :return: InputUnflattened total time history object.
+        """
         return InputUnflattened(
             **self._get_total(
                 shallow_asdict(u_t),
@@ -469,6 +667,11 @@ class LinearAero:
         )
 
     def get_total_state_t(self, x_t: StateUnflattened) -> StateUnflattened:
+        r"""
+        Get the total state time history by adding the reference to the state perturbation time history.
+        :param x_t: StateUnflattened perturbation time history object.
+        :return: StateUnflattened total time history object.
+        """
         return StateUnflattened(
             **self._get_total(
                 shallow_asdict(x_t),
@@ -478,6 +681,11 @@ class LinearAero:
         )
 
     def get_total_output_t(self, y_t: OutputUnflattened) -> OutputUnflattened:
+        r"""
+        Get the total output time history by adding the reference to the output perturbation time history.
+        :param y_t: OutputUnflattened perturbation time history object.
+        :return: OutputUnflattened total time history object.
+        """
         return OutputUnflattened(
             **self._get_total(
                 shallow_asdict(y_t),
@@ -489,6 +697,11 @@ class LinearAero:
     def _get_zero(
         self, slices: dict[str, _LinearComponent]
     ) -> dict[str, Optional[ArrayList]]:
+        r"""
+        Get a zero unflattened object based on the provided slices.
+        :param slices: Dictionary mapping of names to linear components.
+        :return: unflattened object with zero arrays.
+        """
         out = {}
         for name, entry in slices.items():
             if not entry.enabled:
@@ -501,15 +714,33 @@ class LinearAero:
         return out
 
     def get_zero_input(self) -> InputUnflattened:
+        r"""
+        Get a zero input unflattened object.
+        :return: InputUnflattened object with zero arrays.
+        """
         return InputUnflattened(**self._get_zero(shallow_asdict(self.input_slices)))
 
     def get_zero_state(self) -> StateUnflattened:
+        r"""
+        Get a zero state unflattened object.
+        :return: StateUnflattened object with zero arrays.
+        """
         return StateUnflattened(**self._get_zero(shallow_asdict(self.state_slices)))
 
     def get_zero_output(self) -> OutputUnflattened:
+        r"""
+        Get a zero output unflattened object.
+        :return: OutputUnflattened object with zero arrays.
+        """
         return OutputUnflattened(**self._get_zero(shallow_asdict(self.output_slices)))
 
     def _unflatten_subvec(self, vec: Array, component: _LinearComponent) -> ArrayList:
+        r"""
+        Obtain an ArrayList of arrays from a subvector based on the provided component.
+        :param vec: Total vector, [n_elements]
+        :param component: LinearComponent defining the slices and shapes.
+        :return: ArrayList of arrays for each surface for the given component.
+        """
         arrs = ArrayList([])
         cnt = 0
         for i_surf in range(self.n_surf):
@@ -521,10 +752,16 @@ class LinearAero:
         "Linearising aerodynamic system...", "Linearisation complete in {:.2f} seconds."
     )
     def linearise(self) -> LinearSystem:
-        def _make_e_mat(zeta_bs: ArrayList) -> Array:
+        r"""
+        Linearise the UVLM system about the reference state.
+        :return: LinearSystem object representing the linearised system.
+        """
+
+        def _make_solve_mat(zeta_bs: ArrayList) -> Array:
             r"""
-            Matrix for [A(zeta_c, zeta_b) \cdot n]^{-1}
-            [n_surf][zeta_m, zeta_n, 3] -> [m_tot*n_tot, m_tot*n_tot]
+            Gives the matrix :math:`[A(\zeta_c, \zeta_b) \cdot n]^{-1}`
+            :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :return: Solve matrix, [m_tot*n_tot, m_tot*n_tot]
             """
             zeta_cs = get_c(zeta_bs)
             ns = get_nc(zeta_bs)
@@ -570,6 +807,16 @@ class LinearAero:
             zeta_b: Optional[ArrayList],
             zeta_w: Optional[ArrayList],
         ) -> Array:
+            r"""
+            Flow velocity at points x due to the flowfield and the bound and wake surfaces. Entries of None are replaced
+            with the reference value.
+            :param x: Points to evaluate flow velocity at, [..., 3]
+            :param gamma_b: Bound circulation strengths at t=n+1, [n_surf][m, n, 3]
+            :param gamma_w: Wake circulation strengths at t=n+1, [n_surf][m_star, n, 3]
+            :param zeta_b: Bound vertex positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :param zeta_w: Wake vertex positions at t=n+1, [n_surf][zeta_m_star, zeta_n, 3]
+            :return: Flow velocity at points x, [..., 3]
+            """
             # sample flowfield
             v_x = self.flowfield0.vmap_call(x, jnp.array(self.t0))
 
@@ -590,6 +837,12 @@ class LinearAero:
         def _propagate_linear_wake(
             u_np1: InputUnflattened, x_n: StateUnflattened
         ) -> tuple[Optional[ArrayList], ArrayList]:
+            r"""
+            Propagate the linear wake from t=n to t=n+1.
+            :param u_np1: Inputs at time=n+1
+            :param x_n: States at time=n
+            :return: Wake grid perturbations and wake circulation perturbations at time=n+1
+            """
             u_np1_tot = self.get_total_input(u_np1)
             x_n_tot = self.get_total_state(x_n)
 
@@ -621,14 +874,20 @@ class LinearAero:
                 (zeta_w_np1_tot - self.zeta0_w) if self.prescribed_wake else None
             )
 
-            # add pertubations from input_ velocities
+            # add pertubations from input velocities
+            # note that we here use the inputs at t=n+1 to convect the wake to t=n+1, as this best suits the linear
+            # system structure. For the full nonlinear UVLM, we use the inputs at t=n, which can lead to a discrepancy.
             if self.prescribed_wake and self.wake_upwash:
-                nu_w_n = u_np1_tot.nu_w  # TODO: shift in time
-                d_zeta_w_np1 += nu_w_n * self.dt
+                d_zeta_w_np1 += u_np1_tot.nu_w * self.dt
 
             return d_zeta_w_np1, d_gamma_w_np1
 
         def _get_dn(d_zeta_b: Sequence[Array]) -> Sequence[Array]:
+            r"""
+            Get the perturbation in normal vectors due to perturbations in bound grid positions.
+            :param d_zeta_b: Perturbations in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :return: Perturbations in normal vectors at t=n+1, [n_surf][m, n, 3]
+            """
             zeta_b_full = d_zeta_b + self.zeta0_b
             n_full = get_nc(zeta_b_full)
             return n_full - self.n0
@@ -637,41 +896,81 @@ class LinearAero:
         v_bc0 = _make_v_bc(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
 
         def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> Array:
-            def func(dzb_: ArrayList) -> Array:
-                return _make_v_bc(
-                    ArrayList(dzb_), self.zeta0_w, self.gamma0_w, self.zeta0_b_dot
-                )
+            r"""
+            Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_b} \cdot \delta\zeta_b`
+            :param d_zeta_b: Perturbation in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :return: Perturbation in boundary condition velocity, [n_c]
+            """
 
-            primals, tangents = jax.jvp(func, [self.zeta0_b], [d_zeta_b])
+            primals, tangents = jax.jvp(
+                lambda dzb_: _make_v_bc(
+                    zeta_bs=dzb_,
+                    zeta_ws=self.zeta0_w,
+                    gamma_ws=self.gamma0_w,
+                    zeta_bs_dot=self.zeta0_b_dot,
+                ),
+                [self.zeta0_b],
+                [d_zeta_b],
+            )
+
             return ArrayList(tangents).flatten()
 
         def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> Array:
-            def func(dzw_: ArrayList) -> Array:
-                return _make_v_bc(self.zeta0_b, dzw_, self.gamma0_w, self.zeta0_b_dot)
+            r"""
+            Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_w} \cdot \delta\zeta_w`
+            :param d_zeta_w: Perturbation in wake grid positions at t=n+1, [n_surf][zeta_m_star, zeta_n, 3]
+            :return: Perturbation in boundary condition velocity, [n_c]
+            """
+            primals, tangents = jax.jvp(
+                lambda dzw_: _make_v_bc(
+                    zeta_bs=self.zeta0_b,
+                    zeta_ws=dzw_,
+                    gamma_ws=self.gamma0_w,
+                    zeta_bs_dot=self.zeta0_b_dot,
+                ),
+                [self.zeta0_w],
+                [d_zeta_w],
+            )
 
-            primals, tangents = jax.jvp(func, [self.zeta0_w], [d_zeta_w])
             return ArrayList(tangents).flatten()
 
         def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> Array:
-            def func(dgw_: ArrayList) -> Array:
-                return _make_v_bc(self.zeta0_b, self.zeta0_w, dgw_, self.zeta0_b_dot)
-
-            primals, tangents = jax.jvp(func, [self.gamma0_w], [d_gamma_w])
+            r"""
+            Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \Gamma_w} \cdot \delta\Gamma_w`
+            :param d_gamma_w: Perturbation in wake circulation at t=n+1, [n_surf][m_star, n, 3]
+            :return: Perturbation in boundary condition velocity, [n_c]
+            """
+            primals, tangents = jax.jvp(
+                lambda dgw_: _make_v_bc(
+                    zeta_bs=self.zeta0_b,
+                    zeta_ws=self.zeta0_w,
+                    gamma_ws=dgw_,
+                    zeta_bs_dot=self.zeta0_b_dot,
+                ),
+                [self.gamma0_w],
+                [d_gamma_w],
+            )
             return ArrayList(tangents).flatten()
 
-        # e matrix and its derivative
-        # [n_c, n_c]
-        e0 = _make_e_mat(self.zeta0_b)
+        # solve matrix and its derivative, [n_c, n_c]
+        solve_mat0 = _make_solve_mat(self.zeta0_b)
 
-        def d_e_d_zeta_b(d_zeta_b: ArrayList) -> Array:
-            def func(dzb_: ArrayList) -> Array:
-                return _make_e_mat(ArrayList(dzb_))
-
-            primals, tangents = jax.jvp(func, [self.zeta0_b], [d_zeta_b])
+        def d_solve_mat_d_zeta_b(d_zeta_b: ArrayList) -> Array:
+            r"""
+            Obtain the jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot n]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
+            :param d_zeta_b: Perturbation in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :return: Perturbation in solve matrix, [n_c, n_c]
+            """
+            primals, tangents = jax.jvp(_make_solve_mat, [self.zeta0_b], [d_zeta_b])
             return sum(tangents)
 
         @jit
         def _a_func(x_n_vec: Array) -> Array:
+            r"""
+            State update function for the A matrix in the linear system.
+            :param x_n_vec: State vector at time=n, [n_states]
+            :return: State vector at time=n+1, [n_states]
+            """
             x_n = self._unpack_state_vector(x_n_vec)
 
             # set previous bound circulation
@@ -699,7 +998,7 @@ class LinearAero:
 
             # resulting bound circulation perturbation
             d_gamma_b_np1 = self._unflatten_subvec(
-                -e0 @ d_v_bc, self.state_slices.gamma_b
+                -solve_mat0 @ d_v_bc, self.state_slices.gamma_b
             )
 
             d_gamma_b_dot_np1 = (
@@ -720,6 +1019,11 @@ class LinearAero:
 
         @jit
         def _b_func(u_np1_vec: Array) -> Array:
+            r"""
+            Input to state function for the B matrix in the linear system.
+            :param u_np1_vec: Input vector at time=n+1, [n_input]
+            :return: State vector at time=n+1, [n_states]
+            """
             u_np1 = self._unpack_input_vector(u_np1_vec)
 
             # influence of grid perturbations on wake influence
@@ -742,10 +1046,10 @@ class LinearAero:
                     + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
                 ).flatten()
 
-            d_gamma_b_np1_vec = -e0 @ d_v_bc
+            d_gamma_b_np1_vec = -solve_mat0 @ d_v_bc
 
             # pertubations in E matrix [n_c, n_c]
-            d_e = d_e_d_zeta_b(u_np1.zeta_b)
+            d_e = d_solve_mat_d_zeta_b(u_np1.zeta_b)
             d_gamma_b_np1_vec -= d_e @ v_bc0
 
             # pertubations in solve matrix
@@ -778,6 +1082,11 @@ class LinearAero:
 
         @jit
         def _c_func(x_n_vec: Array) -> Array:
+            r"""
+            State to output function for the C matrix in the linear system.
+            :param x_n_vec: State vector time=n, [n_state]
+            :return: Output vector at time=n, [n_outputs]
+            """
             x_n = self._unpack_state_vector(x_n_vec)
 
             if self.unsteady_force:
@@ -802,7 +1111,16 @@ class LinearAero:
                 gamma_w: ArrayList,
                 zeta_w: Optional[ArrayList] = None,
             ):
+                r"""
+                Steady forcing at time=n due to perturbations in the states.
+                """
+
                 def _v_forcing(x: Array) -> Array:
+                    r"""
+                    Flow velocity at points x due to the flowfield and the bound and wake surfaces.
+                    :param x: Points to evaluate flow velocity at, [..., 3]
+                    :return: Flow velocity at points x, [..., 3]
+                    """
                     return _v_flow(
                         x,
                         gamma_b,
@@ -821,6 +1139,7 @@ class LinearAero:
                     self.flowfield0.rho,
                 )
 
+            # obtain perturbation in steady forces due to states
             d_f_steady_n = jax.jvp(
                 steady_forcing_c,
                 [self.gamma0_b, self.gamma0_w, self.zeta0_w]
@@ -837,12 +1156,22 @@ class LinearAero:
 
         @jit
         def _d_func(u_n_vec: Array) -> Array:
+            r"""
+            Input to output function for the D matrix in the linear system.
+            :param u_n_vec: Input vector time=n, [n_input]
+            :return: Output vector at time=n, [n_outputs]
+            """
             u_n = self._unpack_input_vector(u_n_vec)
 
             def steady_forcing_d(
                 zeta_b: ArrayList, zeta_b_dot: ArrayList, nu_b: Optional[ArrayList]
             ) -> ArrayList:
                 def _v_forcing(x: Array) -> Array:
+                    r"""
+                    Flow velocity at points x due to the flowfield and the bound and wake surfaces.
+                    :param x: Points to evaluate flow velocity at, [..., 3]
+                    :return: Flow velocity at points x, [..., 3]
+                    """
                     return _v_flow(
                         x, self.gamma0_b, self.gamma0_w, zeta_b, self.zeta0_w
                     )
@@ -884,6 +1213,7 @@ class LinearAero:
                 OutputUnflattened(d_f_steady_n, d_f_unsteady_n)
             )
 
+        # create linear operators
         a = LinearOperator(_a_func, shape=(self.n_states, self.n_states))
         b = LinearOperator(_b_func, shape=(self.n_states, self.n_inputs))
         c = LinearOperator(_c_func, shape=(self.n_outputs, self.n_states))
@@ -901,9 +1231,10 @@ class LinearAero:
     ) -> Self:
         r"""
         Run the linear system for one time step.
-        :param u: Input perturbations at time=n+1
-        :param x0: State perturbations at time=n
-        :return: Output perturbations at time=n+1
+        :param u: Input perturbations over time.
+        :param x0: Initial state perturbations, defaults to zero state.
+        :param flowfield: FlowField object to provide flow velocities for bound and wake upwash, defaults to no flow.
+        :param use_matrix: If true, use explicit matrix representation for linear system, otherwise use operator form.
         """
         if self.prescribed_wake and self.sys.removed_u_np1:
             warn(
@@ -993,7 +1324,9 @@ class LinearAero:
     def eigenvalues(self, to_components: bool = True) -> Array:
         r"""
         Compute stability eigenvalues of the linear system A matrix.
-        :return: Eigenvalues of the A matrix
+        :param to_components: If true, return real and imaginary parts as separate components. If false, return complex
+        eigenvalues.
+        :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
         """
         evals = jnp.linalg.eigvals(self.sys.a.matrix)
         if to_components:
@@ -1080,6 +1413,10 @@ class LinearAero:
         )
 
     def reference_snapshot(self) -> AeroSnapshot:
+        r"""
+        Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        :return: AeroSnapshot at reference state
+        """
         return AeroSnapshot(
             zeta_b=self.zeta0_b,
             zeta_b_dot=self.zeta0_b_dot,
@@ -1106,6 +1443,12 @@ class LinearAero:
         index: Optional[slice | Sequence[int] | int | Array] = None,
         plot_wake: bool = True,
     ) -> None:
+        r"""
+        Plot the aerodynamic grid at specified time steps.
+        :param directory: Directory to save the plots to
+        :param index: Index or slice of time steps to plot. If None, plot all time steps.
+        :param plot_wake: If True, plot the wake grid
+        """
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep_tot)[index]
         elif isinstance(index, Sequence):

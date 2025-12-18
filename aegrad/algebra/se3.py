@@ -16,12 +16,12 @@ from aegrad.algebra.so3 import (
 from aegrad.algebra.constants import SMALL_ANG_THRESH
 
 
-def bracket_so3(a_vec: Array, b_vec: Array) -> Array:
+def bracket_se3(a_vec: Array, b_vec: Array) -> Array:
     r"""
-    Computes the Lie bracket of two so(3) elements, :math:`\tilde{a}\tilde{b} - \tilde{b}\tilde{a}`.
-    :param a_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
-    :param b_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
-    :return: Lie bracket, [3, 3].
+    Computes the Lie bracket of two se(3) elements, :math:`\tilde{a}\tilde{b} - \tilde{b}\tilde{a}`.
+    :param a_vec: Lie algebra vector in se(3), [6].
+    :param b_vec: Lie algebra vector in se(3), [6].
+    :return: Lie bracket, [4, 4].
     """
     mat1 = ha_to_ha_tilde(a_vec)
     mat2 = ha_to_ha_tilde(b_vec)
@@ -31,10 +31,10 @@ def bracket_so3(a_vec: Array, b_vec: Array) -> Array:
 
 def bracket_neg_se3(a_vec: Array, b_vec: Array) -> Array:
     r"""
-    Computes the negative Lie bracket of two so(3) elements, :math:`\tilde{a}\tilde{b} + \tilde{b}\tilde{a}`.
-    :param a_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
-    :param b_vec: Lie algebra element in so(3) represented as a 3D vector, [3].
-    :return: Lie bracket, [3, 3].
+    Computes the negative Lie bracket of two se(3) elements, :math:`\tilde{a}\tilde{b} + \tilde{b}\tilde{a}`.
+    :param a_vec: Lie algebra vector in se(3), [6].
+    :param b_vec: Lie algebra vector in se(3), [6].
+    :return: Negative lie bracket, [4, 4].
     """
     mat1 = ha_to_ha_tilde(a_vec)
     mat2 = ha_to_ha_tilde(b_vec)

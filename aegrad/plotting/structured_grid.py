@@ -11,6 +11,12 @@ from vtk.numpy_interface import dataset_adapter as dsa
 
 
 def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructuredGrid:
+    r"""
+    Create a VTK structured grid from a JAX array
+    :param grid_arr: Array of grid points, [m, n, 3] or [m, n, p, 3]
+    :param is_planar: If true, the grid is planar (2D), otherwise volumetric (3D)
+    :return: VTK structured grid
+    """
     # add a dummy third dimension of zeros if only 2D data is provided, where y=0
     sg = vtk.vtkStructuredGrid()
     if is_planar:
@@ -42,8 +48,8 @@ def plot_frame_to_vtk(
 ) -> Path:
     r"""
     Plot a single timestep of grid data
-    :param grid_arr: Structured grid array with shapes (n_x, n_y, n_z, 2|3)
-    :param filename: Base filename, including directory. Information on the frame number will be
+    :param grid_arr: Structured grid array,[m, n, 3] for planar grid or [m, n, p, 3] for volume grid
+    :param filename: Base filename, including directory. Information on the time step number will be
     appended to this.
     :param i_ts: Timestep to write
     :param node_scalar_data: Dictionary of node scalar data

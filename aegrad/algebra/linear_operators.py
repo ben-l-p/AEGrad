@@ -11,8 +11,7 @@ from jax import Array, numpy as jnp, jacobian
 @make_pytree
 class LinearOperator:
     r"""
-    Linear operator represented by a function, either as A(x) or Ax
-    If the function is set to none, the zero matrix is assumed.
+    Linear operator represented by a function, either as A(x) or Ax.
     """
 
     def __init__(
@@ -21,6 +20,11 @@ class LinearOperator:
         shape: tuple[int, int],
         mat: Optional[Array] = None,
     ):
+        r"""
+        :param func: Function which represents the linear operator, [n] -> [m]
+        :param shape: Shape of the equivalent matrix, (m, n)
+        :param mat: If available, the explicit matrix representation of the operator
+        """
         if mat is not None:
             if mat.shape != shape:
                 raise ValueError(
@@ -33,12 +37,19 @@ class LinearOperator:
 
     @property
     def matrix(self) -> Array:
+        r"""
+        Obtain the matrix representation of the linear operator.
+        :return: Matrix representation of the linear operator
+        """
         if self._matrix is None:
             self.generate_matrix()
         return self._matrix
 
     @replace_self
     def generate_matrix(self) -> Self:
+        r"""
+        Generate the matrix representation of the linear operator.
+        """
         # dL/dx at x at any point is the same, and should be independent of x
         self._matrix = jacobian(lambda x_: self.func(x_), argnums=0)(
             jnp.full(self.shape[1], 1.0)
@@ -46,6 +57,11 @@ class LinearOperator:
         return self
 
     def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
+        r"""
+        Evaluate the linear operator on an array or compose with another linear operator.
+        :param rhs: Either an array to apply the operator to, or another linear operator to compose with.
+        :return: The result of applying the operator to the array, or the composed linear operator.
+        """
         if isinstance(rhs, LinearOperator):
 
             def new_func(x: Array) -> Array:
@@ -63,6 +79,11 @@ class LinearOperator:
             raise TypeError("Incompatible type for multiplication with LinearOperator.")
 
     def __matmul__[T](self, rhs: T) -> T:
+        r"""
+        Matrix multiplication operator overload, calls __call__ internally.
+        :param rhs: Either an array to apply the operator to, or another linear operator to compose with.
+        :return: The result of applying the operator to the array, or the composed linear operator.
+        """
         return self(rhs)
 
     def __add__(
@@ -92,16 +113,24 @@ class LinearOperator:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
+        r"""
+        Return the names of all static methods for pytree serialization.
+        :return: Sequence of static method names.
+        """
         return ("shape",)
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
+        r"""
+        Return the names of all dynamic methods for pytree serialization.
+        :return: Sequence of dynamic method names.
+        """
         return "func", "_matrix"
 
 
 class BlockLinear:
     r"""
-    Block linear operator represented by a function, supporting matmul
+    Block linear matrix operator composed of smaller linear operators or arrays.
     """
 
     def __init__(
@@ -109,6 +138,11 @@ class BlockLinear:
         entries: Sequence[Sequence[LinearOperator | Array]],
         mat: Optional[Array] = None,
     ):
+        r"""
+        Construct a BlockLinear operator from smaller linear operators or arrays.
+        :param entries: Double nested sequence of linear operators or arrays representing the blocks.
+        :param mat: Optional full matrix representation of the block linear operator.
+        """
         if not all(len(row) == len(entries[0]) for row in entries):
             raise ValueError(
                 "All rows in BlockLinear must have the same number of columns."
@@ -174,6 +208,11 @@ class BlockLinear:
         self.mat = mat
 
     def __matmul__(self, rhs: Array) -> Array:
+        r"""
+        Matrix multiplication operator overload for BlockLinear operator.
+        :param rhs: Right-hand side array to multiply with.
+        :return: Resulting array after multiplication.
+        """
         out = jnp.zeros(self.shape[0])
         for i_block_col in range(self.n_block_col):
             this_rhs = rhs[self.width_index[i_block_col]]
@@ -184,6 +223,10 @@ class BlockLinear:
         return out
 
     def get_matrix(self) -> Array:
+        r"""
+        Generate and return the full matrix representation of the BlockLinear operator.
+        :return: Full matrix representation of the BlockLinear operator.
+        """
         arrs = []
         for i_block_row in range(self.n_block_row):
             arrs.append([])
@@ -200,6 +243,10 @@ class BlockLinear:
 
 @make_pytree
 class LinearSystem:
+    r"""
+    Linear system represented in state-space form, with tools for time-stepping
+    """
+
     def __init__(
         self,
         a: LinearOperator,
@@ -208,6 +255,14 @@ class LinearSystem:
         d: LinearOperator,
         removed_u_np1: bool = False,
     ) -> None:
+        r"""
+        Initialise the LinearSystem with state-space linear operators.
+        :param a: System matrix A
+        :param b: Input matrix B
+        :param c: Output matrix C
+        :param d: Feedthrough matrix D
+        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time n only.
+        """
         self.a: LinearOperator = a
         self.b: LinearOperator = b
         self.c: LinearOperator = c
@@ -222,6 +277,9 @@ class LinearSystem:
         "Computed matrices for linear system in {:.2f} seconds.",
     )
     def compute_matrices(self) -> None:
+        r"""
+        Compute the matrix representations of the linear operators in the system.
+        """
         self.a.generate_matrix()
         self.b.generate_matrix()
         self.c.generate_matrix()
@@ -232,6 +290,10 @@ class LinearSystem:
         "Removed u_np1 from linear system in {:.2f} seconds.",
     )
     def remove_u_np1(self) -> None:
+        r"""
+        Remove the dependence on u at time n+1 from the linear system, modifying b and d accordingly.
+        :math:`D_{new} = C B + D` and :math:`B_{new} = A B`
+        """
         if self.removed_u_np1:
             warn("u_np1 has already been removed from the system. Skipping.")
         else:
@@ -246,6 +308,13 @@ class LinearSystem:
     def run(
         self, u: Array, x0: Optional[Array] = None, use_matrix=False
     ) -> tuple[Array, Array]:
+        r"""
+        Run the linear system for a time history of input vector u.
+        :param u: Time history of input vectors, shape [n_tstep, n_inputs]
+        :param x0: Initial state vector, [n_states]. If None, assumed to be zero.
+        :param use_matrix: If true, use the matrix representations of the linear operators.
+        :return: State history and output history, shapes [n_tstep, n_states] and [n_tstep, n_outputs]
+        """
         if x0 is not None:
             check_arr_shape(x0, (None, self.n_states), "x0")
         check_arr_shape(u, (None, self.n_inputs), "u")
@@ -257,6 +326,12 @@ class LinearSystem:
             a, b, c, d = self.a, self.b, self.c, self.d
 
         def state_func(i_ts: int, x_: Array) -> Array:
+            r"""
+            State update function for time step i_ts, given as :math:`x_{n} = A x_{n-1} + B u_{n-1}` or :math:`x_n = A x_{n-1} + B u_n`.
+            :param i_ts: Time step index to obtain new states for.
+            :param x_: State history array being updated, [n_tstep, n_states]
+            :return: Updated state history array, [n_tstep, n_states]
+            """
             jax_print("Linear UVLM state step {i_ts}", i_ts=i_ts)
             this_u = u[i_ts - 1, ...] if self.removed_u_np1 else u[i_ts, ...]
             return x_.at[i_ts, ...].set(a @ x_[i_ts - 1, ...] + b @ this_u)
@@ -267,6 +342,12 @@ class LinearSystem:
         x = jax.lax.fori_loop(1, n_tstep, state_func, x)
 
         def output_func(i_ts: int, y_: Array) -> Array:
+            r"""
+            Output computation function for time step i_ts, given as :math:`y_n = C x_n + D u_n`.
+            :param i_ts: Time step index to obtain outputs for.
+            :param y_: Output history array being updated, [n_tstep, n_outputs]
+            :return: Updated output history array, [n_tstep, n_outputs]
+            """
             jax_print("Linear UVLM output step {i_ts}", i_ts=i_ts)
             return y_.at[i_ts, ...].set(c @ x[i_ts, ...] + d @ u[i_ts, ...])
 
@@ -276,8 +357,16 @@ class LinearSystem:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
+        r"""
+        Output the names of all static attributes for pytree serialization.
+        :return: Sequence of static attribute names.
+        """
         return "n_inputs", "n_states", "n_outputs"
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
+        r"""
+        Output the names of all dynamic attributes for pytree serialization.
+        :return: Sequence of dynamic attribute names.
+        """
         return "a", "b", "c", "d", "removed_u_np1"

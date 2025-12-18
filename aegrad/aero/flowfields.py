@@ -20,6 +20,13 @@ class FlowField:
         relative_motion: bool,
         **kwargs,
     ):
+        r"""
+        Initialise the flow field.
+        :param u_inf: Base flow velocity, [3]
+        :param rho: Flow density
+        :param relative_motion: If True, the air moves, if false, the plane moves.
+        :param kwargs: Additional keyword arguments for specific flow fields.
+        """
         if u_inf.shape != (3,):
             raise ValueError("u_inf must have shapes (3,)")
         self.u_inf: Array = u_inf
@@ -56,6 +63,7 @@ class FlowField:
 
     def surf_vmap_call(self, xs: ArrayList, t: Array) -> ArrayList:
         """
+        Vectorized version of the __call__ method over a list of surfaces.
         :param xs: Spatial coordinates, [n_surf][..., 3]
         :param t: Time. []
         :return: Flow field values at the specified coordinates, [n_surf][..., 3]
@@ -64,10 +72,18 @@ class FlowField:
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
+        r"""
+        Return the names of dynamic attributes for pytree registration.
+        :return: Sequence of dynamic attribute names.
+        """
         return []
 
     @staticmethod
     def _static_names() -> Sequence[str]:
+        r"""
+        Return the names of static attributes for pytree registration.
+        :return: Sequence of static attribute names.
+        """
         return (
             "u_inf",
             "rho",

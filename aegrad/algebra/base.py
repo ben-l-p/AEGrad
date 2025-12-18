@@ -5,17 +5,29 @@ from jax.lax import cond
 
 
 def matrix2(mat: Array) -> Array:
+    r"""
+    Computes the square of a matrix.
+    :param mat: Matrix, [n, n].
+    :return: Matrix squared, [n, n].
+    """
     return mat @ mat
 
 
 def clip_to_pi(val: Array):
-    # [] -> []
-    # clips a value to be within [-pi, pi]
+    r"""
+    Clips an angle value to be within [-pi, pi].
+    :param val: Scalar to bound.
+    :return: Bounded scalar within [-pi, pi].
+    """
     return jnp.arctan2(jnp.sin(val), jnp.cos(val))
 
 
 def chi(rmat: Array) -> Array:
-    # [3, 3] -> [6, 6]
+    r"""
+    Converts a 3x3 rotation matrix to a 6x6 matrix used in spatial transformations.
+    :param rmat: Rotation matrix, [3, 3].
+    :return: Block matrix with diagonal rotation matrices, [6, 6].
+    """
     return jnp.block([[rmat, jnp.zeros((3, 3))], [jnp.zeros((3, 3)), rmat]])
 
 

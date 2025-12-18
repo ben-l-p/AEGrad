@@ -30,7 +30,7 @@ from aegrad.aero.aic import (
 )
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
-from aegrad.aero.linear import LinearAero, LinearWakeType
+from aegrad.aero.linear import LinearUVLM, LinearWakeType
 from aegrad.print_output import print_with_time, warn, jax_print
 from aegrad.plotting.pvd import write_pvd
 
@@ -237,7 +237,7 @@ class UVLM:
         wake_upwash: bool = True,
         unsteady_force: bool = True,
         gamma_dot_state: bool = True,
-    ) -> LinearAero:
+    ) -> LinearUVLM:
         r"""
         Create linearised aerodynamic model at specified time step
         :param i_ts: Time step index to linearise about
@@ -247,9 +247,9 @@ class UVLM:
         :param wake_upwash: If true, linearise for flowfield pertubations at the wake vortex vertex
         :param unsteady_force: If true, include unsteady force terms in linearisation
         :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model
-        :return: LinearAero model linearised at specified time step
+        :return: LinearUVLM model linearised at specified time step
         """
-        return LinearAero(
+        return LinearUVLM(
             self,
             self[i_ts],
             wake_type=wake_type,

@@ -11,6 +11,14 @@ def write_pvd(
     filedirs: Sequence[Path],
     times: Sequence[float],
 ) -> Path:
+    r"""
+    Write a PVD file for a collection of VTK files.
+    :param directory: Directory to write the PVD file to
+    :param name: Name of the PVD file
+    :param filedirs: File directories of the VTU files to refer to
+    :param times: Time history corresponding to each VTU file
+    :return: Path of the written PVD file
+    """
     dirpath = Path(directory)
     dirpath.mkdir(parents=True, exist_ok=True)
 

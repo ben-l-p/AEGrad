@@ -8,19 +8,33 @@ from aegrad.algebra.constants import ZERO_ANG_THRESH, SMALL_ANG_THRESH
 
 
 def vec_to_skew(vec: Array) -> Array:
-    # [3] -> [3, 3]
+    r"""
+    Converts a 3D vector to a skew-symmetric matrix.
+    :param vec: 3D vector, [3]
+    :return: Skew-symmetric matrix, [3, 3]
+    """
     return jnp.array(
         ((0.0, -vec[2], vec[1]), (vec[2], 0.0, -vec[0]), (-vec[1], vec[0], 0.0))
     )
 
 
 def skew_to_vec(mat: Array) -> Array:
-    # [3, 3] -> [3]
+    r"""
+    Converts a skew-symmetric matrix to a 3D vector.
+    :param mat: Skew-symmetric matrix, [3, 3]
+    :return: 3D vector, [3]
+    """
     return jnp.array((mat[2, 1], mat[0, 2], mat[1, 0]))
 
 
 def alpha(b: Array) -> Array:
-    # [3] -> []
+    r"""
+    Computes the alpha function for SO(3) operations. This includes a small angle approximation as b approaches zero.
+    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by
+    Sonneville et al., 2013, Eq A.4
+    :param b: Input vector, [3]
+    :return: Alpha value, []
+    """
     b_norm = jnp.linalg.norm(b)
 
     def alpha_full() -> Array:
@@ -30,7 +44,13 @@ def alpha(b: Array) -> Array:
 
 
 def beta(b: Array) -> Array:
-    # [3] -> []
+    r"""
+    Computes the beta function for SO(3) operations. This includes a small angle approximation as b approaches zero.
+    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by
+    Sonneville et al., 2013, Eq A.4
+    :param b: Input vector, [3]
+    :return: Beta value, []
+    """
     b_norm2 = jnp.inner(b, b)
     b_norm = jnp.sqrt(b_norm2)
 
@@ -41,8 +61,11 @@ def beta(b: Array) -> Array:
 
 
 def bound_h_omega(h_omega: Array) -> Array:
-    # [3] -> [3]
-    # sets the angle for a CRV to be within pi limits
+    r"""
+    Bounds the angle of a rotation vector to be within [-pi, pi].
+    :param h_omega: Cartesian rotation vector, [3]
+    :return: Bounded Cartesian rotation vector, [3]
+    """
     ang = jnp.linalg.norm(h_omega)
 
     def nonzero_ang() -> Array:
@@ -57,6 +80,12 @@ def bound_h_omega(h_omega: Array) -> Array:
 
 
 def bracket_so3(vec1: Array, vec2: Array) -> Array:
+    r"""
+    Computes the Lie bracket of two so(3) elements represented as vectors.
+    :param vec1: Vector 1, [3]
+    :param vec2: Vector 2, [3]
+    :return: Lie bracket, [3, 3]
+    """
     mat1 = vec_to_skew(vec1)
     mat2 = vec_to_skew(vec2)
 
@@ -64,6 +93,12 @@ def bracket_so3(vec1: Array, vec2: Array) -> Array:
 
 
 def bracket_neg_so3(vec1: Array, vec2: Array) -> Array:
+    r"""
+    Computes the negative Lie bracket of two so(3) elements represented as vectors.
+    :param vec1: Vector 1, [3]
+    :param vec2: Vector 2, [3]
+    :return: Negative Lie bracket, [3, 3]
+    """
     mat1 = vec_to_skew(vec1)
     mat2 = vec_to_skew(vec2)
 
@@ -71,7 +106,14 @@ def bracket_neg_so3(vec1: Array, vec2: Array) -> Array:
 
 
 def t_so3(ha_omega: Array) -> Array:
-    # [3] -> [3, 3]
+    r"""
+    Computes the tangent operator for SO(3) given a rotation vector. Includes a small angle approximation as the
+    rotation approaches zero. Formulation from Geometrically exact beam finite element formulated on the special
+    Euclidean group SE(3), by Sonneville et al., 2013, Eq A.6
+    :param ha_omega: Rotation vector, [3]
+    :return: Tangent operator, [3, 3]
+    """
+
     def t_so3_full() -> Array:
         return (
             jnp.eye(3)
@@ -94,7 +136,13 @@ def t_so3(ha_omega: Array) -> Array:
 
 
 def t_inv_so3(ha_omega: Array) -> Array:
-    # [3] -> [3, 3]
+    r"""
+    Computes the inverse tangent operator for SO(3) given a rotation vector. Includes a small angle approximation as the
+    rotation approaches zero. Formulation from Geometrically exact beam finite element formulated on the special
+    Euclidean group SE(3), by Sonneville et al., 2013, Eq A.7
+    :param ha_omega: Rotation vector, [3]
+    :return: Inverse tangent operator, [3, 3]
+    """
 
     def t_inv_so3_full() -> Array:
         return (
@@ -119,7 +167,13 @@ def t_inv_so3(ha_omega: Array) -> Array:
 
 
 def exp_so3(ha_omega: Array) -> Array:
-    # [3] -> [3, 3]
+    r"""
+    Computes the exponential map from so(3) to SO(3) given a rotation vector. Includes a small angle approximation as
+    the angle approaches zero.
+    :param ha_omega: Rotation vector, [3]
+    :return: Rotation matrix, [3, 3]
+    """
+
     def exp_so3_full() -> Array:
         # has a singularity as ha_omega -> 0
         ang = jnp.linalg.norm(ha_omega)
@@ -137,7 +191,12 @@ def exp_so3(ha_omega: Array) -> Array:
 
 
 def log_so3(rmat: Array) -> Array:
-    # [3, 3] -> [3]
+    r"""
+    Computes the logarithmic map from SO(3) to so(3) given a rotation matrix. Includes a small angle approximation as
+    the angle approaches zero.
+    :param rmat: Rotation matrix, [3, 3]
+    :return: Rotation vector, [3]
+    """
     theta = jnp.acos(0.5 * (jnp.trace(rmat) - 1.0))
 
     def log_so3_full() -> Array:

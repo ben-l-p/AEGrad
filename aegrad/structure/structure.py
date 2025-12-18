@@ -11,14 +11,15 @@ from functools import partial
 
 class Structure:
     r"""
-    Class to represent structural model
+    Class to represent nonlinear beam structural model
     """
 
     def __init__(self, num_nodes: int, connectivity: Array, normal_vector: Array):
         r"""
-        Initialize Structure class with all non-design parameters
+        Initialise Structure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
         :param connectivity: Connectivity array of shapes [n_elem, 2]
+        :param normal_vector: Normal vector defining the plane of the structure, [n_elem, 3]
         """
         check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
@@ -56,6 +57,12 @@ class Structure:
     def set_design_variables(
         self, coords: Array, k_cs: Array, m_cs: Optional[Array]
     ) -> None:
+        r"""
+        Set design variables and compute initial configuration dependent quantities
+        :param coords: Node coordinates, [n_nodes, 3]
+        :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6]
+        :param m_cs: Cross-section mass matrices, [n_elem, 6, 6]
+        """
         # populate arrays
         self.k_cs = self.k_cs.at[...].set(k_cs)
         if m_cs is not None:

@@ -14,7 +14,7 @@ def make_rectangular_grid(
     :param n: Number of panels in the spanwise direction
     :param chord: Total chord of the surface
     :param ea: Elastic axis location as fraction of chord
-    :return: Array of shapes [m+1, n+1, 3] representing grid points in 3D space
+    :return: Array of shapes [zeta_m, zeta_n, 3] representing local grid points in 3D space
     """
 
     grid = jnp.zeros((m + 1, n + 1, 3))
@@ -23,7 +23,7 @@ def make_rectangular_grid(
 
 def get_surf_c(zeta: Array) -> Array:
     r"""
-    Compute the colocation points for a given grid of points.
+    Compute the colocation points for a given grid of points on a single surface.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
     :return: Colocation points [zeta_m-1, zeta_n-1, 3]
     """
@@ -31,16 +31,32 @@ def get_surf_c(zeta: Array) -> Array:
 
 
 def get_surf_nc(zeta: Array) -> Array:
+    r"""
+    Compute the normal vectors for a given grid of points on a single surface. These have length equal to the area of
+    each panel.
+    :param zeta: Grid of points, [zeta_m, zeta_n, 3]
+    :return: Normal vectors [zeta_m-1, zeta_n-1, 3]
+    """
     diag1 = zeta[1:, 1:, :] - zeta[:-1, :-1, :]  # [n_sx, n_cy, 3]
     diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
     return jnp.cross(diag1, diag2)
 
 
 def get_c(zetas: ArrayList) -> ArrayList:
+    r"""
+    Compute the colocation points for a list of surface grids.
+    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
+    :return: Colocation points [n_surf][zeta_m-1, zeta_n-1, 3]
+    """
     return ArrayList([get_surf_c(zeta) for zeta in zetas])
 
 
 def get_nc(zetas: ArrayList) -> ArrayList:
+    r"""
+    Compute the normal vectors for a list of surface grids.
+    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
+    :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
+    """
     return ArrayList([get_surf_nc(zeta) for zeta in zetas])
 
 
@@ -60,12 +76,12 @@ def propagate_surf_wake(
     :param gamma_b_n: Bound circulation at time n, [m, n]
     :param gamma_w_n: Wake circulation at time n, [m_star, n]
     :param zeta_b_np1: Bound grid at time n+1, [zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time n, [zeta_w_m, zeta_n, 3]
-    :param delta_w: Desired wake discretisation, [zeta_w_m, 3] or None for uniform
+    :param zeta_w_n: Wake grid at time n, [zeta_star_m, zeta_n, 3]
+    :param delta_w: Desired wake discretisation, [zeta_star_m, 3] or None for uniform
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param dt: Time step
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [zeta_w_m, zeta_n, 3], [zeta_w_m, zeta_n]
+    :return: New wake grid and circulation, [zeta_star_m, zeta_n, 3], [zeta_m_star, zeta_n]
     """
 
     # trailing edge positions and circulations
@@ -155,12 +171,12 @@ def propagate_wake(
     :param gamma_b_n: Bound circulation at time n, [n_surf][m, n]
     :param gamma_w_n: Wake circulation at time n, [n_surf][m_star, n]
     :param zeta_b_np1: Bound grid at time n+1, [n_surf][zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time n, [n_surf][zeta_w_m, zeta_n, 3]
-    :param delta_w: Desired wake discretisation, [n_surf][zeta_w_m, 3] or None for uniform
+    :param zeta_w_n: Wake grid at time n, [n_surf][zeta_star_m, zeta_n, 3]
+    :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param dt: Time step
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [n_surf][zeta_w_m, zeta_n, 3], [n_surf][zeta_w_m, zeta_n]
+    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n]
     """
 
     n_surf = len(gamma_b_n)
@@ -192,6 +208,17 @@ def steady_forcing(
     v_input: Optional[ArrayList],
     rho: Array,
 ) -> ArrayList:
+    r"""
+    Compute the steady forces on all surfaces
+    :param zeta_b: Bound grid, [n_surf][zeta_m, zeta_n, 3]
+    :param zeta_dot_b: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3]
+    :param gamma_b: Bound circulation, [n_surf][m, n]
+    :param gamma_w: Wake circulation, [n_surf][m_star, n]
+    :param v_func: Function that computes the velocity, [3] -> [3]
+    :param v_input: Optional input to add velocities at the bound grid nodes, [n_surf][zeta_m, zeta_n, 3]
+    :param rho: Flow density
+    :return: Steady forces on each surface, [n_surf][zeta_m, zeta_n, 3]
+    """
     f_steady = ArrayList([])
     for i_surf in range(len(zeta_b)):
         f_steady.append(
@@ -217,6 +244,18 @@ def surf_steady_forcing(
     v_input: Optional[Array],
     rho: Array,
 ) -> Array:
+    r"""
+    Compute the steady forces on a single surface
+    :param zeta_b: Bound grid, [zeta_m, zeta_n, 3]
+    :param zeta_dot_b: Bound grid velocities, [zeta_m, zeta_n, 3]
+    :param gamma_b: Bound circulation, [m, n]
+    :param gamma_w: Wake circulation, [m_star, n]
+    :param v_func: Function that computes the velocity, [3] -> [3]
+    :param v_input: Optional input to add velocities at the bound grid nodes, [zeta_m, zeta_n, 3]
+    :param rho: Flow density
+    :return: Steady forces on the surface, [zeta_m, zeta_n, 3]
+    """
+
     # compute midpoints
     mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
     mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
