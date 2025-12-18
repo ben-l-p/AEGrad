@@ -309,3 +309,36 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     k_lower_right = k_lower_right.at[4:6, 1:3].mul(-1.0)
 
     return jnp.block([[k_upper_left, k_upper_right], [k_lower_left, k_lower_right]])
+
+
+def const_curvature_beam(kappa: Array, s: Array) -> Array:
+    r"""
+    For a beam with constant curvature, with base node at the origin and curvature in the positive z direction
+    (i.e., existing in the x-y plane with z=0), obtain the coordinates along the beam length for
+    :param kappa: Curvature of the element, []
+    :param s: Position along the beam length, []
+    :return: Coordinate of point along the beam, [3]
+    """
+
+    x = jnp.sin(s * kappa) / kappa
+    y = (1.0 - jnp.cos(s * kappa)) / kappa
+
+    return jnp.array([x, y, 0.0])
+
+
+def get_curvature(d: Array) -> Array:
+    r"""
+    Obtain curvature from relative configuration vector
+    :param d: Relative configuration vector, [6]
+    :return: Curvature of neutral axis, []
+    """
+    return jnp.linalg.norm(jnp.cross(d[3:], d[:3])) / jnp.linalg.norm(d[:3])
+
+
+def get_torsion(d: Array) -> Array:
+    r"""
+    Obtain torsion from relative configuration vector
+    :param d: Relative configuration vector, [6]
+    :return: Torsion of neutral axis, []
+    """
+    return -jnp.inner(d[3:], d[:3]) / jnp.linalg.norm(d[:3])

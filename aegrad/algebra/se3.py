@@ -1,5 +1,5 @@
 from jax import numpy as jnp
-from jax import Array, jacobian
+from jax import Array
 from jax.lax import cond
 from aegrad.algebra.base import matrix2
 from aegrad.algebra.so3 import (
@@ -276,7 +276,7 @@ def p(d: Array) -> Array:
     :param d: Relative se(3) configuration vector, [6].
     :return: Matrix, [6, 12].
     """
-    return jnp.concatenate((-t_inv_se3(-d), t_inv_se3(d)), axis=-1)
+    return jnp.concatenate((-t_inv_se3(-d), t_inv_se3(d)), axis=1)
 
 
 def t_star(s_l: Array, d: Array) -> Array:
@@ -303,41 +303,4 @@ def q(s_l: Array, d: Array) -> Array:
     :return::math:`Q(s, \mathbf{d})` matrix, [6, 12].
     """
     t_star_ = t_star(s_l, d)
-    return jnp.stack((jnp.eye(6) - t_star_, t_star_), axis=-1)
-
-
-def k_t_entry(
-    d: Array,
-    l: Array,
-    eps: Array,
-    k: Array,
-    include_material: bool = True,
-    include_geometric: bool = True,
-) -> Array:
-    r"""
-    Computes a stiffness matrix entry between two degrees of freedom. Formulation from Geometrically exact beam finite
-    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 76.
-    :param d: Relative se(3) configuration vector, [6].
-    :param l: Element length, [].
-    :param eps: Beam strain vector, [6].
-    :param k: Beam cross-sectional stiffness matrix, [6, 6].
-    :param include_material: Whether to include material stiffness contribution, bool.
-    :param include_geometric: Whether to include geometric stiffness contribution, bool.
-    :return: Stiffness matrix entry, [12, 12].
-    """
-    if not include_material and not include_geometric:
-        raise ValueError(
-            "At least one of include_material or include_geometric must be True."
-        )
-
-    p_d = p(d)  # d{d}/d{h_{AB}}, [6, 12]
-    if include_material:
-        # contribution from perturbations in the strain
-        k_t = p_d.T @ k @ p_d / l  # [12, 12]
-    else:
-        k_t = jnp.zeros((12, 12))
-
-    if include_geometric:
-        # contribution from perturbations in P(d)
-        k_t += jacobian(lambda d_: p(d_).T @ k @ eps)(d) @ p_d
-    return k_t
+    return jnp.stack((jnp.eye(6) - t_star_, t_star_), axis=1)

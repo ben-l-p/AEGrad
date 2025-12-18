@@ -1,10 +1,11 @@
 from jax import numpy as jnp
 from jax import Array, vmap
 from aegrad.utils import check_type
-from aegrad.structure.utils import check_connectivity
+from aegrad.structure.structure_utils import check_connectivity
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.algebra.base import chi
-from aegrad.algebra.se3 import k_t_entry
+from aegrad.structure.structure_utils import k_t_entry, g_int_entry
+from aegrad.algebra.se3 import p
 from typing import Optional
 from functools import partial
 
@@ -14,13 +15,30 @@ class Structure:
     Class to represent nonlinear beam structural model
     """
 
-    def __init__(self, num_nodes: int, connectivity: Array, normal_vector: Array):
+    def __init__(
+        self,
+        num_nodes: int,
+        connectivity: Array,
+        y_vector: Array,
+        include_material: bool = True,
+        include_geometric: bool = True,
+    ) -> None:
         r"""
         Initialise Structure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
         :param connectivity: Connectivity array of shapes [n_elem, 2]
-        :param normal_vector: Normal vector defining the plane of the structure, [n_elem, 3]
+        :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
+        :param include_material: Whether to include material stiffness, defaults to True
+        :param include_geometric: Whether to include geometric stiffness, defaults to True
         """
+
+        self.include_material: bool = include_material
+        self.include_geometric: bool = include_geometric
+        if not self.include_material and not self.include_geometric:
+            raise ValueError(
+                "At least one of include_material or include_geometric must be True."
+            )
+
         check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
         self.n_dof: int = num_nodes * 6
@@ -39,8 +57,8 @@ class Structure:
             6 * self.connectivity[:, [1]] + jnp.arange(6)[None, :]
         )
 
-        check_arr_shape(normal_vector, (self.n_elem, 3), "normal_vector")
-        self.plane_vector: Array = normal_vector
+        check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
+        self.y_vector: Array = y_vector
 
         # initialize design variables with default values
         self.x0: Array = jnp.zeros((num_nodes, 3))
@@ -76,13 +94,10 @@ class Structure:
         self.d0 = self.d0.at[:, 0].set(self.l0)
 
         dx_unit = dx / self.l0[:, None]  # unit vector in beam direction, [n_elem, 3]
-        dy = jnp.cross(
-            dx_unit, self.plane_vector, axis=-1
-        )  # vector in plane[n_elem, 3]
-        dy_unit = dy / jnp.linalg.norm(dy, axis=-1)[:, None]  # [n_elem, 3]
-        dz_unit = jnp.cross(
-            dx_unit, dy_unit, axis=-1
-        )  # unit vector out of plane, [n_elem, 3]
+        dz = jnp.cross(dx_unit, self.y_vector, axis=-1)  # vector in plane[n_elem, 3]
+        dz_unit = dz / jnp.linalg.norm(dz, axis=-1)[:, None]  # [n_elem, 3]
+
+        dy_unit = jnp.cross(dz_unit, dx_unit)
 
         self.o0 = self.o0.at[..., 0].set(dx_unit)
         self.o0 = self.o0.at[..., 1].set(dy_unit)
@@ -97,31 +112,83 @@ class Structure:
         )
 
     def make_k(
-        self, d: Array, include_material: bool = True, include_geometric: bool = True
+        self,
+        d: Array,
+        p_d: Array,
+        eps: Array,
     ) -> Array:
         r"""
         Assemble global stiffness matrix as a function of the element relative configuration vectors
         :param d: Element relative configuration, [n_elem, 6]
-        :param include_material: Whether to include material stiffness, defaults to True
-        :param include_geometric: Whether to include geometric stiffness, defaults to True
         :return: Global stiffness matrix, [n_dof, n_dof]
         """
+        # compute stiffness matrix entries
         k_t_entries = vmap(
             partial(
                 k_t_entry,
-                include_material=include_material,
-                include_geometric=include_geometric,
+                include_material=self.include_material,
+                include_geometric=self.include_geometric,
             ),
-            (0, 0, 0, 0),
+            (0, 0, 0, 0, 0),
             0,
-        )(d, self.l0, self.d0, self.k)  # [n_elem, 12, 12]
+        )(d, p_d, self.l0, eps, self.k)  # [n_elem, 12, 12]
 
+        # assemble global stiffness matrix
         k_t = jnp.zeros((self.n_dof, self.n_dof))
         for i_elem in range(self.n_elem):
             index = self.dof_per_elem[i_elem, :]
             k_t = k_t.at[jnp.ix_(index, index)].set(k_t_entries[i_elem, ...])
 
         return k_t
+
+    def make_g_int(self, p_d: Array, eps: Array) -> Array:
+        r"""
+        Assemble global internal force vector as a function of the element relative configuration vectors
+        :param d: Element relative configuration, [n_elem, 6]
+        :return: Global internal force vector, [n_dof]
+        """
+
+        # compute internal force entries
+        g_int_entries = vmap(g_int_entry, (0, 0, 0), 0)(
+            p_d, self.k, eps
+        )  # [n_elem, 12]
+
+        # assemble global internal force vector
+        g_int = jnp.zeros(self.n_dof)
+        for i_elem in range(self.n_elem):
+            index = self.dof_per_elem[i_elem, :]
+            g_int = g_int.at[index].add(g_int_entries[i_elem, ...])
+
+        return g_int
+
+    def make_eps(self, d: Array) -> Array:
+        r"""
+        Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from
+        Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,
+        2013, Eq 64.
+        :param d: Element relative configuration, [n_elem, 6]
+        :return: Element strain vectors, [n_elem, 6]
+        """
+
+        return (d - self.d0) / self.l0[:, None]
+
+    def make_g_int_and_k_t(self, d: Array) -> tuple[Array, Array]:
+        r"""
+        Compute both the internal force vector and tangent stiffness matrix as a function of the element relative
+        configuration vectors. This makes computation more efficient by reusing intermediate results.
+        :param d: Element relative configuration, [n_elem, 6]
+        :return: Tuple of global internal force vector [n_dof] and global stiffness matrix [n_dof, n_dof]
+        """
+
+        eps = self.make_eps(d)  # [n_elem, 6]
+
+        # compute P(d) matrices
+        p_d = vmap(p)(d)  # [n_elem, 6, 12]
+
+        g_int = self.make_g_int(p_d, eps)  # [n_dof]
+        k_t = self.make_k(d, p_d, eps)  # [n_dof, n_dof]
+
+        return g_int, k_t
 
     def static_solve(
         self, g_ext: Array, prescribed_dofs: Array, prescribed_values: Array
