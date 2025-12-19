@@ -152,6 +152,16 @@ def x_rmat_to_hg(x: Array, rmat: Array) -> Array:
     return jnp.block([[rmat, x[:, None]], [jnp.zeros((1, 3)), jnp.ones((1, 1))]])
 
 
+def x_rmat_to_ha(x: Array, rmat: Array) -> Array:
+    r"""
+    Combines a translation vector and rotation matrix into an element of the se(3) algebra.
+    :param x: Translation vector, [3].
+    :param rmat: Rotation matrix, [3, 3].
+    :return: se(3) algebra vector, [6].
+    """
+    return log_se3(x_rmat_to_hg(x, rmat))
+
+
 def hg_to_x_rmat(hg: Array) -> tuple[Array, Array]:
     r"""
     Decomposes an SE(3) group element into a translation vector and rotation matrix.

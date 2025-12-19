@@ -198,6 +198,7 @@ def log_so3(rmat: Array) -> Array:
     :return: Rotation vector, [3]
     """
     theta = jnp.acos(0.5 * (jnp.trace(rmat) - 1.0))
+    bounded_theta = clip_to_pi(theta)
 
     def log_so3_full() -> Array:
         return skew_to_vec(theta / (2.0 * jnp.sin(theta)) * (rmat - rmat.T))
@@ -212,5 +213,5 @@ def log_so3(rmat: Array) -> Array:
         return skew_to_vec(out)
 
     return bound_h_omega(
-        cond(theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)
+        cond(bounded_theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)
     )

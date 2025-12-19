@@ -72,6 +72,10 @@ class Structure:
         self.l0: Array = jnp.zeros(self.n_elem)
         self.d0: Array = jnp.zeros((self.n_elem, 6))
 
+        # initialise undeformed algebra and group
+        self.hg0: Array = jnp.zeros((self.n_nodes, 4, 4))
+        self.ha0: Array = jnp.zeros((self.n_nodes, 6))
+
     def set_design_variables(
         self, coords: Array, k_cs: Array, m_cs: Optional[Array]
     ) -> None:
@@ -110,6 +114,8 @@ class Structure:
         self.m = self.m.at[...].set(
             jnp.einsum("ijk,ikl,iml->ijm", chi0, self.m_cs, chi0)
         )
+
+        self.hg0 = self.hg0.at[...].set()
 
     def make_k(
         self,
@@ -191,22 +197,27 @@ class Structure:
         return g_int, k_t
 
     def static_solve(
-        self, g_ext: Array, prescribed_dofs: Array, prescribed_values: Array
+        self, g_ext: Array, prescribed_dofs: Array, ha_init: Optional[Array] = None
     ) -> Array:
         r"""
         Perform static solve of the structure under external loads
-        :param g_ext: External forces array of shapes [n_nodes, 6]
+        :param g_ext: External forces array of follower forces [n_nodes, 6]
         :param prescribed_dofs: Array of prescribed dof indices
-        :param prescribed_values: Array of prescribed dof values
+        :param ha_init: Initial guess for the algebra, [n_nodes, 6]
         :return: Displacement array of shapes [n_nodes, 6]
         """
+
+        if ha_init is None:
+            ha = self.ha0
+        else:
+            ha = ha_init
 
         pass
 
         # def newton_raphson(
         #     func: Callable[[Array], Array],
         #     jac: Callable[[Array], Array],
-        #     x_init: Array,
+        #     x0: Array,
         #     free_dof: slice,
         # ) -> Array:
         #     n_iter = 10
@@ -217,7 +228,7 @@ class Structure:
         #         dx = jnp.linalg.solve(j, f)  # [m - n_cnst]
         #         return x_km1.at[free_dof].add(-dx)
         #
-        #     return jax.lax.fori_loop(0, n_iter, update, x_init)
-        #     # return update(0, x_init)
+        #     return jax.lax.fori_loop(0, n_iter, update, x0)
+        #     # return update(0, x0)
         #
         # return newton_raphson(g_ext)
