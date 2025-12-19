@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from math import factorial
 from jax.scipy.special import bernoulli
 from aegrad.algebra.constants import BASE_SUMMATION_ORDER
-from typing import Sequence
+from typing import Sequence, Literal
 
 
 def check_if_so3_g(
@@ -311,19 +311,26 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     return jnp.block([[k_upper_left, k_upper_right], [k_lower_left, k_lower_right]])
 
 
-def const_curvature_beam(kappa: Array, s: Array) -> Array:
+def const_curvature_beam(kappa: Array, s: Array, direction: Literal["y", "z"]) -> Array:
     r"""
     For a beam with constant curvature, with base node at the origin and curvature in the positive z direction
     (i.e., existing in the x-y plane with z=0), obtain the coordinates along the beam length for
     :param kappa: Curvature of the element, []
     :param s: Position along the beam length, []
+    :param direction: Direction of moment applied, either 'y' or 'z'
     :return: Coordinate of point along the beam, [3]
     """
 
     x = jnp.sin(s * kappa) / kappa
-    y = (1.0 - jnp.cos(s * kappa)) / kappa
+    v_defl = (1.0 - jnp.cos(s * kappa)) / kappa
 
-    return jnp.array([x, y, 0.0])
+    match direction:
+        case "y":
+            return jnp.array([x, 0.0, -v_defl])
+        case "z":
+            return jnp.array([x, v_defl, 0.0])
+        case _:
+            raise ValueError("Direction must be 'y' or 'z'")
 
 
 def get_curvature(d: Array) -> Array:

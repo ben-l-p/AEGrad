@@ -1,25 +1,26 @@
 from jax import numpy as jnp
 from jax import Array
-import jax
-from typing import Callable
-from functools import singledispatch
+from typing import Callable, Optional
+import equinox
 
 
-@singledispatch
 def newton_raphson(
     func: Callable[[Array], tuple[Array, Array]],
     x0: Array,
     atol: float,
     rtol: float,
+    n_iter: Optional[int] = 50,
 ) -> tuple[Array, Array, Array]:
     r"""
-    Perform Newton-Raphson iterations to solve a nonlinear system of equations.
-    TODO: make reverse-mode differentiable.
-    NOTE: This loop does not have a maximum iteration count, so it may run indefinitely if not converging.
-    :param func: Function that returns the residual and Jacobian given the current guess. [n_dof] -> (residual [n_dof], Jacobian [n_dof, n_dof])
+    Perform Newton-Raphson iterations to solve for f(x) = 0, where f(x) is some function with known gradient, which may
+    be nonlinear.
+    :param func: Function that returns the residual and Jacobian given the current guess. [n_dof] -> (residual [n_dof],
+    Jacobian [n_dof, n_dof])
     :param x0: Initial guess for the solution, [n_dof]
     :param atol: Absolute tolerance for convergence
     :param rtol: Relative tolerance for convergence
+    :param n_iter: Optional maximum number of iterations. If None, will iterate until convergence. If set, may return
+    non-converged solution.
     :return: Tuple of converged states [n_dof], residual [n_dof], and Jacobian [n_dof, n_dof]
     """
 
@@ -45,34 +46,11 @@ def newton_raphson(
         return x_np1, f_x_np1, j_x_np1
 
     # main loop, return the converged states, residual and Jacobian
-    x_conv, f_x_conv, j_x_conv = jax.lax.while_loop(
-        check_convergence, update, init_state
+    x_conv, f_x_conv, j_x_conv = equinox.internal.while_loop(
+        check_convergence,
+        update,
+        init_state,
+        max_steps=n_iter,
+        kind="bounded" if n_iter is not None else "lax",
     )
-
     return x_conv, f_x_conv, j_x_conv
-
-
-@newton_raphson.register
-def _(
-    res_func: Callable[[Array], Array],
-    jac_func: Callable[[Array], Array],
-    x0: Array,
-    atol: float,
-    rtol: float,
-) -> tuple[Array, Array, Array]:
-    r"""
-    Perform Newton-Raphson iterations to solve a nonlinear system of equations.
-    TODO: make reverse-mode differentiable.
-    NOTE: This loop does not have a maximum iteration count, so it may run indefinitely if not converging.
-    :param res_func: Residual function, [n_dof] -> [n_dof]
-    :param jac_func: Jacobian function, [n_dof] -> [n_dof, n_dof]
-    :param x0: Initial guess for the solution, [n_dof]
-    :param atol: Absolute tolerance for convergence
-    :param rtol: Relative tolerance for convergence
-    :return: Tuple of converged states [n_dof], residual [n_dof], and Jacobian [n_dof, n_dof]
-    """
-
-    def combined_func(x: Array) -> tuple[Array, Array]:
-        return res_func(x), jac_func(x)
-
-    return newton_raphson(combined_func, x0, atol, rtol)

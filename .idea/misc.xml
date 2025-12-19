@@ -4,8 +4,10 @@
     <option name="sdkName" value="uv (AEGrad)" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="uv (AEGrad)" project-jdk-type="Python SDK" />
+  <component name="PythonCompatibilityInspectionAdvertiser">
+    <option name="version" value="3" />
+  </component>
   <component name="RuffConfiguration">
-    <option name="enabled" value="true" />
     <option name="sortImports" value="false" />
   </component>
 </project>

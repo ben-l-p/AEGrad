@@ -266,6 +266,14 @@ def ha_check_to_ha(ha_check: Array) -> Array:
     ha_omega = skew_to_vec(ha_check[3:, 3:])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
+def ha_to_d(ha1: Array, ha2: Array) -> Array:
+    r"""
+    Obtains the relative configuration vector between two se(3) algebra elements.
+    :param ha1: Base se(3) algebra element at s=0, [6].
+    :param ha2: Tip se(3) algebra element at s=L, [6].
+    :return: se(3) relative configuration vector, [6].
+    """
+    return log_se3(hg_inv(exp_se3(ha1)) @ exp_se3(ha2))
 
 def hg_to_d(hg1: Array, hg2: Array) -> Array:
     r"""

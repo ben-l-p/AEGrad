@@ -5,9 +5,10 @@ from aegrad.structure.structure_utils import check_connectivity
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.algebra.base import chi
 from aegrad.structure.structure_utils import k_t_entry, g_int_entry
-from aegrad.algebra.se3 import p
-from typing import Optional
+from aegrad.algebra.se3 import p, ha_to_d, log_se3
+from typing import Optional, Sequence
 from functools import partial
+from aegrad.algebra.solvers import newton_raphson
 
 
 class Structure:
@@ -115,7 +116,12 @@ class Structure:
             jnp.einsum("ijk,ikl,iml->ijm", chi0, self.m_cs, chi0)
         )
 
-        self.hg0 = self.hg0.at[...].set()
+        self.hg0 = jnp.broadcast_to(
+            jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
+        )  # [n_nodes, 4, 4]
+        self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
+
+        self.ha0 = vmap(log_se3)(self.hg0)  # [n_nodes, 6]
 
     def make_k(
         self,
@@ -145,12 +151,16 @@ class Structure:
             index = self.dof_per_elem[i_elem, :]
             k_t = k_t.at[jnp.ix_(index, index)].set(k_t_entries[i_elem, ...])
 
+        # # TODO: verify sign convention
+        # k_t = -k_t
+
         return k_t
 
     def make_g_int(self, p_d: Array, eps: Array) -> Array:
         r"""
         Assemble global internal force vector as a function of the element relative configuration vectors
-        :param d: Element relative configuration, [n_elem, 6]
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param eps: Element strain vectors, [n_elem, 6]
         :return: Global internal force vector, [n_dof]
         """
 
@@ -164,6 +174,9 @@ class Structure:
         for i_elem in range(self.n_elem):
             index = self.dof_per_elem[i_elem, :]
             g_int = g_int.at[index].add(g_int_entries[i_elem, ...])
+
+        # # TODO: verify sign convention
+        # g_int = -g_int
 
         return g_int
 
@@ -197,38 +210,78 @@ class Structure:
         return g_int, k_t
 
     def static_solve(
-        self, g_ext: Array, prescribed_dofs: Array, ha_init: Optional[Array] = None
-    ) -> Array:
+        self,
+        g_ext: Array,
+        prescribed_dofs: Sequence[int] | Array | slice | int,
+        ha_init: Optional[Array] = None,
+    ) -> tuple[Array, Array, Array]:
         r"""
         Perform static solve of the structure under external loads
         :param g_ext: External forces array of follower forces [n_nodes, 6]
         :param prescribed_dofs: Array of prescribed dof indices
         :param ha_init: Initial guess for the algebra, [n_nodes, 6]
-        :return: Displacement array of shapes [n_nodes, 6]
+        :return: Node algebra [n_nodes, 6], configuration vectors [n_elem, 6] and internal forces, [n_nodes, 6]
         """
 
-        if ha_init is None:
-            ha = self.ha0
+        # degrees of freedom which are prescribed
+        if isinstance(prescribed_dofs, slice) or isinstance(prescribed_dofs, Sequence):
+            prescribed_dofs_arr = jnp.arange(self.n_dof)[prescribed_dofs]
+        elif isinstance(prescribed_dofs, int):
+            prescribed_dofs_arr = jnp.array([prescribed_dofs])
+        elif isinstance(prescribed_dofs, Array):
+            prescribed_dofs_arr = prescribed_dofs
         else:
-            ha = ha_init
+            raise TypeError(
+                "prescribed_dofs must be an int, slice, Sequence[int], or Array"
+            )
 
-        pass
+        # set initial states
+        if ha_init is None:
+            ha0 = self.ha0.ravel()
+        else:
+            ha0 = ha_init.ravel()
 
-        # def newton_raphson(
-        #     func: Callable[[Array], Array],
-        #     jac: Callable[[Array], Array],
-        #     x0: Array,
-        #     free_dof: slice,
-        # ) -> Array:
-        #     n_iter = 10
-        #
-        #     def update(_, x_km1: Array) -> Array:
-        #         f = func(x_km1)[free_dof]  # [m - n_cnst]
-        #         j = jac(x_km1)[free_dof, free_dof]  # [m - n_cnst, m - n_cnst]
-        #         dx = jnp.linalg.solve(j, f)  # [m - n_cnst]
-        #         return x_km1.at[free_dof].add(-dx)
-        #
-        #     return jax.lax.fori_loop(0, n_iter, update, x0)
-        #     # return update(0, x0)
-        #
-        # return newton_raphson(g_ext)
+        # degrees of freedom to solve for
+        solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
+
+        def ha_solve_to_full(ha_solve: Array) -> Array:
+            r"""
+            Reconstruct full algebra from solved degrees of freedom
+            :param ha_solve: Solved degrees of freedom, [n_solve_dof]
+            :return: Full algebra, [n_dof]
+            """
+            ha_full = jnp.zeros(self.n_dof)
+            ha_full = ha_full.at[solve_dofs].set(ha_solve)
+            return ha_full.at[prescribed_dofs_arr].set(ha0[prescribed_dofs_arr])
+
+        def residual_and_jac_func(ha_solve: Array) -> tuple[Array, Array]:
+            r"""
+            Compute the residual and Jacobian for the Newton-Raphson solver.
+            :param ha_solve: Solved degrees of freedom, [n_solve_dof]
+            :return:
+            """
+            ha = ha_solve_to_full(ha_solve).reshape(self.n_nodes, 6)
+            d = vmap(ha_to_d, (0, 0), 0)(
+                ha[self.connectivity[:, 0], :], ha[self.connectivity[:, 1], :]
+            )  # [n_elem, 6]
+            g_int, k_t = self.make_g_int_and_k_t(d)  # [n_dof], [n_dof, n_dof]
+            g_res = g_int - g_ext.flatten()  # [n_dof]
+            return g_res[solve_dofs], k_t[jnp.ix_(solve_dofs, solve_dofs)]
+
+        # solved for dofs
+        ha_solve, g_res_solve, k_t_solve = newton_raphson(
+            residual_and_jac_func, ha0[solve_dofs], atol=1e-8, rtol=1e-8
+        )
+
+        # reconstruct full algebra, [n_dof]
+        ha_full = ha_solve_to_full(ha_solve).reshape(self.n_nodes, 6)
+        d_full = vmap(ha_to_d, (0, 0), 0)(
+            ha_full[self.connectivity[:, 0]], ha_full[self.connectivity[:, 1]]
+        )  # [n_elem, 6]
+        g_int_full = self.make_g_int_and_k_t(d_full)[0].reshape(self.n_nodes, 6)
+
+        return (
+            ha_full,
+            d_full,
+            g_int_full,
+        )
