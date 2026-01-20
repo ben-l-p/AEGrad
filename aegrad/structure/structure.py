@@ -1,11 +1,15 @@
 from jax import numpy as jnp
 from jax import Array, vmap
 from aegrad.utils import check_type
-from aegrad.structure.structure_utils import check_connectivity
+from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.algebra.base import chi
 from aegrad.structure.structure_utils import k_t_entry, g_int_entry
-from aegrad.algebra.se3 import p, ha_to_d, log_se3
+from aegrad.algebra.se3 import (
+    p,
+    ha_to_d,
+    log_se3,
+    rmat_to_ha_hat,
+)
 from typing import Optional, Sequence
 from functools import partial
 from aegrad.algebra.solvers import newton_raphson
@@ -22,7 +26,7 @@ class Structure:
         connectivity: Array,
         y_vector: Array,
         include_material: bool = True,
-        include_geometric: bool = True,
+        include_geometric: bool = False,
     ) -> None:
         r"""
         Initialise Structure class with all non-design parameters
@@ -48,6 +52,7 @@ class Structure:
         check_arr_dtype(connectivity, int, "connectivity")
         check_connectivity(connectivity, num_nodes)
         self.connectivity: Array = connectivity  # [n_elem, 2]
+        self.n_elem_per_node: Array = n_elem_per_node(connectivity)  # [n_nodes]
         self.n_elem: int = connectivity.shape[0]
 
         self.dof_per_elem: Array = jnp.zeros((self.n_elem, 12), dtype=int)
@@ -64,9 +69,9 @@ class Structure:
         # initialize design variables with default values
         self.x0: Array = jnp.zeros((num_nodes, 3))
         self.m: Array = jnp.zeros((self.n_elem, 6, 6))
-        self.k: Array = jnp.zeros((self.n_elem, 6, 6))
         self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
         self.k_cs: Array = jnp.zeros((self.n_elem, 6, 6))
+        self.k_l: Array = jnp.zeros((self.n_elem, 6, 6))
 
         # initialise auxiliary arrays
         self.o0: Array = jnp.zeros((self.n_elem, 3, 3))
@@ -76,6 +81,9 @@ class Structure:
         # initialise undeformed algebra and group
         self.hg0: Array = jnp.zeros((self.n_nodes, 4, 4))
         self.ha0: Array = jnp.zeros((self.n_nodes, 6))
+
+        # adjoint inverse action for the reference rotations
+        self.ad_inv_o0: Array = jnp.zeros((self.n_elem, 6, 6))
 
     def set_design_variables(
         self, coords: Array, k_cs: Array, m_cs: Optional[Array]
@@ -95,6 +103,14 @@ class Structure:
         # obtain initial orientation and length
         x_elem = jnp.take(self.x0, self.connectivity, axis=0)  # [n_elem, 2, 3]
         dx = x_elem[:, 1, :] - x_elem[:, 0, :]  # [n_elem, 3]
+
+        # ensure out-of-plane vector and beam vector are not collinear
+        if jnp.any(jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6):
+            raise ValueError(
+                "y_vector is collinear with beam element direction for at least one element. "
+                "Please provide a different y_vector."
+            )
+
         self.l0 = self.l0.at[...].set(jnp.linalg.norm(dx, axis=-1))  # [n_elem]
         self.d0 = self.d0.at[:, 0].set(self.l0)
 
@@ -108,12 +124,8 @@ class Structure:
         self.o0 = self.o0.at[..., 1].set(dy_unit)
         self.o0 = self.o0.at[..., 2].set(dz_unit)
 
-        chi0 = vmap(chi)(self.o0)  # [n_elem, 6, 6]
-        self.k = self.k.at[...].set(
-            jnp.einsum("ijk,ikl,iml->ijm", chi0, self.k_cs, chi0)
-        )
-        self.m = self.m.at[...].set(
-            jnp.einsum("ijk,ikl,iml->ijm", chi0, self.m_cs, chi0)
+        self.ad_inv_o0 = self.ad_inv_o0.at[...].set(
+            vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
         )
 
         self.hg0 = jnp.broadcast_to(
@@ -122,6 +134,8 @@ class Structure:
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
         self.ha0 = vmap(log_se3)(self.hg0)  # [n_nodes, 6]
+
+        self.k_l = self.k_l.at[...].set(self.k_cs * self.l0[:, None, None])
 
     def make_k(
         self,
@@ -143,16 +157,13 @@ class Structure:
             ),
             (0, 0, 0, 0, 0),
             0,
-        )(d, p_d, self.l0, eps, self.k)  # [n_elem, 12, 12]
+        )(d, p_d, self.l0, eps, self.k_cs)  # [n_elem, 12, 12]
 
         # assemble global stiffness matrix
         k_t = jnp.zeros((self.n_dof, self.n_dof))
         for i_elem in range(self.n_elem):
             index = self.dof_per_elem[i_elem, :]
-            k_t = k_t.at[jnp.ix_(index, index)].set(k_t_entries[i_elem, ...])
-
-        # # TODO: verify sign convention
-        # k_t = -k_t
+            k_t = k_t.at[jnp.ix_(index, index)].add(k_t_entries[i_elem, ...])
 
         return k_t
 
@@ -166,19 +177,48 @@ class Structure:
 
         # compute internal force entries
         g_int_entries = vmap(g_int_entry, (0, 0, 0), 0)(
-            p_d, self.k, eps
+            p_d, self.k_cs, eps
         )  # [n_elem, 12]
 
         # assemble global internal force vector
         g_int = jnp.zeros(self.n_dof)
         for i_elem in range(self.n_elem):
             index = self.dof_per_elem[i_elem, :]
-            g_int = g_int.at[index].add(g_int_entries[i_elem, ...])
-
-        # # TODO: verify sign convention
-        # g_int = -g_int
+            g_int = g_int.at[index[:6]].add(g_int_entries[i_elem, :6])
+            g_int = g_int.at[index[6:]].add(g_int_entries[i_elem, 6:])
 
         return g_int
+
+    def make_g_ext_ab(self, g_ext: Array, d: Array) -> Array:
+        r"""
+        Compute the global external force vector as a function of the element relative configuration vectors
+        :param g_ext: External forces array of follower forces [n_elem, 2, 6]
+        :param d: Element relative configuration, [n_elem, 6]
+        :return: Global external force vector, [n_dof]
+        """
+
+        g_ext_ab_0 = jnp.einsum(
+            "ikj,ik->ij",
+            self.ad_inv_o0[self.connectivity[:, 0], :, :],
+            g_ext[self.connectivity[:, 0], 0, :],
+        )  # [n_elem, 6]
+
+        g_ext_ab_l = jnp.einsum(
+            "ikj,ik->ij",
+            self.ad_inv_o0[self.connectivity[:, 1], :, :],
+            g_ext[self.connectivity[:, 1], 1, :],
+        )  # [n_elem, 6]
+
+        g_ext_ab_vec = jnp.zeros(self.n_dof)
+
+        for i_elem in range(self.n_elem):
+            index = self.dof_per_elem[i_elem, :]
+            g_ext_ab_vec = g_ext_ab_vec.at[index[:6]].add(g_ext_ab_0[i_elem, ...])
+            g_ext_ab_vec = g_ext_ab_vec.at[index[6:]].add(
+                g_ext_ab_l[i_elem, ...]
+            )  # TODO: check
+
+        return g_ext_ab_vec
 
     def make_eps(self, d: Array) -> Array:
         r"""
@@ -202,7 +242,11 @@ class Structure:
         eps = self.make_eps(d)  # [n_elem, 6]
 
         # compute P(d) matrices
-        p_d = vmap(p)(d)  # [n_elem, 6, 12]
+        p_d = vmap(p, (0, 0, 0), 0)(
+            d,
+            self.ad_inv_o0[self.connectivity[:, 0]],
+            self.ad_inv_o0[self.connectivity[:, 1]],
+        )  # [n_elem, 6, 12]
 
         g_int = self.make_g_int(p_d, eps)  # [n_dof]
         k_t = self.make_k(d, p_d, eps)  # [n_dof, n_dof]
@@ -217,7 +261,7 @@ class Structure:
     ) -> tuple[Array, Array, Array]:
         r"""
         Perform static solve of the structure under external loads
-        :param g_ext: External forces array of follower forces [n_nodes, 6]
+        :param g_ext: External forces array of follower forces [n_elem, 2, 6]
         :param prescribed_dofs: Array of prescribed dof indices
         :param ha_init: Initial guess for the algebra, [n_nodes, 6]
         :return: Node algebra [n_nodes, 6], configuration vectors [n_elem, 6] and internal forces, [n_nodes, 6]
@@ -265,7 +309,8 @@ class Structure:
                 ha[self.connectivity[:, 0], :], ha[self.connectivity[:, 1], :]
             )  # [n_elem, 6]
             g_int, k_t = self.make_g_int_and_k_t(d)  # [n_dof], [n_dof, n_dof]
-            g_res = g_int - g_ext.flatten()  # [n_dof]
+            g_ext_ab = self.make_g_ext_ab(g_ext, d)  # [n_dof]
+            g_res = g_int - g_ext_ab  # [n_dof]
             return g_res[solve_dofs], k_t[jnp.ix_(solve_dofs, solve_dofs)]
 
         # solved for dofs

@@ -14,6 +14,7 @@ from aegrad.algebra.so3 import (
     beta,
 )
 from aegrad.algebra.constants import SMALL_ANG_THRESH
+from algebra.base import chi
 
 
 def bracket_se3(a_vec: Array, b_vec: Array) -> Array:
@@ -228,6 +229,16 @@ def ha_to_ha_hat(ha: Array) -> Array:
     )
 
 
+def rmat_to_ha_hat(rmat: Array) -> Array:
+    r"""
+    Converts a rotation matrix into its hat matrix representation in se(3) with zero translation. Formulation from
+    "A geometric local frame approach for flexible multibody systems", by Sonneville, 2015, Eq 1.50, p. 15.
+    :param rmat: Rotation matrix, [3, 3].
+    :return: Hat matrix representation, [6, 6].
+    """
+    return chi(rmat)
+
+
 def ha_hat_to_ha(ha_hat: Array) -> Array:
     r"""
     Converts a se(3) hat matrix representation into an se(3) vector. Formulation from Geometrically exact beam finite
@@ -266,6 +277,24 @@ def ha_check_to_ha(ha_check: Array) -> Array:
     ha_omega = skew_to_vec(ha_check[3:, 3:])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
+
+def hg_to_ha_hat(hg: Array) -> Array:
+    r"""
+    Converts an SE(3) group element into its se(3) hat matrix representation.
+    :param hg: SE(3) group element, [4, 4].
+    :return: se(3) hat matrix representation, [6, 6].
+    """
+    rmat = hg[:3, :3]
+    x = hg[:3, 3]
+
+    return jnp.block(
+        [
+            [rmat, vec_to_skew(x) @ rmat],
+            [jnp.zeros((3, 3)), rmat],
+        ]
+    )
+
+
 def ha_to_d(ha1: Array, ha2: Array) -> Array:
     r"""
     Obtains the relative configuration vector between two se(3) algebra elements.
@@ -274,6 +303,7 @@ def ha_to_d(ha1: Array, ha2: Array) -> Array:
     :return: se(3) relative configuration vector, [6].
     """
     return log_se3(hg_inv(exp_se3(ha1)) @ exp_se3(ha2))
+
 
 def hg_to_d(hg1: Array, hg2: Array) -> Array:
     r"""
@@ -286,15 +316,44 @@ def hg_to_d(hg1: Array, hg2: Array) -> Array:
     return log_se3(hg_inv(hg1) @ hg2)
 
 
-def p(d: Array) -> Array:
+def p(d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
     r"""
     Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation
-    from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,
-    2013, Eq 66.
+    from "A geometric local frame approach for flexible multibody systems", by Sonneville, 2015, Eq 6.141, p. 90.
     :param d: Relative se(3) configuration vector, [6].
+    :param ad_inv_a0: Adjoint action for base rotation, [6, 6].
+    :param ad_inv_b0: Adjoint action for base rotation, [6, 6].
     :return: Matrix, [6, 12].
     """
-    return jnp.concatenate((-t_inv_se3(-d), t_inv_se3(d)), axis=1)
+
+    return jnp.concatenate(
+        (-t_inv_se3(-d) @ ad_inv_a0, t_inv_se3(d) @ ad_inv_b0), axis=1
+    )
+
+
+# def p(d: Array, a0: Array, b0: Array) -> Array:
+#     r"""
+#     Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation
+#     from "A geometric local frame approach for flexible multibody systems", by Sonneville, 2015, Eq 6.141, p. 90.
+#     :param d: Relative se(3) configuration vector, [6].
+#     :return: Matrix, [6, 12].
+#     """
+#
+#     delta = exp_se3(d)
+#     delta_inv = hg_inv(delta)
+#
+#     ha0_inv = jnp.zeros((4, 4)).at[3, 3].set(1.0)
+#     ha0_inv = ha0_inv.at[:3, :3].set(a0.T)
+#
+#     hb0_inv = jnp.zeros((4, 4)).at[3, 3].set(1.0)
+#     hb0_inv = hb0_inv.at[:3, :3].set(b0.T)
+#
+#     ad_a = hg_to_ha_hat(delta_inv @ ha0_inv)
+#     ad_b = hg_to_ha_hat(hb0_inv)
+#
+#     t_inv = t_inv_se3(d)
+#
+#     return jnp.concatenate((-t_inv @ ad_a, t_inv @ ad_b), axis=1)
 
 
 def t_star(s_l: Array, d: Array) -> Array:
@@ -305,20 +364,25 @@ def t_star(s_l: Array, d: Array) -> Array:
     formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.
     :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
-    :return::math:`T^*(s, \mathbf{d})` matrix, [6, 6].
+    :return: :math:`T^*(s, \mathbf{d})` matrix, [6, 6].
     """
     return s_l * t_se3(s_l * d) @ t_inv_se3(d)
 
 
-def q(s_l: Array, d: Array) -> Array:
+def q(s_l: Array, d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
     r"""
     Matrix which described pertubations in the algebra element along an element with respect to the algebra elements at
     both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &
-    T^*(s, \mathbf{d})]`. Formulation from Geometrically exact beam finite element formulated on the special
-    Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.
+    T^*(s, \mathbf{d})]`. Formulation from "A geometric local frame approach for flexible multibody systems",
+    by Sonneville, 2015, Eq 6.145, p. 90.
     :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
-    :return::math:`Q(s, \mathbf{d})` matrix, [6, 12].
+    :param ad_inv_a0: Adjoint action for base rotation, [6, 6].
+    :param ad_inv_b0: Adjoint action for base rotation, [6, 6].
+    :return: :math:`Q(s, \mathbf{d})` matrix, [6, 12].
     """
     t_star_ = t_star(s_l, d)
-    return jnp.stack((jnp.eye(6) - t_star_, t_star_), axis=1)
+
+    return jnp.concatenate(
+        ((jnp.eye(6) - t_star_) @ ad_inv_a0, t_star_ @ ad_inv_b0), axis=1
+    )

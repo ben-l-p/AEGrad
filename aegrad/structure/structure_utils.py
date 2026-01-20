@@ -1,6 +1,4 @@
-from jax import Array, numpy as jnp, jacobian
-
-from algebra.se3 import p
+from jax import Array, numpy as jnp
 
 
 def check_connectivity(connectivity: Array, num_nodes: int) -> None:
@@ -20,6 +18,20 @@ def check_connectivity(connectivity: Array, num_nodes: int) -> None:
         )
 
 
+def n_elem_per_node(connectivity: Array) -> Array:
+    r"""
+    Computes the number of elements connected to each node in the structure.
+    :param connectivity: Connectivity array of shape [n_elem, 2]
+    :return: Number of elements connected to each node, [num_nodes]
+    """
+
+    return jnp.bincount(
+        connectivity.ravel(),
+        minlength=connectivity.shape[0],
+        length=connectivity.shape[0],
+    )
+
+
 def g_int_entry(
     p_d: Array,
     k: Array,
@@ -29,7 +41,7 @@ def g_int_entry(
     Computes the nodal internal force vector for a beam element. Formulation from Geometrically exact beam
     finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 75.
     :param p_d: :math:`\mathbf{P}(\mathbf{d})` matrix, [6, 12].
-    :param k: Beam cross-sectional stiffness matrix, [6, 6].
+    :param k: Beam cross-sectional matrix, [6, 6].
     :param eps: Beam strain vector, [6].
     :return: Forces at nodes, [12].
     """
@@ -69,6 +81,38 @@ def k_t_entry(
         k_t = jnp.zeros((12, 12))
 
     if include_geometric:
-        # contribution from perturbations in P(d)
-        k_t += jacobian(lambda d_: p(d_).T @ k @ eps)(d) @ p_d
+        # contribution from perturbations in P(d) TODO
+        raise NotImplementedError(
+            "Geometric stiffness contribution not implemented yet."
+        )
     return k_t
+
+
+def integrate_m_l(
+    m_cs: Array,
+    d: Array,
+) -> Array:
+    r"""
+    Approximate the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
+    :param m_cs: Cross sectional mass matrix, [6, 6].
+    :param d: Configuration vector, [6]
+    :return: Integrated mass matrix, [12, 12]
+    """
+    # TODO: implement Gauss-Legendre
+    raise NotImplementedError
+
+
+def integrate_c_l(
+    m_cs: Array,
+    v_ab: Array,
+    d: Array,
+) -> Array:
+    r"""
+    Approximate the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
+    :param m_cs: Cross sectional mass matrix, [6, 6].
+    :param v_ab: Nodal local velocities, [12]
+    :param d: Configuration vector, [6]
+    :return: Integrated mass matrix, [12, 12]
+    """
+    # TODO: implement Gauss-Legendre
+    raise NotImplementedError

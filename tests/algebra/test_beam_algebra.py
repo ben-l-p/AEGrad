@@ -26,6 +26,7 @@ from aegrad.algebra.se3 import (
     t_inv_se3,
     bracket_se3,
     t_star,
+    hg_to_ha_hat,
 )
 from aegrad.algebra.test_routines import (
     check_if_so3_a,
@@ -441,6 +442,33 @@ class TestExpLog:
         ), (
             f"SO3 logarithm should equal summation series approximation {sum_}, "
             f"returned {out}"
+        )
+
+
+class TestAdjoint:
+    def test_se3_group_adjoint(self):
+        vals = jnp.linspace(0.6, 0.1, 6)
+        delta = jnp.linspace(0.05, 0.25, 6)
+        hg = exp_se3(vals)
+
+        d_tilde = ha_to_ha_tilde(delta)
+
+        full_output = ha_tilde_to_ha(hg @ d_tilde @ hg_inv(hg))
+        adjoint_output = hg_to_ha_hat(hg) @ delta
+
+        assert jnp.allclose(full_output, adjoint_output), (
+            f"SE3 adjoint operator failed, expected {adjoint_output}, returned {full_output}"
+        )
+
+    def test_se3_algebra_adjoint(self):
+        vals = jnp.linspace(0.1, 0.6, 6)
+        delta = jnp.full(6, 1e-3)
+
+        full_output = ha_tilde_to_ha(bracket_se3(vals, delta))
+        adjoint_output = ha_to_ha_hat(vals) @ delta
+
+        assert jnp.allclose(full_output, adjoint_output), (
+            f"SE3 adjoint operator failed, expected {adjoint_output}, returned {full_output}"
         )
 
 

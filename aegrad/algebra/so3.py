@@ -162,7 +162,7 @@ def t_inv_so3(ha_omega: Array) -> Array:
             out += (-1.0) ** i * b[i] * jnp.linalg.matrix_power(skew, i) / factorial(i)
         return out
 
-    ang_mag2 = jnp.inner(ha_omega, ha_omega)
+    ang_mag2 = jnp.linalg.norm(ha_omega)
     return cond(ang_mag2 > SMALL_ANG_THRESH, t_inv_so3_full, t_inv_so3_small_angle)
 
 

@@ -311,7 +311,9 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     return jnp.block([[k_upper_left, k_upper_right], [k_lower_left, k_lower_right]])
 
 
-def const_curvature_beam(kappa: Array, s: Array, direction: Literal["y", "z"]) -> Array:
+def const_curvature_beam(
+    kappa: float | Array, s: float | Array, direction: Literal["y", "z"]
+) -> Array:
     r"""
     For a beam with constant curvature, with base node at the origin and curvature in the positive z direction
     (i.e., existing in the x-y plane with z=0), obtain the coordinates along the beam length for
