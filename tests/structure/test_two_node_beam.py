@@ -42,7 +42,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure axial strain and forces are calculated correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e5).at[0].set(cls.l)
+        k_coeffs_axial = jnp.full(6, 1e5).at[0].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
         )
@@ -67,7 +67,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure torsional strain and forces are calculated correctly.
         """
-        k_coeffs_torsional = jnp.full(6, 1e5).at[3].set(cls.l)
+        k_coeffs_torsional = jnp.full(6, 1e5).at[3].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_torsional)[None, :], None
         )
@@ -168,7 +168,7 @@ class TestTwoNodeBeamStrainsForces:
         Ensure undeformed beam has zero strains and internal forces when solved for no external loads.
         """
 
-        k_coeffs_unloaded = jnp.ones(6)
+        k_coeffs_unloaded = jnp.full(6, 4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_unloaded)[None, :], None
         )
@@ -190,7 +190,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure axial load case is solved correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e5).at[0].set(1.0)
+        k_coeffs_axial = jnp.full(6, 1e5).at[0].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
         )
@@ -223,7 +223,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure torsion load case is solved correctly.
         """
-        k_coeffs_torsion = jnp.full(6, 1e5).at[3].set(1.0)
+        k_coeffs_torsion = jnp.full(6, 1e5).at[3].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_torsion)[None, :], None
         )
@@ -256,7 +256,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure z-bending load case is solved correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e-3).at[4].set(1.0)
+        k_coeffs_axial = jnp.full(6, 1e-3).at[4].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
         )
@@ -307,7 +307,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure bending in z load case is solved correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e-3).at[5].set(1.0)
+        k_coeffs_axial = jnp.full(6, 1e-3).at[5].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
         )
@@ -358,7 +358,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure shear load case is solved correctly.
         """
-        k_coeffs_shear_y = jnp.full(6, 1e5).at[1].set(1.0)
+        k_coeffs_shear_y = jnp.full(6, 1e5).at[1].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_shear_y)[None, :], None
         )
@@ -403,7 +403,7 @@ class TestTwoNodeBeamStrainsForces:
         r"""
         Ensure shear load case is solved correctly.
         """
-        k_coeffs_shear_z = jnp.full(6, 1e5).at[2].set(1.0)
+        k_coeffs_shear_z = jnp.full(6, 1e5).at[2].set(4.56)
         cls.struct.set_design_variables(
             cls.coords, jnp.diag(k_coeffs_shear_z)[None, :], None
         )
