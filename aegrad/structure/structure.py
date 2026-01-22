@@ -1,9 +1,10 @@
+import jax.lax
 from jax import numpy as jnp
 from jax import Array, vmap
 from aegrad.utils import check_type
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.structure.structure_utils import k_t_entry, g_int_entry
+from aegrad.structure.structure_utils import k_t_entry
 from aegrad.algebra.se3 import (
     p,
     ha_to_d,
@@ -25,24 +26,13 @@ class Structure:
         num_nodes: int,
         connectivity: Array,
         y_vector: Array,
-        include_material: bool = True,
-        include_geometric: bool = False,
     ) -> None:
         r"""
         Initialise Structure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
         :param connectivity: Connectivity array of shapes [n_elem, 2]
         :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
-        :param include_material: Whether to include material stiffness, defaults to True
-        :param include_geometric: Whether to include geometric stiffness, defaults to True
         """
-
-        self.include_material: bool = include_material
-        self.include_geometric: bool = include_geometric
-        if not self.include_material and not self.include_geometric:
-            raise ValueError(
-                "At least one of include_material or include_geometric must be True."
-            )
 
         check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
@@ -142,6 +132,8 @@ class Structure:
         d: Array,
         p_d: Array,
         eps: Array,
+        include_material: bool,
+        include_geometric: bool,
     ) -> Array:
         r"""
         Assemble global stiffness matrix as a function of the element relative configuration vectors
@@ -152,12 +144,20 @@ class Structure:
         k_t_entries = vmap(
             partial(
                 k_t_entry,
-                include_material=self.include_material,
-                include_geometric=self.include_geometric,
+                include_material=include_material,
+                include_geometric=include_geometric,
             ),
-            (0, 0, 0, 0, 0),
+            (0, 0, 0, 0, 0, 0, 0),
             0,
-        )(d, p_d, self.l0, eps, self.k_cs)  # [n_elem, 12, 12]
+        )(
+            d,
+            p_d,
+            self.l0,
+            eps,
+            self.k_cs,
+            self.ad_inv_o0[self.connectivity[:, 0], ...],
+            self.ad_inv_o0[self.connectivity[:, 1], ...],
+        )  # [n_elem, 12, 12]
 
         # assemble global stiffness matrix
         k_t = jnp.zeros((self.n_dof, self.n_dof))
@@ -176,9 +176,11 @@ class Structure:
         """
 
         # compute internal force entries
-        g_int_entries = vmap(g_int_entry, (0, 0, 0), 0)(
-            p_d, self.k_cs, eps
-        )  # [n_elem, 12]
+        # g_int_entries = vmap(g_int_entry, (0, 0, 0), 0)(
+        #     p_d, self.k_cs, eps
+        # )  # [n_elem, 12]
+
+        g_int_entries = jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs, eps)
 
         # assemble global internal force vector
         g_int = jnp.zeros(self.n_dof)
@@ -199,14 +201,14 @@ class Structure:
 
         g_ext_ab_0 = jnp.einsum(
             "ikj,ik->ij",
-            self.ad_inv_o0[self.connectivity[:, 0], :, :],
-            g_ext[self.connectivity[:, 0], 0, :],
+            self.ad_inv_o0,
+            g_ext[:, 0, :],
         )  # [n_elem, 6]
 
         g_ext_ab_l = jnp.einsum(
             "ikj,ik->ij",
-            self.ad_inv_o0[self.connectivity[:, 1], :, :],
-            g_ext[self.connectivity[:, 1], 1, :],
+            self.ad_inv_o0,
+            g_ext[:, 1, :],
         )  # [n_elem, 6]
 
         g_ext_ab_vec = jnp.zeros(self.n_dof)
@@ -214,9 +216,7 @@ class Structure:
         for i_elem in range(self.n_elem):
             index = self.dof_per_elem[i_elem, :]
             g_ext_ab_vec = g_ext_ab_vec.at[index[:6]].add(g_ext_ab_0[i_elem, ...])
-            g_ext_ab_vec = g_ext_ab_vec.at[index[6:]].add(
-                g_ext_ab_l[i_elem, ...]
-            )  # TODO: check
+            g_ext_ab_vec = g_ext_ab_vec.at[index[6:]].add(g_ext_ab_l[i_elem, ...])
 
         return g_ext_ab_vec
 
@@ -231,7 +231,9 @@ class Structure:
 
         return (d - self.d0) / self.l0[:, None]
 
-    def make_g_int_and_k_t(self, d: Array) -> tuple[Array, Array]:
+    def make_g_int_and_k_t(
+        self, d: Array, include_material: bool, include_geometric: bool
+    ) -> tuple[Array, Array]:
         r"""
         Compute both the internal force vector and tangent stiffness matrix as a function of the element relative
         configuration vectors. This makes computation more efficient by reusing intermediate results.
@@ -249,7 +251,9 @@ class Structure:
         )  # [n_elem, 6, 12]
 
         g_int = self.make_g_int(p_d, eps)  # [n_dof]
-        k_t = self.make_k(d, p_d, eps)  # [n_dof, n_dof]
+        k_t = self.make_k(
+            d, p_d, eps, include_material, include_geometric
+        )  # [n_dof, n_dof]
 
         return g_int, k_t
 
@@ -258,6 +262,9 @@ class Structure:
         g_ext: Array,
         prescribed_dofs: Sequence[int] | Array | slice | int,
         ha_init: Optional[Array] = None,
+        include_material: bool = True,
+        include_geometric: bool = False,
+        load_steps: int = 1,
     ) -> tuple[Array, Array, Array]:
         r"""
         Perform static solve of the structure under external loads
@@ -278,6 +285,8 @@ class Structure:
             raise TypeError(
                 "prescribed_dofs must be an int, slice, Sequence[int], or Array"
             )
+        if load_steps < 1:
+            raise ValueError("load_steps must be at least 1")
 
         # set initial states
         if ha_init is None:
@@ -287,6 +296,7 @@ class Structure:
 
         # degrees of freedom to solve for
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
+        n_solve_dofs = solve_dofs.shape[0]
 
         def ha_solve_to_full(ha_solve: Array) -> Array:
             r"""
@@ -298,24 +308,45 @@ class Structure:
             ha_full = ha_full.at[solve_dofs].set(ha_solve)
             return ha_full.at[prescribed_dofs_arr].set(ha0[prescribed_dofs_arr])
 
-        def residual_and_jac_func(ha_solve: Array) -> tuple[Array, Array]:
+        def residual_and_jac_func(ha_solve: Array, g_ext: Array) -> tuple[Array, Array]:
             r"""
             Compute the residual and Jacobian for the Newton-Raphson solver.
             :param ha_solve: Solved degrees of freedom, [n_solve_dof]
+            :param g_ext: External forces array of follower forces [n_elem, 2, 6]
             :return:
             """
             ha = ha_solve_to_full(ha_solve).reshape(self.n_nodes, 6)
             d = vmap(ha_to_d, (0, 0), 0)(
                 ha[self.connectivity[:, 0], :], ha[self.connectivity[:, 1], :]
             )  # [n_elem, 6]
-            g_int, k_t = self.make_g_int_and_k_t(d)  # [n_dof], [n_dof, n_dof]
+            g_int, k_t = self.make_g_int_and_k_t(
+                d, include_material, include_geometric
+            )  # [n_dof], [n_dof, n_dof]
             g_ext_ab = self.make_g_ext_ab(g_ext, d)  # [n_dof]
             g_res = g_int - g_ext_ab  # [n_dof]
             return g_res[solve_dofs], k_t[jnp.ix_(solve_dofs, solve_dofs)]
 
-        # solved for dofs
-        ha_solve, g_res_solve, k_t_solve = newton_raphson(
-            residual_and_jac_func, ha0[solve_dofs], atol=1e-8, rtol=1e-8
+        def load_step_func(
+            i_step: int,
+            carry: tuple[Array, Array, Array],
+        ) -> tuple[Array, Array, Array]:
+            g_ext_step = g_ext * (i_step + 1) / load_steps
+            return newton_raphson(
+                lambda ha_: residual_and_jac_func(ha_, g_ext_step),
+                carry[0],  # previous step solution as initial guess
+                atol=1e-10,
+                rtol=1e-7,
+            )
+
+        ha_solve, g_res_solve, k_t_solve = jax.lax.fori_loop(
+            0,
+            load_steps,
+            load_step_func,
+            (
+                ha0[solve_dofs],
+                jnp.zeros(n_solve_dofs),
+                jnp.zeros((n_solve_dofs, n_solve_dofs)),
+            ),
         )
 
         # reconstruct full algebra, [n_dof]
@@ -323,7 +354,9 @@ class Structure:
         d_full = vmap(ha_to_d, (0, 0), 0)(
             ha_full[self.connectivity[:, 0]], ha_full[self.connectivity[:, 1]]
         )  # [n_elem, 6]
-        g_int_full = self.make_g_int_and_k_t(d_full)[0].reshape(self.n_nodes, 6)
+        g_int_full = self.make_g_int_and_k_t(
+            d_full, include_material, include_geometric
+        )[0].reshape(self.n_nodes, 6)
 
         return (
             ha_full,

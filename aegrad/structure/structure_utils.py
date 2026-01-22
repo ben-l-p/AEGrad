@@ -1,4 +1,6 @@
 from jax import Array, numpy as jnp
+import jax
+from aegrad.algebra.se3 import p
 
 
 def check_connectivity(connectivity: Array, num_nodes: int) -> None:
@@ -32,28 +34,14 @@ def n_elem_per_node(connectivity: Array) -> Array:
     )
 
 
-def g_int_entry(
-    p_d: Array,
-    k: Array,
-    eps: Array,
-) -> Array:
-    r"""
-    Computes the nodal internal force vector for a beam element. Formulation from Geometrically exact beam
-    finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 75.
-    :param p_d: :math:`\mathbf{P}(\mathbf{d})` matrix, [6, 12].
-    :param k: Beam cross-sectional matrix, [6, 6].
-    :param eps: Beam strain vector, [6].
-    :return: Forces at nodes, [12].
-    """
-    return p_d.T @ k @ eps
-
-
 def k_t_entry(
     d: Array,
     p_d: Array,
     l: Array,
     eps: Array,
     k: Array,
+    ad_inv_a0: Array,
+    ad_inv_b0: Array,
     include_material: bool = True,
     include_geometric: bool = True,
 ) -> Array:
@@ -81,10 +69,14 @@ def k_t_entry(
         k_t = jnp.zeros((12, 12))
 
     if include_geometric:
-        # contribution from perturbations in P(d) TODO
-        raise NotImplementedError(
-            "Geometric stiffness contribution not implemented yet."
-        )
+        e = jax.jacobian(lambda d__,: p(d__, ad_inv_a0, ad_inv_b0))(d)
+
+        # [12, 6, 12]
+        f = jnp.einsum("ijk, kl->ijl", e, p_d)
+
+        # [12, 12]
+        k_tg = jnp.einsum("jil,j->il", f, (k * l) @ eps)
+        k_t += k_tg
     return k_t
 
 

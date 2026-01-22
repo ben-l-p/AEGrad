@@ -29,7 +29,7 @@ class TestStiffness:
 
         du0 = jnp.zeros(6).at[0].set(l)
 
-        g_int, k_t = struct.make_g_int_and_k_t(du0[None, :])
+        g_int, k_t = struct.make_g_int_and_k_t(du0[None, :], True, True)
 
         du0t = vec_to_skew(du0[:3])
         k_t_exp = (

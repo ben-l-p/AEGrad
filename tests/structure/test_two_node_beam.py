@@ -32,7 +32,7 @@ class TestTwoNodeBeamStrainsForces:
         assert jnp.allclose(eps_unloaded, 0.0), (
             f"Axial strain calculation incorrect, expected zero strain, got {eps_unloaded}"
         )
-        g_int_unloaded = cls.struct.make_g_int_and_k_t(d_unloaded)[0]
+        g_int_unloaded = cls.struct.make_g_int_and_k_t(d_unloaded, True, True)[0]
         assert jnp.allclose(g_int_unloaded, 0.0), (
             f"Internal force vector incorrect, expected zero force, got {g_int_unloaded}"
         )
@@ -54,7 +54,7 @@ class TestTwoNodeBeamStrainsForces:
         assert jnp.allclose(eps_axial, expected_axial_strain), (
             f"Axial strain calculation incorrect, expected {expected_axial_strain}, got {eps_axial}"
         )
-        g_int_axial = cls.struct.make_g_int_and_k_t(d_axial)[0]
+        g_int_axial = cls.struct.make_g_int_and_k_t(d_axial, True, True)[0]
         expected_f_axial = jnp.zeros(12)
         expected_f_axial = expected_f_axial.at[0].set(-k_coeffs_axial[0] * dx / cls.l)
         expected_f_axial = expected_f_axial.at[6].set(k_coeffs_axial[0] * dx / cls.l)
@@ -82,7 +82,7 @@ class TestTwoNodeBeamStrainsForces:
         assert jnp.allclose(eps_torsional, expected_torsional_strain), (
             f"Torsional strain calculation incorrect, expected {expected_torsional_strain}, got {eps_torsional}"
         )
-        g_int_torsional = cls.struct.make_g_int_and_k_t(d_torsional)[0]
+        g_int_torsional = cls.struct.make_g_int_and_k_t(d_torsional, True, True)[0]
         expected_f_torsional = jnp.zeros(12)
         expected_f_torsional = expected_f_torsional.at[3].set(
             -k_coeffs_torsional[3] * theta_x / cls.l
@@ -119,7 +119,7 @@ class TestTwoNodeBeamStrainsForces:
             f"Bending strain calculation incorrect, expected {expected_bending_strain}, got {eps_bending}"
         )
 
-        g_int = cls.struct.make_g_int_and_k_t(d_bending)[0]
+        g_int = cls.struct.make_g_int_and_k_t(d_bending, True, True)[0]
         g_int_expected = jnp.zeros(12)
         g_int_expected = g_int_expected.at[4].set(-eiy * kappa_y)
         g_int_expected = g_int_expected.at[10].set(eiy * kappa_y)
@@ -153,7 +153,7 @@ class TestTwoNodeBeamStrainsForces:
             f"Bending strain calculation incorrect, expected {expected_bending_strain}, got {eps_bending}"
         )
 
-        g_int = cls.struct.make_g_int_and_k_t(d_bending)[0]
+        g_int = cls.struct.make_g_int_and_k_t(d_bending, True, True)[0]
         g_int_expected = jnp.zeros(12)
         g_int_expected = g_int_expected.at[5].set(-eiz * kappa_z)
         g_int_expected = g_int_expected.at[11].set(eiz * kappa_z)
