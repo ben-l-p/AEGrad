@@ -1,14 +1,15 @@
-import jax.lax
 from jax import numpy as jnp
 from jax import Array, vmap
+import jax
+import equinox
 from aegrad.utils import check_type
+from aegrad.structure.data_structures import StaticStructure
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import k_t_entry
-from aegrad.algebra.se3 import p, ha_to_d, log_se3, rmat_to_ha_hat
+from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from typing import Optional, Sequence
 from functools import partial
-from aegrad.algebra.solvers import newton_raphson
 
 
 class Structure:
@@ -65,7 +66,6 @@ class Structure:
 
         # initialise undeformed algebra and group
         self.hg0: Array = jnp.zeros((self.n_nodes, 4, 4))
-        self.ha0: Array = jnp.zeros((self.n_nodes, 6))
 
         # adjoint inverse action for the reference rotations
         self.ad_inv_o0: Array = jnp.zeros((self.n_elem, 6, 6))
@@ -113,16 +113,10 @@ class Structure:
             vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
         )
 
-        # self.ad_inv_o0 = self.ad_inv_o0.at[...].set(vmap(rmat_to_ha_hat)(self.o0))
-
-        # self.ad_inv_o0 = self.ad_inv_o0.at[...].set(jnp.eye(6)[None, ...])
-
         self.hg0 = jnp.broadcast_to(
             jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
         )  # [n_nodes, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
-
-        self.ha0 = vmap(log_se3)(self.hg0)  # [n_nodes, 6]
 
         self.k_l = self.k_l.at[...].set(self.k_cs * self.l0[:, None, None])
 
@@ -193,24 +187,6 @@ class Structure:
         :return: Global external force vector, [n_dof]
         """
 
-        # rots = jnp.transpose(
-        #     self.o0[self.connectivity, :, :], (0, 1, 3, 2)
-        # )  # [n_elem, 2, 3, 3]
-        # chis = vmap(vmap(chi, 0, 0), 1, 1)(rots)  # [n_elem, 2, 6, 6]
-        # g_ext_rot = jnp.einsum("ijkl,ijl->ijk", chis, g_ext)  # [n_elem, 2, 6]
-
-        # g_ext_ab_0 = jnp.einsum(
-        #     "ikj,ik->ij",
-        #     self.ad_inv_o0,
-        #     g_ext_rot[:, 0, :],
-        # )  # [n_elem, 6]
-        #
-        # g_ext_ab_l = jnp.einsum(
-        #     "ikj,ik->ij",
-        #     self.ad_inv_o0,
-        #     g_ext_rot[:, 1, :],
-        # )  # [n_elem, 6]
-
         g_ext_ab_0 = jnp.einsum(
             "ikj,ik->ij",
             self.ad_inv_o0,
@@ -243,7 +219,7 @@ class Structure:
 
         return (d - self.d0) / self.l0[:, None]
 
-    def make_g_int_and_k_t(
+    def make_f_int_and_k_t(
         self, d: Array, include_material: bool, include_geometric: bool
     ) -> tuple[Array, Array]:
         r"""
@@ -269,22 +245,51 @@ class Structure:
 
         return g_int, k_t
 
+    def make_d(self, hg: Array) -> Array:
+        r"""
+        Compute the element relative configuration vectors from the nodal homogeneous transformation matrices
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :return: Element relative configuration vectors, [n_elem, 6]
+        """
+
+        base_hg = jnp.zeros((self.n_elem, 4, 4))
+        base_hg = base_hg.at[:, :3, :3].set(self.o0)
+        base_hg = base_hg.at[:, 3, 3].set(1.0)
+
+        haha0 = jnp.einsum(
+            "ijk,ikl->ijl", hg[self.connectivity[:, 0], :, :], base_hg
+        )  # [n_elem, 4, 4]
+        haha1 = jnp.einsum(
+            "ijk,ikl->ijl", hg[self.connectivity[:, 1], :, :], base_hg
+        )  # [n_elem, 4, 4]
+
+        return vmap(hg_to_d, (0, 0), 0)(haha0, haha1)  # [n_elem, 6]
+
     def static_solve(
         self,
-        g_ext: Array,
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int,
-        ha_init: Optional[Array] = None,
         include_material: bool = True,
         include_geometric: bool = False,
         load_steps: int = 1,
         max_iter: int = 40,
-    ) -> tuple[Array, Array, Array]:
+        rel_tol: float = 1e-6,
+        abs_tol: float = 1e-8,
+    ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
-        :param g_ext: External forces array of follower forces [n_elem, 2, 6]
-        :param prescribed_dofs: Array of prescribed dof indices
-        :param ha_init: Initial guess for the algebra, [n_nodes, 6]
-        :return: Node algebra [n_nodes, 6], configuration vectors [n_elem, 6] and internal forces, [n_nodes, 6]
+        :param f_ext_follower: External forces array of follower forces [n_elem, 2, 6]
+        :param f_ext_dead: External forces array of dead loads [n_elem, 2, 6]
+        :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
+        :param include_material: Whether to include material stiffness contribution.
+        :param include_geometric: Whether to include geometric stiffness contribution.
+        :param load_steps: Number of load steps to apply the external loads over.
+        :param max_iter: Maximum number of Newton-Raphson iterations per load step.
+        :param rel_tol: Relative tolerance for convergence. measured for resultant forces relative to maximum applied
+        force.
+        :param abs_tol: Absolute tolerance for convergence.
+        :return: StaticStructure dataclass containing results of the static analysis.
         """
 
         # degrees of freedom which are prescribed
@@ -301,81 +306,99 @@ class Structure:
         if load_steps < 1:
             raise ValueError("load_steps must be at least 1")
 
-        # set initial states
-        if ha_init is None:
-            ha0 = self.ha0.ravel()
-        else:
-            ha0 = ha_init.ravel()
-
         # degrees of freedom to solve for
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
         n_solve_dofs = solve_dofs.shape[0]
 
-        def ha_solve_to_full(ha_solve: Array) -> Array:
-            r"""
-            Reconstruct full algebra from solved degrees of freedom
-            :param ha_solve: Solved degrees of freedom, [n_solve_dof]
-            :return: Full algebra, [n_dof]
-            """
-            ha_full = jnp.zeros(self.n_dof)
-            ha_full = ha_full.at[solve_dofs].set(ha_solve)
-            return ha_full.at[prescribed_dofs_arr].set(ha0[prescribed_dofs_arr])
+        def update(
+            hg_n_full: Array, g_res_n: Array, g_ext_n: Array
+        ) -> tuple[Array, Array, Array]:
+            # configuration vectors, [n_elem, 6]
+            d_n = self.make_d(hg_n_full)
 
-        def residual_and_jac_func(ha_solve: Array, g_ext: Array) -> tuple[Array, Array]:
-            r"""
-            Compute the residual and Jacobian for the Newton-Raphson solver.
-            :param ha_solve: Solved degrees of freedom, [n_solve_dof]
-            :param g_ext: External forces array of follower forces [n_elem, 2, 6]
-            :return:
-            """
-            ha = ha_solve_to_full(ha_solve).reshape(self.n_nodes, 6)
-            d = vmap(ha_to_d, (0, 0), 0)(
-                ha[self.connectivity[:, 0], :], ha[self.connectivity[:, 1], :]
-            )  # [n_elem, 6]
-            g_int, k_t = self.make_g_int_and_k_t(
-                d, include_material, include_geometric
+            f_int_n, k_t_n = self.make_f_int_and_k_t(
+                d_n, include_material, include_geometric
             )  # [n_dof], [n_dof, n_dof]
-            g_ext_ab = self.make_g_ext_ab(g_ext, d)  # [n_dof]
-            g_res = g_int - g_ext_ab  # [n_dof]
-            return g_res[solve_dofs], k_t[jnp.ix_(solve_dofs, solve_dofs)]
+
+            k_t_n_solve = k_t_n[
+                jnp.ix_(solve_dofs, solve_dofs)
+            ]  # [n_solve_dofs, n_solve_dofs]
+            g_int_n_solve = f_int_n[solve_dofs]  # [n_solve_dofs]
+
+            f_ext_ab = self.make_g_ext_ab(g_ext_n, d_n)  # [n_dof]
+            f_res_n_solve = g_int_n_solve - f_ext_ab[solve_dofs]  # [n_dof]
+
+            d_ha_np1 = -jnp.linalg.solve(k_t_n_solve, f_res_n_solve)
+            d_ha_np1_full = jnp.zeros(self.n_dof)
+            d_ha_np1_full = d_ha_np1_full.at[solve_dofs].set(d_ha_np1)
+
+            hg_np1_full = jnp.einsum(
+                "ijk,ikl->ijl",
+                hg_n_full,
+                vmap(exp_se3, 0, 0)(d_ha_np1_full.reshape(-1, 6)),
+            )
+            return hg_np1_full, g_res_n, g_ext_n
+
+        def convergence(hg_n_full: Array, g_res_n: Array, g_ext_n) -> Array:
+            max_res = jnp.abs(g_res_n).max()
+            max_ext = jnp.abs(g_ext_n).max()
+
+            conv_abs = max_res < abs_tol
+
+            # rely on abs_tol if external forces are very small
+            conv_rel = jax.lax.select(
+                max_ext > 1e-5, (max_res / max_ext) < rel_tol, jnp.zeros((), dtype=bool)
+            )
+
+            # return true if converged
+            return conv_abs | conv_rel
+
+        def inner_loop(
+            f_ext: Array, g_res_init: Array, hg_init: Array
+        ) -> tuple[Array, Array, Array]:
+            return equinox.internal.while_loop(
+                lambda args: convergence(*args),
+                lambda args: update(*args),
+                (hg_init, g_res_init, f_ext),
+                max_steps=max_iter,
+                kind="bounded" if max_iter is not None else "lax",
+            )
 
         def load_step_func(
             i_step: int,
-            carry: tuple[Array, Array, Array],
+            init: tuple[Array, Array, Array],
         ) -> tuple[Array, Array, Array]:
-            g_ext_step = g_ext * (i_step + 1) / load_steps
-            return newton_raphson(
-                lambda ha_: residual_and_jac_func(ha_, g_ext_step),
-                carry[0],  # previous step solution as initial guess
-                atol=1e-10,
-                rtol=1e-7,
-                n_iter_max=max_iter,
-            )
+            hg_init, g_res_init, _ = init
+            g_ext_step = f_ext_follower * (i_step + 1) / load_steps
+            return inner_loop(g_ext_step, g_res_init, hg_init)
 
-        ha_solve, g_res_solve, k_t_solve = jax.lax.fori_loop(
+        (
+            hg,
+            g_res,
+        ) = jax.lax.fori_loop(
             0,
             load_steps,
             load_step_func,
-            (
-                ha0[solve_dofs],
-                jnp.zeros(n_solve_dofs),
-                jnp.zeros((n_solve_dofs, n_solve_dofs)),
-            ),
-        )
+            (self.hg0, jnp.zeros(n_solve_dofs), jnp.zeros((self.n_elem, 2, 6))),
+        )[:2]
 
-        # reconstruct full algebra, [n_dof]
-        ha_full = ha_solve_to_full(ha_solve).reshape(self.n_nodes, 6)
-        d_full = vmap(ha_to_d, (0, 0), 0)(
-            ha_full[self.connectivity[:, 0]], ha_full[self.connectivity[:, 1]]
-        )  # [n_elem, 6]
-        g_int_full = self.make_g_int_and_k_t(
-            d_full, include_material, include_geometric
-        )[0].reshape(self.n_nodes, 6)
+        d_n = self.make_d(hg)
 
-        # hg_full =
+        p_d = vmap(p, (0, 0, 0), 0)(
+            d_n,
+            self.ad_inv_o0[self.connectivity[:, 0], ...],
+            self.ad_inv_o0[self.connectivity[:, 1], ...],
+        )  # [n_elem, 6, 12]
 
-        return (
-            ha_full,
-            d_full,
-            g_int_full,
+        eps = self.make_eps(d_n)  # [n_elem, 6]
+
+        f_int = self.make_g_int(p_d, eps).reshape(-1, 6)  # [n_dof]
+
+        return StaticStructure(
+            hg=hg,
+            d=d_n,
+            eps=eps,
+            f_int=f_int,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=None,
         )
