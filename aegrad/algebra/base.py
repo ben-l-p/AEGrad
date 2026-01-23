@@ -25,10 +25,10 @@ def clip_to_pi(val: Array):
 def chi(rmat: Array) -> Array:
     r"""
     Converts a 3x3 rotation matrix to a 6x6 matrix used in spatial transformations.
-    :param rmat: Rotation matrix, [3, 3].
-    :return: Block matrix with diagonal rotation matrices, [6, 6].
+    :param rmat: Rotation matrix, [a, b].
+    :return: Block matrix with diagonal rotation matrices, [2a, 2b].
     """
-    return jnp.block([[rmat, jnp.zeros((3, 3))], [jnp.zeros((3, 3)), rmat]])
+    return jnp.block([[rmat, jnp.zeros_like(rmat)], [jnp.zeros_like(rmat), rmat]])
 
 
 def finite_difference(

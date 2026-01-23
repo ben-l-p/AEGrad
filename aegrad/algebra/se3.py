@@ -331,31 +331,6 @@ def p(d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
     )
 
 
-# def p(d: Array, a0: Array, b0: Array) -> Array:
-#     r"""
-#     Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation
-#     from "A geometric local frame approach for flexible multibody systems", by Sonneville, 2015, Eq 6.141, p. 90.
-#     :param d: Relative se(3) configuration vector, [6].
-#     :return: Matrix, [6, 12].
-#     """
-#
-#     delta = exp_se3(d)
-#     delta_inv = hg_inv(delta)
-#
-#     ha0_inv = jnp.zeros((4, 4)).at[3, 3].set(1.0)
-#     ha0_inv = ha0_inv.at[:3, :3].set(a0.T)
-#
-#     hb0_inv = jnp.zeros((4, 4)).at[3, 3].set(1.0)
-#     hb0_inv = hb0_inv.at[:3, :3].set(b0.T)
-#
-#     ad_a = hg_to_ha_hat(delta_inv @ ha0_inv)
-#     ad_b = hg_to_ha_hat(hb0_inv)
-#
-#     t_inv = t_inv_se3(d)
-#
-#     return jnp.concatenate((-t_inv @ ad_a, t_inv @ ad_b), axis=1)
-
-
 def t_star(s_l: Array, d: Array) -> Array:
     r"""
     Matrix which described perturbations in the algebra element along an element with respect to the algebra elements at

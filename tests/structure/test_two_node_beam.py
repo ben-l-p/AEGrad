@@ -8,14 +8,18 @@ from algebra.se3 import exp_se3
 jax.config.update("jax_enable_x64", True)
 
 
-class TestTwoNodeBeamStrainsForces:
+class TestTwoNodeXBeamStrainsForces:
     r"""
     Test the strains and forces for a two-node beam element with prescribed displacements
     """
 
+    beam_direction = "x"
+    direction_index = 0
+    y_vector = jnp.array([[0.0, 1.0, 0.0]])
+
     l = jnp.array(3.45)
-    coords = jnp.zeros((2, 3)).at[1, 0].set(l)
-    struct = Structure(2, jnp.array([[0, 1]]), jnp.array([[0.0, 1.0, 0.0]]))
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    struct = Structure(2, jnp.array([[0, 1]]), y_vector)
 
     @classmethod
     def test_unloaded(cls):
@@ -442,3 +446,23 @@ class TestTwoNodeBeamStrainsForces:
         assert jnp.isclose(f_int[1, 4], expected_moment), (
             f"Internal moment at loaded end incorrect, expected {expected_moment}, got {f_int[1, 4]}"
         )
+
+
+class TestTwoNodeYBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
+    beam_direction = "y"
+    direction_index = 1
+    y_vector = jnp.array([[0.0, 0.0, 1.0]])
+
+    l = jnp.array(3.45)
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    struct = Structure(2, jnp.array([[0, 1]]), y_vector)
+
+
+class TestTwoNodeZBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
+    beam_direction = "z"
+    direction_index = 2
+    y_vector = jnp.array([[1.0, 0.0, 0.0]])
+
+    l = jnp.array(3.45)
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    struct = Structure(2, jnp.array([[0, 1]]), y_vector)

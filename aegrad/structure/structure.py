@@ -5,12 +5,7 @@ from aegrad.utils import check_type
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import k_t_entry
-from aegrad.algebra.se3 import (
-    p,
-    ha_to_d,
-    log_se3,
-    rmat_to_ha_hat,
-)
+from aegrad.algebra.se3 import p, ha_to_d, log_se3, rmat_to_ha_hat
 from typing import Optional, Sequence
 from functools import partial
 from aegrad.algebra.solvers import newton_raphson
@@ -118,6 +113,10 @@ class Structure:
             vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
         )
 
+        # self.ad_inv_o0 = self.ad_inv_o0.at[...].set(vmap(rmat_to_ha_hat)(self.o0))
+
+        # self.ad_inv_o0 = self.ad_inv_o0.at[...].set(jnp.eye(6)[None, ...])
+
         self.hg0 = jnp.broadcast_to(
             jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
         )  # [n_nodes, 4, 4]
@@ -175,11 +174,6 @@ class Structure:
         :return: Global internal force vector, [n_dof]
         """
 
-        # compute internal force entries
-        # g_int_entries = vmap(g_int_entry, (0, 0, 0), 0)(
-        #     p_d, self.k_cs, eps
-        # )  # [n_elem, 12]
-
         g_int_entries = jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs, eps)
 
         # assemble global internal force vector
@@ -198,6 +192,24 @@ class Structure:
         :param d: Element relative configuration, [n_elem, 6]
         :return: Global external force vector, [n_dof]
         """
+
+        # rots = jnp.transpose(
+        #     self.o0[self.connectivity, :, :], (0, 1, 3, 2)
+        # )  # [n_elem, 2, 3, 3]
+        # chis = vmap(vmap(chi, 0, 0), 1, 1)(rots)  # [n_elem, 2, 6, 6]
+        # g_ext_rot = jnp.einsum("ijkl,ijl->ijk", chis, g_ext)  # [n_elem, 2, 6]
+
+        # g_ext_ab_0 = jnp.einsum(
+        #     "ikj,ik->ij",
+        #     self.ad_inv_o0,
+        #     g_ext_rot[:, 0, :],
+        # )  # [n_elem, 6]
+        #
+        # g_ext_ab_l = jnp.einsum(
+        #     "ikj,ik->ij",
+        #     self.ad_inv_o0,
+        #     g_ext_rot[:, 1, :],
+        # )  # [n_elem, 6]
 
         g_ext_ab_0 = jnp.einsum(
             "ikj,ik->ij",
@@ -246,8 +258,8 @@ class Structure:
         # compute P(d) matrices
         p_d = vmap(p, (0, 0, 0), 0)(
             d,
-            self.ad_inv_o0[self.connectivity[:, 0]],
-            self.ad_inv_o0[self.connectivity[:, 1]],
+            self.ad_inv_o0[self.connectivity[:, 0], ...],
+            self.ad_inv_o0[self.connectivity[:, 1], ...],
         )  # [n_elem, 6, 12]
 
         g_int = self.make_g_int(p_d, eps)  # [n_dof]
@@ -265,6 +277,7 @@ class Structure:
         include_material: bool = True,
         include_geometric: bool = False,
         load_steps: int = 1,
+        max_iter: int = 40,
     ) -> tuple[Array, Array, Array]:
         r"""
         Perform static solve of the structure under external loads
@@ -336,6 +349,7 @@ class Structure:
                 carry[0],  # previous step solution as initial guess
                 atol=1e-10,
                 rtol=1e-7,
+                n_iter_max=max_iter,
             )
 
         ha_solve, g_res_solve, k_t_solve = jax.lax.fori_loop(
@@ -357,6 +371,8 @@ class Structure:
         g_int_full = self.make_g_int_and_k_t(
             d_full, include_material, include_geometric
         )[0].reshape(self.n_nodes, 6)
+
+        # hg_full =
 
         return (
             ha_full,
