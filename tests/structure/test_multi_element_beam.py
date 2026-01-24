@@ -203,8 +203,7 @@ class TestMultiXElementStrainsForces:
 
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        f_ext = jnp.zeros((cls.n_elem, 2, 6))
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(None, None, jnp.arange(6))
 
         assert jnp.allclose(result.hg, cls.struct.hg0), (
             f"Unloaded static solve contained deformation, expected {cls.struct.hg0}, got {result.hg}"
@@ -227,7 +226,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = jnp.full(6, 1e5).at[0].set(4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 0].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
+        )
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
         expected_eps = load / k_coeffs[0]
@@ -268,7 +271,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = jnp.full(6, 1e5).at[3].set(4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 3].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
+        )
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
         expected_strain = load / k_coeffs[3]
@@ -306,7 +313,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = jnp.full(6, 1e5).at[4].set(4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 4].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
+        )
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
         expected_strain = load / k_coeffs[4]
@@ -356,7 +367,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = jnp.full(6, 1e5).at[5].set(4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 5].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
+        )
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
         expected_strain = load / k_coeffs[5]
@@ -409,7 +424,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = k_coeffs.at[0].set(1e2)  # allow the beam to stretch
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 1].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
+        )
         result = cls.struct.static_solve(
             f_ext,
             None,
@@ -464,7 +483,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = k_coeffs.at[0].set(1e2)  # allow the beam to stretch
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 1.23
-        f_ext = jnp.zeros((cls.n_elem, 2, 6)).at[-1, 1, 2].set(load)
+        f_ext = (
+            jnp.zeros((cls.n_nodes, 6))
+            .at[-1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
+        )
         result = cls.struct.static_solve(
             f_ext,
             None,

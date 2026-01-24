@@ -241,40 +241,13 @@ def rmat_to_ha_hat(rmat: Array) -> Array:
 
 def ha_hat_to_ha(ha_hat: Array) -> Array:
     r"""
-    Converts a se(3) hat matrix representation into an se(3) vector. Formulation from Geometrically exact beam finite
+    Converts a se(3) hat matrix representation into se(3) vector. Formulation from Geometrically exact beam finite
     element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 15.
     :param ha_hat: Hat matrix representation, [6, 6].
     :return: se(3) vector, [6].
     """
     ha_u = skew_to_vec(ha_hat[:3, 3:])
     ha_omega = skew_to_vec(ha_hat[:3, :3])
-    return jnp.concatenate((ha_u, ha_omega), axis=-1)
-
-
-def ha_to_ha_check(ha: Array) -> Array:
-    r"""
-    Converts a se(3) vector into its check matrix representation. Formulation from Geometrically exact beam finite
-    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 16.
-    :param ha: se(3) algebra vector, [6].
-    :return: Check matrix representation, [6, 6].
-    """
-    return jnp.block(
-        [
-            [jnp.zeros((3, 3)), vec_to_skew(ha[:3])],
-            [vec_to_skew(ha[:3]), vec_to_skew(ha[3:])],
-        ]
-    )
-
-
-def ha_check_to_ha(ha_check: Array) -> Array:
-    r"""
-    Converts a se(3) hat matrix representation into an se(3) vector. Formulation from Geometrically exact beam finite
-    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 16.
-    :param ha_check: Check matrix representation, [6, 6].
-    :return: se(3) vector, [6].
-    """
-    ha_u = skew_to_vec(ha_check[:3, 3:])
-    ha_omega = skew_to_vec(ha_check[3:, 3:])
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
 
@@ -293,16 +266,6 @@ def hg_to_ha_hat(hg: Array) -> Array:
             [jnp.zeros((3, 3)), rmat],
         ]
     )
-
-
-def ha_to_d(ha1: Array, ha2: Array) -> Array:
-    r"""
-    Obtains the relative configuration vector between two se(3) algebra elements.
-    :param ha1: Base se(3) algebra element at s=0, [6].
-    :param ha2: Tip se(3) algebra element at s=L, [6].
-    :return: se(3) relative configuration vector, [6].
-    """
-    return log_se3(hg_inv(exp_se3(ha1)) @ exp_se3(ha2))
 
 
 def hg_to_d(hg1: Array, hg2: Array) -> Array:

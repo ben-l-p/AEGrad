@@ -160,7 +160,7 @@ class Structure:
 
         return k_t
 
-    def make_g_int(self, p_d: Array, eps: Array) -> Array:
+    def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
         Assemble global internal force vector as a function of the element relative configuration vectors
         :param p_d: P(d) operator, [n_elem, 6, 12]
@@ -172,41 +172,32 @@ class Structure:
 
         # assemble global internal force vector
         g_int = jnp.zeros(self.n_dof)
-        for i_elem in range(self.n_elem):
-            index = self.dof_per_elem[i_elem, :]
-            g_int = g_int.at[index[:6]].add(g_int_entries[i_elem, :6])
-            g_int = g_int.at[index[6:]].add(g_int_entries[i_elem, 6:])
+        g_int = g_int.at[self.dof_per_elem[:, :6]].add(g_int_entries[:, :6])
+        g_int = g_int.at[self.dof_per_elem[:, 6:]].add(g_int_entries[:, 6:])
 
         return g_int
 
-    def make_g_ext_ab(self, g_ext: Array, d: Array) -> Array:
+    def make_f_follower_ext_ab(self, f_ext: Array) -> Array:
         r"""
-        Compute the global external force vector as a function of the element relative configuration vectors
-        :param g_ext: External forces array of follower forces [n_elem, 2, 6]
-        :param d: Element relative configuration, [n_elem, 6]
+        Compute the global external follower force vector.
+        :param f_ext: External forces array of follower forces in global reference, [n_node, 6]
         :return: Global external force vector, [n_dof]
         """
 
-        g_ext_ab_0 = jnp.einsum(
-            "ikj,ik->ij",
-            self.ad_inv_o0,
-            g_ext[:, 0, :],
-        )  # [n_elem, 6]
+        return f_ext.reshape(self.n_dof)
 
-        g_ext_ab_l = jnp.einsum(
-            "ikj,ik->ij",
-            self.ad_inv_o0,
-            g_ext[:, 1, :],
-        )  # [n_elem, 6]
+    @staticmethod
+    def make_f_dead_ext_ab(f_ext: Array, rmat: Array) -> Array:
+        r"""
+        Compute the global external dead force vector.
+        :param f_ext: External forces array of dead forces in global reference, [n_node, 6]
+        :param rmat: Deformation rotation matrices, [n_node, 3, 3]
+        :return: Global external force vector, [n_dof]
+        """
 
-        g_ext_ab_vec = jnp.zeros(self.n_dof)
-
-        for i_elem in range(self.n_elem):
-            index = self.dof_per_elem[i_elem, :]
-            g_ext_ab_vec = g_ext_ab_vec.at[index[:6]].add(g_ext_ab_0[i_elem, ...])
-            g_ext_ab_vec = g_ext_ab_vec.at[index[6:]].add(g_ext_ab_l[i_elem, ...])
-
-        return g_ext_ab_vec
+        f_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
+        m_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
+        return jnp.concatenate((f_rot, m_rot), axis=-1).ravel()
 
     def make_eps(self, d: Array) -> Array:
         r"""
@@ -238,12 +229,12 @@ class Structure:
             self.ad_inv_o0[self.connectivity[:, 1], ...],
         )  # [n_elem, 6, 12]
 
-        g_int = self.make_g_int(p_d, eps)  # [n_dof]
+        f_int = self.make_f_int(p_d, eps)  # [n_dof]
         k_t = self.make_k(
             d, p_d, eps, include_material, include_geometric
         )  # [n_dof, n_dof]
 
-        return g_int, k_t
+        return f_int, k_t
 
     def make_d(self, hg: Array) -> Array:
         r"""
@@ -279,8 +270,8 @@ class Structure:
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
-        :param f_ext_follower: External forces array of follower forces [n_elem, 2, 6]
-        :param f_ext_dead: External forces array of dead loads [n_elem, 2, 6]
+        :param f_ext_follower: External forces array of follower forces [n_node, 6]
+        :param f_ext_dead: External forces array of dead loads [n_node, 6]
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param include_material: Whether to include material stiffness contribution.
         :param include_geometric: Whether to include geometric stiffness contribution.
@@ -306,13 +297,20 @@ class Structure:
         if load_steps < 1:
             raise ValueError("load_steps must be at least 1")
 
+        # check inputs
+        if f_ext_follower is not None:
+            check_arr_shape(f_ext_follower, (self.n_nodes, 6), "f_ext_follower")
+
         # degrees of freedom to solve for
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
         n_solve_dofs = solve_dofs.shape[0]
 
         def update(
-            hg_n_full: Array, g_res_n: Array, g_ext_n: Array
-        ) -> tuple[Array, Array, Array]:
+            hg_n_full: Array,
+            f_res_n: Array,
+            f_ext_follower_n: Array,
+            f_ext_dead_n: Array,
+        ) -> tuple[Array, Array, Array, Array]:
             # configuration vectors, [n_elem, 6]
             d_n = self.make_d(hg_n_full)
 
@@ -325,8 +323,15 @@ class Structure:
             ]  # [n_solve_dofs, n_solve_dofs]
             g_int_n_solve = f_int_n[solve_dofs]  # [n_solve_dofs]
 
-            f_ext_ab = self.make_g_ext_ab(g_ext_n, d_n)  # [n_dof]
-            f_res_n_solve = g_int_n_solve - f_ext_ab[solve_dofs]  # [n_dof]
+            f_res_n_solve = g_int_n_solve
+            if f_ext_follower is not None:
+                f_res_n_solve -= self.make_f_follower_ext_ab(f_ext_follower_n)[
+                    solve_dofs
+                ]
+            if f_ext_dead is not None:
+                f_res_n_solve -= self.make_f_dead_ext_ab(
+                    f_ext_dead_n, hg_n_full[:, :3, :3]
+                )[solve_dofs]
 
             d_ha_np1 = -jnp.linalg.solve(k_t_n_solve, f_res_n_solve)
             d_ha_np1_full = jnp.zeros(self.n_dof)
@@ -337,11 +342,22 @@ class Structure:
                 hg_n_full,
                 vmap(exp_se3, 0, 0)(d_ha_np1_full.reshape(-1, 6)),
             )
-            return hg_np1_full, g_res_n, g_ext_n
+            return hg_np1_full, f_res_n, f_ext_follower_n, f_ext_dead_n
 
-        def convergence(hg_n_full: Array, g_res_n: Array, g_ext_n) -> Array:
+        def convergence(
+            hg_n_full: Array,
+            g_res_n: Array,
+            f_ext_follower_n: Array,
+            f_ext_dead_n: Array,
+        ) -> Array:
             max_res = jnp.abs(g_res_n).max()
-            max_ext = jnp.abs(g_ext_n).max()
+
+            # find maximum external force magnitude from both forcing types
+            max_ext = jnp.zeros(())
+            if f_ext_follower_n is not None:
+                max_ext = jnp.abs(f_ext_follower_n).max()
+            if f_ext_dead_n is not None:
+                max_ext = jnp.maximum(max_ext, jnp.abs(f_ext_dead_n).max())
 
             conv_abs = max_res < abs_tol
 
@@ -354,23 +370,36 @@ class Structure:
             return conv_abs | conv_rel
 
         def inner_loop(
-            f_ext: Array, g_res_init: Array, hg_init: Array
+            f_ext_follower: Array, f_ext_dead: Array, g_res_init: Array, hg_init: Array
         ) -> tuple[Array, Array, Array]:
             return equinox.internal.while_loop(
                 lambda args: convergence(*args),
                 lambda args: update(*args),
-                (hg_init, g_res_init, f_ext),
+                (hg_init, g_res_init, f_ext_follower, f_ext_dead),
                 max_steps=max_iter,
                 kind="bounded" if max_iter is not None else "lax",
             )
 
         def load_step_func(
             i_step: int,
-            init: tuple[Array, Array, Array],
-        ) -> tuple[Array, Array, Array]:
-            hg_init, g_res_init, _ = init
-            g_ext_step = f_ext_follower * (i_step + 1) / load_steps
-            return inner_loop(g_ext_step, g_res_init, hg_init)
+            init: tuple[Array, Array, Array, Array],
+        ) -> tuple[Array, Array, Array, Array]:
+            hg_init, g_res_init = init[:2]
+
+            # compute scaled external loads for this load step
+            f_ext_follower_step = (
+                f_ext_follower * (i_step + 1) / load_steps
+                if f_ext_follower is not None
+                else jnp.zeros((self.n_nodes, 6))
+            )
+
+            f_ext_dead_step = (
+                f_ext_dead * (i_step + 1) / load_steps
+                if f_ext_dead is not None
+                else jnp.zeros((self.n_nodes, 6))
+            )
+
+            return inner_loop(f_ext_follower_step, f_ext_dead_step, g_res_init, hg_init)
 
         (
             hg,
@@ -379,7 +408,12 @@ class Structure:
             0,
             load_steps,
             load_step_func,
-            (self.hg0, jnp.zeros(n_solve_dofs), jnp.zeros((self.n_elem, 2, 6))),
+            (
+                self.hg0,
+                jnp.zeros(n_solve_dofs),
+                jnp.zeros((self.n_nodes, 6)),
+                jnp.zeros((self.n_nodes, 6)),
+            ),
         )[:2]
 
         d_n = self.make_d(hg)
@@ -392,7 +426,7 @@ class Structure:
 
         eps = self.make_eps(d_n)  # [n_elem, 6]
 
-        f_int = self.make_g_int(p_d, eps).reshape(-1, 6)  # [n_dof]
+        f_int = self.make_f_int(p_d, eps).reshape(-1, 6)  # [n_dof]
 
         return StaticStructure(
             hg=hg,

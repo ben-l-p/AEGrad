@@ -162,8 +162,7 @@ class TestTwoNodeXBeamStrainsForces:
 
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        f_ext = jnp.zeros((1, 2, 6))
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(None, None, jnp.arange(6))
 
         assert jnp.allclose(result.hg, cls.struct.hg0), (
             f"Unloaded static solve contained deformation, expected {cls.struct.hg0}, got {result.hg}"
@@ -185,7 +184,11 @@ class TestTwoNodeXBeamStrainsForces:
         k_coeffs = jnp.full(6, 1e5).at[0].set(4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         load = 0.123
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 0].set(load)
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
+        )
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
         expected_eps = load / k_coeffs[0]
@@ -218,15 +221,17 @@ class TestTwoNodeXBeamStrainsForces:
         r"""
         Ensure torsion load case is solved correctly.
         """
-        k_coeffs_torsion = jnp.full(6, 1e5).at[3].set(4.56)
-        cls.struct.set_design_variables(
-            cls.coords, jnp.diag(k_coeffs_torsion)[None, :], None
+        k_coeffs = jnp.full(6, 1e5).at[3].set(4.56)
+        cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
+        load = 0.123
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
         )
-        torsion_load = 0.123
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 3].set(torsion_load)
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
-        expected_strain = torsion_load / k_coeffs_torsion[3]
+        expected_strain = load / k_coeffs[3]
         expected_disp = expected_strain * cls.l
         assert jnp.allclose(
             result.d,
@@ -243,12 +248,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero shear/moment/axial components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 3], -torsion_load), (
-            f"Internal axial force at fixed end incorrect, expected {-torsion_load}, got {f_int_rot[0, 3]}"
+        assert jnp.isclose(f_int_rot[0, 3], -load), (
+            f"Internal axial force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 3]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 3], torsion_load), (
-            f"Internal axial force at loaded end incorrect, expected {torsion_load}, got {f_int_rot[1, 3]}"
+        assert jnp.isclose(f_int_rot[1, 3], load), (
+            f"Internal axial force at loaded end incorrect, expected {load}, got {f_int_rot[1, 3]}"
         )
 
     @classmethod
@@ -256,15 +261,17 @@ class TestTwoNodeXBeamStrainsForces:
         r"""
         Ensure z-bending load case is solved correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e-3).at[4].set(4.56)
-        cls.struct.set_design_variables(
-            cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
+        k_coeffs = jnp.full(6, 1e-3).at[4].set(4.56)
+        cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
+        load = 1e-1
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
-        bending_y_load = 1e-1
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 4].set(bending_y_load)
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
-        expected_curvature = bending_y_load / k_coeffs_axial[4]
+        expected_curvature = load / k_coeffs[4]
         expected_angle = expected_curvature * cls.l
 
         assert jnp.allclose(
@@ -283,12 +290,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/shear/moment/z-moment components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 4], -bending_y_load), (
-            f"Internal bending moment at fixed end incorrect, expected {-bending_y_load}, got {f_int_rot[0, 4]}"
+        assert jnp.isclose(f_int_rot[0, 4], -load), (
+            f"Internal bending moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 4]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 4], bending_y_load), (
-            f"Internal bending moment at loaded end incorrect, expected {bending_y_load}, got {f_int_rot[1, 4]}"
+        assert jnp.isclose(f_int_rot[1, 4], load), (
+            f"Internal bending moment at loaded end incorrect, expected {load}, got {f_int_rot[1, 4]}"
         )
 
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
@@ -310,15 +317,17 @@ class TestTwoNodeXBeamStrainsForces:
         r"""
         Ensure bending in z load case is solved correctly.
         """
-        k_coeffs_axial = jnp.full(6, 1e-3).at[5].set(4.56)
-        cls.struct.set_design_variables(
-            cls.coords, jnp.diag(k_coeffs_axial)[None, :], None
+        k_coeffs = jnp.full(6, 1e-3).at[5].set(4.56)
+        cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
+        load = 1e-1
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, 3:]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
-        bending_z_load = 1e-1
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 5].set(bending_z_load)
         result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
 
-        expected_curvature = bending_z_load / k_coeffs_axial[5]
+        expected_curvature = load / k_coeffs[5]
         expected_angle = expected_curvature * cls.l
 
         assert jnp.allclose(
@@ -337,12 +346,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/shear/y-moment components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 5], -bending_z_load), (
-            f"Internal z-moment at fixed end incorrect, expected {-bending_z_load}, got {f_int_rot[0, 5]}"
+        assert jnp.isclose(f_int_rot[0, 5], -load), (
+            f"Internal z-moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 5]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 5], bending_z_load), (
-            f"Internal z-moment at loaded end incorrect, expected {bending_z_load}, got {f_int_rot[1, 5]}"
+        assert jnp.isclose(f_int_rot[1, 5], load), (
+            f"Internal z-moment at loaded end incorrect, expected {load}, got {f_int_rot[1, 5]}"
         )
 
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
@@ -364,19 +373,21 @@ class TestTwoNodeXBeamStrainsForces:
         r"""
         Ensure shear load case is solved correctly.
         """
-        k_coeffs_shear_y = jnp.full(6, 1e5).at[1].set(4.56)
-        cls.struct.set_design_variables(
-            cls.coords, jnp.diag(k_coeffs_shear_y)[None, :], None
+        k_coeffs = jnp.full(6, 1e5).at[1].set(4.56)
+        cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
+        load = 7.89
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
-        shear_y_load = 7.89
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 1].set(shear_y_load)
         result = cls.struct.static_solve(
             f_ext, None, jnp.concatenate((jnp.arange(6), jnp.arange(9, 12)))
         )
 
-        expected_strain = shear_y_load / k_coeffs_shear_y[1]
+        expected_strain = load / k_coeffs[1]
         expected_disp = expected_strain * cls.l
-        expected_moment = -0.5 * shear_y_load * cls.l
+        expected_moment = -0.5 * load * cls.l
 
         assert jnp.allclose(
             result.d,
@@ -393,12 +404,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/torsion/z_shear components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 1], -shear_y_load), (
-            f"Internal shear_y force at fixed end incorrect, expected {-shear_y_load}, got {f_int_rot[0, 1]}"
+        assert jnp.isclose(f_int_rot[0, 1], -load), (
+            f"Internal shear_y force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 1]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 1], shear_y_load), (
-            f"Internal shear_y force at loaded end incorrect, expected {shear_y_load}, got {f_int_rot[1, 1]}"
+        assert jnp.isclose(f_int_rot[1, 1], load), (
+            f"Internal shear_y force at loaded end incorrect, expected {load}, got {f_int_rot[1, 1]}"
         )
 
         assert jnp.isclose(f_int_rot[0, 5], expected_moment), (
@@ -414,19 +425,21 @@ class TestTwoNodeXBeamStrainsForces:
         r"""
         Ensure shear load case is solved correctly.
         """
-        k_coeffs_shear_z = jnp.full(6, 1e5).at[2].set(4.56)
-        cls.struct.set_design_variables(
-            cls.coords, jnp.diag(k_coeffs_shear_z)[None, :], None
+        k_coeffs = jnp.full(6, 1e5).at[2].set(4.56)
+        cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
+        load = 7.89
+        f_ext = (
+            jnp.zeros((2, 6))
+            .at[1, :3]
+            .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
-        shear_z_load = 7.89
-        f_ext = jnp.zeros((1, 2, 6)).at[0, 1, 2].set(shear_z_load)
         result = cls.struct.static_solve(
             f_ext, None, jnp.concatenate((jnp.arange(6), jnp.arange(9, 12)))
         )
 
-        expected_strain = shear_z_load / k_coeffs_shear_z[2]
+        expected_strain = load / k_coeffs[2]
         expected_disp = expected_strain * cls.l
-        expected_moment = 0.5 * shear_z_load * cls.l
+        expected_moment = 0.5 * load * cls.l
 
         assert jnp.allclose(
             result.d,
@@ -443,12 +456,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/torsion/y-shear components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 2], -shear_z_load), (
-            f"Internal shear_z force at fixed end incorrect, expected {-shear_z_load}, got {f_int_rot[0, 2]}"
+        assert jnp.isclose(f_int_rot[0, 2], -load), (
+            f"Internal shear_z force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 2]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 2], shear_z_load), (
-            f"Internal shear_z force at loaded end incorrect, expected {shear_z_load}, got {f_int_rot[1, 2]}"
+        assert jnp.isclose(f_int_rot[1, 2], load), (
+            f"Internal shear_z force at loaded end incorrect, expected {load}, got {f_int_rot[1, 2]}"
         )
 
         assert jnp.isclose(f_int_rot[0, 4], expected_moment), (
