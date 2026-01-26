@@ -475,7 +475,7 @@ class UVLM:
     def get_zeta(self, i_ts: int) -> ArrayList:
         r"""
         Get full grid coordinates all bound and wake surfaces at specified time step. These are stacked in (bound, wake)
-        order.
+        int_order.
         :param i_ts: Timestep index
         :return: List of grid coordinates for each surface, [2 * n_surf][zeta_m | zeta_m_star, zeta_n, 3]
         """

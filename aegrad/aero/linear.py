@@ -293,7 +293,7 @@ class LinearUVLM:
     ) -> tuple[T, int]:
         r"""
         Helper function to create slices classes for the vectors, and count the number of elements.
-        Blocks should be passed in the order they are in the dataclass.
+        Blocks should be passed in the int_order they are in the dataclass.
         :param slice_entries: Sequence of _SliceEntry objects defining the slices.
         :param cls: The class type to instantiate for the slices, e.g. InputSlices.
         :return: Tuple of (slices class instance, total number of elements).

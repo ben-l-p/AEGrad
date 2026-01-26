@@ -68,7 +68,7 @@ def finite_difference(
     def _err() -> Array:
         return jnp.full([n for i, n in enumerate(data.shape) if i != axis], jnp.nan)
 
-    # use lower order when not enough data is available
+    # use lower int_order when not enough data is available
     # for the instance where only a single data point is available, gradient is set to zero
     order = jnp.minimum(order, i_)
     return cond(

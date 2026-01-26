@@ -6,7 +6,7 @@ from aegrad.utils import check_type
 from aegrad.structure.data_structures import StaticStructure
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.structure.structure_utils import k_t_entry
+from aegrad.structure.structure_utils import k_t_entry, integrate_m_l
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from typing import Optional, Sequence
 from functools import partial
@@ -120,7 +120,23 @@ class Structure:
 
         self.k_l = self.k_l.at[...].set(self.k_cs * self.l0[:, None, None])
 
-    def make_k(
+    def assemble_matrix_from_entries(self, entries: Array) -> Array:
+        r"""
+        Assemble global matrix from element entries
+        :param entries: Array of element matrix entries, [n_elem, 12, 12]
+        :return: System global matrix, [n_dof, n_dof]
+        """
+
+        # vectorised assembly of full matrix
+        row_idx = jnp.broadcast_to(self.dof_per_elem[:, :, None], (self.n_elem, 12, 12))
+        col_idx = jnp.broadcast_to(self.dof_per_elem[:, None, :], (self.n_elem, 12, 12))
+        return (
+            jnp.zeros((self.n_dof, self.n_dof))
+            .at[row_idx.ravel(), col_idx.ravel()]
+            .add(entries.ravel())
+        )
+
+    def make_k_t(
         self,
         d: Array,
         p_d: Array,
@@ -129,7 +145,7 @@ class Structure:
         include_geometric: bool,
     ) -> Array:
         r"""
-        Assemble global stiffness matrix as a function of the element relative configuration vectors
+        Assemble tangent stiffness matrix as a function of the element relative configuration vectors
         :param d: Element relative configuration, [n_elem, 6]
         :return: Global stiffness matrix, [n_dof, n_dof]
         """
@@ -140,7 +156,7 @@ class Structure:
                 include_material=include_material,
                 include_geometric=include_geometric,
             ),
-            (0, 0, 0, 0, 0, 0, 0),
+            (0, 0, 0, 0, 0, 0),
             0,
         )(
             d,
@@ -148,17 +164,23 @@ class Structure:
             self.l0,
             eps,
             self.k_cs,
-            self.ad_inv_o0[self.connectivity[:, 0], ...],
-            self.ad_inv_o0[self.connectivity[:, 1], ...],
+            self.ad_inv_o0,
         )  # [n_elem, 12, 12]
 
-        # assemble global stiffness matrix
-        k_t = jnp.zeros((self.n_dof, self.n_dof))
-        for i_elem in range(self.n_elem):
-            index = self.dof_per_elem[i_elem, :]
-            k_t = k_t.at[jnp.ix_(index, index)].add(k_t_entries[i_elem, ...])
+        return self.assemble_matrix_from_entries(k_t_entries)
 
-        return k_t
+    def make_m_t(self, d: Array, int_order: int = 3) -> Array:
+        r"""
+        Assemble tangent mass matrix as a function of the element relative configuration vectors
+        :param d: Element relative configuration, [n_elem, 6]
+        :param int_order: Integration order for mass matrix computation
+        :return: Global mass matrix, [n_dof, n_dof]
+        """
+        m_t_entries = vmap(
+            partial(integrate_m_l, int_order=int_order), (0, 0, 0, 0), 0
+        )(d, self.m_cs, self.ad_inv_o0, self.l0)
+
+        return self.assemble_matrix_from_entries(m_t_entries)
 
     def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
@@ -177,15 +199,6 @@ class Structure:
 
         return g_int
 
-    def make_f_follower_ext_ab(self, f_ext: Array) -> Array:
-        r"""
-        Compute the global external follower force vector.
-        :param f_ext: External forces array of follower forces in global reference, [n_node, 6]
-        :return: Global external force vector, [n_dof]
-        """
-
-        return f_ext.reshape(self.n_dof)
-
     @staticmethod
     def make_f_dead_ext_ab(f_ext: Array, rmat: Array) -> Array:
         r"""
@@ -195,8 +208,10 @@ class Structure:
         :return: Global external force vector, [n_dof]
         """
 
-        f_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
-        m_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
+        # f_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
+        # m_rot = jnp.einsum("ijk,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
+        f_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
+        m_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
         return jnp.concatenate((f_rot, m_rot), axis=-1).ravel()
 
     def make_eps(self, d: Array) -> Array:
@@ -230,7 +245,7 @@ class Structure:
         )  # [n_elem, 6, 12]
 
         f_int = self.make_f_int(p_d, eps)  # [n_dof]
-        k_t = self.make_k(
+        k_t = self.make_k_t(
             d, p_d, eps, include_material, include_geometric
         )  # [n_dof, n_dof]
 
@@ -265,8 +280,8 @@ class Structure:
         include_geometric: bool = False,
         load_steps: int = 1,
         max_iter: int = 40,
-        rel_tol: float = 1e-6,
-        abs_tol: float = 1e-8,
+        rel_tol: float = 1e-7,
+        abs_tol: float = 1e-9,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
@@ -300,6 +315,8 @@ class Structure:
         # check inputs
         if f_ext_follower is not None:
             check_arr_shape(f_ext_follower, (self.n_nodes, 6), "f_ext_follower")
+        if f_ext_dead is not None:
+            check_arr_shape(f_ext_dead, (self.n_nodes, 6), "f_ext_dead")
 
         # degrees of freedom to solve for
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
@@ -325,7 +342,7 @@ class Structure:
 
             f_res_n_solve = g_int_n_solve
             if f_ext_follower is not None:
-                f_res_n_solve -= self.make_f_follower_ext_ab(f_ext_follower_n)[
+                f_res_n_solve -= f_ext_follower_n.reshape(self.n_dof).ravel()[
                     solve_dofs
                 ]
             if f_ext_dead is not None:
@@ -370,12 +387,15 @@ class Structure:
             return conv_abs | conv_rel
 
         def inner_loop(
-            f_ext_follower: Array, f_ext_dead: Array, g_res_init: Array, hg_init: Array
-        ) -> tuple[Array, Array, Array]:
+            f_ext_follower_n: Array,
+            f_ext_dead_n: Array,
+            g_res_init: Array,
+            hg_init: Array,
+        ) -> tuple[Array, Array, Array, Array]:
             return equinox.internal.while_loop(
                 lambda args: convergence(*args),
                 lambda args: update(*args),
-                (hg_init, g_res_init, f_ext_follower, f_ext_dead),
+                (hg_init, g_res_init, f_ext_follower_n, f_ext_dead_n),
                 max_steps=max_iter,
                 kind="bounded" if max_iter is not None else "lax",
             )
