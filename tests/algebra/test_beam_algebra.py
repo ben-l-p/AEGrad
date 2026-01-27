@@ -27,6 +27,7 @@ from aegrad.algebra.se3 import (
     bracket_se3,
     t_star,
     hg_to_ha_hat,
+    ha_to_ha_check,
 )
 from aegrad.algebra.test_routines import (
     check_if_so3_a,
@@ -65,14 +66,16 @@ class TestTilde:
     Test functions involving skew symmetric matrices
     """
 
-    def test_so3_identity(self):
+    @staticmethod
+    def test_so3_identity():
         skew = vec_to_skew(jnp.zeros(3))
         check_if_so3_a(skew)
         assert jnp.allclose(skew, 0.0), (
             f"Skew symmetric of zero vector should yield zero matrix, returned {skew}"
         )
 
-    def test_so3_inverse(self):
+    @staticmethod
+    def test_so3_inverse():
         vec = jnp.linspace(1.0, 3.0, 3)
         skew = vec_to_skew(vec)
         check_if_so3_a(skew)
@@ -81,7 +84,8 @@ class TestTilde:
             f"should yield original vector {vec}, returned {out}"
         )
 
-    def test_so3_tilde_times_vec(self):
+    @staticmethod
+    def test_so3_tilde_times_vec():
         vec = jnp.linspace(1.0, 3.0, 3)
         skew = vec_to_skew(vec)
         check_if_so3_a(skew)
@@ -90,14 +94,16 @@ class TestTilde:
             f"should yield zero, returned {out}"
         )
 
-    def test_se3_identity(self):
+    @staticmethod
+    def test_se3_identity():
         ha_tilde = ha_to_ha_tilde(jnp.zeros(6))
         check_if_se3_a(ha_tilde)
         assert jnp.allclose(ha_tilde, 0.0), (
             f"Lie algebra of zero vector should yield zero matrix, returned {ha_tilde}"
         )
 
-    def test_se3_inverse(self):
+    @staticmethod
+    def test_se3_inverse():
         vec = jnp.linspace(1.0, 6.0, 6)
         ha_tilde = ha_to_ha_tilde(vec)
         check_if_se3_a(ha_tilde)
@@ -105,31 +111,36 @@ class TestTilde:
             f"Inverse transformation of transformation should yield original vector {vec}, returned {out} "
         )
 
-    def test_se3_hat_identity(self):
+    @staticmethod
+    def test_se3_hat_identity():
         assert jnp.allclose(out := ha_to_ha_hat(jnp.zeros(6)), 0.0), (
             f"Adjoint of zero vector should yield zero matrix, returned {out}"
         )
 
-    def test_se3_hat_inverse(self):
+    @staticmethod
+    def test_se3_hat_inverse():
         vec = jnp.linspace(1.0, 6.0, 6)
         assert jnp.allclose(out := ha_hat_to_ha(ha_to_ha_hat(vec)), vec), (
             f"Inverse transformation of hat should yield original vector {vec}, returned {out} "
         )
 
-    def test_se3_hat_times_vec(self):
+    @staticmethod
+    def test_se3_hat_times_vec():
         vec = jnp.linspace(1.0, 6.0, 6)
         assert jnp.allclose(out := ha_to_ha_hat(vec) @ vec, 0.0), (
             f"Product of lie algebra and its vector should yield zero, returned {out}"
         )
 
-    def test_hg_se3_inverse_identity(self):
+    @staticmethod
+    def test_hg_se3_inverse_identity():
         hg_inv_ = hg_inv(jnp.eye(4))
         check_if_se3_g(hg_inv_)
         assert jnp.allclose(hg_inv_, jnp.eye(4)), (
             f"Inverse of identity should yield identity, returned {hg_inv_}"
         )
 
-    def test_hg_se3_inverse(self):
+    @staticmethod
+    def test_hg_se3_inverse():
         vec = jnp.linspace(0.6, 0.1, 6)
         hg = exp_se3(vec)
         check_if_se3_g(hg)
@@ -146,7 +157,8 @@ class TestTilde:
             f"zero matrix, returned {out}"
         )
 
-    def test_x_rmat(self):
+    @staticmethod
+    def test_x_rmat():
         x = jnp.linspace(0.4, 0.6, 3)
         crv = jnp.linspace(0.1, 0.3, 3)
         rmat = exp_so3(crv)
@@ -168,7 +180,8 @@ class TestUtils:
     Test functions involving angle normalisation
     """
 
-    def clip_to_pi_within_range(self):
+    @staticmethod
+    def clip_to_pi_within_range():
         angs = [-0.5 * jnp.pi, 0.0, 0.5 * jnp.pi]
         clipped_angs = [clip_to_pi(ang) for ang in angs]
         for ang, clipped_ang in zip(angs, clipped_angs):
@@ -176,7 +189,8 @@ class TestUtils:
                 f"Angle clipping values in range should not affect result, in={ang}, out={clipped_ang}"
             )
 
-    def clip_to_pi_outside_range(self):
+    @staticmethod
+    def clip_to_pi_outside_range():
         angs = [-1.5 * jnp.pi, 1.5 * jnp.pi]
         clipped_angs = [clip_to_pi(ang) for ang in angs]
         expected_angs = [0.5 * jnp.pi, -0.5 * jnp.pi]
@@ -185,7 +199,8 @@ class TestUtils:
                 f"Angle clipping values in range should not affect result, in={ang}, out={clipped_ang}"
             )
 
-    def clip_rot_vec_within_range(self):
+    @staticmethod
+    def clip_rot_vec_within_range():
         vecs = [jnp.zeros(3).at[i].set(0.5) for i in range(3)]
         clipped_vecs = [bound_h_omega(vec) for vec in vecs]
         for vec, clipped_vec in zip(vecs, clipped_vecs):
@@ -193,7 +208,8 @@ class TestUtils:
                 f"Angle clipping vectors in range should not affect result, in={vec}, out={clipped_vec}"
             )
 
-    def clip_rot_vec_outside_range(self):
+    @staticmethod
+    def clip_rot_vec_outside_range():
         vecs = [
             jnp.zeros(3).at[i].set(s * 1.5 * jnp.pi)
             for i in range(3)
@@ -210,7 +226,8 @@ class TestUtils:
                 f"Angle clipping vectors in range should not affect result, in={vec}, out={clipped_vec}"
             )
 
-    def test_chi(self):
+    @staticmethod
+    def test_chi():
         vec = jnp.linspace(0.1, 0.3, 3)
         rmat = exp_so3(vec)
         check_if_so3_g(rmat)
@@ -227,7 +244,8 @@ class TestUtils:
 
 
 class TestBracket:
-    def test_bracket_so3(self):
+    @staticmethod
+    def test_bracket_so3():
         vec1 = jnp.linspace(0.1, 0.3, 3)
         vec2 = jnp.linspace(0.4, 0.6, 3)
 
@@ -235,7 +253,8 @@ class TestBracket:
             lhs := bracket_so3(vec1, vec2), rhs := -bracket_so3(vec2, vec1)
         ), f"so3 bracket operator identity not met, expected {rhs}, returned {lhs}"
 
-    def test_bracket_se3(self):
+    @staticmethod
+    def test_bracket_se3():
         vec1 = jnp.linspace(0.1, 0.6, 6)
         vec2 = jnp.linspace(0.7, 1.2, 6)
 
@@ -249,24 +268,28 @@ class TestTangent:
     Test functions involving the tangent operator
     """
 
-    def test_so3_identity(self):
+    @staticmethod
+    def test_so3_identity():
         assert jnp.allclose(out := t_so3(jnp.zeros(3)), jnp.eye(3)), (
             f"SO3 tangent at zero should yield identity matrix., returned {out}"
         )
 
-    def test_so3_inverse_identity(self):
+    @staticmethod
+    def test_so3_inverse_identity():
         assert jnp.allclose(out := t_inv_so3(jnp.zeros(3)), jnp.eye(3)), (
             f"SO3 inverse tangent at zero should yield identity matrix, returned {out}"
         )
 
-    def test_so3_inverse(self):
+    @staticmethod
+    def test_so3_inverse():
         vec = jnp.linspace(0.1, 0.3, 3)
         assert jnp.allclose(out := t_inv_so3(vec), inv := jnp.linalg.inv(t_so3(vec))), (
             f"SO3 inverse tangent should equal matrix "
             f"inverse of tangent {inv}, returned {out}"
         )
 
-    def test_so3_finite(self):
+    @staticmethod
+    def test_so3_finite():
         vec = jnp.linspace(0.1, 0.3, 3)
         assert jnp.allclose(out := t_inv_so3(vec) @ t_so3(vec), jnp.eye(3)), (
             f"Product of tangent and its inverse should yield "
@@ -277,14 +300,16 @@ class TestTangent:
             f"identity matrix, returned {out}"
         )
 
-    def test_so3_summation_series(self):
+    @staticmethod
+    def test_so3_summation_series():
         vec = jnp.linspace(0.1, 0.3, 3)
         assert jnp.allclose(out := t_so3(vec), sum_ := t_sum(vec_to_skew(vec))), (
             f"SO3 tangent should equal summation series approximations {sum_}, "
             f"returned {out}"
         )
 
-    def test_so3_inv_summation_series(self):
+    @staticmethod
+    def test_so3_inv_summation_series():
         vec = jnp.linspace(0.1, 0.3, 3)
         assert jnp.allclose(
             out := t_inv_so3(vec), sum_ := t_inv_sum(vec_to_skew(vec))
@@ -293,14 +318,16 @@ class TestTangent:
             f"returned {out}"
         )
 
-    def test_se3_inverse(self):
+    @staticmethod
+    def test_se3_inverse():
         vec = jnp.linspace(0.1, 0.6, 6)
         assert jnp.allclose(out := t_inv_se3(vec), inv := jnp.linalg.inv(t_se3(vec))), (
             f"SE3 inverse tangent should equal matrix "
             f"inverse of tangent {inv}, returned {out}"
         )
 
-    def test_se3_finite(self):
+    @staticmethod
+    def test_se3_finite():
         vec = jnp.linspace(0.1, 0.6, 6)
         assert jnp.allclose(out := t_inv_se3(vec) @ t_se3(vec), jnp.eye(6)), (
             f"Product of tangent and its inverse should yield "
@@ -311,14 +338,16 @@ class TestTangent:
             f"identity matrix, returned {out}"
         )
 
-    def test_se3_summation_series(self):
+    @staticmethod
+    def test_se3_summation_series():
         vec = jnp.linspace(0.1, 0.6, 6)
         assert jnp.allclose(out := t_se3(vec), sum_ := t_sum(ha_to_ha_hat(vec))), (
             f"SE3 tangent should equal summation series approximations {sum_}, "
             f"returned {out}"
         )
 
-    def test_se3_inv_summation_series(self):
+    @staticmethod
+    def test_se3_inv_summation_series():
         vec = jnp.linspace(0.1, 0.6, 6)
         assert jnp.allclose(
             out := t_inv_se3(vec), sum_ := t_inv_sum(ha_to_ha_hat(vec))
@@ -327,12 +356,14 @@ class TestTangent:
             f"returned {out}"
         )
 
-    def test_se3_u_omega_plus_zero(self):
+    @staticmethod
+    def test_se3_u_omega_plus_zero():
         assert jnp.allclose(out := t_u_omega_plus(jnp.zeros(6)), 0.0), (
             f"T_u_omega_plus should return zero for zero input, returned {out}"
         )
 
-    def test_se3_u_omega_plus_zero_rot(self):
+    @staticmethod
+    def test_se3_u_omega_plus_zero_rot():
         vec = jnp.array((0.1, 0.2, 0.3, 0.0, 0.0, 0.0))
         assert jnp.allclose(
             out := t_u_omega_plus(vec), val := -0.5 * vec_to_skew(vec[:3])
@@ -340,12 +371,14 @@ class TestTangent:
             f"T_u_omega_plus should return {val} for zero rotation component, returned {out}"
         )
 
-    def test_se3_u_omega_minus_zero(self):
+    @staticmethod
+    def test_se3_u_omega_minus_zero():
         assert jnp.allclose(out := t_u_omega_minus(jnp.zeros(6)), 0.0), (
             f"T_u_omega_minus should return zero for zero input, returned {out}"
         )
 
-    def test_se3_u_omega_minus_zero_rot(self):
+    @staticmethod
+    def test_se3_u_omega_minus_zero_rot():
         vec = jnp.array((0.1, 0.2, 0.3, 0.0, 0.0, 0.0))
         assert jnp.allclose(
             out := t_u_omega_minus(vec), val := 0.5 * vec_to_skew(vec[:3])
@@ -366,35 +399,40 @@ class TestExpLog:
     Test functions involving the matrix exponential and logarithm operator
     """
 
-    def test_exp_so3_identity(self):
+    @staticmethod
+    def test_exp_so3_identity():
         rmat = exp_so3(jnp.zeros(3))
         check_if_so3_g(rmat)
         assert jnp.allclose(rmat, jnp.eye(3)), (
             f"SO3 exponential at zero should yield identity matrix, returned {rmat}"
         )
 
-    def test_log_so3_identity(self):
+    @staticmethod
+    def test_log_so3_identity():
         assert jnp.allclose(out := log_so3(jnp.eye(3)), 0.0), (
             f"SO3 logarithm at identity should yield zero, returned {out}"
         )
 
-    def test_so3_finite(self):
+    @staticmethod
+    def test_so3_finite():
         vec = jnp.linspace(0.1, 0.3, 3)
         rmat = exp_so3(vec)
         check_if_so3_g(rmat)
-        assert (out := log_so3(rmat), vec), (
+        assert jnp.allclose(out := log_so3(rmat), vec), (
             f"SO3 Logarithm of exponential of vector should return same vector "
             f"{vec}, returned {out}"
         )
 
-    def test_exp_so3_summation_series(self):
+    @staticmethod
+    def test_exp_so3_summation_series():
         vec = jnp.linspace(0.1, 0.3, 3)
         assert jnp.allclose(out := exp_so3(vec), sum_ := exp_sum(vec_to_skew(vec))), (
             f"SO3 exponential should equal summation series approximation {sum_}, "
             f"returned {out}"
         )
 
-    def test_log_so3_summation_series(self):
+    @staticmethod
+    def test_log_so3_summation_series():
         vec = jnp.linspace(0.1, 0.3, 3)
         rmat = exp_so3(vec)
         check_if_so3_g(rmat)
@@ -403,19 +441,22 @@ class TestExpLog:
             f"returned {out}"
         )
 
-    def test_exp_se3_identity(self):
+    @staticmethod
+    def test_exp_se3_identity():
         hg = exp_se3(jnp.zeros(6))
         check_if_se3_g(hg)
         assert jnp.allclose(hg, jnp.eye(4)), (
             f"SE3 exponential at zero should yield identity matrix, returned {hg}"
         )
 
-    def test_log_se3_identity(self):
+    @staticmethod
+    def test_log_se3_identity():
         assert jnp.allclose(out := log_so3(jnp.eye(4)), 0.0), (
             f"SE3 logarithm at identity should yield zero, returned {out}"
         )
 
-    def test_se3_finite(self):
+    @staticmethod
+    def test_se3_finite():
         vec = jnp.linspace(0.1, 0.6, 6)
         hg = exp_se3(vec)
         check_if_se3_g(hg)
@@ -424,7 +465,8 @@ class TestExpLog:
             f"{vec}, returned {out}"
         )
 
-    def test_exp_se3_summation_series(self):
+    @staticmethod
+    def test_exp_se3_summation_series():
         vec = jnp.linspace(0.1, 0.6, 6)
         assert jnp.allclose(
             out := exp_se3(vec), sum_ := exp_sum(ha_to_ha_tilde(vec))
@@ -433,7 +475,8 @@ class TestExpLog:
             f"returned {out}"
         )
 
-    def test_log_se3_summation_series(self):
+    @staticmethod
+    def test_log_se3_summation_series():
         vec = jnp.linspace(0.1, 0.6, 6)
         hg = exp_se3(vec)
         check_if_se3_g(hg)
@@ -445,8 +488,22 @@ class TestExpLog:
         )
 
 
+class TestCheckMatrix:
+    @staticmethod
+    def test_se3_check():
+        h1 = jnp.linspace(0.1, 0.6, 6)
+        h2 = jnp.linspace(0.7, 1.2, 6)
+
+        lhs = ha_to_ha_hat(h1).T @ h2
+        rhs = ha_to_ha_check(h2).T @ h1
+        assert jnp.allclose(lhs, rhs), (
+            f"ha_hat and ha_check are not consistent, lhs={lhs}, rhs={rhs}"
+        )
+
+
 class TestAdjoint:
-    def test_se3_group_adjoint(self):
+    @staticmethod
+    def test_se3_group_adjoint():
         vals = jnp.linspace(0.6, 0.1, 6)
         delta = jnp.linspace(0.05, 0.25, 6)
         hg = exp_se3(vals)
@@ -460,7 +517,8 @@ class TestAdjoint:
             f"SE3 adjoint operator failed, expected {adjoint_output}, returned {full_output}"
         )
 
-    def test_se3_algebra_adjoint(self):
+    @staticmethod
+    def test_se3_algebra_adjoint():
         vals = jnp.linspace(0.1, 0.6, 6)
         delta = jnp.full(6, 1e-3)
 

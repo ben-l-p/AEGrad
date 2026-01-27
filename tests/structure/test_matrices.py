@@ -2,6 +2,7 @@ from jax import numpy as jnp
 from structure.structure import Structure
 from algebra.so3 import vec_to_skew
 import jax
+from algebra.se3 import p
 
 jax.config.update("jax_enable_x64", True)
 
@@ -29,7 +30,9 @@ class TestStiffness:
 
         du0 = jnp.zeros(6).at[0].set(l)
 
-        g_int, k_t = struct.make_f_int_and_k_t(du0[None, :], True, True)
+        k_t = struct._make_k_t(
+            du0[None, :], p(du0, jnp.eye(6))[None, :], jnp.zeros((1, 6)), True, True
+        )
 
         du0t = vec_to_skew(du0[:3])
         k_t_exp = (

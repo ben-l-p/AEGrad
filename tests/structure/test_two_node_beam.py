@@ -3,6 +3,7 @@ import jax
 from aegrad.algebra.base import chi
 from aegrad.structure.structure import Structure
 from aegrad.algebra.test_routines import const_curvature_beam
+from aegrad.algebra.se3 import p
 
 jax.config.update("jax_enable_x64", True)
 
@@ -29,11 +30,13 @@ class TestTwoNodeXBeamStrainsForces:
         k_coeffs = jnp.ones(6)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         d = jnp.zeros((1, 6)).at[0, 0].set(cls.l)
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         assert jnp.allclose(eps, 0.0), (
             f"Axial strain calculation incorrect, expected zero strain, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(
+            p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
+        )[0, :]
         assert jnp.allclose(f_int, 0.0), (
             f"Internal force vector incorrect, expected zero force, got {f_int}"
         )
@@ -48,12 +51,14 @@ class TestTwoNodeXBeamStrainsForces:
         dx = 0.1
         d = jnp.zeros((1, 6))
         d = d.at[0, 0].set(cls.l + dx)
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((dx / cls.l, 0.0, 0.0, 0.0, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Axial strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(
+            p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
+        )[0, :]
         expected_f_int = jnp.zeros(12)
         expected_f_int = expected_f_int.at[0].set(-k_coeffs[0] * dx / cls.l)
         expected_f_int = expected_f_int.at[6].set(k_coeffs[0] * dx / cls.l)
@@ -74,12 +79,14 @@ class TestTwoNodeXBeamStrainsForces:
         d = jnp.zeros((1, 6))
         d = d.at[0, 0].set(cls.l)
         d = d.at[0, 3].set(theta_x)
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, theta_x / cls.l, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Torsional strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(
+            p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
+        )[0, :]
         expected_f_int = jnp.zeros(12)
         expected_f_int = expected_f_int.at[3].set(-k_coeffs[3] * theta_x / cls.l)
         expected_f_int = expected_f_int.at[9].set(k_coeffs[3] * theta_x / cls.l)
@@ -105,13 +112,15 @@ class TestTwoNodeXBeamStrainsForces:
         d = d.at[0, 0].set(cls.l)
         d = d.at[0, 4].set(kappa_y * cls.l)
 
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, kappa_y, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
 
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(
+            p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
+        )[0, :]
         expected_f_int = jnp.zeros(12)
         expected_f_int = expected_f_int.at[4].set(-eiy * kappa_y)
         expected_f_int = expected_f_int.at[10].set(eiy * kappa_y)
@@ -138,13 +147,15 @@ class TestTwoNodeXBeamStrainsForces:
         d = d.at[0, 0].set(cls.l)
         d = d.at[0, 5].set(kappa_z * cls.l)
 
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, kappa_z))
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
 
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(
+            p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
+        )[0, :]
         expected_f_int = jnp.zeros(12)
         expected_f_int = expected_f_int.at[5].set(-eiz * kappa_z)
         expected_f_int = expected_f_int.at[11].set(eiz * kappa_z)

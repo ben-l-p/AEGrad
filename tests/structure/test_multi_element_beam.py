@@ -36,11 +36,11 @@ class TestMultiXElementStrainsForces:
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         d = jnp.zeros((cls.n_elem, 6)).at[:, 0].set(cls.l / cls.n_elem)
-        strain = cls.struct.make_eps(d)
-        assert jnp.allclose(strain, 0.0), (
-            f"Strain calculation incorrect, expected zero strain, got {strain}"
+        eps = cls.struct._make_eps(d)
+        assert jnp.allclose(eps, 0.0), (
+            f"Strain calculation incorrect, expected zero strain, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0]
+        f_int = cls.struct._make_f_int(cls.struct._make_p_d(d), eps)[0]
         assert jnp.allclose(f_int, 0.0), (
             f"Internal force vector incorrect, expected zero, got {f_int}"
         )
@@ -55,14 +55,16 @@ class TestMultiXElementStrainsForces:
         dx = 0.1
         d = jnp.zeros((cls.n_elem, 6))
         d = d.at[:, 0].set((cls.l + dx) / cls.n_elem)
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((dx / cls.l, 0.0, 0.0, 0.0, 0.0, 0.0))[None, :]
         expected_f = k_coeffs[0] * dx / cls.l
 
         assert jnp.allclose(eps, expected_eps), (
             f"Axial strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0].reshape(cls.n_nodes, 6)
+        f_int = cls.struct._assemble_vector_from_entries(
+            cls.struct._make_f_int(cls.struct._make_p_d(d), eps)
+        ).reshape(-1, 6)
 
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
@@ -93,14 +95,16 @@ class TestMultiXElementStrainsForces:
         d = d.at[:, 0].set(cls.l / cls.n_elem)
         d = d.at[:, 3].set(dx / cls.n_elem)
 
-        strain = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_strain = jnp.array((0.0, 0.0, 0.0, dx / cls.l, 0.0, 0.0))[None, :]
         expected_f = k_coeffs[3] * dx / cls.l
 
-        assert jnp.allclose(strain, expected_strain), (
-            f"Torsional strain calculation incorrect, expected {expected_strain}, got {strain}"
+        assert jnp.allclose(eps, expected_strain), (
+            f"Torsional strain calculation incorrect, expected {expected_strain}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0].reshape(cls.n_nodes, 6)
+        f_int = cls.struct._assemble_vector_from_entries(
+            cls.struct._make_f_int(cls.struct._make_p_d(d), eps)
+        ).reshape(-1, 6)
 
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
@@ -131,16 +135,18 @@ class TestMultiXElementStrainsForces:
         d = d.at[:, 0].set(cls.l / cls.n_elem)
         d = d.at[:, 4].set(dx / cls.n_elem)
 
-        eps_bending = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_bending_strain = jnp.array((0.0, 0.0, 0.0, 0.0, dx / cls.l, 0.0))[
             None, :
         ]
         expected_f = k_coeffs[4] * dx / cls.l
 
-        assert jnp.allclose(eps_bending, expected_bending_strain), (
-            f"Bending strain calculation incorrect, expected {expected_bending_strain}, got {eps_bending}"
+        assert jnp.allclose(eps, expected_bending_strain), (
+            f"Bending strain calculation incorrect, expected {expected_bending_strain}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0].reshape(cls.n_nodes, 6)
+        f_int = cls.struct._assemble_vector_from_entries(
+            cls.struct._make_f_int(cls.struct._make_p_d(d), eps)
+        ).reshape(-1, 6)
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
         assert jnp.allclose(f_int_rot[0, 4], -expected_f), (
@@ -170,14 +176,16 @@ class TestMultiXElementStrainsForces:
         d = d.at[:, 0].set(cls.l / cls.n_elem)
         d = d.at[:, 5].set(dx / cls.n_elem)
 
-        eps = cls.struct.make_eps(d)
+        eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, dx / cls.l))[None, :]
         expected_f = k_coeffs[5] * dx / cls.l
 
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct.make_f_int_and_k_t(d, True, True)[0].reshape(cls.n_nodes, 6)
+        f_int = cls.struct._assemble_vector_from_entries(
+            cls.struct._make_f_int(cls.struct._make_p_d(d), eps)
+        ).reshape(-1, 6)
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
         assert jnp.allclose(f_int_rot[0, 5], -expected_f), (

@@ -1,6 +1,7 @@
 from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
+import jax
 from aegrad.algebra.base import matrix2
 from aegrad.algebra.so3 import (
     vec_to_skew,
@@ -251,6 +252,21 @@ def ha_hat_to_ha(ha_hat: Array) -> Array:
     return jnp.concatenate((ha_u, ha_omega), axis=-1)
 
 
+def ha_to_ha_check(ha: Array) -> Array:
+    r"""
+    Converts a se(3) vector into its check matrix representation. Formulation from "Geometrically exact beam finite element formulated
+    on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.
+    :param ha: se(3) algebra vector, [6].
+    :return: Check matrix representation, [6, 6].
+    """
+    return -jnp.block(
+        [
+            [jnp.zeros((3, 3)), vec_to_skew(ha[:3])],
+            [vec_to_skew(ha[:3]), vec_to_skew(ha[3:])],
+        ]
+    )
+
+
 def hg_to_ha_hat(hg: Array) -> Array:
     r"""
     Converts an SE(3) group element into its se(3) hat matrix representation.
@@ -279,19 +295,19 @@ def hg_to_d(hg1: Array, hg2: Array) -> Array:
     return log_se3(hg_inv(hg1) @ hg2)
 
 
-def p(d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
+def p(
+    d: Array,
+    ad_inv: Array,
+) -> Array:
     r"""
     Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation
     from "A geometric local frame approach for flexible multibody systems", by Sonneville, 2015, Eq 6.141, p. 90.
     :param d: Relative se(3) configuration vector, [6].
-    :param ad_inv_a0: Adjoint action for base rotation, [6, 6].
-    :param ad_inv_b0: Adjoint action for base rotation, [6, 6].
+    :param ad_inv: Adjoint action for rotation, [6, 6].
     :return: Matrix, [6, 12].
     """
 
-    return jnp.concatenate(
-        (-t_inv_se3(-d) @ ad_inv_a0, t_inv_se3(d) @ ad_inv_b0), axis=1
-    )
+    return jnp.concatenate((-t_inv_se3(-d) @ ad_inv, t_inv_se3(d) @ ad_inv), axis=1)
 
 
 def t_star(s_l: Array, d: Array) -> Array:
@@ -307,7 +323,7 @@ def t_star(s_l: Array, d: Array) -> Array:
     return s_l * t_se3(s_l * d) @ t_inv_se3(d)
 
 
-def q(s_l: Array, d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
+def q(s_l: Array, d: Array, ad_inv: Array) -> Array:
     r"""
     Matrix which described pertubations in the algebra element along an element with respect to the algebra elements at
     both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &
@@ -315,12 +331,29 @@ def q(s_l: Array, d: Array, ad_inv_a0: Array, ad_inv_b0: Array) -> Array:
     by Sonneville, 2015, Eq 6.145, p. 90.
     :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
-    :param ad_inv_a0: Adjoint action for base rotation, [6, 6].
-    :param ad_inv_b0: Adjoint action for base rotation, [6, 6].
+    :param ad_inv: Adjoint action for base rotation, [6, 6].
     :return: :math:`Q(s, \mathbf{d})` matrix, [6, 12].
     """
     t_star_ = t_star(s_l, d)
 
-    return jnp.concatenate(
-        ((jnp.eye(6) - t_star_) @ ad_inv_a0, t_star_ @ ad_inv_b0), axis=1
+    return jnp.concatenate(((jnp.eye(6) - t_star_) @ ad_inv, t_star_ @ ad_inv), axis=1)
+
+
+def q_dot(s_l: Array, d: Array, d_dot: Array, ad_inv: Array) -> Array:
+    r"""
+    Time derivative of the matrix which described pertubations in the algebra element along an element with respect to
+    the algebra elements at both ends of the element, :math:`\dot{Q}(s, \mathbf{d})`.
+    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param d: Relative se(3) configuration vector, [6].
+    :param d_dot: Time derivative of relative se(3) configuration vector, [6].
+    :param ad_inv: Adjoint action for base rotation, [6, 6].
+    :return: Time derivative of :math:`Q(s, \mathbf{d})` matrix, [6, 12].
+    """
+
+    primals, tangents = jax.jvp(
+        lambda d_: q(s_l, d_, ad_inv),
+        primals=[d],
+        tangents=[d_dot],
     )
+
+    return tangents[0]

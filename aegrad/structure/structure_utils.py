@@ -1,7 +1,7 @@
 from jax import Array, numpy as jnp
 import jax
-from aegrad.algebra.se3 import p, q
-from aegrad.algebra.integration import gauss_lobatto
+from aegrad.algebra.se3 import p, q, q_dot, ha_to_ha_hat, ha_to_ha_check
+from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
 from typing import Literal
 
 
@@ -71,7 +71,7 @@ def k_t_entry(
         k_t = jnp.zeros((12, 12))
 
     if include_geometric:
-        e = jax.jacobian(lambda d__,: p(d__, ad_inv, ad_inv))(d)
+        e = jax.jacobian(lambda d__,: p(d__, ad_inv))(d)
 
         # [12, 6, 12]
         f = jnp.einsum("ijk, kl->ijl", e, p_d)
@@ -100,7 +100,7 @@ def integrate_m_l(
     """
 
     def inner_func(s_l) -> Array:
-        q_mat = q(s_l, d, ad_inv, ad_inv)
+        q_mat = q(s_l, d, ad_inv)
         return q_mat.T @ m_cs @ q_mat
 
     f0 = jnp.zeros((12, 12)).at[:6, :6].set(ad_inv.T @ m_cs @ ad_inv)
@@ -109,22 +109,43 @@ def integrate_m_l(
     return l * gauss_lobatto(
         inner_func,
         jnp.array((0.0, 1.0)),
-        jnp.stack((f0, fl), axis=-1),
+        jnp.stack((f0, fl), axis=0),
         int_order=int_order,
     )
 
 
-# def integrate_c_l(
-#     m_cs: Array,
-#     v_ab: Array,
-#     d: Array,
-# ) -> Array:
-#     r"""
-#     Approximate the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
-#     :param m_cs: Cross sectional mass matrix, [6, 6].
-#     :param v_ab: Nodal local velocities, [12]
-#     :param d: Configuration vector, [6]
-#     :return: Integrated mass matrix, [12, 12]
-#     """
-#     # TODO: implement Gauss-Legendre
-#     raise NotImplementedError
+def integrate_c_t(
+    m_cs: Array,
+    v_ab: Array,
+    d: Array,
+    d_dot: Array,
+    ad_inv: Array,
+    l: Array,
+    int_order: Literal[1, 2, 3],
+) -> Array:
+    r"""
+    Approximate the integral :math:`C_T = C^L - \int_L \check{(\mathbf{MQv}_{AB})^{\top} \mathbf{Q} \ ds` where
+    :math:`C^L = \int_L \mathbf{Q}^{\top} ( \mathbf{M}_{cs} \dot{\mathbf{Q}} - \hat{\mathbf{Qv}_{AB}}^{\top}
+    \mathbf{M}_{cs} \mathbf{Q} ) \ ds`
+    :param m_cs: Cross sectional mass matrix, [6, 6].
+    :param v_ab: Nodal local velocities, [12]
+    :param d: Configuration vector, [6]
+    :param d_dot: Configuration velocity vector, [6]
+    :param ad_inv: Inverse adjoint matrix for element, [6, 6]
+    :param l: Element length, []
+    :param int_order: Order of integration, 1, 2, or 3
+    :return: Stacked [C_L, C_T], [2, 12, 12]
+    """
+
+    def inner_func(s_l) -> Array:
+        q_mat = q(s_l, d, ad_inv)
+        q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
+        c_l = q_mat.T @ (m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat)
+        c_t = c_l - ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
+        return jnp.stack((c_l, c_t), axis=0)
+
+    return l * gauss_legendre(
+        inner_func,
+        jnp.array((0.0, 1.0)),
+        int_order=int_order,
+    )  # [2, 12, 12]
