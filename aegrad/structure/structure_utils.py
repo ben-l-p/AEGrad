@@ -141,7 +141,7 @@ def integrate_c_t(
         q_mat = q(s_l, d, ad_inv)
         q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
         c_l = q_mat.T @ (m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat)
-        c_t = c_l - ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
+        c_t = c_l - q_mat.T @ ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
         return jnp.stack((c_l, c_t), axis=0)
 
     return l * gauss_legendre(

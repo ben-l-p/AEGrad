@@ -2,6 +2,8 @@ from __future__ import annotations
 from jax import numpy as jnp
 from jax import Array
 from typing import Optional
+from aegrad.utils import make_pytree
+from typing import Sequence
 
 
 class StaticStructure:
@@ -85,6 +87,7 @@ class DynamicStructureSnapshot:
         )
 
 
+@make_pytree
 class DynamicStructure:
     """Results of a dynamic structure analysis."""
 
@@ -165,6 +168,39 @@ class DynamicStructure:
         eps = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.eps)
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
         v_dot = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v_dot)
+        f_ext_follower = (
+            jnp.zeros((n_tstep, n_node, 6))
+            .at[0, ...]
+            .set(initial_snapshot.f_ext_follower)
+        )
+        f_ext_dead = (
+            jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_dead)
+        )
         f_int = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_int)
         t = jnp.zeros((n_tstep,)).at[0].set(initial_snapshot.t)
-        return cls(hg, d, d_dot, eps, v, v_dot, f_int, t)
+        return cls(hg, d, d_dot, eps, v, v_dot, f_ext_follower, f_ext_dead, f_int, t)
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        r"""
+        Get names of static attributes in dynamic beam
+        """
+        return ()
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        r"""
+        Get names of dynamic attributes in dynamic beam
+        """
+        return (
+            "hg",
+            "d",
+            "d_dot",
+            "eps",
+            "v",
+            "v_dot",
+            "f_ext_follower",
+            "f_ext_dead",
+            "f_int",
+            "t",
+        )

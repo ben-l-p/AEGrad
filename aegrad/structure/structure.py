@@ -11,7 +11,7 @@ from aegrad.structure.data_structures import (
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import k_t_entry, integrate_m_l, integrate_c_t
-from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
+from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, t_se3
 from aegrad.structure.time_integration import get_integration_parameters
 from typing import Optional, Sequence, Literal
 from functools import partial
@@ -218,20 +218,20 @@ class Structure:
         )
 
     def _make_c_t(
-        self, d: Array, d_dot: Array, v_ab: Array, int_order: Literal[1, 2, 3] = 3
+        self, d: Array, d_dot: Array, v: Array, int_order: Literal[1, 2, 3] = 3
     ) -> tuple[Array, Array]:
         r"""
         Assemble tangent gyroscopic matrix.
         :param d: Element relative configuration, [n_elem, 6]
         :param d_dot: Element relative velocity, [n_elem, 6]
-        :param v_ab: Velocities in local frames, [n_node, 6]
+        :param v: Velocities in local frames, [n_node, 6]
         :param int_order: Integration order,
         :return: Elementwise gyroscopic C_L and C_T matrices, [n_elem, 12, 12], [n_elem, 12, 12]
         """
         clt = vmap(partial(integrate_c_t, int_order=int_order), (0, 0, 0, 0, 0, 0), 0)(
             self.m_cs,
             jnp.concatenate(
-                (v_ab[self.connectivity[:, 0], :], v_ab[self.connectivity[:, 1], :]),
+                (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]),
                 axis=-1,
             ),
             d,
@@ -248,8 +248,8 @@ class Structure:
         m_t: Array,
         c_t: Array,
         k_t: Array,
-        gamma_prime: float,
-        beta_prime: float,
+        gamma_prime: Array,
+        beta_prime: Array,
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
@@ -372,6 +372,20 @@ class Structure:
 
         return vmap(hg_to_d, (0, 0), 0)(haha0, haha1)  # [n_elem, 6]
 
+    def _make_d_dot(self, p_d: Array, v: Array) -> Array:
+        r"""
+        Compute the time derivative of the element relative configuration vectors from the nodal velocities.
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param v: Nodal velocities in global frame, [n_node, 6]
+        :return: Element relative velocity vectors, [n_elem, 6]
+        """
+
+        v_elem = jnp.concatenate(
+            (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]), axis=-1
+        )  # [n_elem, 12]
+
+        return jnp.einsum("ijk,ik->ij", p_d, v_elem)  # [n_elem, 6]
+
     def _make_f_res(
         self,
         p_d: Array,
@@ -418,7 +432,7 @@ class Structure:
 
     def make_prescribed_dofs_array(
         self,
-        prescribed_dofs: Sequence[int] | Array | slice | int,
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
     ) -> Array:
         # degrees of freedom which are prescribed
         if isinstance(prescribed_dofs, slice) or isinstance(prescribed_dofs, Sequence):
@@ -427,6 +441,8 @@ class Structure:
             return jnp.array([prescribed_dofs])
         elif isinstance(prescribed_dofs, Array):
             return prescribed_dofs
+        elif prescribed_dofs is None:
+            return jnp.array([], dtype=int)
         else:
             raise TypeError(
                 "prescribed_dofs must be an int, slice, Sequence[int], or Array"
@@ -612,13 +628,12 @@ class Structure:
         self,
         init_state: Optional[DynamicStructureSnapshot | StaticStructure],
         n_tstep: int,
-        dt: Array,
+        dt: Array | float,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
-        prescribed_dofs: Sequence[int] | Array | slice | int,
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
         include_material: bool = True,
         include_geometric: bool = False,
-        load_steps: int = 1,
         max_iter: int = 40,
         spectral_radius: float = 0.9,
         rel_tol: float = 1e-7,
@@ -635,7 +650,6 @@ class Structure:
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param include_material: If True, include material stiffness contribution.
         :param include_geometric: If True, include geometric stiffness contribution.
-        :param load_steps: Number of load steps to apply the external loads over.
         :param max_iter: Maximum number of Newton-Raphson iterations per load step.
         :param rel_tol: Relative tolerance for convergence. measured for resultant forces relative to maximum applied
         force.
@@ -656,7 +670,7 @@ class Structure:
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
-        n_solve_dofs = solve_dofs.shape[0]
+        n_solve_dofs = len(solve_dofs)
 
         # check and process external forces
         def check_force(arr: Optional[Array], name: str) -> Optional[Array]:
@@ -680,42 +694,118 @@ class Structure:
         )  # [n_tstep, n_node, 6]
 
         # time integration parameters
+        dt: Array = jnp.array(dt)
         gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
 
-        # data structure to hold results
-        result = DynamicStructure.initialise(init_state_, n_tstep)
+        def _update(
+            i_ts: int,
+            hg_n: Array,
+            d_n_n: Array,
+            n_n: Array,
+            v_n: Array,
+            v_dot_n: Array,
+            f_res_n: Array,
+        ) -> tuple[int, Array, Array, Array, Array, Array, Array]:
+            # base parameters
+            d_n = self._make_d(hg_n)  # [n_elem, 6]
+            p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
+            eps_n = self._make_eps(d_n)  # [n_elem, 6]
+            d_dot_n = self._make_d_dot(p_d_n, v_n)  # [n_elem, 6]
+            t_n = vmap(t_se3, 0, 0)(n_n)  # [n_node, 6, 6]
 
-        # def _update(
-        #     hg_n: Array,
-        #     f_res_n: Array,
-        # ) -> tuple[int, Array, Array]:
-        #     pass
-        #
-        # def _convergence(
-        #     _: Array,
-        #     f_res: Array,
-        # ) -> Array:
-        #     pass
-        #
-        # def inner_loop(
-        #     args: tuple[Array, Array],
-        # ) -> tuple[Array, Array]:
-        #     pass
-        #
-        # def load_step_func(
-        #     carry: tuple[Array, Array],
-        # ) -> tuple[Array, Array]:
-        #     pass
-        #
-        # (
-        #     hg,
-        #     g_res,
-        # ) = jax.lax.fori_loop(
-        #     0,
-        #     load_steps,
-        #     load_step_func,
-        #     (
-        #         self.hg0,
-        #         jnp.zeros(n_solve_dofs),
-        #     ),
-        # )[:2]
+            # tangent matrices
+            m_t = self._make_m_t(d_n)  # [n_elem, 12, 12]
+            c_l, c_t = self._make_c_t(
+                d_n, d_dot_n, v_n
+            )  # [n_elem, 12, 12], [n_elem, 12, 12]
+            k_t = self._make_k_t(
+                d_n, p_d_n, eps_n, include_material, include_geometric
+            )  # [n_elem, 12, 12]
+
+            # transform tangent stiffness with tangent operator
+            k_t_t_upper = jnp.einsum(
+                "ijk,ikl->ijl", k_t[..., :6], t_n[self.connectivity[:, 0], ...]
+            )  # [n_elem, 12, 6]
+            k_t_t_lower = jnp.einsum(
+                "ijk,ikl->ijl", k_t[..., 6:], t_n[self.connectivity[:, 1], ...]
+            )  # [n_elem, 12, 6]
+            k_t_t = jnp.concatenate(
+                (k_t_t_upper, k_t_t_lower), axis=-1
+            )  # [n_elem, 12, 12]
+
+            # residual forces, [n_solve_dofs]
+            f_res_n_solve = self._make_f_res(
+                p_d_n,
+                eps_n,
+                hg_n,
+                f_ext_follower[i_ts, ...] if f_ext_follower is not None else None,
+                f_ext_dead[i_ts, ...] if f_ext_dead is not None else None,
+                True,
+                m_t,
+                c_l,
+                v_n,
+                v_dot_n,
+            )[solve_dofs]
+
+            # system matrix, [n_solve_dofs, n_solve_dofs]
+            sys_mat = self._assemble_matrix_from_entries(
+                self._make_sys_matrix(m_t, c_t, k_t_t, gamma_prime, beta_prime)
+            )[jnp.ix_(solve_dofs, solve_dofs)]
+
+            # solve for configuration increment, [n_solve_dofs]
+            d_n_np1 = -jnp.linalg.solve(sys_mat, f_res_n_solve)
+            n_np1 = n_n.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
+
+            # update configuration, velocities and accelerations
+            v_np1 = v_n.ravel().at[solve_dofs].add(gamma_prime * d_n_np1).reshape(-1, 6)
+            v_dot_np1 = (
+                v_dot_n.ravel().at[solve_dofs].add(beta_prime * d_n_np1).reshape(-1, 6)
+            )
+
+            return i_ts, hg_n, d_n_np1, n_np1, v_np1, v_dot_np1, f_res_n
+
+        def _convergence(
+            i_ts: int,
+            hg_np1: Array,
+            d_n_np1: Array,
+            n_np1: Array,
+            v_np1: Array,
+            v_dot_np1: Array,
+            f_res_n: Array,
+        ) -> Array:
+            return jnp.linalg.norm(d_n_np1) < abs_tol
+
+        def inner_loop(
+            i_ts: int, sol: DynamicStructureSnapshot
+        ) -> DynamicStructureSnapshot:
+            n_init = jnp.zeros((self.n_nodes, 6))
+            d_n_init = jnp.zeros(n_solve_dofs)
+            f_res_init = jnp.zeros(n_solve_dofs)
+            v_init = sol.v[i_ts - 1, :]
+            v_dot_init = sol.v_dot[i_ts - 1, :]
+
+            _, _, _, n, v, v_dot, _ = equinox.internal.while_loop(
+                lambda args_: _convergence(*args_),
+                lambda args_: _update(*args_),
+                (
+                    i_ts,
+                    sol.hg[i_ts - 1, ...],
+                    d_n_init,
+                    n_init,
+                    v_init,
+                    v_dot_init,
+                    f_res_init,
+                ),
+                max_steps=max_iter,
+                kind="bounded" if max_iter is not None else "lax",
+            )
+
+            hg_np1 = self._update_hg(sol.hg[i_ts - 1, ...], n)
+            sol.hg = sol.hg.at[i_ts, ...].set(hg_np1)
+            sol.v = sol.v.at[i_ts, ...].set(v)
+            sol.v_dot = sol.v_dot.at[i_ts, ...].set(v_dot)
+            return sol
+
+        return jax.lax.fori_loop(
+            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_, n_tstep)
+        )

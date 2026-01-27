@@ -356,4 +356,4 @@ def q_dot(s_l: Array, d: Array, d_dot: Array, ad_inv: Array) -> Array:
         tangents=[d_dot],
     )
 
-    return tangents[0]
+    return tangents
