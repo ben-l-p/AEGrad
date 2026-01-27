@@ -3,27 +3,43 @@ from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import numpy as np
 
-v_init = jnp.array((1.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-l = 3.14
-coords = jnp.zeros((2, 3)).at[1, 0].set(l)
-conn = jnp.array([[0, 1]])
-y_vect = jnp.array([[0.0, 1.0, 0.0]])
-k_cs = jnp.diag(jnp.full(6, 1e9))
-m_bar = 5.0 * jnp.eye(3)
-j_bar = 0.1 * jnp.eye(3)
-m_cs = block_diag(m_bar, j_bar)
 
-n_tstep = 10
-dt = 0.001
+class TestConstXVelocityXBeam:
+    v_direction_index: int = 0
+    beam_direction_index: int = 0
+    y_vect = jnp.array([[0.0, 1.0, 0.0]])
 
-struct = Structure(2, conn, y_vect, None)
-struct.set_design_variables(coords, k_cs, m_cs)
+    @classmethod
+    def test_const_velocity_beam(cls):
+        v_mag: float = 50.0
+        l = 3.14
 
-init_cond = struct.reference_configuration().to_dynamic()
-init_cond.v = jnp.broadcast_to(v_init[None, :], (2, 6))
+        v_init = jnp.zeros((2, 6)).at[:, cls.v_direction_index].set(v_mag)
 
-output = struct.dynamic_solve(init_cond, n_tstep, dt, None, None, None)
-x_t = np.array(output.hg[:, 0, :3, 3])
+        coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(l)
+        conn = jnp.array([[0, 1]])
 
+        k_cs = jnp.diag(jnp.full(6, 1e9))
+        m_bar = 5.0 * jnp.eye(3)
+        j_bar = 0.1 * jnp.eye(3)
+        m_cs = block_diag(m_bar, j_bar)
 
-pass
+        n_tstep = 10
+        dt = 0.001
+
+        struct = Structure(2, conn, cls.y_vect, None)
+        struct.set_design_variables(coords, k_cs, m_cs)
+
+        init_cond = struct.reference_configuration().to_dynamic()
+        init_cond.v = v_init
+
+        output = struct.dynamic_solve(
+            init_cond, n_tstep, dt, None, None, None, max_iter=5
+        )
+        x_t = np.array(output.hg[:, 0, cls.v_direction_index, 3])  # [n_tstep]
+
+        expected_x_t = jnp.arange(n_tstep) * dt * v_mag  # [n_tstep]
+
+        assert np.allclose(expected_x_t, x_t), (
+            "Beam with constant initial velocity did not maintain constant velocity."
+        )

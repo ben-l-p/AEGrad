@@ -12,7 +12,7 @@ from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import k_t_entry, integrate_m_l, integrate_c_t
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, t_se3
-from aegrad.structure.time_integration import get_integration_parameters
+from aegrad.structure.time_integration import get_integration_parameters, predict_n
 from typing import Optional, Sequence, Literal
 from functools import partial
 
@@ -695,7 +695,7 @@ class Structure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
+        beta, gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
 
         def _update(
             i_ts: int,
@@ -778,7 +778,7 @@ class Structure:
         def inner_loop(
             i_ts: int, sol: DynamicStructureSnapshot
         ) -> DynamicStructureSnapshot:
-            n_init = jnp.zeros((self.n_nodes, 6))
+            n_init = predict_n(dt, beta, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
             d_n_init = jnp.zeros(n_solve_dofs)
             f_res_init = jnp.zeros(n_solve_dofs)
             v_init = sol.v[i_ts - 1, :]
