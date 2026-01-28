@@ -29,7 +29,7 @@ def check_arr_shape(
 
     message = f"Expected shapes {expected_shape}, but got shapes {actual_shape}."
     if name is not None:
-        message += f"Issue with input_ '{name}'"
+        message += f"Issue with input '{name}'"
     raise ValueError(message)
 
 
@@ -44,7 +44,7 @@ def check_arr_ndim(arr: Array, expected_ndim: int, name: Optional[str]) -> None:
     if actual_ndim != expected_ndim:
         message = f"Expected {expected_ndim} dimensions, but got {actual_ndim}."
         if name is not None:
-            message += f"Issue with input_ '{name}'"
+            message += f"Issue with input '{name}'"
         raise ValueError(message)
 
 
@@ -67,7 +67,7 @@ def check_arr_dtype(arr: Array, expected_dtype: type, name: Optional[str]) -> No
     if not jnp.issubdtype(actual_dtype, jax_dtype):
         message = f"Expected {jax_dtype}, but got {actual_dtype}."
         if name is not None:
-            message += f"Issue with input_ '{name}'"
+            message += f"Issue with input '{name}'"
         raise ValueError(message)
 
 

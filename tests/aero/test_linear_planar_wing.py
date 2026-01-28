@@ -2,10 +2,10 @@ from __future__ import annotations
 from aegrad.aero.uvlm_utils import make_rectangular_grid
 from aegrad.aero.data_structures import GridDiscretization, InputUnflattened
 from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero.linear import LinearWakeType
+from aegrad.aero.linear_uvlm import LinearWakeType
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as rot
-from aegrad.aero.case import UVLM
+from aegrad.aero.uvlm import UVLM
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
 from aegrad.print_output import set_verbosity, VerbosityLevel
 from pathlib import Path

@@ -8,6 +8,7 @@ from aegrad.structure.data_structures import (
     DynamicStructure,
     DynamicStructureSnapshot,
 )
+from aegrad.print_output import warn, warn_if_32_bit
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import k_t_entry, integrate_m_l, integrate_c_t
@@ -56,6 +57,12 @@ class Structure:
             6 * self.connectivity[:, [1]] + jnp.arange(6)[None, :]
         )
 
+        # allow for a single y_vector to be broadcast to all elements
+        if y_vector.shape == (3,):
+            y_vector = y_vector[None, :]
+        if y_vector.shape == (1, 3):
+            y_vector = jnp.broadcast_to(y_vector, (self.n_elem, 3))
+
         check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
         self.y_vector: Array = y_vector
 
@@ -98,6 +105,11 @@ class Structure:
         self.k_cs = self.k_cs.at[...].set(k_cs)
         if m_cs is not None:
             self.m_cs = self.m_cs.at[...].set(m_cs)
+        else:
+            if self.use_gravity:
+                warn(
+                    "No mass matrices provided, but gravity is enabled. Assuming zero mass."
+                )
         self.x0 = self.x0.at[...].set(coords)
 
         # obtain initial orientation and length
@@ -142,8 +154,10 @@ class Structure:
         """
         return StaticStructure(
             self.hg0,
+            self.connectivity,
             self.d0,
             jnp.zeros((self.n_elem, 6)),
+            jnp.zeros((self.n_nodes, 6)),
             jnp.zeros((self.n_nodes, 6)),
             jnp.zeros((self.n_nodes, 6)),
             jnp.zeros((self.n_nodes, 6)),
@@ -478,6 +492,9 @@ class Structure:
         if load_steps < 1:
             raise ValueError("load_steps must be at least 1")
 
+        # add a warning if using 32-bit floats
+        warn_if_32_bit()
+
         # check inputs
         if f_ext_follower is not None:
             check_arr_shape(f_ext_follower, (self.n_nodes, 6), "f_ext_follower")
@@ -595,7 +612,7 @@ class Structure:
 
         (
             hg,
-            g_res,
+            f_res,
         ) = jax.lax.fori_loop(
             0,
             load_steps,
@@ -610,18 +627,29 @@ class Structure:
         d_n_ = self._make_d(hg)
         p_d_ = self._make_p_d(d_n_)
         eps_ = self._make_eps(d_n_)  # [n_elem, 6]
+        m_t = self._make_m_t(d_n_) if self.use_gravity else None
 
-        f_int_ = self._assemble_vector_from_entries(
-            self._make_f_int(p_d_, eps_)
-        ).reshape(-1, 6)  # [n_node, 6]
+        # warn if NaNs in results - there is no error checking within the solver itself
+        if jnp.isnan(hg).any() or jnp.isnan(f_res).any():
+            warn("Static solve resulted in NaN values.")
 
         return StaticStructure(
             hg=hg,
+            conn=self.connectivity,
             d=d_n_,
             eps=eps_,
-            f_int=f_int_,
+            f_int=self._assemble_vector_from_entries(
+                self._make_f_int(p_d_, eps_)
+            ).reshape(-1, 6),
             f_ext_follower=f_ext_follower,
-            f_ext_dead=None,
+            f_ext_dead=self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
+            if f_ext_dead is not None
+            else None,
+            f_grav=self._assemble_vector_from_entries(
+                self._make_f_grav(m_t, hg[:, :3, :3])
+            ).reshape(-1, 6)
+            if self.use_gravity
+            else None,
         )
 
     def dynamic_solve(
@@ -656,6 +684,9 @@ class Structure:
         :param abs_tol: Absolute tolerance for convergence.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
+
+        # add a warning if using 32-bit floats
+        warn_if_32_bit()
 
         # set up initial state
         if init_state is None:

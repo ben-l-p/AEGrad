@@ -31,7 +31,7 @@ from aegrad.print_output import print_with_time, warn
 from aegrad.plotting.pvd import write_pvd
 
 if TYPE_CHECKING:
-    from aegrad.aero.case import UVLM
+    from aegrad.aero.uvlm import UVLM
 
 
 class LinearWakeType(Enum):

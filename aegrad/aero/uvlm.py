@@ -30,7 +30,7 @@ from aegrad.aero.aic import (
 )
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
-from aegrad.aero.linear import LinearUVLM, LinearWakeType
+from aegrad.aero.linear_uvlm import LinearUVLM, LinearWakeType
 from aegrad.print_output import print_with_time, warn, jax_print
 from aegrad.plotting.pvd import write_pvd
 

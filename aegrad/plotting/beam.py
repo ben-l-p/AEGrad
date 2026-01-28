@@ -85,6 +85,8 @@ def plot_beam_to_vtk(
     # attach node (point) data
     if node_scalar_data is not None:
         for name, arr in node_scalar_data.items():
+            if arr is None:
+                continue
             arr = jnp.asarray(arr)
             if arr.shape[0] != nodes.shape[0]:
                 raise ValueError(
@@ -94,6 +96,8 @@ def plot_beam_to_vtk(
 
     if node_vector_data is not None:
         for name, arr in node_vector_data.items():
+            if arr is None:
+                continue
             arr = jnp.asarray(arr)
             if arr.shape != nodes.shape:
                 raise ValueError(
@@ -107,6 +111,8 @@ def plot_beam_to_vtk(
     # attach cell data
     if cell_scalar_data is not None:
         for name, arr in cell_scalar_data.items():
+            if arr is None:
+                continue
             arr = jnp.asarray(arr)
             if arr.shape[0] != conn.shape[0]:
                 raise ValueError(
@@ -116,6 +122,8 @@ def plot_beam_to_vtk(
 
     if cell_vector_data is not None:
         for name, arr in cell_vector_data.items():
+            if arr is None:
+                continue
             arr = jnp.asarray(arr)
             if arr.shape[0] != conn.shape[0] or arr.shape[1] != 3:
                 raise ValueError(

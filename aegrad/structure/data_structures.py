@@ -26,6 +26,7 @@ class StaticStructure:
         eps: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_grav: Optional[Array],
         f_int: Array,
         local: bool = True,
     ):
@@ -35,6 +36,7 @@ class StaticStructure:
         self.eps: Array = eps  # [n_elem, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
         self.f_int: Array = f_int  # [n_nodes, 6]
         self.local: bool = local
 
@@ -57,6 +59,7 @@ class StaticStructure:
             v_dot=zero_v_dot,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
+            f_grav=self.f_grav,
             f_int=self.f_int,
             t=zero_time,
             i_ts=-1,
@@ -71,6 +74,10 @@ class StaticStructure:
             self.f_ext_dead = self.f_ext_dead.at[...].set(
                 jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_dead)
             )
+        if self.f_grav is not None:
+            self.f_grav = self.f_grav.at[...].set(
+                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_grav)
+            )
         self.f_int = self.f_int.at[...].set(
             jnp.einsum("ijk,ik->ij", nodal_chi, self.f_int)
         )
@@ -83,9 +90,7 @@ class StaticStructure:
         else:
             self.local = False
 
-        nodal_chi = vmap(chi, 0, 0)(
-            jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
-        )  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
@@ -96,7 +101,10 @@ class StaticStructure:
         else:
             self.local = True
 
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(
+            jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
+        )  # [n_nodes, 6, 6]
+
         self._transform(nodal_chi)
 
     def plot(self, directory: PathLike) -> Path:
@@ -120,9 +128,11 @@ class DynamicStructureSnapshot:
         v_dot: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_grav: Optional[Array],
         f_int: Array,
         t: Array,
         i_ts: int,
+        local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -133,9 +143,11 @@ class DynamicStructureSnapshot:
         self.v_dot: Array = v_dot  # [n_nodes, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
         self.f_int: Array = f_int  # [n_nodes, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
+        self.local: bool = local
 
     def to_static(self) -> StaticStructure:
         """Extract static structure results from the snapshot."""
@@ -146,6 +158,7 @@ class DynamicStructureSnapshot:
             eps=self.eps,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
+            f_grav=self.f_grav,
             f_int=self.f_int,
         )
 
@@ -157,6 +170,10 @@ class DynamicStructureSnapshot:
         if self.f_ext_dead is not None:
             self.f_ext_dead = self.f_ext_dead.at[...].set(
                 jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_dead)
+            )
+        if self.f_grav is not None:
+            self.f_grav = self.f_grav.at[...].set(
+                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_grav)
             )
         self.f_int = self.f_int.at[...].set(
             jnp.einsum("ijk,ik->ij", nodal_chi, self.f_int)
@@ -174,9 +191,7 @@ class DynamicStructureSnapshot:
         else:
             self.local = False
 
-        nodal_chi = vmap(chi, 0, 0)(
-            jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
-        )  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
@@ -187,7 +202,9 @@ class DynamicStructureSnapshot:
         else:
             self.local = True
 
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(
+            jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
+        )  # [n_nodes, 6, 6]
         self._transform(nodal_chi)
 
     def plot(self, directory: PathLike) -> Path:
@@ -212,6 +229,12 @@ class DynamicStructureSnapshot:
         m_ext_dead = (
             data.f_ext_dead[:, 3:] if data.f_ext_dead is not None else None
         )  # [n_nodes, 3]
+        f_ext_grav = (
+            data.f_grav[:, :3] if data.f_grav is not None else None
+        )  # [n_nodes, 3]
+        m_ext_grav = (
+            data.f_grav[:, 3:] if data.f_grav is not None else None
+        )  # [n_nodes, 3]
         f_int = data.f_int[:, :3]  # [n_nodes, 3]
         m_int = data.f_int[:, 3:]  # [n_nodes, 3]
 
@@ -232,6 +255,8 @@ class DynamicStructureSnapshot:
             "m_ext_follower": m_ext_follower,
             "f_ext_dead": f_ext_dead,
             "m_ext_dead": m_ext_dead,
+            "f_ext_grav": f_ext_grav,
+            "m_ext_grav": m_ext_grav,
             "f_int": f_int,
             "m_int": m_int,
             "v_linear": v_lin,
@@ -267,6 +292,7 @@ class DynamicStructure:
         v_dot: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_grav: Optional[Array],
         f_int: Array,
         t: Array,
     ):
@@ -279,6 +305,7 @@ class DynamicStructure:
         self.v_dot: Array = v_dot  # [n_tstep, n_nodes, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes, 6]
         self.f_int: Array = f_int  # [n_tstep, n_nodes, 6]
         self.t: Array = t  # [n_tstep]
 
@@ -295,6 +322,7 @@ class DynamicStructure:
             f_ext_dead=self.f_ext_dead[i_ts, ...]
             if self.f_ext_dead is not None
             else None,
+            f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_int=self.f_int[i_ts, ...],
         )
 
@@ -314,6 +342,7 @@ class DynamicStructure:
             f_ext_dead=self.f_ext_dead[i_ts, ...]
             if self.f_ext_dead is not None
             else None,
+            f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_int=self.f_int[i_ts, ...],
             t=self.t[i_ts],
             i_ts=i_ts,
@@ -347,10 +376,22 @@ class DynamicStructure:
         f_ext_dead = (
             jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_dead)
         )
+        f_grav = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
         f_int = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_int)
         t = jnp.zeros((n_tstep,)).at[0].set(initial_snapshot.t)
         return cls(
-            hg, conn, d, d_dot, eps, v, v_dot, f_ext_follower, f_ext_dead, f_int, t
+            hg,
+            conn,
+            d,
+            d_dot,
+            eps,
+            v,
+            v_dot,
+            f_ext_follower,
+            f_ext_dead,
+            f_grav,
+            f_int,
+            t,
         )
 
     @staticmethod

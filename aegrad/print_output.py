@@ -39,6 +39,14 @@ def warn(message: str) -> None:
         print(make_color(f"Warning: {message}", Colour.YELLOW))
 
 
+def warn_if_32_bit() -> None:
+    if not jax.config.read("jax_enable_x64"):
+        warn(
+            'Running with 32-bit floating point precision. Using 64-bit with "jax.config.update("jax_enable_x64", '
+            'True)" is recommended'
+        )
+
+
 def jax_print(message: str, verbose_level=VERBOSITY_LEVEL.VERBOSE, **kwargs) -> None:
     if VERBOSITY_LEVEL.value >= verbose_level.value:
         jax.debug.print(message, **kwargs)
