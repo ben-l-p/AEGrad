@@ -14,8 +14,6 @@ class TestConstXVelocityXBeam:
         v_mag: float = 50.0
         l = 3.14
 
-        v_init = jnp.zeros((2, 6)).at[:, cls.v_direction_index].set(v_mag)
-
         coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(l)
         conn = jnp.array([[0, 1]])
 
@@ -24,11 +22,13 @@ class TestConstXVelocityXBeam:
         j_bar = 0.1 * jnp.eye(3)
         m_cs = block_diag(m_bar, j_bar)
 
-        n_tstep = 10
+        n_tstep = 5
         dt = 0.001
 
         struct = Structure(2, conn, cls.y_vect, None)
         struct.set_design_variables(coords, k_cs, m_cs)
+
+        v_init = jnp.zeros((2, 6)).at[:, cls.v_direction_index].set(v_mag)
 
         init_cond = struct.reference_configuration().to_dynamic()
         init_cond.v = v_init
@@ -43,3 +43,37 @@ class TestConstXVelocityXBeam:
         assert np.allclose(expected_x_t, x_t), (
             "Beam with constant initial velocity did not maintain constant velocity."
         )
+
+
+class TestConstYVelocityXBeam(TestConstXVelocityXBeam):
+    v_direction_index: int = 1
+
+
+class TestConstZVelocityXBeam(TestConstXVelocityXBeam):
+    v_direction_index: int = 2
+
+
+class TestConstXVelocityYBeam(TestConstXVelocityXBeam):
+    beam_direction_index: int = 1
+    y_vect = jnp.array([[0.0, 0.0, 1.0]])
+
+
+class TestConstYVelocityYBeam(TestConstXVelocityYBeam):
+    v_direction_index: int = 1
+
+
+class TestConstZVelocityYBeam(TestConstXVelocityYBeam):
+    v_direction_index: int = 2
+
+
+class TestConstXVelocityZBeam(TestConstXVelocityXBeam):
+    beam_direction_index: int = 2
+    y_vect = jnp.array([[1.0, 0.0, 0.0]])
+
+
+class TestConstYVelocityZBeam(TestConstXVelocityZBeam):
+    v_direction_index: int = 1
+
+
+class TestConstZVelocityZBeam(TestConstXVelocityZBeam):
+    v_direction_index: int = 2
