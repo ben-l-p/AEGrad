@@ -1,12 +1,12 @@
 from jax import numpy as jnp
 from jax import Array, vmap
 import jax
-import equinox
 from aegrad.utils import check_type
 from aegrad.structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
+    ConvergenceStatus,
 )
 from aegrad.print_output import warn, warn_if_32_bit
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
@@ -189,6 +189,9 @@ class Structure:
         vect = vect.at[self.dof_per_elem[:, :6]].add(entries[:, :6])
         return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
 
+    def _convergence_message(self, status: ConvergenceStatus) -> None:
+        pass
+
     def _make_k_t(
         self,
         d: Array,
@@ -318,7 +321,7 @@ class Structure:
         Compute the global external dead force vector.
         :param f_ext: External forces array of dead forces in global reference, [n_node, 6]
         :param rmat: Deformation rotation matrices, [n_node, 3, 3]
-        :return: External forces, [n_elem, 6]
+        :return: External forces, [n_node, 6]
         """
 
         f_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
@@ -400,6 +403,55 @@ class Structure:
 
         return jnp.einsum("ijk,ik->ij", p_d, v_elem)  # [n_elem, 6]
 
+    def _resolve_forces(
+        self,
+        hg: Array,
+        dynamic: bool,
+        f_ext_dead: Optional[Array],
+        v: Optional[Array],
+        v_dot: Optional[Array],
+    ) -> tuple[Array, Array, Optional[Array], Optional[Array], Array, Optional[Array]]:
+        r"""
+        Obtain all components of the force from a final solution
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param dynamic: Whether to compute dynamic forces
+        :param f_ext_dead: External dead forces in global reference, [n_node, 6]
+        :param v: Nodal velocities in global frame, [n_node, 6]
+        :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces and inertial forces
+        """
+        d = self._make_d(hg)
+        eps = self._make_eps(d)
+        p_d = self._make_p_d(d)
+        d_dot = self._make_d_dot(p_d, v) if dynamic else None
+        m_t = self._make_m_t(d) if self.use_gravity or dynamic else None
+        c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
+
+        if f_ext_dead is not None:
+            this_f_ext_dead = self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
+        else:
+            this_f_ext_dead = None
+
+        if self.use_gravity:
+            this_f_grav = self._assemble_vector_from_entries(
+                self._make_f_grav(m_t, hg[:, :3, :3])
+            )
+        else:
+            this_f_grav = None
+
+        this_f_int = self._assemble_vector_from_entries(
+            self._make_f_int(p_d, eps)
+        ).reshape(-1, 6)
+
+        if dynamic:
+            this_f_iner = self._assemble_vector_from_entries(
+                self._make_f_iner(m_t, c_l, v, v_dot)
+            ).reshape(-1, 6)
+        else:
+            this_f_iner = None
+
+        return d, eps, this_f_ext_dead, this_f_grav, this_f_int, this_f_iner
+
     def _make_f_res(
         self,
         p_d: Array,
@@ -470,8 +522,7 @@ class Structure:
         include_material: bool = True,
         include_geometric: bool = False,
         load_steps: int = 1,
-        max_iter: int = 40,
-        rel_tol: float = 1e-7,
+        max_iter: Optional[int] = 40,
         abs_tol: float = 1e-9,
     ) -> StaticStructure:
         r"""
@@ -483,8 +534,6 @@ class Structure:
         :param include_geometric: Whether to include geometric stiffness contribution.
         :param load_steps: Number of load steps to apply the external loads over.
         :param max_iter: Maximum number of Newton-Raphson iterations per load step.
-        :param rel_tol: Relative tolerance for convergence. measured for resultant forces relative to maximum applied
-        force.
         :param abs_tol: Absolute tolerance for convergence.
         :return: StaticStructure dataclass containing results of the static analysis.
         """
@@ -526,9 +575,9 @@ class Structure:
 
         def _update(
             i_load_step: int,
+            converge_status_n: ConvergenceStatus,
             hg_n: Array,
-            f_res_n: Array,
-        ) -> tuple[int, Array, Array]:
+        ) -> tuple[int, ConvergenceStatus, Array]:
             # base parameters
             d_n = self._make_d(hg_n)  # [n_elem, 6]
             p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
@@ -562,94 +611,68 @@ class Structure:
 
             # update configuration, [n_nodes, 4, 4]
             hg_np1_full = self._update_hg(hg_n, d_ha_np1_full)
-            return i_load_step, hg_np1_full, f_res_n
 
-        def _convergence(
-            i_load_step: int,
-            _: Array,
-            f_res: Array,
-        ) -> Array:
-            max_res = jnp.abs(f_res).max()
-
-            # find maximum external force magnitude from both forcing types
-            max_ext = jnp.zeros(())
-            if f_ext_follower is not None:
-                max_ext = jnp.abs(f_ext_follower_steps[i_load_step, ...]).max()
-            if f_ext_dead is not None:
-                max_ext = jnp.maximum(
-                    max_ext, jnp.abs(f_ext_dead_steps[i_load_step, ...]).max()
-                )
-
-            conv_abs = max_res < abs_tol
-
-            # rely on abs_tol if external forces are very small
-            conv_rel = jax.lax.select(
-                max_ext > 1e-5, (max_res / max_ext) < rel_tol, jnp.zeros((), dtype=bool)
+            # update convergence status
+            converge_status_np1 = ConvergenceStatus(
+                d_ha_np1,
+                converge_status_n.abs_tol,
+                converge_status_n.i_iter + 1,
+                converge_status_n.n_iter,
             )
-
-            # return true if converged
-            return conv_abs | conv_rel
+            return i_load_step, converge_status_np1, hg_np1_full
 
         def inner_loop(
             i_load_step: int,
-            args: tuple[Array, Array],
-        ) -> tuple[Array, Array]:
-            hg_init, g_res_init = args
-            _, hg_solve, f_res_solve = equinox.internal.while_loop(
-                lambda args_: _convergence(*args_),
+            hg_init: Array,
+        ) -> Array:
+            _, convergence_status, hg_solve = jax.lax.while_loop(
+                lambda args_: ~args_[1].get_status(),
                 lambda args_: _update(*args_),
-                (i_load_step, hg_init, g_res_init),
-                max_steps=max_iter,
-                kind="bounded" if max_iter is not None else "lax",
+                (
+                    i_load_step,
+                    ConvergenceStatus(
+                        jnp.zeros(n_solve_dofs),
+                        jnp.array(abs_tol),
+                        jnp.zeros((), dtype=int),
+                        jnp.array(max_iter, dtype=int)
+                        if max_iter is not None
+                        else None,
+                    ),
+                    hg_init,
+                ),
             )
-            return hg_solve, f_res_solve
+
+            convergence_status.print_message(None, i_load_step)
+
+            return hg_solve
 
         def load_step_func(
             i_step: int,
-            carry: tuple[Array, Array],
-        ) -> tuple[Array, Array]:
-            return inner_loop(i_step, carry)
+            hg_: Array,
+        ) -> Array:
+            return inner_loop(i_step, hg_)
 
-        (
-            hg,
-            f_res,
-        ) = jax.lax.fori_loop(
+        hg = jax.lax.fori_loop(
             0,
             load_steps,
             load_step_func,
-            (
-                self.hg0,
-                jnp.zeros(n_solve_dofs),
-            ),
-        )[:2]
+            self.hg0,
+        )
 
         # postprocess final results
-        d_n_ = self._make_d(hg)
-        p_d_ = self._make_p_d(d_n_)
-        eps_ = self._make_eps(d_n_)  # [n_elem, 6]
-        m_t = self._make_m_t(d_n_) if self.use_gravity else None
-
-        # warn if NaNs in results - there is no error checking within the solver itself
-        if jnp.isnan(hg).any() or jnp.isnan(f_res).any():
-            warn("Static solve resulted in NaN values.")
+        d, eps, f_ext_dead_local, f_grav, f_int, _ = self._resolve_forces(
+            hg, False, f_ext_dead, None, None
+        )
 
         return StaticStructure(
             hg=hg,
             conn=self.connectivity,
-            d=d_n_,
-            eps=eps_,
-            f_int=self._assemble_vector_from_entries(
-                self._make_f_int(p_d_, eps_)
-            ).reshape(-1, 6),
+            d=d,
+            eps=eps,
+            f_int=f_int,
             f_ext_follower=f_ext_follower,
-            f_ext_dead=self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
-            if f_ext_dead is not None
-            else None,
-            f_grav=self._assemble_vector_from_entries(
-                self._make_f_grav(m_t, hg[:, :3, :3])
-            ).reshape(-1, 6)
-            if self.use_gravity
-            else None,
+            f_ext_dead=f_ext_dead_local,
+            f_grav=f_grav,
         )
 
     def dynamic_solve(
@@ -664,7 +687,6 @@ class Structure:
         include_geometric: bool = False,
         max_iter: int = 40,
         spectral_radius: float = 0.9,
-        rel_tol: float = 1e-7,
         abs_tol: float = 1e-9,
     ) -> DynamicStructure:
         r"""
@@ -730,13 +752,19 @@ class Structure:
 
         def _update(
             i_ts: int,
+            converge_status_n: ConvergenceStatus,
             hg_n: Array,
-            d_n_n: Array,
             n_n: Array,
             v_n: Array,
             v_dot_n: Array,
-            f_res_n: Array,
-        ) -> tuple[int, Array, Array, Array, Array, Array, Array]:
+        ) -> tuple[
+            int,
+            ConvergenceStatus,
+            Array,
+            Array,
+            Array,
+            Array,
+        ]:
             # base parameters
             d_n = self._make_d(hg_n)  # [n_elem, 6]
             p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
@@ -793,50 +821,80 @@ class Structure:
                 v_dot_n.ravel().at[solve_dofs].add(beta_prime * d_n_np1).reshape(-1, 6)
             )
 
-            return i_ts, hg_n, d_n_np1, n_np1, v_np1, v_dot_np1, f_res_n
+            # update convergence status
+            converge_status_np1 = ConvergenceStatus(
+                d_n_np1,
+                converge_status_n.abs_tol,
+                converge_status_n.i_iter + 1,
+                converge_status_n.n_iter,
+            )
 
-        def _convergence(
-            i_ts: int,
-            hg_np1: Array,
-            d_n_np1: Array,
-            n_np1: Array,
-            v_np1: Array,
-            v_dot_np1: Array,
-            f_res_n: Array,
-        ) -> Array:
-            return jnp.linalg.norm(d_n_np1) < abs_tol
+            return (
+                i_ts,
+                converge_status_np1,
+                hg_n,
+                n_np1,
+                v_np1,
+                v_dot_np1,
+            )
 
         def inner_loop(
             i_ts: int, sol: DynamicStructureSnapshot
         ) -> DynamicStructureSnapshot:
             n_init = predict_n(dt, beta, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
-            d_n_init = jnp.zeros(n_solve_dofs)
-            f_res_init = jnp.zeros(n_solve_dofs)
             v_init = sol.v[i_ts - 1, :]
             v_dot_init = sol.v_dot[i_ts - 1, :]
 
-            _, _, _, n, v, v_dot, _ = equinox.internal.while_loop(
-                lambda args_: _convergence(*args_),
+            _, converge_status, hg, n, v, v_dot = jax.lax.while_loop(
+                lambda args_: ~args_[1].get_status(),
                 lambda args_: _update(*args_),
                 (
                     i_ts,
+                    ConvergenceStatus(
+                        jnp.zeros(n_solve_dofs),
+                        jnp.array(abs_tol),
+                        jnp.zeros((), dtype=int),
+                        jnp.array(max_iter, dtype=int)
+                        if max_iter is not None
+                        else None,
+                    ),
                     sol.hg[i_ts - 1, ...],
-                    d_n_init,
                     n_init,
                     v_init,
                     v_dot_init,
-                    f_res_init,
                 ),
-                max_steps=max_iter,
-                kind="bounded" if max_iter is not None else "lax",
             )
 
+            converge_status.print_message(i_ts, None)
+
             hg_np1 = self._update_hg(sol.hg[i_ts - 1, ...], n)
-            sol.hg = sol.hg.at[i_ts, ...].set(hg_np1)
+            d, eps, f_ext_dead_local, f_grav, f_int, f_iner = self._resolve_forces(
+                hg_np1,
+                True,
+                f_ext_dead[i_ts, ...] if f_ext_dead is not None else None,
+                v,
+                v_dot,
+            )
+            sol.d = sol.d.at[i_ts, ...].set(d)
+            sol.eps = sol.eps.at[i_ts, ...].set(eps)
             sol.v = sol.v.at[i_ts, ...].set(v)
             sol.v_dot = sol.v_dot.at[i_ts, ...].set(v_dot)
+            sol.hg = sol.hg.at[i_ts, ...].set(hg_np1)
+            if f_ext_follower is not None:
+                sol.f_ext_follower = sol.f_ext_follower.at[i_ts, ...].set(
+                    f_ext_follower[i_ts, ...]
+                )
+            if f_ext_dead is not None:
+                sol.f_ext_dead = sol.f_ext_dead.at[i_ts, ...].set(f_ext_dead_local)
+            if self.use_gravity:
+                sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
+            sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
+            sol.f_iner = sol.f_iner.at[i_ts, ...].set(f_iner)
+
             return sol
 
-        return jax.lax.fori_loop(
+        output = jax.lax.fori_loop(
             1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_, n_tstep)
         )
+
+        return output

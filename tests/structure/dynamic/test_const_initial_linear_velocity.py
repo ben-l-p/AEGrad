@@ -2,6 +2,9 @@ from aegrad.structure.structure import Structure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import numpy as np
+import jax
+
+jax.config.update("jax_enable_x64", True)
 
 
 class TestConstXVelocityXBeam:

@@ -28,7 +28,7 @@ def geradin_beam(
     )
     struct = Structure(n_nodes, conn, y_vect[None, :])
 
-    k_coeffs = jnp.full(6, 1e15)
+    k_coeffs = jnp.full(6, 1e12)
     k_coeffs = k_coeffs.at[1:3].set(3.231e8)
     k_coeffs = k_coeffs.at[4:6].set(9.345e6)
     struct.set_design_variables(coords, jnp.diag(k_coeffs), m_cs)

@@ -34,9 +34,13 @@ def make_color(text: str, color: Colour) -> str:
     return f"\033[{color.value}m{text}\033[0m"
 
 
-def warn(message: str) -> None:
+def warn(message: str, **kwargs) -> None:
     if VERBOSITY_LEVEL.value >= VerbosityLevel.WARNING.value:
-        print(make_color(f"Warning: {message}", Colour.YELLOW))
+        jax_print(
+            make_color(f"Warning: {message}", color=Colour.YELLOW),
+            verbose_level=VerbosityLevel.WARNING,
+            **kwargs,
+        )
 
 
 def warn_if_32_bit() -> None:
@@ -47,7 +51,9 @@ def warn_if_32_bit() -> None:
         )
 
 
-def jax_print(message: str, verbose_level=VERBOSITY_LEVEL.VERBOSE, **kwargs) -> None:
+def jax_print(
+    message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
+) -> None:
     if VERBOSITY_LEVEL.value >= verbose_level.value:
         jax.debug.print(message, **kwargs)
 

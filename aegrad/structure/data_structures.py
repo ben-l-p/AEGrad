@@ -8,11 +8,62 @@ from jax import Array
 from typing import Optional
 from aegrad.utils import make_pytree
 from typing import Sequence
-from aegrad.print_output import warn
+from aegrad.print_output import warn, jax_print, VerbosityLevel
 from aegrad.algebra.base import chi
 from jax import vmap
 
 from plotting.beam import plot_beam_to_vtk
+
+
+@make_pytree
+class ConvergenceStatus:
+    def __init__(
+        self, vect: Array, abs_tol: Array, i_iter: Array, n_iter: Optional[Array]
+    ):
+        self.max_elem = jnp.abs(vect).max()
+
+        self.converged: Array = (self.max_elem < abs_tol) & (i_iter > 0)
+        self.final_iter: Array = (
+            (i_iter >= n_iter) if n_iter is not None else jnp.zeros((), dtype=bool)
+        )
+        self.has_nan: Array = jnp.isnan(vect).any()
+        self.i_iter: Array = i_iter
+        self.n_iter: Array = n_iter
+        self.abs_tol: Array = abs_tol
+
+    def get_status(self) -> Array:
+        """Get overall convergence status."""
+        return self.converged | self.has_nan | self.final_iter
+
+    def print_message(self, i_ts: Optional[int], i_load_step: Optional[int]) -> None:
+        """Print convergence message based on status."""
+
+        if i_ts is None:
+            jax_print(
+                "Load step: {i_load_step:<4} | Iterations: {i_iter:<3} | Converged: {conv:1} | Residual: {res:.03e}",
+                verbose_level=VerbosityLevel.NORMAL,
+                i_load_step=i_load_step,
+                i_iter=self.i_iter,
+                conv=self.converged,
+                res=self.max_elem,
+            )
+        else:
+            jax_print(
+                "Time step: {i_ts:<4} | Iterations: {i_iter:<3} | Converged: {conv:1} | Residual: {res:.03e}",
+                verbose_level=VerbosityLevel.NORMAL,
+                i_ts=i_ts,
+                i_iter=self.i_iter,
+                conv=self.converged,
+                res=self.max_elem,
+            )
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "n_iter", "abs_tol"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "converged", "final_iter", "has_nan", "i_iter", "max_elem"
 
 
 class StaticStructure:
@@ -43,17 +94,15 @@ class StaticStructure:
     def to_dynamic(self) -> DynamicStructureSnapshot:
         """Convert static structure results to a dynamic structure snapshot with zero velocities."""
         n_nodes = self.hg.shape[0]
-        n_elem = self.d.shape[0]
-        zero_d_dot = jnp.zeros((n_elem, 6))
         zero_v = jnp.zeros((n_nodes, 6))
         zero_v_dot = jnp.zeros((n_nodes, 6))
         zero_time = jnp.array(0.0)
+        zero_f_iner = jnp.zeros((n_nodes, 6))
 
         return DynamicStructureSnapshot(
             hg=self.hg,
             conn=self.conn,
             d=self.d,
-            d_dot=zero_d_dot,
             eps=self.eps,
             v=zero_v,
             v_dot=zero_v_dot,
@@ -61,6 +110,7 @@ class StaticStructure:
             f_ext_dead=self.f_ext_dead,
             f_grav=self.f_grav,
             f_int=self.f_int,
+            f_iner=zero_f_iner,
             t=zero_time,
             i_ts=-1,
         )
@@ -122,7 +172,6 @@ class DynamicStructureSnapshot:
         hg: Array,
         conn: Array,
         d: Array,
-        d_dot: Array,
         eps: Array,
         v: Array,
         v_dot: Array,
@@ -130,6 +179,7 @@ class DynamicStructureSnapshot:
         f_ext_dead: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
+        f_iner: Array,
         t: Array,
         i_ts: int,
         local: bool = True,
@@ -137,7 +187,6 @@ class DynamicStructureSnapshot:
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.d: Array = d  # [n_elem, 6]
-        self.d_dot: Array = d_dot  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
         self.v: Array = v  # [n_nodes, 6]
         self.v_dot: Array = v_dot  # [n_nodes, 6]
@@ -145,6 +194,7 @@ class DynamicStructureSnapshot:
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
         self.f_int: Array = f_int  # [n_nodes, 6]
+        self.f_iner: Array = f_iner  # [n_nodes, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
         self.local: bool = local
@@ -177,6 +227,9 @@ class DynamicStructureSnapshot:
             )
         self.f_int = self.f_int.at[...].set(
             jnp.einsum("ijk,ik->ij", nodal_chi, self.f_int)
+        )
+        self.f_iner = self.f_iner.at[...].set(
+            jnp.einsum("ijk,ik->ij", nodal_chi, self.f_iner)
         )
         self.v = self.v.at[...].set(jnp.einsum("ijk,ik->ij", nodal_chi, self.v))
         self.v_dot = self.v_dot.at[...].set(
@@ -235,6 +288,8 @@ class DynamicStructureSnapshot:
         m_ext_grav = (
             data.f_grav[:, 3:] if data.f_grav is not None else None
         )  # [n_nodes, 3]
+        f_iner = data.f_iner[:, :3]  # [n_nodes, 3]
+        m_iner = data.f_iner[:, 3:]  # [n_nodes,
         f_int = data.f_int[:, :3]  # [n_nodes, 3]
         m_int = data.f_int[:, 3:]  # [n_nodes, 3]
 
@@ -257,6 +312,8 @@ class DynamicStructureSnapshot:
             "m_ext_dead": m_ext_dead,
             "f_ext_grav": f_ext_grav,
             "m_ext_grav": m_ext_grav,
+            "f_iner": f_iner,
+            "m_iner": m_iner,
             "f_int": f_int,
             "m_int": m_int,
             "v_linear": v_lin,
@@ -286,7 +343,6 @@ class DynamicStructure:
         hg: Array,
         conn: Array,
         d: Array,
-        d_dot: Array,
         eps: Array,
         v: Array,
         v_dot: Array,
@@ -294,12 +350,12 @@ class DynamicStructure:
         f_ext_dead: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
+        f_iner: Array,
         t: Array,
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.d: Array = d  # [n_tstep, n_elem, 6]
-        self.d_dot: Array = d_dot  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
         self.v: Array = v  # [n_tstep, n_nodes, 6]
         self.v_dot: Array = v_dot  # [n_tstep, n_nodes, 6]
@@ -307,6 +363,7 @@ class DynamicStructure:
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes, 6]
         self.f_int: Array = f_int  # [n_tstep, n_nodes, 6]
+        self.f_iner: Array = f_iner  # [n_tstep, n_nodes, 6]
         self.t: Array = t  # [n_tstep]
 
     def to_static(self, i_ts: int) -> StaticStructure:
@@ -332,7 +389,6 @@ class DynamicStructure:
             hg=self.hg[i_ts, ...],
             conn=self.conn,
             d=self.d[i_ts, ...],
-            d_dot=self.d_dot[i_ts, ...],
             eps=self.eps[i_ts, ...],
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
@@ -343,6 +399,7 @@ class DynamicStructure:
             if self.f_ext_dead is not None
             else None,
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
+            f_iner=self.f_iner[i_ts, ...],
             f_int=self.f_int[i_ts, ...],
             t=self.t[i_ts],
             i_ts=i_ts,
@@ -364,7 +421,6 @@ class DynamicStructure:
         hg = jnp.zeros((n_tstep, n_node, 4, 4)).at[0, ...].set(initial_snapshot.hg)
         conn = initial_snapshot.conn
         d = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.d)
-        d_dot = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.d_dot)
         eps = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.eps)
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
         v_dot = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v_dot)
@@ -378,20 +434,21 @@ class DynamicStructure:
         )
         f_grav = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
         f_int = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_int)
+        f_iner = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_iner)
         t = jnp.zeros((n_tstep,)).at[0].set(initial_snapshot.t)
         return cls(
-            hg,
-            conn,
-            d,
-            d_dot,
-            eps,
-            v,
-            v_dot,
-            f_ext_follower,
-            f_ext_dead,
-            f_grav,
-            f_int,
-            t,
+            hg=hg,
+            conn=conn,
+            d=d,
+            eps=eps,
+            v=v,
+            v_dot=v_dot,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=f_ext_dead,
+            f_grav=f_grav,
+            f_int=f_int,
+            f_iner=f_iner,
+            t=t,
         )
 
     @staticmethod
@@ -409,12 +466,11 @@ class DynamicStructure:
         return (
             "hg",
             "d",
-            "d_dot",
             "eps",
             "v",
             "v_dot",
             "f_ext_follower",
             "f_ext_dead",
             "f_int",
-            "t",
+            "f_iner",
         )
