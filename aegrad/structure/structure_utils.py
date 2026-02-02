@@ -149,3 +149,21 @@ def integrate_c_t(
         jnp.array((0.0, 1.0)),
         int_order=int_order,
     )  # [2, 12, 12]
+
+
+def make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
+    r"""
+    Construct lumped damping matrix :math:`C_T` from lumped mass matrix :math:`M_{lumped}` and nodal velocities
+    :math:`\mathbf{v}`
+    :param m_lumped: Lumped mass matrix, [6, 6]
+    :param v: Nodal local velocities, [6]
+    :return: Stacked gyroscopic matrices, [2, 6, 6]
+    """
+
+    def g_iner_func(v_: Array) -> Array:
+        return -ha_to_ha_hat(v_).T @ m_lumped @ v_
+    c_l = -ha_to_ha_hat(v).T @ m_lumped  # g_iner = c_l @ v
+
+    c_t = jax.jacobian(g_iner_func)(v)  # d_{g_iner}/d_v
+
+    return jnp.stack((c_l, c_t), axis=0)

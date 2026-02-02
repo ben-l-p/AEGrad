@@ -28,10 +28,11 @@ class TestLinearAero:
         m = 4
         n = 8
         m_star = 10
+        physical_time = 1.0  # seconds
+
         c_ref = 1.0
         b_ref = 5.0
         alpha = jnp.deg2rad(0.0)
-        physical_time = 1.0  # seconds
 
         dt = c_ref / (m * flowfield.u_inf_mag)
         n_tstep = int(jnp.ceil(physical_time / dt))

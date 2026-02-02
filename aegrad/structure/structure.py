@@ -1,6 +1,7 @@
 from jax import numpy as jnp
 from jax import Array, vmap
 import jax
+from jax.scipy.linalg import block_diag
 from aegrad.utils import check_type
 from aegrad.structure.data_structures import (
     StaticStructure,
@@ -11,9 +12,18 @@ from aegrad.structure.data_structures import (
 from aegrad.print_output import warn, warn_if_32_bit
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.structure.structure_utils import k_t_entry, integrate_m_l, integrate_c_t
+from aegrad.structure.structure_utils import (
+    k_t_entry,
+    integrate_m_l,
+    integrate_c_t,
+    make_c_t_lumped,
+)
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, t_se3
-from aegrad.structure.time_integration import get_integration_parameters, predict_n
+from aegrad.structure.time_integration import (
+    get_integration_parameters,
+    predict_n,
+    predict_v,
+)
 from typing import Optional, Sequence, Literal
 from functools import partial
 
@@ -65,6 +75,7 @@ class Structure:
 
         check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
         self.y_vector: Array = y_vector
+        self.use_lumped_mass: bool = False
 
         # initialize design variables with default values
         self.x0: Array = jnp.zeros((num_nodes, 3))
@@ -72,6 +83,8 @@ class Structure:
         self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
         self.k_cs: Array = jnp.zeros((self.n_elem, 6, 6))
         self.k_l: Array = jnp.zeros((self.n_elem, 6, 6))
+        self.m_lumped: Array = jnp.zeros((num_nodes, 6, 6))
+        self.m_t_lumped: Array = jnp.zeros((self.n_dof, self.n_dof))
 
         # initialise auxiliary arrays
         self.o0: Array = jnp.zeros((self.n_elem, 3, 3))
@@ -93,13 +106,18 @@ class Structure:
             self.gravity_vec = jnp.zeros((3,))
 
     def set_design_variables(
-        self, coords: Array, k_cs: Array, m_cs: Optional[Array]
+        self,
+        coords: Array,
+        k_cs: Array,
+        m_cs: Optional[Array],
+        m_lumped: Optional[Array] = None,
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities
         :param coords: Node coordinates, [n_nodes, 3]
         :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6]
         :param m_cs: Cross-section mass matrices, [n_elem, 6, 6]
+        :param m_lumped: Lumped mass matrices at nodes, [n_nodes, 6, 6]
         """
         # populate arrays
         self.k_cs = self.k_cs.at[...].set(k_cs)
@@ -110,6 +128,11 @@ class Structure:
                 warn(
                     "No mass matrices provided, but gravity is enabled. Assuming zero mass."
                 )
+        if m_lumped is not None:
+            self.m_lumped = self.m_lumped.at[...].set(m_lumped)
+            self.m_t_lumped = self.m_t_lumped.at[...].set(block_diag(*m_lumped))
+            self.use_lumped_mass = True
+
         self.x0 = self.x0.at[...].set(coords)
 
         # obtain initial orientation and length
@@ -189,9 +212,6 @@ class Structure:
         vect = vect.at[self.dof_per_elem[:, :6]].add(entries[:, :6])
         return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
 
-    def _convergence_message(self, status: ConvergenceStatus) -> None:
-        pass
-
     def _make_k_t(
         self,
         d: Array,
@@ -225,7 +245,8 @@ class Structure:
 
     def _make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
         r"""
-        Assemble tangent mass matrix as a function of the element relative configuration vectors
+        Assemble tangent mass matrix as a function of the element relative configuration vectors. This does not include
+        the lumped mass contribution.
         :param d: Element relative configuration, [n_elem, 6]
         :param int_order: Integration order for mass matrix computation
         :return: Elementwise mass matrix, [n_elem, 12, 12]
@@ -238,7 +259,7 @@ class Structure:
         self, d: Array, d_dot: Array, v: Array, int_order: Literal[1, 2, 3] = 3
     ) -> tuple[Array, Array]:
         r"""
-        Assemble tangent gyroscopic matrix.
+        Assemble tangent gyroscopic matrix. This does not include the lumped mass contribution.
         :param d: Element relative configuration, [n_elem, 6]
         :param d_dot: Element relative velocity, [n_elem, 6]
         :param v: Velocities in local frames, [n_node, 6]
@@ -260,27 +281,44 @@ class Structure:
         ct = clt[:, 1, ...]
         return cl, ct
 
-    @staticmethod
+    def _make_c_t_lumped(self, v: Array) -> tuple[Array, Array]:
+        r"""
+        Obtain the gyroscopic matrix contribution from the lumped masses.
+        :param v: Nodal velocities in global frame, [n_node, 6]
+        :return: Gyroscopic L and T matrix entries from lumped masses, [n_node, 6, 6], [n_node, 6, 6]
+        """
+        c_t_l = vmap(make_c_t_lumped, (0, 0), 0)(self.m_lumped, v)  # [n_node, 2, 6, 6]
+        return c_t_l[:, 0, :, :], c_t_l[:, 1, :, :]
+
     def _make_sys_matrix(
+        self,
         m_t: Array,
         c_t: Array,
+        c_t_lumped: Optional[Array],
         k_t: Array,
         gamma_prime: Array,
         beta_prime: Array,
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
-        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
-        :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
-        :param k_t: Disassembled system stiffness matrix, [n_elem, 12, 12]
-        :param v: Nodal velocities in global frame, [n_node, 6]
-        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param m_t: Assembled system mass matrix, [n_dof, n_dof]
+        :param c_t: Assembled system gyroscopic matrix, [n_dof, n_dof]
+        :param c_t_lumped: Assembled system lumped gyroscopic matrix, [n_dof, n_dof]
+        :param k_t: Assembled system stiffness matrix, [n_dof, n_dof]
         :param gamma_prime: Velocity integration parameter
         :param beta_prime: Acceleration integration parameter
         :return: System matrix, [n_dof, n_dof]
         """
 
-        return m_t * beta_prime + c_t * gamma_prime + k_t
+        mat = k_t
+        if self.use_lumped_mass:
+            mat += (m_t + self.m_t_lumped) * beta_prime + (
+                c_t + c_t_lumped
+            ) * gamma_prime
+        else:
+            mat += m_t * beta_prime + c_t * gamma_prime
+
+        return mat
 
     def _make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
@@ -294,7 +332,7 @@ class Structure:
 
     def _make_f_grav(self, m_t: Array, rmat: Array) -> Array:
         r"""
-        Compute the global gravitational force vector.
+        Compute the global gravitational force vector. This does not include the lumped mass contribution.
         :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
         :param rmat: Node rotations from reference, [n_node, 3, 3]
         :return: Gravity force element vector, [n_elem, 12]
@@ -314,6 +352,18 @@ class Structure:
                 axis=1,
             ),
         )  # [n_elem, 12]
+
+    def _make_f_grav_lumped(self, rmat: Array) -> Array:
+        r"""
+        Compute the global gravitational force vector contribution from the lumped masses.
+        :param rmat: Rotation matrices at nodes, [n_node, 3, 3]
+        :return: Lumped gravity force vector, [n_node, 6]
+        """
+        f_rot = jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)  # [n_node, 3]
+        f_rot_tot = jnp.concatenate(
+            (f_rot, jnp.zeros((self.n_nodes, 3))), axis=-1
+        )  # [n_node, 6]
+        return jnp.einsum("ijk,ik->ij", self.m_lumped, f_rot_tot)  # [n_node, 6]
 
     @staticmethod
     def _make_f_dead_ext(f_ext: Array, rmat: Array) -> Array:
@@ -349,6 +399,18 @@ class Structure:
         return jnp.einsum("ijk,ik->ij", m_l, v_dot_elem) + jnp.einsum(
             "ijk,ik->ij", c_l, v_elem
         )  # [n_elem, 12]
+
+    def _make_f_iner_lumped(self, c_l_lumped: Array, v: Array, v_dot: Array) -> Array:
+        r"""
+        Obtain the contribution to the inertial forces from the lumped masses.
+        :param c_l_lumped: Gyroscopic matrix from lumped masses, [n_node, 6, 6]
+        :param v: Nodal velocities in global frame, [n_node, 6]
+        :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        :return: Inertial forces from lumped masses, [n_node, 6]
+        """
+        return jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot) + jnp.einsum(
+            "ijk,ik->ij", c_l_lumped, v
+        )  # [n_node, 6]
 
     def _make_eps(self, d: Array) -> Array:
         r"""
@@ -427,6 +489,11 @@ class Structure:
         m_t = self._make_m_t(d) if self.use_gravity or dynamic else None
         c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
 
+        if self.use_lumped_mass and dynamic:
+            c_l_lumped = self._make_c_t_lumped(v)[0]
+        else:
+            c_l_lumped = None
+
         if f_ext_dead is not None:
             this_f_ext_dead = self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
         else:
@@ -435,7 +502,9 @@ class Structure:
         if self.use_gravity:
             this_f_grav = self._assemble_vector_from_entries(
                 self._make_f_grav(m_t, hg[:, :3, :3])
-            )
+            ).reshape(-1, 6)
+            if self.use_lumped_mass:
+                this_f_grav += self._make_f_grav_lumped(hg[:, :3, :3])
         else:
             this_f_grav = None
 
@@ -447,6 +516,8 @@ class Structure:
             this_f_iner = self._assemble_vector_from_entries(
                 self._make_f_iner(m_t, c_l, v, v_dot)
             ).reshape(-1, 6)
+            if self.use_lumped_mass:
+                this_f_iner += self._make_f_iner_lumped(c_l_lumped, v, v_dot)
         else:
             this_f_iner = None
 
@@ -462,6 +533,7 @@ class Structure:
         dynamic: bool,
         m_t: Optional[Array],
         c_l: Optional[Array],
+        c_l_lumped: Optional[Array],
         v: Optional[Array],
         v_dot: Optional[Array],
     ) -> Array:
@@ -479,6 +551,12 @@ class Structure:
             f_res_vect -= f_ext_follower_n.reshape(self.n_dof).ravel()
         if f_ext_dead_n is not None:
             f_res_vect -= self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
+
+        if self.use_lumped_mass:
+            if dynamic:
+                f_res_vect += self._make_f_iner_lumped(c_l_lumped, v, v_dot).ravel()
+            if self.use_gravity:
+                f_res_vect -= self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
 
         return f_res_vect  # [n_dof]
 
@@ -522,6 +600,7 @@ class Structure:
         include_material: bool = True,
         include_geometric: bool = False,
         load_steps: int = 1,
+        relaxation_factor: float = 1.0,
         max_iter: Optional[int] = 40,
         abs_tol: float = 1e-9,
     ) -> StaticStructure:
@@ -533,6 +612,7 @@ class Structure:
         :param include_material: Whether to include material stiffness contribution.
         :param include_geometric: Whether to include geometric stiffness contribution.
         :param load_steps: Number of load steps to apply the external loads over.
+        :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
         :param max_iter: Maximum number of Newton-Raphson iterations per load step.
         :param abs_tol: Absolute tolerance for convergence.
         :return: StaticStructure dataclass containing results of the static analysis.
@@ -549,6 +629,9 @@ class Structure:
             check_arr_shape(f_ext_follower, (self.n_nodes, 6), "f_ext_follower")
         if f_ext_dead is not None:
             check_arr_shape(f_ext_dead, (self.n_nodes, 6), "f_ext_dead")
+
+        if not (0.0 < relaxation_factor <= 1.0):
+            raise ValueError("relaxation_factor must be in the range (0, 1]")
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -602,10 +685,11 @@ class Structure:
                 None,
                 None,
                 None,
+                None,
             )[solve_dofs]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_ha_np1 = -jnp.linalg.solve(k_t_n, f_res_n_solve)
+            d_ha_np1 = -jnp.linalg.solve(k_t_n, f_res_n_solve) * relaxation_factor
             d_ha_np1_full = jnp.zeros(self.n_dof)
             d_ha_np1_full = d_ha_np1_full.at[solve_dofs].set(d_ha_np1)
 
@@ -685,6 +769,7 @@ class Structure:
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         include_material: bool = True,
         include_geometric: bool = False,
+        relaxation_factor: float = 1.0,
         max_iter: int = 40,
         spectral_radius: float = 0.9,
         abs_tol: float = 1e-9,
@@ -700,9 +785,8 @@ class Structure:
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param include_material: If True, include material stiffness contribution.
         :param include_geometric: If True, include geometric stiffness contribution.
+        :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
         :param max_iter: Maximum number of Newton-Raphson iterations per load step.
-        :param rel_tol: Relative tolerance for convergence. measured for resultant forces relative to maximum applied
-        force.
         :param abs_tol: Absolute tolerance for convergence.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
@@ -719,6 +803,9 @@ class Structure:
             init_state_ = init_state.to_dynamic()
         else:
             init_state_ = init_state
+
+        if not (0.0 < relaxation_factor <= 1.0):
+            raise ValueError("relaxation_factor must be in the range (0, 1]")
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -748,7 +835,7 @@ class Structure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        beta, gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
+        gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
 
         def _update(
             i_ts: int,
@@ -781,6 +868,13 @@ class Structure:
                 d_n, p_d_n, eps_n, include_material, include_geometric
             )  # [n_elem, 12, 12]
 
+            if self.use_lumped_mass:
+                c_l_lumped, c_t_lumped = self._make_c_t_lumped(
+                    v_n
+                )  # [n_node, 6, 6], [n_node, 6, 6]
+            else:
+                c_l_lumped, c_t_lumped = None, None
+
             # transform tangent stiffness with tangent operator
             k_t_t_upper = jnp.einsum(
                 "ijk,ikl->ijl", k_t[..., :6], t_n[self.connectivity[:, 0], ...]
@@ -802,17 +896,20 @@ class Structure:
                 True,
                 m_t,
                 c_l,
+                c_l_lumped,
                 v_n,
                 v_dot_n,
             )[solve_dofs]
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
             sys_mat = self._assemble_matrix_from_entries(
-                self._make_sys_matrix(m_t, c_t, k_t_t, gamma_prime, beta_prime)
+                self._make_sys_matrix(
+                    m_t, c_t, c_t_lumped, k_t_t, gamma_prime, beta_prime
+                )
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_n_np1 = -jnp.linalg.solve(sys_mat, f_res_n_solve)
+            d_n_np1 = -jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
             n_np1 = n_n.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
@@ -841,9 +938,9 @@ class Structure:
         def inner_loop(
             i_ts: int, sol: DynamicStructureSnapshot
         ) -> DynamicStructureSnapshot:
-            n_init = predict_n(dt, beta, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
-            v_init = sol.v[i_ts - 1, :]
-            v_dot_init = sol.v_dot[i_ts - 1, :]
+            n_init = predict_n(dt, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
+            v_init = predict_v(dt, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
+            v_dot_init = sol.v_dot[i_ts - 1, ...]
 
             _, converge_status, hg, n, v, v_dot = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
@@ -893,8 +990,9 @@ class Structure:
 
             return sol
 
+        t = jnp.arange(n_tstep) * dt + init_state_.t
         output = jax.lax.fori_loop(
-            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_, n_tstep)
+            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_, t)
         )
 
         return output

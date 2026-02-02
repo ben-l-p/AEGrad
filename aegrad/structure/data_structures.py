@@ -13,6 +13,7 @@ from aegrad.algebra.base import chi
 from jax import vmap
 
 from plotting.beam import plot_beam_to_vtk
+from plotting.pvd import write_pvd
 
 
 @make_pytree
@@ -295,6 +296,8 @@ class DynamicStructureSnapshot:
 
         v_lin = data.v[:, :3]  # [n_nodes, 3]
         v_ang = data.v[:, 3:]  # [n_nodes, 3]
+        v_dot_lin = data.v_dot[:, :3]  # [n_nodes, 3]
+        v_dot_ang = data.v_dot[:, 3:]  # [n_nodes,
         eps_lin = data.eps[:, :3]  # [n_elem, 3]
         eps_ang = data.eps[:, 3:]  # [n_elem, 3]
 
@@ -318,14 +321,18 @@ class DynamicStructureSnapshot:
             "m_int": m_int,
             "v_linear": v_lin,
             "v_angular": v_ang,
+            "v_dot_linear": v_dot_lin,
+            "v_dot_angular": v_dot_ang,
         }
         cell_scalar_data = {"element_number": elem_num}
         cell_vector_data = {"eps_linear": eps_lin, "eps_angular": eps_ang}
 
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        file_name = Path(directory).joinpath("beam")
         return plot_beam_to_vtk(
             coords,
             data.conn,
-            directory,
+            file_name,
             data.i_ts,
             node_scalar_data,
             node_vector_data,
@@ -352,6 +359,7 @@ class DynamicStructure:
         f_int: Array,
         f_iner: Array,
         t: Array,
+        n_tstep: int,
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -365,6 +373,7 @@ class DynamicStructure:
         self.f_int: Array = f_int  # [n_tstep, n_nodes, 6]
         self.f_iner: Array = f_iner  # [n_tstep, n_nodes, 6]
         self.t: Array = t  # [n_tstep]
+        self.n_tstep: int = n_tstep
 
     def to_static(self, i_ts: int) -> StaticStructure:
         """Extract static structure results at a specific time index."""
@@ -407,16 +416,17 @@ class DynamicStructure:
 
     @classmethod
     def initialise(
-        cls, initial_snapshot: DynamicStructureSnapshot, n_tstep: int
+        cls, initial_snapshot: DynamicStructureSnapshot, t: Array
     ) -> DynamicStructure:
         r"""
         Initialise a DynamicStructure object given an initial snapshot and number of time steps.
         :param initial_snapshot: Snapshot at initial time step.
-        :param n_tstep: Number of time steps in the dynamic analysis. This includes the initial time step at t=0.
+        :param t: Time step array, [n_tstep]
         :return: DynamicStructure object with arrays initialised to zero except for the first time step.
         """
         n_node = initial_snapshot.hg.shape[0]
         n_elem = initial_snapshot.d.shape[0]
+        n_tstep = t.shape[0]
 
         hg = jnp.zeros((n_tstep, n_node, 4, 4)).at[0, ...].set(initial_snapshot.hg)
         conn = initial_snapshot.conn
@@ -435,7 +445,6 @@ class DynamicStructure:
         f_grav = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
         f_int = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_int)
         f_iner = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_iner)
-        t = jnp.zeros((n_tstep,)).at[0].set(initial_snapshot.t)
         return cls(
             hg=hg,
             conn=conn,
@@ -449,14 +458,50 @@ class DynamicStructure:
             f_int=f_int,
             f_iner=f_iner,
             t=t,
+            n_tstep=n_tstep,
         )
+
+    def plot(
+        self,
+        directory: PathLike,
+        index: Optional[slice | Sequence[int] | int | Array] = None,
+    ) -> Path:
+        r"""
+        Plot the beam for specified time steps to VTU files in the specified directory. Additionally, a PVD
+        file is created to allow easy loading of all time steps in Paraview.
+        :param directory: Path to write files to
+        :param index: Single or multiple time step indices to plot. If None, all time steps are plotted
+
+        """
+        if isinstance(index, slice):
+            index_ = jnp.arange(self.n_tstep)[index]
+        elif isinstance(index, Sequence):
+            index_ = jnp.array(index)
+        elif isinstance(index, Array):
+            index_ = index
+        elif isinstance(index, int):
+            index_ = (index,)
+        elif index is None:
+            index_ = jnp.arange(self.n_tstep)
+        else:
+            raise TypeError("index must be a slices, sequence of ints, or Array")
+
+        directory = Path(directory).resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+
+        paths: list[Path] = []
+        for i_ts in index_:
+            snapshot = self[i_ts]
+            paths.append(snapshot.plot(directory))
+
+        return write_pvd(directory, "beam_dynamic_ts", paths, list(self.t[index_]))
 
     @staticmethod
     def _static_names() -> Sequence[str]:
         r"""
         Get names of static attributes in dynamic beam
         """
-        return ("conn",)
+        return "conn", "n_tstep"
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -471,6 +516,8 @@ class DynamicStructure:
             "v_dot",
             "f_ext_follower",
             "f_ext_dead",
+            "f_grav",
             "f_int",
             "f_iner",
+            "t",
         )

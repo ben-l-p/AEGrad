@@ -6,7 +6,7 @@ from jax import numpy as jnp
 def get_integration_parameters(
     spectral_radius: float | Array,
     dt: float | Array,
-) -> tuple[Array, Array, Array]:
+) -> tuple[Array, Array]:
     if 1.0 <= spectral_radius < 0.0:
         warn("Spectral radius should be between 0.0 and 1.0")
     alpha_m = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
@@ -15,16 +15,29 @@ def get_integration_parameters(
     beta = 1.0 / (spectral_radius + 1.0) ** 2
     gamma_prime = gamma / (beta * dt)
     beta_prime = (1.0 - alpha_m) / (beta * dt * dt * (1.0 - alpha_f))
-    return jnp.array(beta), jnp.array(gamma_prime), jnp.array(beta_prime)
+    return (
+        jnp.array(gamma_prime),
+        jnp.array(beta_prime),
+    )
 
 
-def predict_n(dt: Array, beta: Array, v_n: Array, v_dot: Array) -> Array:
+def predict_n(dt: Array, v_n: Array, v_dot: Array) -> Array:
     r"""
     Predict the next velocity based on current velocity and acceleration.
     :param dt: Time step size.
-    :param beta: Time integration parameter.
     :param v_n: Previous velocity, [n_nodes, 6].
     :param v_dot: Previous acceleration, [n_nodes, 6].
     :return: Initial guess for next increment, [n_nodes, 6].
     """
-    return dt * v_n + (0.5 - beta) * dt * dt * v_dot
+    return dt * v_n + 0.5 * dt * dt * v_dot
+
+
+def predict_v(dt: Array, v_n: Array, v_dot: Array) -> Array:
+    r"""
+    Predict the next velocity based on current velocity and acceleration.
+    :param dt: Time step size.
+    :param v_n: Previous velocity, [n_nodes, 6].
+    :param v_dot: Previous acceleration, [n_nodes, 6].
+    :return: Initial guess for next velocity, [n_nodes, 6].
+    """
+    return v_n + dt * v_dot

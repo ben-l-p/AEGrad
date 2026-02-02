@@ -20,13 +20,13 @@ class TestConstXVelocityXBeam:
         coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(l)
         conn = jnp.array([[0, 1]])
 
-        k_cs = jnp.diag(jnp.full(6, 1e9))
+        k_cs = jnp.diag(jnp.full(6, 1e3))
         m_bar = 5.0 * jnp.eye(3)
         j_bar = 0.1 * jnp.eye(3)
         m_cs = block_diag(m_bar, j_bar)
 
-        n_tstep = 5
-        dt = 0.001
+        n_tstep = 500
+        dt = 0.01
 
         struct = Structure(2, conn, cls.y_vect, None)
         struct.set_design_variables(coords, k_cs, m_cs)
@@ -37,7 +37,7 @@ class TestConstXVelocityXBeam:
         init_cond.v = v_init
 
         output = struct.dynamic_solve(
-            init_cond, n_tstep, dt, None, None, None, max_iter=5
+            init_cond, n_tstep, dt, None, None, None, spectral_radius=0.1
         )
         x_t = np.array(output.hg[:, 0, cls.v_direction_index, 3])  # [n_tstep]
 
