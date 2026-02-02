@@ -36,7 +36,7 @@ class TestXGravityXBeamDrop:
         init_cond.v_dot = init_cond.v_dot.at[:, :3].set(g_vec[None, :])
 
         output = struct.dynamic_solve(
-            init_cond, n_tstep, dt, None, None, None, spectral_radius=0.9
+            init_cond, n_tstep, dt, None, None, None, spectral_radius=1.0
         )
 
         expected_nodal_fg = 0.5 * m_bar[0, 0] * l * g

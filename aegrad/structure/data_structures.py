@@ -97,6 +97,7 @@ class StaticStructure:
         n_nodes = self.hg.shape[0]
         zero_v = jnp.zeros((n_nodes, 6))
         zero_v_dot = jnp.zeros((n_nodes, 6))
+        zero_a = jnp.zeros((n_nodes, 6))
         zero_time = jnp.array(0.0)
         zero_f_iner = jnp.zeros((n_nodes, 6))
 
@@ -107,6 +108,7 @@ class StaticStructure:
             eps=self.eps,
             v=zero_v,
             v_dot=zero_v_dot,
+            a=zero_a,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
             f_grav=self.f_grav,
@@ -176,6 +178,7 @@ class DynamicStructureSnapshot:
         eps: Array,
         v: Array,
         v_dot: Array,
+        a: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_grav: Optional[Array],
@@ -191,6 +194,7 @@ class DynamicStructureSnapshot:
         self.eps: Array = eps  # [n_elem, 6]
         self.v: Array = v  # [n_nodes, 6]
         self.v_dot: Array = v_dot  # [n_nodes, 6]
+        self.a: Array = a  # [n_nodes, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
@@ -236,6 +240,7 @@ class DynamicStructureSnapshot:
         self.v_dot = self.v_dot.at[...].set(
             jnp.einsum("ijk,ik->ij", nodal_chi, self.v_dot)
         )
+        # TODO: should pseudoacceleration also be transformed?
 
     def to_global(self) -> None:
         """Convert local structure results to global frame."""
@@ -353,6 +358,7 @@ class DynamicStructure:
         eps: Array,
         v: Array,
         v_dot: Array,
+        a: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_grav: Optional[Array],
@@ -367,6 +373,7 @@ class DynamicStructure:
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
         self.v: Array = v  # [n_tstep, n_nodes, 6]
         self.v_dot: Array = v_dot  # [n_tstep, n_nodes, 6]
+        self.a: Array = a  # [n_tstep, n_nodes, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes, 6]
@@ -401,6 +408,7 @@ class DynamicStructure:
             eps=self.eps[i_ts, ...],
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
+            a=self.a[i_ts, ...],
             f_ext_follower=self.f_ext_follower[i_ts, ...]
             if self.f_ext_follower is not None
             else None,
@@ -434,6 +442,7 @@ class DynamicStructure:
         eps = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.eps)
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
         v_dot = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v_dot)
+        a = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.a)
         f_ext_follower = (
             jnp.zeros((n_tstep, n_node, 6))
             .at[0, ...]
@@ -452,6 +461,7 @@ class DynamicStructure:
             eps=eps,
             v=v,
             v_dot=v_dot,
+            a=a,
             f_ext_follower=f_ext_follower,
             f_ext_dead=f_ext_dead,
             f_grav=f_grav,
@@ -514,6 +524,7 @@ class DynamicStructure:
             "eps",
             "v",
             "v_dot",
+            "a",
             "f_ext_follower",
             "f_ext_dead",
             "f_grav",

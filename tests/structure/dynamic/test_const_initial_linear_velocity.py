@@ -37,7 +37,7 @@ class TestConstXVelocityXBeam:
         init_cond.v = v_init
 
         output = struct.dynamic_solve(
-            init_cond, n_tstep, dt, None, None, None, spectral_radius=0.1
+            init_cond, n_tstep, dt, None, None, None, spectral_radius=1.0
         )
         x_t = np.array(output.hg[:, 0, cls.v_direction_index, 3])  # [n_tstep]
 

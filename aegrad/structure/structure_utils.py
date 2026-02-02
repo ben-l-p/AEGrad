@@ -12,14 +12,21 @@ def check_connectivity(connectivity: Array, num_nodes: int) -> None:
     :param num_nodes: Number of nodes in the structure
     :raises ValueError: If connectivity array contains invalid node indices, or is missing nodes
     """
-    all_node_index = set(connectivity.ravel().tolist())
-    expected_node_index = set(range(num_nodes))
 
-    if all_node_index != expected_node_index:
-        raise ValueError(
-            f"Connectivity array either contains invalid node indices, or is missing nodes. Expected "
-            f"indices: {expected_node_index}, but got: {all_node_index}."
-        )
+    if num_nodes != 1:
+        all_node_index = set(connectivity.ravel().tolist())
+        expected_node_index = set(range(num_nodes))
+
+        if all_node_index != expected_node_index:
+            raise ValueError(
+                f"Connectivity array either contains invalid node indices, or is missing nodes. Expected "
+                f"indices: {expected_node_index}, but got: {all_node_index}."
+            )
+    else:
+        if connectivity.size != 0:
+            raise ValueError(
+                f"Connectivity array must be empty for a structure with a single node, but got: {connectivity}."
+            )
 
 
 def n_elem_per_node(connectivity: Array) -> Array:
@@ -162,6 +169,7 @@ def make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
 
     def g_iner_func(v_: Array) -> Array:
         return -ha_to_ha_hat(v_).T @ m_lumped @ v_
+
     c_l = -ha_to_ha_hat(v).T @ m_lumped  # g_iner = c_l @ v
 
     c_t = jax.jacobian(g_iner_func)(v)  # d_{g_iner}/d_v

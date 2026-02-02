@@ -2,7 +2,6 @@ from aegrad.structure.structure import Structure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import jax
-from pathlib import Path
 
 jax.config.update("jax_enable_x64", True)
 
@@ -28,13 +27,13 @@ class TestConstXVelocityXBeam:
         )
         conn = jnp.array([[0, 1], [1, 2]])
 
-        k_cs = jnp.diag(jnp.full(6, 1e3))
+        k_cs = jnp.diag(jnp.full(6, 1e9))
         m_bar = 0.1 * jnp.eye(3)
         j_bar = 100.0 * jnp.eye(3)
         m_cs = block_diag(m_bar, j_bar)
 
         n_tstep = 500
-        dt = 0.001
+        dt = 0.005
 
         struct = Structure(3, conn, cls.y_vect, None)
         struct.set_design_variables(coords, k_cs, m_cs)
@@ -66,7 +65,7 @@ class TestConstXVelocityXBeam:
             None,
             None,
             max_iter=10,
-            spectral_radius=0.1,
+            spectral_radius=1.0,
             abs_tol=1e-10,
             relaxation_factor=1.0,
         )
@@ -113,7 +112,7 @@ class TestConstXVelocityXBeam:
         eps0 = np.array(output.eps[:, 0, :])
         eps1 = np.array(output.eps[:, 1, :])
 
-        output.plot(Path("./test_outputs/rotating_beam/"))
+        # output.plot(Path("./test_outputs/rotating_beam/"))
 
         x0 = output.hg[:, 0, :3, 3]
         x1 = output.hg[:, 1, :3, 3]

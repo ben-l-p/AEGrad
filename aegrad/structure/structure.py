@@ -19,13 +19,10 @@ from aegrad.structure.structure_utils import (
     make_c_t_lumped,
 )
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, t_se3
-from aegrad.structure.time_integration import (
-    get_integration_parameters,
-    predict_n,
-    predict_v,
-)
 from typing import Optional, Sequence, Literal
 from functools import partial
+
+from structure.time_integration import TimeIntregrator
 
 
 class Structure:
@@ -124,7 +121,7 @@ class Structure:
         if m_cs is not None:
             self.m_cs = self.m_cs.at[...].set(m_cs)
         else:
-            if self.use_gravity:
+            if self.use_gravity and m_lumped is None:
                 warn(
                     "No mass matrices provided, but gravity is enabled. Assuming zero mass."
                 )
@@ -296,27 +293,27 @@ class Structure:
         c_t: Array,
         c_t_lumped: Optional[Array],
         k_t: Array,
-        gamma_prime: Array,
-        beta_prime: Array,
+        ti: TimeIntregrator,
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
-        :param m_t: Assembled system mass matrix, [n_dof, n_dof]
-        :param c_t: Assembled system gyroscopic matrix, [n_dof, n_dof]
-        :param c_t_lumped: Assembled system lumped gyroscopic matrix, [n_dof, n_dof]
-        :param k_t: Assembled system stiffness matrix, [n_dof, n_dof]
-        :param gamma_prime: Velocity integration parameter
-        :param beta_prime: Acceleration integration parameter
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
+        :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
+        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
+        :param k_t: Disassembled system stiffness matrix, [n_elem, 12, 12]
+        :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
 
-        mat = k_t
+        mat = self._assemble_matrix_from_entries(
+            m_t * ti.beta_prime + c_t * ti.gamma_prime + k_t
+        )
+
         if self.use_lumped_mass:
-            mat += (m_t + self.m_t_lumped) * beta_prime + (
-                c_t + c_t_lumped
-            ) * gamma_prime
-        else:
-            mat += m_t * beta_prime + c_t * gamma_prime
+            mat += (
+                self.m_t_lumped * ti.beta_prime
+                + block_diag(*c_t_lumped) * ti.gamma_prime
+            )
 
         return mat
 
@@ -771,7 +768,7 @@ class Structure:
         include_geometric: bool = False,
         relaxation_factor: float = 1.0,
         max_iter: int = 40,
-        spectral_radius: float = 0.9,
+        spectral_radius: float = 1.0,
         abs_tol: float = 1e-9,
     ) -> DynamicStructure:
         r"""
@@ -807,6 +804,9 @@ class Structure:
         if not (0.0 < relaxation_factor <= 1.0):
             raise ValueError("relaxation_factor must be in the range (0, 1]")
 
+        if not jnp.allclose(init_state_.v_dot[0, ...], init_state_.a[0, ...]):
+            warn("Initial accelerations do not match initial pseudoaccelerations.")
+
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
@@ -835,7 +835,7 @@ class Structure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        gamma_prime, beta_prime = get_integration_parameters(spectral_radius, dt)
+        time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
 
         def _update(
             i_ts: int,
@@ -902,10 +902,8 @@ class Structure:
             )[solve_dofs]
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
-            sys_mat = self._assemble_matrix_from_entries(
-                self._make_sys_matrix(
-                    m_t, c_t, c_t_lumped, k_t_t, gamma_prime, beta_prime
-                )
+            sys_mat = self._make_sys_matrix(
+                m_t, c_t, c_t_lumped, k_t_t, time_integrator
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
@@ -913,9 +911,17 @@ class Structure:
             n_np1 = n_n.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
-            v_np1 = v_n.ravel().at[solve_dofs].add(gamma_prime * d_n_np1).reshape(-1, 6)
+            v_np1 = (
+                v_n.ravel()
+                .at[solve_dofs]
+                .add(time_integrator.gamma_prime * d_n_np1)
+                .reshape(-1, 6)
+            )
             v_dot_np1 = (
-                v_dot_n.ravel().at[solve_dofs].add(beta_prime * d_n_np1).reshape(-1, 6)
+                v_dot_n.ravel()
+                .at[solve_dofs]
+                .add(time_integrator.beta_prime * d_n_np1)
+                .reshape(-1, 6)
             )
 
             # update convergence status
@@ -938,9 +944,20 @@ class Structure:
         def inner_loop(
             i_ts: int, sol: DynamicStructureSnapshot
         ) -> DynamicStructureSnapshot:
-            n_init = predict_n(dt, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
-            v_init = predict_v(dt, sol.v[i_ts - 1, ...], sol.v_dot[i_ts - 1, ...])
-            v_dot_init = sol.v_dot[i_ts - 1, ...]
+            a_init = time_integrator.predict_a(
+                sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
+            )
+
+            n_init = time_integrator.predict_n(
+                sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
+            )
+            v_init = time_integrator.predict_v(
+                sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
+            )
+            # v_dot_init = time_integrator.predict_v_dot(
+            #     sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
+            # )
+            v_dot_init = jnp.zeros((self.n_nodes, 6))
 
             _, converge_status, hg, n, v, v_dot = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
@@ -987,6 +1004,13 @@ class Structure:
                 sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
             sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
             sol.f_iner = sol.f_iner.at[i_ts, ...].set(f_iner)
+
+            # update pseudoacceleration
+            sol.a = sol.a.at[i_ts, ...].set(
+                time_integrator.calculate_a_np1(
+                    sol.v[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
+                )
+            )
 
             return sol
 
