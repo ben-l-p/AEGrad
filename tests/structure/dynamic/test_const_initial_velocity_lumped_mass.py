@@ -34,7 +34,7 @@ class TestConstLinXVelocityLumpedMass:
             coords, jnp.zeros((0, 6, 6)), None, m_lump[None, ...]
         )
 
-        v_init = jnp.zeros(6).at[cls.v_direction_index].set(v)
+        v_init = jnp.zeros((1, 6)).at[0, cls.v_direction_index].set(v)
 
         init_cond = struct.reference_configuration().to_dynamic()
         init_cond.v = v_init

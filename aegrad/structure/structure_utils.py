@@ -1,6 +1,6 @@
 from jax import Array, numpy as jnp
 import jax
-from aegrad.algebra.se3 import p, q, q_dot, ha_to_ha_hat, ha_to_ha_check
+from aegrad.algebra.se3 import p, q, ha_to_ha_hat, q_dot, ha_to_ha_check
 from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
 from typing import Literal
 

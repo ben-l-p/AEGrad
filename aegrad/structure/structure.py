@@ -18,7 +18,7 @@ from aegrad.structure.structure_utils import (
     integrate_c_t,
     make_c_t_lumped,
 )
-from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, t_se3
+from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from typing import Optional, Sequence, Literal
 from functools import partial
 
@@ -127,7 +127,7 @@ class Structure:
                 )
         if m_lumped is not None:
             self.m_lumped = self.m_lumped.at[...].set(m_lumped)
-            self.m_t_lumped = self.m_t_lumped.at[...].set(block_diag(*m_lumped))
+            self.m_t_lumped = self.m_t_lumped.at[...].set(block_diag(*self.m_lumped))
             self.use_lumped_mass = True
 
         self.x0 = self.x0.at[...].set(coords)
@@ -300,7 +300,7 @@ class Structure:
         :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
-        :param k_t: Disassembled system stiffness matrix, [n_elem, 12, 12]
+        :param k_t: Disassembled system stiffness matrix postmultiplied by increment tangent, [n_elem, 12, 12]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
@@ -325,7 +325,7 @@ class Structure:
         :return: Internal forces, [n_elem, 12]
         """
 
-        return jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs, eps)
+        return -jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs, eps)
 
     def _make_f_grav(self, m_t: Array, rmat: Array) -> Array:
         r"""
@@ -393,7 +393,7 @@ class Structure:
             axis=-1,
         )  # [n_elem, 12]
 
-        return jnp.einsum("ijk,ik->ij", m_l, v_dot_elem) + jnp.einsum(
+        return -jnp.einsum("ijk,ik->ij", m_l, v_dot_elem) - jnp.einsum(
             "ijk,ik->ij", c_l, v_elem
         )  # [n_elem, 12]
 
@@ -405,7 +405,7 @@ class Structure:
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
         :return: Inertial forces from lumped masses, [n_node, 6]
         """
-        return jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot) + jnp.einsum(
+        return -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot) - jnp.einsum(
             "ijk,ik->ij", c_l_lumped, v
         )  # [n_node, 6]
 
@@ -483,7 +483,7 @@ class Structure:
         eps = self._make_eps(d)
         p_d = self._make_p_d(d)
         d_dot = self._make_d_dot(p_d, v) if dynamic else None
-        m_t = self._make_m_t(d) if self.use_gravity or dynamic else None
+        m_t = self._make_m_t(d) if (self.use_gravity or dynamic) else None
         c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
 
         if self.use_lumped_mass and dynamic:
@@ -537,7 +537,7 @@ class Structure:
         f_res = self._make_f_int(p_d, eps)  # [n_elem, 12]
 
         if self.use_gravity:
-            f_res -= self._make_f_grav(m_t, hg[:, :3, :3])
+            f_res += self._make_f_grav(m_t, hg[:, :3, :3])
 
         if dynamic:
             f_res += self._make_f_iner(m_t, c_l, v, v_dot)
@@ -545,15 +545,15 @@ class Structure:
         f_res_vect = self._assemble_vector_from_entries(f_res)
 
         if f_ext_follower_n is not None:
-            f_res_vect -= f_ext_follower_n.reshape(self.n_dof).ravel()
+            f_res_vect += f_ext_follower_n.reshape(self.n_dof).ravel()
         if f_ext_dead_n is not None:
-            f_res_vect -= self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
+            f_res_vect += self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
 
         if self.use_lumped_mass:
             if dynamic:
                 f_res_vect += self._make_f_iner_lumped(c_l_lumped, v, v_dot).ravel()
             if self.use_gravity:
-                f_res_vect -= self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
+                f_res_vect += self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
 
         return f_res_vect  # [n_dof]
 
@@ -686,7 +686,7 @@ class Structure:
             )[solve_dofs]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_ha_np1 = -jnp.linalg.solve(k_t_n, f_res_n_solve) * relaxation_factor
+            d_ha_np1 = jnp.linalg.solve(k_t_n, f_res_n_solve) * relaxation_factor
             d_ha_np1_full = jnp.zeros(self.n_dof)
             d_ha_np1_full = d_ha_np1_full.at[solve_dofs].set(d_ha_np1)
 
@@ -804,9 +804,6 @@ class Structure:
         if not (0.0 < relaxation_factor <= 1.0):
             raise ValueError("relaxation_factor must be in the range (0, 1]")
 
-        if not jnp.allclose(init_state_.v_dot[0, ...], init_state_.a[0, ...]):
-            warn("Initial accelerations do not match initial pseudoaccelerations.")
-
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
@@ -852,12 +849,15 @@ class Structure:
             Array,
             Array,
         ]:
+            # TODO: rewrite to make more efficient by avoiding recomputation of HG
+
+            hg_update = self._update_hg(hg_n, n_n)  # [n_node, 4, 4]
+
             # base parameters
-            d_n = self._make_d(hg_n)  # [n_elem, 6]
+            d_n = self._make_d(hg_update)  # [n_elem, 6]
             p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
             eps_n = self._make_eps(d_n)  # [n_elem, 6]
             d_dot_n = self._make_d_dot(p_d_n, v_n)  # [n_elem, 6]
-            t_n = vmap(t_se3, 0, 0)(n_n)  # [n_node, 6, 6]
 
             # tangent matrices
             m_t = self._make_m_t(d_n)  # [n_elem, 12, 12]
@@ -875,17 +875,6 @@ class Structure:
             else:
                 c_l_lumped, c_t_lumped = None, None
 
-            # transform tangent stiffness with tangent operator
-            k_t_t_upper = jnp.einsum(
-                "ijk,ikl->ijl", k_t[..., :6], t_n[self.connectivity[:, 0], ...]
-            )  # [n_elem, 12, 6]
-            k_t_t_lower = jnp.einsum(
-                "ijk,ikl->ijl", k_t[..., 6:], t_n[self.connectivity[:, 1], ...]
-            )  # [n_elem, 12, 6]
-            k_t_t = jnp.concatenate(
-                (k_t_t_upper, k_t_t_lower), axis=-1
-            )  # [n_elem, 12, 12]
-
             # residual forces, [n_solve_dofs]
             f_res_n_solve = self._make_f_res(
                 p_d_n,
@@ -902,12 +891,12 @@ class Structure:
             )[solve_dofs]
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
-            sys_mat = self._make_sys_matrix(
-                m_t, c_t, c_t_lumped, k_t_t, time_integrator
-            )[jnp.ix_(solve_dofs, solve_dofs)]
+            sys_mat = self._make_sys_matrix(m_t, c_t, c_t_lumped, k_t, time_integrator)[
+                jnp.ix_(solve_dofs, solve_dofs)
+            ]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_n_np1 = -jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
+            d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
             n_np1 = n_n.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
@@ -954,10 +943,9 @@ class Structure:
             v_init = time_integrator.predict_v(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            # v_dot_init = time_integrator.predict_v_dot(
-            #     sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
-            # )
-            v_dot_init = jnp.zeros((self.n_nodes, 6))
+            v_dot_init = time_integrator.predict_v_dot(
+                sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
+            )
 
             _, converge_status, hg, n, v, v_dot = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
@@ -1008,15 +996,62 @@ class Structure:
             # update pseudoacceleration
             sol.a = sol.a.at[i_ts, ...].set(
                 time_integrator.calculate_a_np1(
-                    sol.v[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
+                    sol.v_dot[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
                 )
             )
 
             return sol
 
+        # test initial state to ensure that equilibrium is satisfied
+        def evaluate_initial_equilibrium(
+            init_state_: DynamicStructureSnapshot,
+        ) -> DynamicStructureSnapshot:
+            d, eps, f_ext_dead_, f_grav, f_int, f_iner = self._resolve_forces(
+                init_state_.hg,
+                True,
+                init_state_.f_ext_dead,
+                init_state_.v,
+                init_state_.v_dot,
+            )
+
+            f_res = f_int + f_iner
+            if f_grav is not None:
+                f_res += f_grav
+            if f_ext_dead_ is not None:
+                f_res += f_ext_dead_
+            if init_state_.f_ext_follower is not None:
+                f_res += init_state_.f_ext_follower
+
+            max_res = jnp.max(jnp.abs(f_res))
+            if max_res > 1e-6:
+                warn(
+                    f"Initial state is not in equilibrium, maximum residual force is {max_res:.3e}"
+                )
+
+            return DynamicStructureSnapshot(
+                init_state_.hg,
+                self.connectivity,
+                d,
+                eps,
+                init_state_.v,
+                init_state_.v_dot,
+                init_state_.v_dot,
+                init_state_.f_ext_follower,
+                f_ext_dead_,
+                f_grav,
+                f_int,
+                f_iner,
+                init_state_.t,
+                init_state_.i_ts,
+            )
+
+        # obtain values for timestep 0
+        init_state_eval = evaluate_initial_equilibrium(init_state_)
+
+        # solve
         t = jnp.arange(n_tstep) * dt + init_state_.t
         output = jax.lax.fori_loop(
-            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_, t)
+            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_eval, t)
         )
 
         return output

@@ -60,8 +60,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[0].set(-k_coeffs[0] * dx / cls.l)
-        expected_f_int = expected_f_int.at[6].set(k_coeffs[0] * dx / cls.l)
+        expected_f_int = expected_f_int.at[0].set(k_coeffs[0] * dx / cls.l)
+        expected_f_int = expected_f_int.at[6].set(-k_coeffs[0] * dx / cls.l)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
 
         assert jnp.allclose(f_int, expected_f_int), (
@@ -88,8 +88,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[3].set(-k_coeffs[3] * theta_x / cls.l)
-        expected_f_int = expected_f_int.at[9].set(k_coeffs[3] * theta_x / cls.l)
+        expected_f_int = expected_f_int.at[3].set(k_coeffs[3] * theta_x / cls.l)
+        expected_f_int = expected_f_int.at[9].set(-k_coeffs[3] * theta_x / cls.l)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
         assert jnp.allclose(f_int, expected_f_int), (
             f"Torsional force calculation incorrect, expected {expected_f_int}, got {f_int}"
@@ -122,8 +122,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[4].set(-eiy * kappa_y)
-        expected_f_int = expected_f_int.at[10].set(eiy * kappa_y)
+        expected_f_int = expected_f_int.at[4].set(eiy * kappa_y)
+        expected_f_int = expected_f_int.at[10].set(-eiy * kappa_y)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
 
         assert jnp.allclose(f_int, expected_f_int), (
@@ -157,8 +157,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[5].set(-eiz * kappa_z)
-        expected_f_int = expected_f_int.at[11].set(eiz * kappa_z)
+        expected_f_int = expected_f_int.at[5].set(eiz * kappa_z)
+        expected_f_int = expected_f_int.at[11].set(-eiz * kappa_z)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
 
         assert jnp.allclose(f_int, expected_f_int), (
@@ -219,12 +219,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero shear/moment/torsion components, got {f_int_rot[:, 1:]}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 0], -load), (
-            f"Internal axial force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 0]}"
+        assert jnp.isclose(f_int_rot[0, 0], load), (
+            f"Internal axial force at fixed end incorrect, expected {load}, got {f_int_rot[0, 0]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 0], load), (
-            f"Internal axial force at loaded end incorrect, expected {load}, got {f_int_rot[1, 0]}"
+        assert jnp.isclose(f_int_rot[1, 0], -load), (
+            f"Internal axial force at loaded end incorrect, expected {-load}, got {f_int_rot[1, 0]}"
         )
 
     @classmethod
@@ -259,12 +259,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero shear/moment/axial components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 3], -load), (
-            f"Internal axial force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 3]}"
+        assert jnp.isclose(f_int_rot[0, 3], load), (
+            f"Internal axial force at fixed end incorrect, expected {load}, got {f_int_rot[0, 3]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 3], load), (
-            f"Internal axial force at loaded end incorrect, expected {load}, got {f_int_rot[1, 3]}"
+        assert jnp.isclose(f_int_rot[1, 3], -load), (
+            f"Internal axial force at loaded end incorrect, expected {-load}, got {f_int_rot[1, 3]}"
         )
 
     @classmethod
@@ -301,12 +301,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/shear/moment/z-moment components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 4], -load), (
-            f"Internal bending moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 4]}"
+        assert jnp.isclose(f_int_rot[0, 4], load), (
+            f"Internal bending moment at fixed end incorrect, expected {load}, got {f_int_rot[0, 4]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 4], load), (
-            f"Internal bending moment at loaded end incorrect, expected {load}, got {f_int_rot[1, 4]}"
+        assert jnp.isclose(f_int_rot[1, 4], -load), (
+            f"Internal bending moment at loaded end incorrect, expected {-load}, got {f_int_rot[1, 4]}"
         )
 
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
@@ -357,12 +357,12 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/shear/y-moment components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 5], -load), (
-            f"Internal z-moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 5]}"
+        assert jnp.isclose(f_int_rot[0, 5], load), (
+            f"Internal z-moment at fixed end incorrect, expected {load}, got {f_int_rot[0, 5]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 5], load), (
-            f"Internal z-moment at loaded end incorrect, expected {load}, got {f_int_rot[1, 5]}"
+        assert jnp.isclose(f_int_rot[1, 5], -load), (
+            f"Internal z-moment at loaded end incorrect, expected {-load}, got {f_int_rot[1, 5]}"
         )
 
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
@@ -415,20 +415,20 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/torsion/z_shear components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 1], -load), (
-            f"Internal shear_y force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 1]}"
+        assert jnp.isclose(f_int_rot[0, 1], load), (
+            f"Internal shear_y force at fixed end incorrect, expected {load}, got {f_int_rot[0, 1]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 1], load), (
-            f"Internal shear_y force at loaded end incorrect, expected {load}, got {f_int_rot[1, 1]}"
+        assert jnp.isclose(f_int_rot[1, 1], -load), (
+            f"Internal shear_y force at loaded end incorrect, expected {-load}, got {f_int_rot[1, 1]}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 5], expected_moment), (
-            f"Internal moment at fixed end incorrect, expected {expected_moment}, got {f_int_rot[0, 5]}",
+        assert jnp.isclose(f_int_rot[0, 5], -expected_moment), (
+            f"Internal moment at fixed end incorrect, expected {-expected_moment}, got {f_int_rot[0, 5]}",
         )
 
-        assert jnp.isclose(f_int_rot[1, 5], expected_moment), (
-            f"Internal moment at loaded end incorrect, expected {expected_moment}, got {result.f_int[1, 5]}"
+        assert jnp.isclose(f_int_rot[1, 5], -expected_moment), (
+            f"Internal moment at loaded end incorrect, expected {-expected_moment}, got {result.f_int[1, 5]}"
         )
 
     @classmethod
@@ -467,20 +467,20 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal force vector expected to have zero axial/torsion/y-shear components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 2], -load), (
-            f"Internal shear_z force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 2]}"
+        assert jnp.isclose(f_int_rot[0, 2], load), (
+            f"Internal shear_z force at fixed end incorrect, expected {load}, got {f_int_rot[0, 2]}"
         )
 
-        assert jnp.isclose(f_int_rot[1, 2], load), (
-            f"Internal shear_z force at loaded end incorrect, expected {load}, got {f_int_rot[1, 2]}"
+        assert jnp.isclose(f_int_rot[1, 2], -load), (
+            f"Internal shear_z force at loaded end incorrect, expected {-load}, got {f_int_rot[1, 2]}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 4], expected_moment), (
-            f"Internal moment at fixed end incorrect, expected {expected_moment}, got {f_int_rot[0, 4]}",
+        assert jnp.isclose(f_int_rot[0, 4], -expected_moment), (
+            f"Internal moment at fixed end incorrect, expected {-expected_moment}, got {f_int_rot[0, 4]}",
         )
 
-        assert jnp.isclose(f_int_rot[1, 4], expected_moment), (
-            f"Internal moment at loaded end incorrect, expected {expected_moment}, got {f_int_rot[1, 4]}"
+        assert jnp.isclose(f_int_rot[1, 4], -expected_moment), (
+            f"Internal moment at loaded end incorrect, expected {-expected_moment}, got {f_int_rot[1, 4]}"
         )
 
 

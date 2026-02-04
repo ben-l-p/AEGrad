@@ -68,12 +68,12 @@ class TestMultiXElementStrainsForces:
 
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.allclose(f_int_rot[0, 0], -expected_f), (
-            f"Axial force calculation at root incorrect, expected {-expected_f}, got {f_int_rot[0, 0]}"
+        assert jnp.allclose(f_int_rot[0, 0], expected_f), (
+            f"Axial force calculation at root incorrect, expected {expected_f}, got {f_int_rot[0, 0]}"
         )
 
-        assert jnp.allclose(f_int_rot[-1, 0], expected_f), (
-            f"Axial force calculation at tip incorrect, expected {expected_f}, got {f_int_rot[-1, 0]}"
+        assert jnp.allclose(f_int_rot[-1, 0], -expected_f), (
+            f"Axial force calculation at tip incorrect, expected {-expected_f}, got {f_int_rot[-1, 0]}"
         )
 
         index_zero = jnp.array(
@@ -108,12 +108,12 @@ class TestMultiXElementStrainsForces:
 
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.allclose(f_int_rot[0, 3], -expected_f), (
-            f"Torsional force calculation at root incorrect, expected {-expected_f}, got {f_int_rot[0, 3]}"
+        assert jnp.allclose(f_int_rot[0, 3], expected_f), (
+            f"Torsional force calculation at root incorrect, expected {expected_f}, got {f_int_rot[0, 3]}"
         )
 
-        assert jnp.allclose(f_int_rot[-1, 3], expected_f), (
-            f"Torsional force calculation at tip incorrect, expected {expected_f}, got {f_int_rot[-1, 3]}"
+        assert jnp.allclose(f_int_rot[-1, 3], -expected_f), (
+            f"Torsional force calculation at tip incorrect, expected {-expected_f}, got {f_int_rot[-1, 3]}"
         )
 
         index_zero = jnp.array(
@@ -149,12 +149,12 @@ class TestMultiXElementStrainsForces:
         ).reshape(-1, 6)
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.allclose(f_int_rot[0, 4], -expected_f), (
-            f"Bending moment calculation at root incorrect, expected {-expected_f}, got {f_int_rot[0, 4]}"
+        assert jnp.allclose(f_int_rot[0, 4], expected_f), (
+            f"Bending moment calculation at root incorrect, expected {expected_f}, got {f_int_rot[0, 4]}"
         )
 
-        assert jnp.allclose(f_int_rot[-1, 4], expected_f), (
-            f"Bending calculation at tip incorrect, expected {expected_f}, got {f_int_rot[-1, 4]}"
+        assert jnp.allclose(f_int_rot[-1, 4], -expected_f), (
+            f"Bending calculation at tip incorrect, expected {-expected_f}, got {f_int_rot[-1, 4]}"
         )
 
         index_zero = jnp.array(
@@ -188,12 +188,12 @@ class TestMultiXElementStrainsForces:
         ).reshape(-1, 6)
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.allclose(f_int_rot[0, 5], -expected_f), (
-            f"Bending moment calculation at root incorrect, expected {-expected_f}, got {f_int_rot[0, 5]}"
+        assert jnp.allclose(f_int_rot[0, 5], expected_f), (
+            f"Bending moment calculation at root incorrect, expected {expected_f}, got {f_int_rot[0, 5]}"
         )
 
-        assert jnp.allclose(f_int_rot[-1, 5], expected_f), (
-            f"Bending calculation at tip incorrect, expected {expected_f}, got {f_int_rot[-1, 5]}"
+        assert jnp.allclose(f_int_rot[-1, 5], -expected_f), (
+            f"Bending calculation at tip incorrect, expected {-expected_f}, got {f_int_rot[-1, 5]}"
         )
 
         index_zero = jnp.array(
@@ -263,12 +263,12 @@ class TestMultiXElementStrainsForces:
             f"Internal force vector expected to have zero shear/moment/torsion components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 0], -load), (
-            f"Internal axial force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 0]}"
+        assert jnp.isclose(f_int_rot[0, 0], load), (
+            f"Internal axial force at fixed end incorrect, expected {load}, got {f_int_rot[0, 0]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 0], load), (
-            f"Internal axial force at loaded end incorrect, expected {load}, got {f_int_rot[-1, 0]}"
+        assert jnp.isclose(f_int_rot[-1, 0], -load), (
+            f"Internal axial force at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 0]}"
         )
 
     @classmethod
@@ -305,12 +305,12 @@ class TestMultiXElementStrainsForces:
             f"Internal force vector expected to have zero axial/shear/moment components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 3], -load), (
-            f"Internal axial force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 3]}"
+        assert jnp.isclose(f_int_rot[0, 3], load), (
+            f"Internal axial force at fixed end incorrect, expected {load}, got {f_int_rot[0, 3]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 3], load), (
-            f"Internal axial force at loaded end incorrect, expected {load}, got {f_int_rot[-1, 3]}"
+        assert jnp.isclose(f_int_rot[-1, 3], -load), (
+            f"Internal axial force at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 3]}"
         )
 
     @classmethod
@@ -347,12 +347,12 @@ class TestMultiXElementStrainsForces:
             f"Internal force vector expected to have zero axial/shear/torsional components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 4], -load), (
-            f"Internal moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 4]}"
+        assert jnp.isclose(f_int_rot[0, 4], load), (
+            f"Internal moment at fixed end incorrect, expected {load}, got {f_int_rot[0, 4]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 4], load), (
-            f"Internal moment at loaded end incorrect, expected {load}, got {f_int_rot[-1, 4]}"
+        assert jnp.isclose(f_int_rot[-1, 4], -load), (
+            f"Internal moment at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 4]}"
         )
 
         coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
@@ -401,12 +401,12 @@ class TestMultiXElementStrainsForces:
             f"Internal force vector expected to have zero axial/shear/torsional components, got {f_int_rot}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 5], -load), (
-            f"Internal moment at fixed end incorrect, expected {-load}, got {f_int_rot[0, 5]}"
+        assert jnp.isclose(f_int_rot[0, 5], load), (
+            f"Internal moment at fixed end incorrect, expected {load}, got {f_int_rot[0, 5]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 5], load), (
-            f"Internal moment at loaded end incorrect, expected {load}, got {f_int_rot[-1, 5]}"
+        assert jnp.isclose(f_int_rot[-1, 5], -load), (
+            f"Internal moment at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 5]}"
         )
 
         coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
@@ -464,20 +464,20 @@ class TestMultiXElementStrainsForces:
         f_int = result.f_int
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.isclose(f_int_rot[0, 1], -load, atol=1e-4), (
-            f"Internal shear_y force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 1]}"
+        assert jnp.isclose(f_int_rot[0, 1], load, atol=1e-4), (
+            f"Internal shear_y force at fixed end incorrect, expected {load}, got {f_int_rot[0, 1]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 1], load, atol=1e-4), (
-            f"Internal shear_y force at loaded end incorrect, expected {load}, got {f_int_rot[-1, 1]}"
+        assert jnp.isclose(f_int_rot[-1, 1], -load, atol=1e-4), (
+            f"Internal shear_y force at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 1]}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 5], expected_moment, atol=1e-3), (
-            f"Internal moment at fixed end incorrect, expected {expected_moment}, got {f_int_rot[0, 5]}",
+        assert jnp.isclose(f_int_rot[0, 5], -expected_moment, atol=1e-3), (
+            f"Internal moment at fixed end incorrect, expected {-expected_moment}, got {f_int_rot[0, 5]}",
         )
 
-        assert jnp.isclose(f_int_rot[-1, 5], expected_moment, atol=1e-3), (
-            f"Internal moment at loaded end incorrect, expected {expected_moment}, got {f_int_rot[-1, 5]}"
+        assert jnp.isclose(f_int_rot[-1, 5], -expected_moment, atol=1e-3), (
+            f"Internal moment at loaded end incorrect, expected {-expected_moment}, got {f_int_rot[-1, 5]}"
         )
 
     @classmethod
@@ -523,20 +523,20 @@ class TestMultiXElementStrainsForces:
         f_int = result.f_int
         f_int_rot = jnp.einsum("ij,kj->ki", chi(cls.struct.o0[0, ...].T), f_int)
 
-        assert jnp.isclose(f_int_rot[0, 2], -load, atol=1e-4), (
-            f"Internal shear_y force at fixed end incorrect, expected {-load}, got {f_int_rot[0, 2]}"
+        assert jnp.isclose(f_int_rot[0, 2], load, atol=1e-4), (
+            f"Internal shear_y force at fixed end incorrect, expected {load}, got {f_int_rot[0, 2]}"
         )
 
-        assert jnp.isclose(f_int_rot[-1, 2], load, atol=1e-4), (
-            f"Internal shear_y force at loaded end incorrect, expected {load}, got {f_int_rot[-1, 2]}"
+        assert jnp.isclose(f_int_rot[-1, 2], -load, atol=1e-4), (
+            f"Internal shear_y force at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 2]}"
         )
 
-        assert jnp.isclose(f_int_rot[0, 4], expected_moment, atol=1e-3), (
-            f"Internal moment at fixed end incorrect, expected {expected_moment}, got {f_int_rot[0, 4]}",
+        assert jnp.isclose(f_int_rot[0, 4], -expected_moment, atol=1e-3), (
+            f"Internal moment at fixed end incorrect, expected {-expected_moment}, got {f_int_rot[0, 4]}",
         )
 
-        assert jnp.isclose(f_int_rot[-1, 4], expected_moment, atol=1e-3), (
-            f"Internal moment at loaded end incorrect, expected {expected_moment}, got {f_int_rot[-1, 4]}"
+        assert jnp.isclose(f_int_rot[-1, 4], -expected_moment, atol=1e-3), (
+            f"Internal moment at loaded end incorrect, expected {-expected_moment}, got {f_int_rot[-1, 4]}"
         )
 
 

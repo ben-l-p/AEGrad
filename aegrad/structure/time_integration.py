@@ -22,7 +22,7 @@ class TimeIntregrator:
         self.alpha_m: Array = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
         self.alpha_f: Array = spectral_radius / (spectral_radius + 1.0)
         self.gamma: Array = (3.0 - spectral_radius) / (2.0 + 2.0 * spectral_radius)
-        self.beta: Array = 1.0 / (spectral_radius + 1.0) ** 2
+        self.beta: Array = 1.0 / ((spectral_radius + 1.0) ** 2)
         self.gamma_prime: Array = self.gamma / (self.beta * dt)
         self.beta_prime: Array = (1.0 - self.alpha_m) / (
             self.beta * dt * dt * (1.0 - self.alpha_f)
