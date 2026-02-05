@@ -70,8 +70,8 @@ def flying_spaghetti(
 
 
 if __name__ == "__main__":
-    n_nodes = 20
-    dt = 0.01
+    n_nodes = 21
+    dt = 0.02
     t_end = 10.0
     n_tstep = int(jnp.ceil(t_end / dt)) + 1
 
@@ -87,14 +87,13 @@ if __name__ == "__main__":
         None,
         f_dead_2d,
         None,
-        max_iter=50,
-        abs_tol=1e-14,
-        spectral_radius=0.5,
-        relaxation_factor=1.0,
+        max_iter=40,
+        abs_tol=1e-15,
+        spectral_radius=0.99,
     )
 
     plot_path = Path("./flying_spaghetti")
-    stride = 25
+    stride = 4
     solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))
 
     pass

@@ -572,6 +572,16 @@ class Structure:
             vmap(exp_se3, 0, 0)(d_ha.reshape(-1, 6)),
         )
 
+    def get_cg(self, hg: Array):
+        r"""
+        Compute the total mass and the coordinate of center of gravity.
+        :param hg: Node locations in SE(3), [n_nodes, 4, 4]
+        :return: Total mass, x coordinate of center of gravity, [3]
+        """
+
+        # TODO: implement
+        raise NotImplementedError
+
     def make_prescribed_dofs_array(
         self,
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
