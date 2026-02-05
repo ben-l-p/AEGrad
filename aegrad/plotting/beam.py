@@ -241,8 +241,6 @@ def plot_beam_to_vtk(
                 raise ValueError(
                     f"Cell scalar '{name}' has incorrect shape {arr.shape}; expected {(n_elems,)}"
                 )
-            if n_interp > 0:  # add zero entries for interpolated case
-                arr = arr[elem_map]  # map original cell data to new interpolated cells
             ug.GetCellData().AddArray(dsa.numpyTovtkDataArray(arr.ravel(), name))
 
     if cell_vector_data is not None:
@@ -253,8 +251,6 @@ def plot_beam_to_vtk(
                 raise ValueError(
                     f"Cell vector '{name}' must have shape {(n_elems, 3)}, got {arr.shape}"
                 )
-            if n_interp > 0:  # add zero entries for interpolated case
-                arr = arr[elem_map]  # map original cell data to new interpolated cells
             vectors = algs.make_vector(
                 arr[:, 0].ravel(), arr[:, 1].ravel(), arr[:, 2].ravel()
             )
