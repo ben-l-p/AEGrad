@@ -175,6 +175,7 @@ class Structure:
         return StaticStructure(
             self.hg0,
             self.connectivity,
+            self.o0,
             self.d0,
             jnp.zeros((self.n_elem, 6)),
             jnp.zeros((self.n_nodes, 6)),
@@ -748,6 +749,7 @@ class Structure:
         return StaticStructure(
             hg=hg,
             conn=self.connectivity,
+            o0=self.o0,
             d=d,
             eps=eps,
             f_int=f_int,
@@ -1029,20 +1031,21 @@ class Structure:
                 )
 
             return DynamicStructureSnapshot(
-                init_state_.hg,
-                self.connectivity,
-                d,
-                eps,
-                init_state_.v,
-                init_state_.v_dot,
-                init_state_.v_dot,
-                init_state_.f_ext_follower,
-                f_ext_dead_,
-                f_grav,
-                f_int,
-                f_iner,
-                init_state_.t,
-                init_state_.i_ts,
+                hg=init_state_.hg,
+                conn=self.connectivity,
+                o0=self.o0,
+                d=d,
+                eps=eps,
+                v=init_state_.v,
+                v_dot=init_state_.v_dot,
+                a=init_state_.v_dot,  # initial pseudoacceleration set equal to initial acceleration
+                f_ext_follower=init_state_.f_ext_follower,
+                f_ext_dead=f_ext_dead_,
+                f_grav=f_grav,
+                f_int=f_int,
+                f_iner=f_iner,
+                t=init_state_.t,
+                i_ts=init_state_.i_ts,
             )
 
         # obtain values for timestep 0

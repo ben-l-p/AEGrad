@@ -74,6 +74,7 @@ class StaticStructure:
         self,
         hg: Array,
         conn: Array,
+        o0: Array,
         d: Array,
         eps: Array,
         f_ext_follower: Optional[Array],
@@ -84,6 +85,7 @@ class StaticStructure:
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
+        self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
@@ -104,6 +106,7 @@ class StaticStructure:
         return DynamicStructureSnapshot(
             hg=self.hg,
             conn=self.conn,
+            o0=self.o0,
             d=self.d,
             eps=self.eps,
             v=zero_v,
@@ -160,11 +163,11 @@ class StaticStructure:
 
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike) -> Path:
+    def plot(self, directory: PathLike, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory.
         """
-        return self.to_dynamic().plot(directory)
+        return self.to_dynamic().plot(directory, n_interp)
 
 
 class DynamicStructureSnapshot:
@@ -174,6 +177,7 @@ class DynamicStructureSnapshot:
         self,
         hg: Array,
         conn: Array,
+        o0: Array,
         d: Array,
         eps: Array,
         v: Array,
@@ -190,6 +194,7 @@ class DynamicStructureSnapshot:
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
+        self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
         self.v: Array = v  # [n_nodes, 6]
@@ -209,6 +214,7 @@ class DynamicStructureSnapshot:
         return StaticStructure(
             hg=self.hg,
             conn=self.conn,
+            o0=self.o0,
             d=self.d,
             eps=self.eps,
             f_ext_follower=self.f_ext_follower,
@@ -266,11 +272,9 @@ class DynamicStructureSnapshot:
         )  # [n_nodes, 6, 6]
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike) -> Path:
+    def plot(self, directory: PathLike, n_interp: int = 0) -> Path:
         data = deepcopy(self)
         data.to_global()
-
-        coords = data.hg[:, :3, 3]  # [n_nodes, 3]
 
         local_x = data.hg[:, :3, 0]  # [n_nodes, 3]
         local_y = data.hg[:, :3, 1]  # [n_nodes, 3]
@@ -335,8 +339,10 @@ class DynamicStructureSnapshot:
         Path(directory).mkdir(parents=True, exist_ok=True)
         file_name = Path(directory).joinpath("beam")
         return plot_beam_to_vtk(
-            coords,
+            data.hg,
             data.conn,
+            data.o0,
+            n_interp,
             file_name,
             data.i_ts,
             node_scalar_data,
@@ -354,6 +360,7 @@ class DynamicStructure:
         self,
         hg: Array,
         conn: Array,
+        o0: Array,
         d: Array,
         eps: Array,
         v: Array,
@@ -369,6 +376,7 @@ class DynamicStructure:
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
+        self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
         self.v: Array = v  # [n_tstep, n_nodes, 6]
@@ -387,6 +395,7 @@ class DynamicStructure:
         return StaticStructure(
             hg=self.hg[i_ts, ...],
             conn=self.conn,
+            o0=self.o0,
             d=self.d[i_ts, ...],
             eps=self.eps[i_ts, ...],
             f_ext_follower=self.f_ext_follower[i_ts, ...]
@@ -404,6 +413,7 @@ class DynamicStructure:
         return DynamicStructureSnapshot(
             hg=self.hg[i_ts, ...],
             conn=self.conn,
+            o0=self.o0,
             d=self.d[i_ts, ...],
             eps=self.eps[i_ts, ...],
             v=self.v[i_ts, ...],
@@ -438,6 +448,7 @@ class DynamicStructure:
 
         hg = jnp.zeros((n_tstep, n_node, 4, 4)).at[0, ...].set(initial_snapshot.hg)
         conn = initial_snapshot.conn
+        o0 = initial_snapshot.o0
         d = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.d)
         eps = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.eps)
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
@@ -461,6 +472,7 @@ class DynamicStructure:
         return cls(
             hg=hg,
             conn=conn,
+            o0=o0,
             d=d,
             eps=eps,
             v=v,
@@ -479,13 +491,14 @@ class DynamicStructure:
         self,
         directory: PathLike,
         index: Optional[slice | Sequence[int] | int | Array] = None,
+        n_interp: int = 0,
     ) -> Path:
         r"""
         Plot the beam for specified time steps to VTU files in the specified directory. Additionally, a PVD
         file is created to allow easy loading of all time steps in Paraview.
         :param directory: Path to write files to
-        :param index: Single or multiple time step indices to plot. If None, all time steps are plotted
-
+        :param index: Single or multiple time step indices to plot. If None, all time steps are plotted.
+        :param n_interp: Number of interpolation points to add between each element for smoother visualization.
         """
         if isinstance(index, slice):
             index_ = jnp.arange(self.n_tstep)[index]
@@ -506,7 +519,7 @@ class DynamicStructure:
         paths: list[Path] = []
         for i_ts in index_:
             snapshot = self[i_ts]
-            paths.append(snapshot.plot(directory))
+            paths.append(snapshot.plot(directory, n_interp))
 
         return write_pvd(directory, "beam_dynamic_ts", paths, list(self.t[index_]))
 
@@ -515,7 +528,7 @@ class DynamicStructure:
         r"""
         Get names of static attributes in dynamic beam
         """
-        return "conn", "n_tstep"
+        return "conn", "o0", "n_tstep"
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
