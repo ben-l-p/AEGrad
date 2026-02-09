@@ -2,7 +2,6 @@ from aegrad.structure.structure import Structure
 from jax import Array
 from jax import numpy as jnp
 import jax
-from pathlib import Path
 
 jax.config.update("jax_enable_x64", True)
 
@@ -85,15 +84,17 @@ if __name__ == "__main__":
         n_tstep,
         dt,
         None,
-        f_dead_2d,
+        f_dead_2d,  # swap between 2d and 3d to see the difference in response
         None,
-        max_iter=40,
-        abs_tol=1e-15,
+        max_n_iter=40,
+        abs_disp_tol=1e-15,
         spectral_radius=0.99,
+        include_geometric=True,
+        include_material=True,
     )
 
-    plot_path = Path("./flying_spaghetti")
-    stride = 4
-    solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))
+    # plot_path = Path("./flying_spaghetti_2d")
+    # stride = 5
+    # solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))
 
     pass

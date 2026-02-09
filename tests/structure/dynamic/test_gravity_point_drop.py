@@ -46,7 +46,7 @@ class TestXGravityPointDrop:
             None,
             None,
             None,
-            max_iter=10,
+            max_n_iter=10,
             spectral_radius=1.0,
         )
 

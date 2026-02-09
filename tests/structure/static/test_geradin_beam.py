@@ -21,8 +21,8 @@ class TestGeradinBeam:
             include_material=True,
             include_geometric=False,
             load_steps=3,
-            abs_tol=1e-4,
-            max_iter=10,
+            abs_disp_tol=1e-4,
+            max_n_iter=10,
         )
 
         z_tip = result.hg[-1, 2, 3]

@@ -173,15 +173,17 @@ class Structure:
         :return: StaticStructure dataclass containing reference configuration
         """
         return StaticStructure(
-            self.hg0,
-            self.connectivity,
-            self.o0,
-            self.d0,
-            jnp.zeros((self.n_elem, 6)),
-            jnp.zeros((self.n_nodes, 6)),
-            jnp.zeros((self.n_nodes, 6)),
-            jnp.zeros((self.n_nodes, 6)),
-            jnp.zeros((self.n_nodes, 6)),
+            hg=self.hg0,
+            conn=self.connectivity,
+            o0=self.o0,
+            d=self.d0,
+            eps=jnp.zeros((self.n_elem, 6)),
+            f_ext_follower=jnp.zeros((self.n_nodes, 6)),
+            f_ext_dead=jnp.zeros((self.n_nodes, 6)),
+            f_grav=jnp.zeros((self.n_nodes, 6)),
+            f_int=jnp.zeros((self.n_nodes, 6)),
+            f_res=jnp.zeros((self.n_nodes, 6)),
+            local=True,
         )
 
     def _assemble_matrix_from_entries(self, entries: Array) -> Array:
@@ -467,10 +469,13 @@ class Structure:
         self,
         hg: Array,
         dynamic: bool,
+        f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         v: Optional[Array],
         v_dot: Optional[Array],
-    ) -> tuple[Array, Array, Optional[Array], Optional[Array], Array, Optional[Array]]:
+    ) -> tuple[
+        Array, Array, Optional[Array], Optional[Array], Array, Optional[Array], Array
+    ]:
         r"""
         Obtain all components of the force from a final solution
         :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
@@ -478,7 +483,8 @@ class Structure:
         :param f_ext_dead: External dead forces in global reference, [n_node, 6]
         :param v: Nodal velocities in global frame, [n_node, 6]
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
-        :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces and inertial forces
+        :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces,
+        inertial forces and residual forces
         """
         d = self._make_d(hg)
         eps = self._make_eps(d)
@@ -487,6 +493,7 @@ class Structure:
         m_t = self._make_m_t(d) if (self.use_gravity or dynamic) else None
         c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
 
+        this_f_res = jnp.zeros((self.n_nodes, 6))
         if self.use_lumped_mass and dynamic:
             c_l_lumped = self._make_c_t_lumped(v)[0]
         else:
@@ -494,6 +501,7 @@ class Structure:
 
         if f_ext_dead is not None:
             this_f_ext_dead = self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
+            this_f_res += this_f_ext_dead
         else:
             this_f_ext_dead = None
 
@@ -503,12 +511,14 @@ class Structure:
             ).reshape(-1, 6)
             if self.use_lumped_mass:
                 this_f_grav += self._make_f_grav_lumped(hg[:, :3, :3])
+            this_f_res += this_f_grav
         else:
             this_f_grav = None
 
         this_f_int = self._assemble_vector_from_entries(
             self._make_f_int(p_d, eps)
         ).reshape(-1, 6)
+        this_f_res += this_f_int
 
         if dynamic:
             this_f_iner = self._assemble_vector_from_entries(
@@ -516,13 +526,18 @@ class Structure:
             ).reshape(-1, 6)
             if self.use_lumped_mass:
                 this_f_iner += self._make_f_iner_lumped(c_l_lumped, v, v_dot)
+            this_f_res += this_f_iner
         else:
             this_f_iner = None
 
-        return d, eps, this_f_ext_dead, this_f_grav, this_f_int, this_f_iner
+        if f_ext_follower is not None:
+            this_f_res += f_ext_follower
+
+        return d, eps, this_f_ext_dead, this_f_grav, this_f_int, this_f_iner, this_f_res
 
     def _make_f_res(
         self,
+        solve_dofs: Array,
         p_d: Array,
         eps: Array,
         hg: Array,
@@ -534,29 +549,62 @@ class Structure:
         c_l_lumped: Optional[Array],
         v: Optional[Array],
         v_dot: Optional[Array],
-    ) -> Array:
+    ) -> tuple[Array, Array]:
+        r"""
+        Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
+        This is the force imbalance that the nonlinear solver will seek to drive to zero. Additionally, returns an
+        "absolute sum" of all forces, used for relative convergence checks.
+        :param solve_dofs: Array of degrees of freedom to solve for [n_solve_dofs]
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param eps: Element strain vectors, [n_elem, 6]
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param f_ext_follower_n: Nodal follower forces, [n_node, 6]
+        :param f_ext_dead_n: Nodal dead forces, [n_node, 6]
+        :param dynamic: Flag for whether to compute dynamic entries
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
+        :param c_l: Dissembled system gyroscopic matrix, [n_elem, 12, 12]
+        :param c_l_lumped: Lumped gyroscopic matrix, [n_node, 6, 6]
+        :param v: Nodal velocities, [n_node, 6]
+        :param v_dot: Nodal accelerations, [n_node, 6]
+        :return: Residual force vector, [n_dof], absolute sum of forces, [n_dof]
+        """
         f_res = self._make_f_int(p_d, eps)  # [n_elem, 12]
+        f_abs_sum = jnp.abs(f_res)
 
         if self.use_gravity:
-            f_res += self._make_f_grav(m_t, hg[:, :3, :3])
+            f_grav = self._make_f_grav(m_t, hg[:, :3, :3])
+            f_res += f_grav
+            f_abs_sum += jnp.abs(f_grav)
 
         if dynamic:
-            f_res += self._make_f_iner(m_t, c_l, v, v_dot)
+            f_iner = self._make_f_iner(m_t, c_l, v, v_dot)
+            f_res += f_iner
+            f_abs_sum += jnp.abs(f_iner)
 
         f_res_vect = self._assemble_vector_from_entries(f_res)
+        f_abs_sum_vect = self._assemble_vector_from_entries(f_abs_sum)
 
         if f_ext_follower_n is not None:
             f_res_vect += f_ext_follower_n.reshape(self.n_dof).ravel()
+            f_abs_sum_vect += jnp.abs(f_ext_follower_n.reshape(self.n_dof).ravel())
         if f_ext_dead_n is not None:
-            f_res_vect += self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
+            f_dead = self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
+            f_res_vect += f_dead
+            f_abs_sum_vect += jnp.abs(f_dead)
 
         if self.use_lumped_mass:
             if dynamic:
-                f_res_vect += self._make_f_iner_lumped(c_l_lumped, v, v_dot).ravel()
+                f_iner_lumped = self._make_f_iner_lumped(c_l_lumped, v, v_dot).ravel()
+                f_res_vect += f_iner_lumped
+                f_abs_sum_vect += jnp.abs(f_iner_lumped)
             if self.use_gravity:
-                f_res_vect += self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
+                f_grav_lumped = self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
+                f_res_vect += f_grav_lumped
+                f_abs_sum_vect += jnp.abs(f_grav_lumped)
 
-        return f_res_vect  # [n_dof]
+        return f_res_vect[solve_dofs], f_abs_sum_vect[
+            solve_dofs
+        ]  # [n_solve_dof], [n_solve_dof]
 
     @staticmethod
     def _update_hg(hg: Array, d_ha: Array) -> Array:
@@ -609,8 +657,11 @@ class Structure:
         include_geometric: bool = False,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
-        max_iter: Optional[int] = 40,
-        abs_tol: float = 1e-9,
+        max_n_iter: Optional[int] = 40,
+        rel_disp_tol: Optional[float] = 1e-6,
+        abs_disp_tol: Optional[float] = 1e-9,
+        rel_force_tol: Optional[float] = 1e-6,
+        abs_force_tol: Optional[float] = 1e-9,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
@@ -621,8 +672,11 @@ class Structure:
         :param include_geometric: Whether to include geometric stiffness contribution.
         :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
-        :param max_iter: Maximum number of Newton-Raphson iterations per load step.
-        :param abs_tol: Absolute tolerance for convergence.
+        :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
+        :param rel_disp_tol: Relative displacement tolerance for convergence.
+        :param abs_disp_tol: Absolute displacement tolerance for convergence.
+        :param rel_force_tol: Relative force tolerance for convergence.
+        :param abs_force_tol: Absolute force tolerance for convergence.
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -644,7 +698,6 @@ class Structure:
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
-        n_solve_dofs = solve_dofs.shape[0]
 
         # process external forces for load stepping
         load_step_weight: Array = jnp.linspace(0.0, 1.0, load_steps + 1)[
@@ -666,7 +719,7 @@ class Structure:
 
         def _update(
             i_load_step: int,
-            converge_status_n: ConvergenceStatus,
+            converge_status: ConvergenceStatus,
             hg_n: Array,
         ) -> tuple[int, ConvergenceStatus, Array]:
             # base parameters
@@ -680,7 +733,8 @@ class Structure:
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # compute residual forces, [n_solve_dofs]
-            f_res_n_solve = self._make_f_res(
+            f_res_solve_n, f_abs_sum_n = self._make_f_res(
+                solve_dofs,
                 p_d_n,
                 eps_n,
                 hg_n,
@@ -694,24 +748,32 @@ class Structure:
                 None,
                 None,
                 None,
-            )[solve_dofs]
+            )
 
             # solve for configuration increment, [n_solve_dofs]
-            d_ha_np1 = jnp.linalg.solve(k_t_n, f_res_n_solve) * relaxation_factor
+            d_ha_np1 = jnp.linalg.solve(k_t_n, f_res_solve_n) * relaxation_factor
             d_ha_np1_full = jnp.zeros(self.n_dof)
             d_ha_np1_full = d_ha_np1_full.at[solve_dofs].set(d_ha_np1)
 
             # update configuration, [n_nodes, 4, 4]
             hg_np1_full = self._update_hg(hg_n, d_ha_np1_full)
 
+            # algebra between undeformed and deformed shapes, used to check relative convergence, [n_solve_dofs]
+            if rel_disp_tol is not None:
+                h_full = vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_np1_full).ravel()[
+                    solve_dofs
+                ]
+            else:
+                h_full = None
+
             # update convergence status
-            converge_status_np1 = ConvergenceStatus(
-                d_ha_np1,
-                converge_status_n.abs_tol,
-                converge_status_n.i_iter + 1,
-                converge_status_n.n_iter,
+            converge_status.update(
+                delta_disp=d_ha_np1,
+                total_disp=h_full,
+                delta_force=f_res_solve_n,
+                total_force=f_abs_sum_n,
             )
-            return i_load_step, converge_status_np1, hg_np1_full
+            return i_load_step, converge_status, hg_np1_full
 
         def inner_loop(
             i_load_step: int,
@@ -723,12 +785,19 @@ class Structure:
                 (
                     i_load_step,
                     ConvergenceStatus(
-                        jnp.zeros(n_solve_dofs),
-                        jnp.array(abs_tol),
-                        jnp.zeros((), dtype=int),
-                        jnp.array(max_iter, dtype=int)
-                        if max_iter is not None
+                        rel_disp_tol=jnp.array(rel_disp_tol)
+                        if rel_disp_tol is not None
                         else None,
+                        abs_disp_tol=jnp.array(abs_disp_tol)
+                        if abs_disp_tol is not None
+                        else None,
+                        rel_force_tol=jnp.array(rel_force_tol)
+                        if rel_force_tol is not None
+                        else None,
+                        abs_force_tol=jnp.array(abs_force_tol)
+                        if abs_force_tol is not None
+                        else None,
+                        max_n_iter=jnp.array(max_n_iter),
                     ),
                     hg_init,
                 ),
@@ -752,8 +821,13 @@ class Structure:
         )
 
         # postprocess final results
-        d, eps, f_ext_dead_local, f_grav, f_int, _ = self._resolve_forces(
-            hg, False, f_ext_dead, None, None
+        d, eps, f_ext_dead_local, f_grav, f_int, _, f_res = self._resolve_forces(
+            hg=hg,
+            dynamic=False,
+            f_ext_dead=f_ext_dead,
+            f_ext_follower=f_ext_follower,
+            v=None,
+            v_dot=None,
         )
 
         return StaticStructure(
@@ -766,6 +840,7 @@ class Structure:
             f_ext_follower=f_ext_follower,
             f_ext_dead=f_ext_dead_local,
             f_grav=f_grav,
+            f_res=f_res,
         )
 
     def dynamic_solve(
@@ -779,9 +854,12 @@ class Structure:
         include_material: bool = True,
         include_geometric: bool = False,
         relaxation_factor: float = 1.0,
-        max_iter: int = 40,
+        max_n_iter: int = 40,
         spectral_radius: float = 1.0,
-        abs_tol: float = 1e-9,
+        rel_disp_tol: Optional[float] = 1e-9,
+        abs_disp_tol: Optional[float] = 1e-15,
+        rel_force_tol: Optional[float] = 1e-9,
+        abs_force_tol: Optional[float] = 1e-15,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
@@ -795,8 +873,12 @@ class Structure:
         :param include_material: If True, include material stiffness contribution.
         :param include_geometric: If True, include geometric stiffness contribution.
         :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
-        :param max_iter: Maximum number of Newton-Raphson iterations per load step.
-        :param abs_tol: Absolute tolerance for convergence.
+        :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
+        :param spectral_radius: Spectral radius for the time integrator, in the range [0, 1].
+        :param rel_disp_tol: Relative tolerance for displacement convergence.
+        :param abs_disp_tol: Absolute tolerance for displacement convergence.
+        :param rel_force_tol: Relative tolerance for force convergence.
+        :param abs_force_tol: Absolute tolerance for force convergence.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
@@ -819,7 +901,6 @@ class Structure:
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
-        n_solve_dofs = len(solve_dofs)
 
         # check and process external forces
         def check_force(arr: Optional[Array], name: str) -> Optional[Array]:
@@ -848,7 +929,7 @@ class Structure:
 
         def _update(
             i_ts: int,
-            converge_status_n: ConvergenceStatus,
+            converge_status: ConvergenceStatus,
             hg_n: Array,
             n_n: Array,
             v_n: Array,
@@ -888,7 +969,8 @@ class Structure:
                 c_l_lumped, c_t_lumped = None, None
 
             # residual forces, [n_solve_dofs]
-            f_res_n_solve = self._make_f_res(
+            f_res_n_solve, f_abs_sum_n = self._make_f_res(
+                solve_dofs,
                 p_d_n,
                 eps_n,
                 hg_n,
@@ -900,7 +982,7 @@ class Structure:
                 c_l_lumped,
                 v_n,
                 v_dot_n,
-            )[solve_dofs]
+            )
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
             sys_mat = self._make_sys_matrix(m_t, c_t, c_t_lumped, k_t, time_integrator)[
@@ -926,16 +1008,16 @@ class Structure:
             )
 
             # update convergence status
-            converge_status_np1 = ConvergenceStatus(
-                d_n_np1,
-                converge_status_n.abs_tol,
-                converge_status_n.i_iter + 1,
-                converge_status_n.n_iter,
+            converge_status.update(
+                delta_disp=d_n_np1,
+                total_disp=n_np1,
+                delta_force=f_res_n_solve,
+                total_force=f_abs_sum_n,
             )
 
             return (
                 i_ts,
-                converge_status_np1,
+                converge_status,
                 hg_n,
                 n_np1,
                 v_np1,
@@ -965,12 +1047,19 @@ class Structure:
                 (
                     i_ts,
                     ConvergenceStatus(
-                        jnp.zeros(n_solve_dofs),
-                        jnp.array(abs_tol),
-                        jnp.zeros((), dtype=int),
-                        jnp.array(max_iter, dtype=int)
-                        if max_iter is not None
+                        rel_disp_tol=jnp.array(rel_disp_tol)
+                        if rel_disp_tol is not None
                         else None,
+                        abs_disp_tol=jnp.array(abs_disp_tol)
+                        if abs_disp_tol is not None
+                        else None,
+                        rel_force_tol=jnp.array(rel_force_tol)
+                        if rel_force_tol is not None
+                        else None,
+                        abs_force_tol=jnp.array(abs_force_tol)
+                        if abs_force_tol is not None
+                        else None,
+                        max_n_iter=jnp.array(max_n_iter),
                     ),
                     sol.hg[i_ts - 1, ...],
                     n_init,
@@ -979,15 +1068,22 @@ class Structure:
                 ),
             )
 
-            converge_status.print_message(i_ts, None)
+            converge_status.print_message(t[i_ts], None)
 
             hg_np1 = self._update_hg(sol.hg[i_ts - 1, ...], n)
-            d, eps, f_ext_dead_local, f_grav, f_int, f_iner = self._resolve_forces(
-                hg_np1,
-                True,
-                f_ext_dead[i_ts, ...] if f_ext_dead is not None else None,
-                v,
-                v_dot,
+            d, eps, f_ext_dead_local, f_grav, f_int, f_iner, f_res = (
+                self._resolve_forces(
+                    hg=hg_np1,
+                    dynamic=True,
+                    f_ext_dead=f_ext_dead[i_ts, ...]
+                    if f_ext_dead is not None
+                    else None,
+                    f_ext_follower=f_ext_follower[i_ts, ...]
+                    if f_ext_follower is not None
+                    else None,
+                    v=v,
+                    v_dot=v_dot,
+                )
             )
             sol.d = sol.d.at[i_ts, ...].set(d)
             sol.eps = sol.eps.at[i_ts, ...].set(eps)
@@ -1004,6 +1100,7 @@ class Structure:
                 sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
             sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
             sol.f_iner = sol.f_iner.at[i_ts, ...].set(f_iner)
+            sol.f_res = sol.f_res.at[i_ts, ...].set(f_res)
 
             # update pseudoacceleration
             sol.a = sol.a.at[i_ts, ...].set(
@@ -1014,25 +1111,24 @@ class Structure:
 
             return sol
 
-        # test initial state to ensure that equilibrium is satisfied
         def evaluate_initial_equilibrium(
             init_state_: DynamicStructureSnapshot,
         ) -> DynamicStructureSnapshot:
-            d, eps, f_ext_dead_, f_grav, f_int, f_iner = self._resolve_forces(
-                init_state_.hg,
-                True,
-                init_state_.f_ext_dead,
-                init_state_.v,
-                init_state_.v_dot,
+            r"""
+            Evaluates the forces for a given initial state to check whether it is in equilibrium. If not, a warning is
+            raised with the maximum residual force. This is important to ensure that the time integration starts from a
+            consistent state.
+            :param init_state_: DynamicStructureSnapshot containing the initial state to evaluate.
+            :return: DynamicStructureSnapshot with the forces evaluated for the initial state.
+            """
+            d, eps, f_ext_dead_, f_grav, f_int, f_iner, f_res = self._resolve_forces(
+                hg=init_state_.hg,
+                dynamic=True,
+                f_ext_dead=init_state_.f_ext_dead,
+                f_ext_follower=init_state_.f_ext_follower,
+                v=init_state_.v,
+                v_dot=init_state_.v_dot,
             )
-
-            f_res = f_int + f_iner
-            if f_grav is not None:
-                f_res += f_grav
-            if f_ext_dead_ is not None:
-                f_res += f_ext_dead_
-            if init_state_.f_ext_follower is not None:
-                f_res += init_state_.f_ext_follower
 
             max_res = jnp.max(jnp.abs(f_res))
             if max_res > 1e-6:
@@ -1054,6 +1150,7 @@ class Structure:
                 f_grav=f_grav,
                 f_int=f_int,
                 f_iner=f_iner,
+                f_res=f_res,
                 t=init_state_.t,
                 i_ts=init_state_.i_ts,
             )

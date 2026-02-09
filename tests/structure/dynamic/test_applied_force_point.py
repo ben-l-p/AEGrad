@@ -53,9 +53,9 @@ class TestLinXForcePoint:
             jnp.zeros((1, 6)).at[0, cls.f_direction_index].set(cls.f),
             None,
             None,
-            max_iter=10,
+            max_n_iter=10,
             spectral_radius=1.0,
-            abs_tol=1e-10,
+            abs_disp_tol=1e-10,
             relaxation_factor=1.0,
         )
 

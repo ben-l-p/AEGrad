@@ -50,8 +50,8 @@ if __name__ == "__main__":
         None,
         f_ext,
         jnp.arange(6),
-        max_iter=30,
+        max_n_iter=30,
     )
 
-    out_path = Path("./output/geradin_beam")
+    out_path = Path("./geradin_beam")
     result.plot(out_path, 3)
