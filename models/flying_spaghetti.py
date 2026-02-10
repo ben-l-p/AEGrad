@@ -87,6 +87,7 @@ if __name__ == "__main__":
         f_dead_2d,  # swap between 2d and 3d to see the difference in response
         None,
         max_n_iter=40,
+        load_steps=1,
         abs_disp_tol=1e-15,
         spectral_radius=0.99,
         include_geometric=True,

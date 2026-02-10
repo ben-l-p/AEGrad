@@ -148,13 +148,26 @@ class ConvergenceStatus:
         """Get overall convergence status."""
         return self.converged | self.has_nan | self.final_iter
 
-    def print_message(self, t: Optional[Array], i_load_step: Optional[int]) -> None:
+    def reset_status(self) -> None:
+        r"""
+        Reset convergence status for next load step, setting all convergence flags to False.
+        """
+        self.converged = self.converged.at[...].set(False)
+        self.converged_abs_disp = self.converged_abs_disp.at[...].set(False)
+        self.converged_rel_disp = self.converged_rel_disp.at[...].set(False)
+        self.converged_rel_force = self.converged_rel_force.at[...].set(False)
+        self.converged_abs_force = self.converged_abs_force.at[...].set(False)
+        self.has_nan = self.has_nan.at[...].set(False)
+        self.final_iter = self.final_iter.at[...].set(False)
+        self.i_iter = self.i_iter.at[...].set(0)
+
+    def print_message(self, t: Optional[Array], i_load_step: int) -> None:
         """Print convergence message based on status."""
 
         if t is None:
             # static message
             jax_print(
-                "| Step: {i_load_step:<4} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
+                "| Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
                 "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
                 "{abs_force_val:.02e} |",
                 verbose_level=VerbosityLevel.NORMAL,
@@ -169,10 +182,11 @@ class ConvergenceStatus:
         else:
             # dynamic message
             jax_print(
-                "| Time: {t:.02e} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
+                "| Time: {t:.02e} | Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
                 "Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: {abs_force_val:.02e} |",
                 verbose_level=VerbosityLevel.NORMAL,
                 t=t,
+                i_load_step=i_load_step,
                 i_iter=self.i_iter,
                 conv=self.converged,
                 rel_disp_val=self.rel_disp_val,

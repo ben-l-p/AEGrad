@@ -1,5 +1,5 @@
 from aegrad.algebra.base import clip_to_pi, chi
-from aegrad.algebra.constants import SMALL_ANG_THRESH, ZERO_ANG_THRESH
+from constants import SMALL_ANG_THRESH, ZERO_ANG_THRESH
 from aegrad.algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
@@ -34,12 +34,8 @@ from aegrad.algebra.test_routines import (
     check_if_so3_g,
     check_if_se3_a,
     check_if_se3_g,
-    exp_sum,
-    log_sum,
-    t_sum,
-    t_inv_sum,
 )
-
+from algebra.base import exp_sum, log_sum, t_sum, t_inv_sum
 
 from jax import numpy as jnp
 import jax

@@ -3,7 +3,7 @@ import jax
 from jax import Array
 from jax.lax import cond
 from typing import Callable
-from aegrad.aero.constants import EPSILON, R_CUTOFF
+from aegrad.constants import EPSILON, R_CUTOFF
 
 type KernelFunction = Callable[[Array, Array], Array]
 

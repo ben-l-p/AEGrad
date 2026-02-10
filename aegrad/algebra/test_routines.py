@@ -1,8 +1,5 @@
 from jax import Array, vmap
 import jax.numpy as jnp
-from math import factorial
-from jax.scipy.special import bernoulli
-from aegrad.algebra.constants import BASE_SUMMATION_ORDER
 from typing import Sequence, Literal
 
 
@@ -189,78 +186,6 @@ def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
             raise ValueError("Not all matrices are se3 algebra elements")
         return False
     return True
-
-
-def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
-    r"""
-    Computes the matrix exponential using truncated summation. This is used to validate other implementations.
-    :param a: Algebra matrix to exponentiate, [n, n]
-    :param order: Order of summation.
-    :return: Exponential of matrix, [n, n]
-    """
-
-    if a.ndim != 2 or a.shape[0] != a.shape[1]:
-        raise ValueError("Input must be a square matrix")
-
-    result = jnp.eye(a.shape[0])
-    for i in range(1, order + 1):
-        result += jnp.linalg.matrix_power(a, i) / factorial(i)
-    return result
-
-
-def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
-    r"""
-    Computes the matrix logarithm using truncated summation. This is used to validate other implementations.
-    :param g: Group matrix to exponentiate, [n, n]
-    :param order: Order of summation.
-    :return: Logarithm of matrix, [n, n]
-    """
-
-    if g.ndim != 2 or g.shape[0] != g.shape[1]:
-        raise ValueError("Input must be a square matrix")
-
-    g_e = g - jnp.eye(g.shape[0])
-    result = g_e
-
-    for i in range(2, order + 1):
-        result += (-1.0) ** (i + 1) * jnp.linalg.matrix_power(g_e, i) / i
-    return result
-
-
-def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
-    r"""
-    Computes the tangent operator truncated summation. This is used to validate other implementations.
-    :param a: Adjoint action matrix, [n, n]
-    :param order: Order of summation.
-    :return: Tangent operator, [n, n]
-    """
-
-    if a.ndim != 2 or a.shape[0] != a.shape[1]:
-        raise ValueError("Input must be a square matrix")
-
-    result = jnp.eye(a.shape[0])
-    for i in range(1, order + 1):
-        result += (-1.0) ** i * jnp.linalg.matrix_power(a, i) / factorial(i + 1)
-    return result
-
-
-def t_inv_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
-    r"""
-    Computes the inverse tangent operator truncated summation. This is used to validate other implementations.
-    :param a: Adjoint action matrix, [n, n]
-    :param order: Order of summation.
-    :return: Inverse angent operator, [n, n]
-    """
-
-    if a.ndim != 2 or a.shape[0] != a.shape[1]:
-        raise ValueError("Input must be a square matrix")
-
-    b = bernoulli(order)
-
-    result = jnp.eye(a.shape[0])
-    for i in range(1, order + 1):
-        result += (-1.0) ** i * b[i] * jnp.linalg.matrix_power(a, i) / factorial(i)
-    return result
 
 
 def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:

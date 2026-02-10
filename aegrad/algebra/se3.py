@@ -2,7 +2,7 @@ from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
 import jax
-from aegrad.algebra.base import matrix2
+from aegrad.algebra.base import matrix2, log_sum, t_sum, t_inv_sum, exp_sum
 from aegrad.algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
@@ -14,7 +14,7 @@ from aegrad.algebra.so3 import (
     alpha,
     beta,
 )
-from aegrad.algebra.constants import SMALL_ANG_THRESH
+from constants import SMALL_ANG_THRESH
 from algebra.base import chi
 
 
@@ -103,8 +103,16 @@ def t_se3(ha: Array) -> Array:
     :param ha: se(3) vector, [6].
     :return: Tangent operator, [6, 6].
     """
-    t_ = t_so3(ha[3:])
-    return jnp.block([[t_, t_u_omega_plus(ha)], [jnp.zeros((3, 3)), t_]])
+
+    def t_se3_full() -> Array:
+        t_ = t_so3(ha[3:])
+        return jnp.block([[t_, t_u_omega_plus(ha)], [jnp.zeros((3, 3)), t_]])
+
+    def t_se3_small_angle() -> Array:
+        return t_sum(ha_to_ha_hat(ha), 2)
+
+    ang_mag2 = jnp.inner(ha[3:], ha[3:])
+    return cond(ang_mag2 > SMALL_ANG_THRESH, t_se3_full, t_se3_small_angle)
 
 
 def t_inv_se3(ha: Array) -> Array:
@@ -114,8 +122,16 @@ def t_inv_se3(ha: Array) -> Array:
     :param ha: se(3) algebra vector, [6].
     :return: Inverse angent operator, [6, 6].
     """
-    t_ = t_inv_so3(ha[3:])
-    return jnp.block([[t_, t_u_omega_minus(ha)], [jnp.zeros((3, 3)), t_]])
+
+    def t_inv_se3_full() -> Array:
+        t_ = t_inv_so3(ha[3:])
+        return jnp.block([[t_, t_u_omega_minus(ha)], [jnp.zeros((3, 3)), t_]])
+
+    def t_inv_se3_small_angle() -> Array:
+        return t_inv_sum(ha_to_ha_hat(ha), 2)
+
+    ang_mag2 = jnp.inner(ha[3:], ha[3:])
+    return cond(ang_mag2 > SMALL_ANG_THRESH, t_inv_se3_full, t_inv_se3_small_angle)
 
 
 def log_se3(hg: Array) -> Array:
@@ -125,8 +141,17 @@ def log_se3(hg: Array) -> Array:
     :param hg: SE(3) group element, [4, 4].
     :return: se(3) algebra vector, [6].
     """
+
     omega = log_so3(hg[:3, :3])
-    return jnp.concatenate((t_inv_so3(omega).T @ hg[:3, 3], omega))
+
+    def log_se3_full() -> Array:
+        return jnp.concatenate((t_inv_so3(omega).T @ hg[:3, 3], omega))
+
+    def log_se3_small_angle() -> Array:
+        return ha_tilde_to_ha(log_sum(hg, 2))
+
+    ang_mag2 = jnp.inner(omega, omega)
+    return cond(ang_mag2 > SMALL_ANG_THRESH, log_se3_full, log_se3_small_angle)
 
 
 def exp_se3(ha: Array) -> Array:
@@ -136,12 +161,20 @@ def exp_se3(ha: Array) -> Array:
     :param ha: se(3) algebra vector, [6].
     :return: SE(3) group element, [4, 4].
     """
-    return jnp.block(
-        [
-            [exp_so3(ha[3:]), (t_so3(ha[3:]).T @ ha[:3])[:, None]],
-            [jnp.zeros((1, 3)), jnp.ones((1, 1))],
-        ]
-    )
+
+    def exp_se3_full() -> Array:
+        return jnp.block(
+            [
+                [exp_so3(ha[3:]), (t_so3(ha[3:]).T @ ha[:3])[:, None]],
+                [jnp.zeros((1, 3)), jnp.ones((1, 1))],
+            ]
+        )
+
+    def exp_se3_small_angle() -> Array:
+        return exp_sum(ha_to_ha_tilde(ha), 2)
+
+    ang_mag2 = jnp.inner(ha[3:], ha[3:])
+    return cond(ang_mag2 > SMALL_ANG_THRESH, exp_se3_full, exp_se3_small_angle)
 
 
 def x_rmat_to_hg(x: Array, rmat: Array) -> Array:

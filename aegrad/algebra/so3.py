@@ -1,10 +1,8 @@
 from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
-from jax.scipy.special import bernoulli
-from math import factorial
-from aegrad.algebra.base import clip_to_pi, matrix2
-from aegrad.algebra.constants import ZERO_ANG_THRESH, SMALL_ANG_THRESH
+from aegrad.algebra.base import clip_to_pi, matrix2, t_sum, t_inv_sum, exp_sum, log_sum
+from constants import ZERO_ANG_THRESH, SMALL_ANG_THRESH
 
 
 def vec_to_skew(vec: Array) -> Array:
@@ -124,12 +122,7 @@ def t_so3(ha_omega: Array) -> Array:
         )
 
     def t_so3_small_angle() -> Array:
-        order: int = 2
-        skew = vec_to_skew(ha_omega)
-        out = jnp.eye(3)
-        for i in range(1, order + 1):
-            out += (-1.0) ** i / factorial(i + 1) * jnp.linalg.matrix_power(skew, i)
-        return out
+        return t_sum(vec_to_skew(ha_omega), 2)
 
     ang_mag2 = jnp.inner(ha_omega, ha_omega)
     return cond(ang_mag2 > SMALL_ANG_THRESH, t_so3_full, t_so3_small_angle)
@@ -154,13 +147,7 @@ def t_inv_so3(ha_omega: Array) -> Array:
         )
 
     def t_inv_so3_small_angle() -> Array:
-        order: int = 2
-        skew = vec_to_skew(ha_omega)
-        b = bernoulli(order + 1)
-        out = jnp.eye(3)
-        for i in range(1, order + 1):
-            out += (-1.0) ** i * b[i] * jnp.linalg.matrix_power(skew, i) / factorial(i)
-        return out
+        return t_inv_sum(vec_to_skew(ha_omega), 2)
 
     ang_mag2 = jnp.linalg.norm(ha_omega)
     return cond(ang_mag2 > SMALL_ANG_THRESH, t_inv_so3_full, t_inv_so3_small_angle)
@@ -184,7 +171,7 @@ def exp_so3(ha_omega: Array) -> Array:
         )
 
     def exp_so3_small_angle() -> Array:
-        return jnp.eye(3) + vec_to_skew(ha_omega) + 0.5 * matrix2(vec_to_skew(ha_omega))
+        return exp_sum(vec_to_skew(ha_omega), 2)
 
     ang_mag2 = jnp.inner(ha_omega, ha_omega)
     return cond(ang_mag2 > SMALL_ANG_THRESH, exp_so3_full, exp_so3_small_angle)
@@ -204,13 +191,7 @@ def log_so3(rmat: Array) -> Array:
         return skew_to_vec(theta / (2.0 * jnp.sin(theta)) * (rmat - rmat.T))
 
     def log_so3_small_angle() -> Array:
-        order: int = 1
-        out = jnp.zeros((3, 3))
-        for i in range(1, order):
-            out += (
-                (-1.0) ** (i + 1) * jnp.linalg.matrix_power((rmat - jnp.eye(3)), i) / i
-            )
-        return skew_to_vec(out)
+        return skew_to_vec(log_sum(rmat, 2))
 
     return bound_h_omega(
         cond(bounded_theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)

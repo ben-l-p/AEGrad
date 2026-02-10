@@ -11,7 +11,7 @@ from pathlib import Path
 from aegrad.utils import replace_self, make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
 from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
-from aegrad.aero.constants import HORSESHOE_LENGTH
+from aegrad.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import (
     check_arr_dtype,
     neighbour_average,

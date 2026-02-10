@@ -775,10 +775,16 @@ class Structure:
             )
             return i_load_step, converge_status, hg_np1_full
 
-        def inner_loop(
+        def convergence_loop(
             i_load_step: int,
             hg_init: Array,
         ) -> Array:
+            r"""
+            Convergence loop
+            :param i_load_step:
+            :param hg_init:
+            :return:
+            """
             _, convergence_status, hg_solve = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
                 lambda args_: _update(*args_),
@@ -807,16 +813,11 @@ class Structure:
 
             return hg_solve
 
-        def load_step_func(
-            i_step: int,
-            hg_: Array,
-        ) -> Array:
-            return inner_loop(i_step, hg_)
-
+        # solve for each load step
         hg = jax.lax.fori_loop(
             0,
             load_steps,
-            load_step_func,
+            lambda *args: convergence_loop(*args),
             self.hg0,
         )
 
@@ -853,6 +854,7 @@ class Structure:
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         include_material: bool = True,
         include_geometric: bool = False,
+        load_steps: int = 1,
         relaxation_factor: float = 1.0,
         max_n_iter: int = 40,
         spectral_radius: float = 1.0,
@@ -898,6 +900,9 @@ class Structure:
         if not (0.0 < relaxation_factor <= 1.0):
             raise ValueError("relaxation_factor must be in the range (0, 1]")
 
+        if load_steps <= 0:
+            raise ValueError("load_steps must be a positive integer")
+
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
         solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
@@ -923,18 +928,38 @@ class Structure:
             f_ext_follower, "f_ext_follower"
         )  # [n_tstep, n_node, 6]
 
+        # process external forces for load stepping
+        load_step_weight: Array = jnp.linspace(0.0, 1.0, load_steps + 1)[
+            1:
+        ]  # [load_steps]
+        if f_ext_follower is not None:
+            f_ext_follower_steps = jnp.einsum(
+                "i,jkl->ijkl", load_step_weight, f_ext_follower
+            )  # [n_load_steps, n_tstep, n_node, 6]
+        else:
+            f_ext_follower_steps = None
+
+        if f_ext_dead is not None:
+            f_ext_dead_steps = jnp.einsum(
+                "i,jkl->ijkl", load_step_weight, f_ext_dead
+            )  # [n_load_steps, n_tstep, n_node, 6]
+        else:
+            f_ext_dead_steps = None
+
         # time integration parameters
         dt: Array = jnp.array(dt)
         time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
 
         def _update(
+            i_load_step: int,
             i_ts: int,
-            converge_status: ConvergenceStatus,
+            converge_status_: ConvergenceStatus,
             hg_n: Array,
             n_n: Array,
             v_n: Array,
             v_dot_n: Array,
         ) -> tuple[
+            int,
             int,
             ConvergenceStatus,
             Array,
@@ -942,6 +967,19 @@ class Structure:
             Array,
             Array,
         ]:
+            r"""
+            Solution update for a single iteration of the nonlinear solver at a given time step and load step
+            :param i_load_step: Loadstep index
+            :param i_ts: Time step index
+            :param converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
+            print messages.
+            :param hg_n: Transformation matrices at iteration n, [n_nodes, 4, 4]
+            :param n_n: Incremental configuration at iteration n, [n_nodes, 6]
+            :param v_n: Velocities at iteration n, [n_nodes, 6]
+            :param v_dot_n: Accelerations at iteration n, [n_nodes, 6]
+            :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
+            configuration, velocities and accelerations for iteration n+1.
+            """
             # TODO: rewrite to make more efficient by avoiding recomputation of HG
 
             hg_update = self._update_hg(hg_n, n_n)  # [n_node, 4, 4]
@@ -974,8 +1012,12 @@ class Structure:
                 p_d_n,
                 eps_n,
                 hg_n,
-                f_ext_follower[i_ts, ...] if f_ext_follower is not None else None,
-                f_ext_dead[i_ts, ...] if f_ext_dead is not None else None,
+                f_ext_follower_steps[i_load_step, i_ts, ...]
+                if f_ext_follower is not None
+                else None,
+                f_ext_dead_steps[i_load_step, i_ts, ...]
+                if f_ext_dead is not None
+                else None,
                 True,
                 m_t,
                 c_l,
@@ -1008,7 +1050,7 @@ class Structure:
             )
 
             # update convergence status
-            converge_status.update(
+            converge_status_.update(
                 delta_disp=d_n_np1,
                 total_disp=n_np1,
                 delta_force=f_res_n_solve,
@@ -1017,16 +1059,26 @@ class Structure:
 
             return (
                 i_ts,
-                converge_status,
+                i_load_step,
+                converge_status_,
                 hg_n,
                 n_np1,
                 v_np1,
                 v_dot_np1,
             )
 
-        def inner_loop(
-            i_ts: int, sol: DynamicStructureSnapshot
-        ) -> DynamicStructureSnapshot:
+        def time_step_loop(
+            i_ts: int, sol: DynamicStructure, converge_status_: ConvergenceStatus
+        ) -> tuple[DynamicStructure, ConvergenceStatus]:
+            r"""
+            Performs analysis on a single time step, including load stepping
+            :param i_ts: Index of time step to solve
+            :param sol: Solution object, with results up to time step i_ts-1.
+            :param converge_status_: Convergence status object.
+            :return: Solution object with results up to time step i_ts.
+            """
+
+            # predictor step
             a_init = time_integrator.predict_a(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
             )
@@ -1041,35 +1093,17 @@ class Structure:
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
             )
 
-            _, converge_status, hg, n, v, v_dot = jax.lax.while_loop(
-                lambda args_: ~args_[1].get_status(),
-                lambda args_: _update(*args_),
-                (
-                    i_ts,
-                    ConvergenceStatus(
-                        rel_disp_tol=jnp.array(rel_disp_tol)
-                        if rel_disp_tol is not None
-                        else None,
-                        abs_disp_tol=jnp.array(abs_disp_tol)
-                        if abs_disp_tol is not None
-                        else None,
-                        rel_force_tol=jnp.array(rel_force_tol)
-                        if rel_force_tol is not None
-                        else None,
-                        abs_force_tol=jnp.array(abs_force_tol)
-                        if abs_force_tol is not None
-                        else None,
-                        max_n_iter=jnp.array(max_n_iter),
-                    ),
-                    sol.hg[i_ts - 1, ...],
-                    n_init,
-                    v_init,
-                    v_dot_init,
-                ),
+            # solve
+            _, converge_status_, hg, n, v, v_dot = load_step_loop(
+                i_ts,
+                converge_status_,
+                sol.hg[i_ts - 1, ...],
+                n_init,
+                v_init,
+                v_dot_init,
             )
 
-            converge_status.print_message(t[i_ts], None)
-
+            # postprocess results for time step and store in solution object
             hg_np1 = self._update_hg(sol.hg[i_ts - 1, ...], n)
             d, eps, f_ext_dead_local, f_grav, f_int, f_iner, f_res = (
                 self._resolve_forces(
@@ -1109,7 +1143,74 @@ class Structure:
                 )
             )
 
-            return sol
+            return sol, converge_status_
+
+        def convergence_loop(
+            i_load_step: int,
+            i_ts: int,
+            converge_status_: ConvergenceStatus,
+            hg_n: Array,
+            n_n: Array,
+            v_n: Array,
+            v_dot_n: Array,
+        ) -> tuple[int, ConvergenceStatus, Array, Array, Array, Array]:
+            r"""
+            Convergence loop within each load step of a time step.
+            :param i_load_step: Load step index
+            :param i_ts: Time step index
+            :param converge_status_: ConvergenceStatus object to update with convergence information during load
+            stepping.
+            :param hg_n: Node transformations at the beginning of the load step, [n_nodes, 4, 4]
+            :param n_n: Node configuration increments in algebra space, [n_nodes, 6]
+            :param v_n: Node velocities, [n_nodes, 6]
+            :param v_dot_n: Node accelerations, [n_nodes, 6]
+            :return: Time step index, convergence status, and updated configuration, velocities and accelerations.
+            """
+
+            converge_status_.reset_status()
+
+            _, _, converge_status_, hg_solve, n_n, v_n, v_dot_n = jax.lax.while_loop(
+                lambda args_: ~args_[2].get_status(),
+                lambda args_: _update(*args_),
+                (
+                    i_ts,
+                    i_load_step,
+                    converge_status_,
+                    hg_n,
+                    n_n,
+                    v_n,
+                    v_dot_n,
+                ),
+            )
+
+            converge_status_.print_message(t[i_ts], i_load_step)
+
+            return i_ts, converge_status_, hg_solve, n_n, v_n, v_dot_n
+
+        def load_step_loop(
+            i_ts: int,
+            converge_status_: ConvergenceStatus,
+            hg_n: Array,
+            n_n: Array,
+            v_n: Array,
+            v_dot_n: Array,
+        ) -> tuple[int, ConvergenceStatus, Array, Array, Array, Array]:
+            r"""
+            Performs load stepping iterations for a given time step
+            :param i_ts: Timestep index for which to perform load stepping
+            :param converge_status_: ConvergenceStatus object to update with load stepping convergence information
+            :param hg_n: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4]
+            :param n_n: Nodal updates to the configuration in the algebra space, [n_nodes, 6]
+            :param v_n: Nodal velocities, [n_nodes, 6]
+            :param v_dot_n: Nodal accelerations, [n_nodes, 6]
+            :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
+            """
+            return jax.lax.fori_loop(
+                0,
+                load_steps,
+                lambda i_load_step, args: convergence_loop(i_load_step, *args),
+                (i_ts, converge_status_, hg_n, n_n, v_n, v_dot_n),
+            )
 
         def evaluate_initial_equilibrium(
             init_state_: DynamicStructureSnapshot,
@@ -1155,13 +1256,28 @@ class Structure:
                 i_ts=init_state_.i_ts,
             )
 
-        # obtain values for timestep 0
+        # initialise problem
+        t = jnp.arange(n_tstep) * dt + init_state_.t
         init_state_eval = evaluate_initial_equilibrium(init_state_)
+        init_dynamic_state = DynamicStructure.initialise(init_state_eval, t)
+        converge_status = ConvergenceStatus(
+            rel_disp_tol=jnp.array(rel_disp_tol) if rel_disp_tol is not None else None,
+            abs_disp_tol=jnp.array(abs_disp_tol) if abs_disp_tol is not None else None,
+            rel_force_tol=jnp.array(rel_force_tol)
+            if rel_force_tol is not None
+            else None,
+            abs_force_tol=jnp.array(abs_force_tol)
+            if abs_force_tol is not None
+            else None,
+            max_n_iter=jnp.array(max_n_iter),
+        )
 
         # solve
-        t = jnp.arange(n_tstep) * dt + init_state_.t
-        output = jax.lax.fori_loop(
-            1, n_tstep, inner_loop, DynamicStructure.initialise(init_state_eval, t)
+        output, _ = jax.lax.fori_loop(
+            1,
+            n_tstep,
+            lambda i_ts, args: time_step_loop(i_ts, *args),
+            (init_dynamic_state, converge_status),
         )
 
         return output

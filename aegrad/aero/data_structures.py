@@ -4,7 +4,7 @@ from typing import Sequence, Optional
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
-from aegrad.plotting.structured_grid import plot_frame_to_vtk
+from aegrad.plotting.aerogrid import plot_frame_to_vtk
 from aegrad.print_output import warn
 from aegrad.algebra.array_utils import ArrayList
 
