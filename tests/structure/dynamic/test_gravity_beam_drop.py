@@ -1,4 +1,4 @@
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import jax
@@ -29,7 +29,7 @@ class TestXGravityXBeamDrop:
         n_tstep = 1000
         dt = 0.001
 
-        struct = Structure(2, conn, cls.y_vect, g_vec)
+        struct = BeamStructure(2, conn, cls.y_vect, g_vec)
         struct.set_design_variables(coords, k_cs, m_cs)
 
         init_cond = struct.reference_configuration().to_dynamic()

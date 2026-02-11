@@ -27,8 +27,6 @@ class TestBeamPlot:
                 f_ext,
                 f_ext,
                 jnp.arange(6),
-                include_material=True,
-                include_geometric=False,
                 load_steps=3,
             )
 

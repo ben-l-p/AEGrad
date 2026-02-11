@@ -1,6 +1,6 @@
 from jax import numpy as jnp
 import jax
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from aegrad.algebra.test_routines import const_curvature_beam
 from aegrad.algebra.base import chi
 
@@ -25,7 +25,7 @@ class TestMultiXElementStrainsForces:
         jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 1].set(1.0)
-    struct = Structure(n_nodes, conn, y_vect)
+    struct = BeamStructure(n_nodes, conn, y_vect)
 
     @classmethod
     def test_unloaded(cls):
@@ -441,8 +441,6 @@ class TestMultiXElementStrainsForces:
             f_ext,
             None,
             jnp.concatenate((jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))),
-            include_material=True,
-            include_geometric=False,
             load_steps=4,
         )
 
@@ -500,8 +498,6 @@ class TestMultiXElementStrainsForces:
             f_ext,
             None,
             jnp.concatenate((jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))),
-            include_material=True,
-            include_geometric=False,
             load_steps=4,
         )
 
@@ -552,7 +548,7 @@ class TestMultiYElementStrainsForces(TestMultiXElementStrainsForces):
         jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 2].set(1.0)
-    struct = Structure(n_nodes, conn, y_vect)
+    struct = BeamStructure(n_nodes, conn, y_vect)
 
 
 class TestMultiZElementStrainsForces(TestMultiXElementStrainsForces):
@@ -567,4 +563,4 @@ class TestMultiZElementStrainsForces(TestMultiXElementStrainsForces):
         jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 0].set(1.0)
-    struct = Structure(n_nodes, conn, y_vect)
+    struct = BeamStructure(n_nodes, conn, y_vect)

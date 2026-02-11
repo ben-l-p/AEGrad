@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 import jax
 from aegrad.algebra.base import chi
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from aegrad.algebra.test_routines import const_curvature_beam
 from aegrad.algebra.se3 import p
 
@@ -19,7 +19,7 @@ class TestTwoNodeXBeamStrainsForces:
 
     l = jnp.array(3.45)
     coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
-    struct = Structure(2, jnp.array([[0, 1]]), y_vector)
+    struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)
 
     @classmethod
     def test_unloaded(cls):
@@ -491,7 +491,7 @@ class TestTwoNodeYBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
 
     l = jnp.array(3.45)
     coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
-    struct = Structure(2, jnp.array([[0, 1]]), y_vector)
+    struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)
 
 
 class TestTwoNodeZBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
@@ -501,4 +501,4 @@ class TestTwoNodeZBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
 
     l = jnp.array(3.45)
     coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
-    struct = Structure(2, jnp.array([[0, 1]]), y_vector)
+    struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)

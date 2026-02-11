@@ -1,4 +1,4 @@
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import jax
@@ -26,7 +26,7 @@ class TestXGravityPointDrop:
         n_tstep = 50
         dt = 0.001
 
-        struct = Structure(
+        struct = BeamStructure(
             1,
             conn,
             jnp.zeros((0, 3)),

@@ -18,8 +18,6 @@ class TestGeradinBeam:
             None,
             f_ext,
             jnp.arange(6),
-            include_material=True,
-            include_geometric=False,
             load_steps=3,
             abs_disp_tol=1e-4,
             max_n_iter=10,

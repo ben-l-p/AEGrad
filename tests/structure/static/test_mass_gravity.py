@@ -1,6 +1,6 @@
 from jax import numpy as jnp
 import jax
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from aegrad.algebra.se3 import exp_se3
 
 jax.config.update("jax_enable_x64", True)
@@ -31,7 +31,7 @@ class TestTwoNodeXGravityZ:
         Ensure total mass of beam is correct
         """
 
-        cls.struct = Structure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
 
         m_t = cls.struct._make_m_t(cls.struct.d0)
@@ -55,7 +55,7 @@ class TestTwoNodeXGravityZ:
         Ensure weight of beam is correct
         """
 
-        cls.struct = Structure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
         f_g = cls.struct._assemble_vector_from_entries(
             cls.struct._make_f_grav(
@@ -78,7 +78,7 @@ class TestTwoNodeXGravityZ:
         Ensure weight of beam is correct
         """
 
-        cls.struct = Structure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
 
         # make beam curved around local y

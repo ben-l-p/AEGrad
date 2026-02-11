@@ -1,14 +1,15 @@
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import Array
 from jax import numpy as jnp
 import jax
+from pathlib import Path
 
 jax.config.update("jax_enable_x64", True)
 
 
 def flying_spaghetti(
     n_nodes: int, t: Array, use_gravity: bool = False
-) -> tuple[Structure, Array, Array]:
+) -> tuple[BeamStructure, Array, Array]:
     r"""
     Creates a flying spaghetti model structure.
     :param n_nodes: Number of nodes.
@@ -38,7 +39,7 @@ def flying_spaghetti(
 
     gravity = jnp.array((0.0, 0.0, -9.81)) if use_gravity else None
 
-    struct = Structure(n_nodes, conn, y_vector, gravity)
+    struct = BeamStructure(n_nodes, conn, y_vector, gravity)
     struct.set_design_variables(coords, k_cs, m_cs)
 
     n_tstep = t.shape[0]
@@ -70,7 +71,7 @@ def flying_spaghetti(
 
 if __name__ == "__main__":
     n_nodes = 21
-    dt = 0.02
+    dt = 0.01
     t_end = 10.0
     n_tstep = int(jnp.ceil(t_end / dt)) + 1
 
@@ -86,16 +87,9 @@ if __name__ == "__main__":
         None,
         f_dead_2d,  # swap between 2d and 3d to see the difference in response
         None,
-        max_n_iter=40,
-        load_steps=1,
-        abs_disp_tol=1e-15,
-        spectral_radius=0.99,
-        include_geometric=True,
-        include_material=True,
+        spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
     )
 
-    # plot_path = Path("./flying_spaghetti_2d")
-    # stride = 5
-    # solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))
-
-    pass
+    plot_path = Path("./flying_spaghetti_2d")
+    stride = 10
+    solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))

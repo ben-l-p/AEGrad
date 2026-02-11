@@ -1,9 +1,9 @@
 from jax import numpy as jnp
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from typing import Literal, Optional
 from jax import Array
-from pathlib import Path
 import jax
+from pathlib import Path
 
 jax.config.update("jax_enable_x64", True)
 
@@ -12,7 +12,7 @@ def geradin_beam(
     n_nodes: int = 20,
     beam_direction: Literal["x", "y", "z"] = "x",
     m_cs: Optional[Array] = None,
-) -> Structure:
+) -> BeamStructure:
     l = jnp.array(5.0)
     n_elem = n_nodes - 1
 
@@ -30,7 +30,7 @@ def geradin_beam(
     coords = (
         jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
     )
-    struct = Structure(n_nodes, conn, y_vect[None, :])
+    struct = BeamStructure(n_nodes, conn, y_vect[None, :])
 
     k_coeffs = jnp.full(6, 1e12)
     k_coeffs = k_coeffs.at[1:3].set(3.231e8)
@@ -51,6 +51,7 @@ if __name__ == "__main__":
         f_ext,
         jnp.arange(6),
         max_n_iter=30,
+        load_steps=3,
     )
 
     out_path = Path("./geradin_beam")

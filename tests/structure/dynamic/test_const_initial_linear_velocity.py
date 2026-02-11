@@ -1,4 +1,4 @@
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import numpy as np
@@ -28,7 +28,7 @@ class TestConstXVelocityXBeam:
         n_tstep = 500
         dt = 0.01
 
-        struct = Structure(2, conn, cls.y_vect, None)
+        struct = BeamStructure(2, conn, cls.y_vect, None)
         struct.set_design_variables(coords, k_cs, m_cs)
 
         v_init = jnp.zeros((2, 6)).at[:, cls.v_direction_index].set(v_mag)

@@ -1,6 +1,6 @@
 from jax.scipy.linalg import block_diag
 
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 import jax
 
@@ -48,7 +48,7 @@ class TestTwoXLumpedMassConstXRotVelocity:
 
         m_mat_lumped = block_diag(jnp.eye(3) * m_lumped, jnp.eye(3) * j_lumped)[None, :]
 
-        struct = Structure(2, conn, cls.y_vect, None)
+        struct = BeamStructure(2, conn, cls.y_vect, None)
         struct.set_design_variables(
             coords, jnp.diag(k_coeffs), None, m_lumped=m_mat_lumped
         )

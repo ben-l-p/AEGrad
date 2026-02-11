@@ -1,6 +1,6 @@
 from jax.scipy.linalg import block_diag
 
-from aegrad.structure.structure import Structure
+from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 import jax
 
@@ -50,7 +50,7 @@ class TestXBeamConstXRotVelocity:
 
         m_cs = block_diag(jnp.eye(3) * m_bar, jnp.eye(3) * j_bar)[None, :]
 
-        struct = Structure(3, conn, cls.y_vect, None)
+        struct = BeamStructure(3, conn, cls.y_vect, None)
         struct.set_design_variables(coords, jnp.diag(k_coeffs), m_cs)
 
         v_init = jnp.zeros((3, 6))

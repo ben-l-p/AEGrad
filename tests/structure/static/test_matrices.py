@@ -1,5 +1,5 @@
 from jax import numpy as jnp
-from structure.structure import Structure
+from structure.beam import BeamStructure
 from algebra.so3 import vec_to_skew
 import jax
 from algebra.se3 import p
@@ -25,13 +25,13 @@ class TestStiffness:
         conn = jnp.array(((0, 1),))
         y_vect = jnp.array(((0.0, 1.0, 0.0),))
 
-        struct = Structure(2, conn, y_vect)
+        struct = BeamStructure(2, conn, y_vect)
         struct.set_design_variables(x, k_cs[None, ...], None)
 
         du0 = jnp.zeros(6).at[0].set(l)
 
         k_t = struct._make_k_t(
-            du0[None, :], p(du0, jnp.eye(6))[None, :], jnp.zeros((1, 6)), True, True
+            du0[None, :], p(du0, jnp.eye(6))[None, :], jnp.zeros((1, 6))
         )
 
         du0t = vec_to_skew(du0[:3])

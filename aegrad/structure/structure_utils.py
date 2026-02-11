@@ -1,6 +1,6 @@
 from jax import Array, numpy as jnp
 import jax
-from aegrad.algebra.se3 import p, q, ha_to_ha_hat, q_dot, ha_to_ha_check
+from aegrad.algebra.se3 import q, ha_to_ha_hat, p, q_dot, ha_to_ha_check
 from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
 from typing import Literal
 
@@ -129,6 +129,7 @@ def integrate_c_t(
     ad_inv: Array,
     l: Array,
     int_order: Literal[1, 2, 3],
+    include_q_dot: bool,
 ) -> Array:
     r"""
     Approximate the integral :math:`C_T = C^L - \int_L \check{(\mathbf{MQv}_{AB})^{\top} \mathbf{Q} \ ds` where
@@ -141,21 +142,71 @@ def integrate_c_t(
     :param ad_inv: Inverse adjoint matrix for element, [6, 6]
     :param l: Element length, []
     :param int_order: Order of integration, 1, 2, or 3
+    :param include_q_dot: Whether to compute the contribution of the derivative of q_dot with respect to velocity.
     :return: Stacked [C_L, C_T], [2, 12, 12]
     """
 
-    def inner_func(s_l) -> Array:
-        q_mat = q(s_l, d, ad_inv)
-        q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
-        c_l = q_mat.T @ (m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat)
-        c_t = c_l - q_mat.T @ ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
-        return jnp.stack((c_l, c_t), axis=0)
+    if include_q_dot:
 
-    return l * gauss_legendre(
-        inner_func,
-        jnp.array((0.0, 1.0)),
-        int_order=int_order,
-    )  # [2, 12, 12]
+        def g_iner_ab_integr(s_l: Array, v: Array) -> Array:
+            r"""
+            Integrand for intertial forcing with zero acceleration
+            """
+            d_dot = p(d, ad_inv) @ v
+            q_mat = q(s_l, d, ad_inv)
+            q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
+            return q_mat.T @ (
+                m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
+            )
+
+        def g_iner_ab(v: Array) -> Array:
+            r"""
+            Integrate along the beam to find the inertial loads at each end due to velocity.
+            """
+            return l * gauss_legendre(
+                lambda s_l_: g_iner_ab_integr(s_l_, v),
+                jnp.array((0.0, 1.0)),
+                int_order=int_order,
+            )  # [12]
+
+        def c_l_integr(s_l: Array) -> Array:
+            r"""
+            Integrand for linear contribution to inertial forcing.
+            """
+            q_mat = q(s_l, d, ad_inv)
+            q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
+            return q_mat.T @ (
+                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+            )
+
+        # obtain the tangent stiffness as the Jacobian of the inertial forcing with respect to velocity, which includes
+        # the contribution from q_dot
+        c_t = jax.jacobian(g_iner_ab, argnums=0)(v_ab)  # [12, 12]
+
+        # obtain the linear contribution seperately - these are combined when q_dot is omitted for simplicity
+        c_l = l * gauss_legendre(
+            c_l_integr,
+            jnp.array((0.0, 1.0)),
+            int_order=int_order,
+        )  # [12, 12]
+
+        return jnp.stack([c_l, c_t], axis=0)
+    else:
+
+        def inner_func(s_l) -> Array:
+            q_mat = q(s_l, d, ad_inv)
+            q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
+            c_l = q_mat.T @ (
+                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+            )
+            c_t = c_l - q_mat.T @ ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
+            return jnp.stack((c_l, c_t), axis=0)
+
+        return l * gauss_legendre(
+            inner_func,
+            jnp.array((0.0, 1.0)),
+            int_order=int_order,
+        )  # [2, 12, 12]
 
 
 def make_c_t_lumped(m_lumped: Array, v: Array) -> Array:

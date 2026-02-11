@@ -3,7 +3,7 @@ import jax
 from jax import Array
 from aegrad.algebra.so3 import log_so3
 from models.geradin_beam import geradin_beam
-from aegrad.structure.structure import StaticStructure
+from aegrad.structure.beam import StaticStructure
 
 from copy import deepcopy
 
@@ -43,8 +43,6 @@ class TestGeradinBeamGradients:
                 None,
                 cls.f_ext,
                 jnp.arange(6),
-                include_material=True,
-                include_geometric=False,
                 load_steps=3,
                 abs_disp_tol=1e-4,
                 max_n_iter=10,
@@ -80,8 +78,6 @@ class TestGeradinBeamGradients:
                 None,
                 cls.f_ext,
                 jnp.arange(6),
-                include_material=True,
-                include_geometric=False,
                 load_steps=3,
                 abs_disp_tol=1e-4,
                 max_n_iter=10,
@@ -113,8 +109,6 @@ class TestGeradinBeamGradients:
                 None,
                 cls.f_ext * f_fact,
                 jnp.arange(6),
-                include_material=True,
-                include_geometric=False,
                 load_steps=3,
                 abs_disp_tol=1e-4,
                 max_n_iter=10,

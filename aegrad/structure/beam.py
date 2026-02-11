@@ -9,7 +9,7 @@ from aegrad.structure.data_structures import (
     DynamicStructureSnapshot,
     ConvergenceStatus,
 )
-from aegrad.print_output import warn, warn_if_32_bit
+from aegrad.print_output import warn, warn_if_32_bit, VerbosityLevel
 from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import (
@@ -19,13 +19,14 @@ from aegrad.structure.structure_utils import (
     make_c_t_lumped,
 )
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
+from aegrad.algebra.so3 import vec_to_skew
 from typing import Optional, Sequence, Literal
 from functools import partial
 
 from structure.time_integration import TimeIntregrator
 
 
-class Structure:
+class BeamStructure:
     r"""
     Class to represent nonlinear beam structural model
     """
@@ -36,9 +37,11 @@ class Structure:
         connectivity: Array,
         y_vector: Array,
         gravity: Optional[Array] = None,
+        include_geometric: bool = False,
+        include_q_dot: bool = False,
     ) -> None:
         r"""
-        Initialise Structure class with all non-design parameters
+        Initialise BeamStructure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
         :param connectivity: Connectivity array of shapes [n_elem, 2]
         :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
@@ -102,6 +105,10 @@ class Structure:
         else:
             self.gravity_vec = jnp.zeros((3,))
 
+        self.verbosity: VerbosityLevel = VerbosityLevel.NORMAL
+        self.include_geometric: bool = include_geometric
+        self.include_q_dot: bool = include_q_dot
+
     def set_design_variables(
         self,
         coords: Array,
@@ -123,7 +130,8 @@ class Structure:
         else:
             if self.use_gravity and m_lumped is None:
                 warn(
-                    "No mass matrices provided, but gravity is enabled. Assuming zero mass."
+                    "No mass matrices provided, but gravity is enabled. Assuming zero mass.",
+                    current_level=self.verbosity,
                 )
         if m_lumped is not None:
             self.m_lumped = self.m_lumped.at[...].set(m_lumped)
@@ -186,7 +194,7 @@ class Structure:
             local=True,
         )
 
-    def _assemble_matrix_from_entries(self, entries: Array) -> Array:
+    def _assemble_matrix_from_element_entries(self, entries: Array) -> Array:
         r"""
         Assemble global matrix from element entries
         :param entries: Array of element matrix entries, [n_elem, 12, 12]
@@ -217,8 +225,6 @@ class Structure:
         d: Array,
         p_d: Array,
         eps: Array,
-        include_material: bool,
-        include_geometric: bool,
     ) -> Array:
         r"""
         Assemble tangent stiffness matrix as a function of the element relative configuration vectors
@@ -229,8 +235,8 @@ class Structure:
         return vmap(
             partial(
                 k_t_entry,
-                include_material=include_material,
-                include_geometric=include_geometric,
+                include_material=True,
+                include_geometric=self.include_geometric,
             ),
             (0, 0, 0, 0, 0, 0),
             0,
@@ -242,6 +248,24 @@ class Structure:
             self.k_cs,
             self.ad_inv_o0,
         )  # [n_elem, 12, 12]
+
+    def _make_k_t_dead(self, rmat: Array, f_ext_dead: Array) -> Array:
+        r"""
+        Compute the contribution to the stiffness matrix from dead external forces.
+        :param rmat: Rotation matrices at nodes, [n_node, 3, 3]
+        :param f_ext_dead: External dead forces in global reference, [n_node, 6]
+        :return: Stiffness matrix contribution from dead forces, [n_node, 6, 6]
+        """
+        k_t = jnp.zeros((self.n_nodes, 6, 6))
+
+        k_t = k_t.at[:, :3, 3:].set(
+            -vmap(vec_to_skew)(jnp.einsum("ikj,ik->ij", rmat, f_ext_dead[:, :3]))
+        )
+        k_t = k_t.at[:, 3:, 3:].set(
+            -vmap(vec_to_skew)(jnp.einsum("ikj,ik->ij", rmat, f_ext_dead[:, 3:]))
+        )
+
+        return k_t
 
     def _make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
         r"""
@@ -256,7 +280,11 @@ class Structure:
         )
 
     def _make_c_t(
-        self, d: Array, d_dot: Array, v: Array, int_order: Literal[1, 2, 3] = 3
+        self,
+        d: Array,
+        d_dot: Array,
+        v: Array,
+        int_order: Literal[1, 2, 3] = 3,
     ) -> tuple[Array, Array]:
         r"""
         Assemble tangent gyroscopic matrix. This does not include the lumped mass contribution.
@@ -266,7 +294,13 @@ class Structure:
         :param int_order: Integration order,
         :return: Elementwise gyroscopic C_L and C_T matrices, [n_elem, 12, 12], [n_elem, 12, 12]
         """
-        clt = vmap(partial(integrate_c_t, int_order=int_order), (0, 0, 0, 0, 0, 0), 0)(
+        clt = vmap(
+            partial(
+                integrate_c_t, int_order=int_order, include_q_dot=self.include_q_dot
+            ),
+            (0, 0, 0, 0, 0, 0),
+            0,
+        )(
             self.m_cs,
             jnp.concatenate(
                 (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]),
@@ -296,6 +330,7 @@ class Structure:
         c_t: Array,
         c_t_lumped: Optional[Array],
         k_t: Array,
+        k_t_dead: Optional[Array],
         ti: TimeIntregrator,
     ) -> Array:
         r"""
@@ -304,13 +339,17 @@ class Structure:
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
         :param k_t: Disassembled system stiffness matrix postmultiplied by increment tangent, [n_elem, 12, 12]
+        :param k_t_dead: Stiffness matrix contribution from dead forces, [n_node, 6, 6]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
 
-        mat = self._assemble_matrix_from_entries(
+        mat = self._assemble_matrix_from_element_entries(
             m_t * ti.beta_prime + c_t * ti.gamma_prime + k_t
         )
+
+        if k_t_dead is not None:
+            mat += block_diag(*k_t_dead)
 
         if self.use_lumped_mass:
             mat += (
@@ -653,23 +692,20 @@ class Structure:
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int,
-        include_material: bool = True,
-        include_geometric: bool = False,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
         max_n_iter: Optional[int] = 40,
-        rel_disp_tol: Optional[float] = 1e-6,
-        abs_disp_tol: Optional[float] = 1e-9,
-        rel_force_tol: Optional[float] = 1e-6,
-        abs_force_tol: Optional[float] = 1e-9,
+        rel_disp_tol: Optional[float] = 1e-8,
+        abs_disp_tol: Optional[float] = 1e-12,
+        rel_force_tol: Optional[float] = 1e-8,
+        abs_force_tol: Optional[float] = 1e-12,
+        verbosity: Optional[VerbosityLevel] = None,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
         :param f_ext_follower: External forces array of follower forces [n_node, 6]
         :param f_ext_dead: External forces array of dead loads [n_node, 6]
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
-        :param include_material: Whether to include material stiffness contribution.
-        :param include_geometric: Whether to include geometric stiffness contribution.
         :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
         :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
@@ -677,6 +713,7 @@ class Structure:
         :param abs_disp_tol: Absolute displacement tolerance for convergence.
         :param rel_force_tol: Relative force tolerance for convergence.
         :param abs_force_tol: Absolute force tolerance for convergence.
+        :param verbosity: Verbosity level for convergence messages.
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -684,6 +721,8 @@ class Structure:
             raise ValueError("load_steps must be at least 1")
 
         # add a warning if using 32-bit floats
+        if verbosity is not None:
+            self.verbosity = verbosity
         warn_if_32_bit()
 
         # check inputs
@@ -728,9 +767,17 @@ class Structure:
             eps_n = self._make_eps(d_n)  # [n_elem, 6]
 
             # assemble tangent stiffness matrix, [n_solve_dof, n_solve_dof]
-            k_t_n = self._assemble_matrix_from_entries(
-                self._make_k_t(d_n, p_d_n, eps_n, include_material, include_geometric)
+            k_t_n = self._assemble_matrix_from_element_entries(
+                self._make_k_t(d_n, p_d_n, eps_n)
             )[jnp.ix_(solve_dofs, solve_dofs)]
+
+            # add stiffness contribution from dead forces if applicable
+            if f_ext_dead is not None:
+                k_t_n += block_diag(
+                    *self._make_k_t_dead(
+                        hg_n[:, :3, :3], f_ext_dead_steps[i_load_step, ...]
+                    )
+                )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # compute residual forces, [n_solve_dofs]
             f_res_solve_n, f_abs_sum_n = self._make_f_res(
@@ -773,6 +820,10 @@ class Structure:
                 delta_force=f_res_solve_n,
                 total_force=f_abs_sum_n,
             )
+
+            if self.verbosity == VerbosityLevel.VERBOSE:
+                converge_status.print_message(None, i_load_step)
+
             return i_load_step, converge_status, hg_np1_full
 
         def convergence_loop(
@@ -809,7 +860,8 @@ class Structure:
                 ),
             )
 
-            convergence_status.print_message(None, i_load_step)
+            if self.verbosity == VerbosityLevel.NORMAL:
+                convergence_status.print_message(None, i_load_step)
 
             return hg_solve
 
@@ -852,16 +904,15 @@ class Structure:
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
-        include_material: bool = True,
-        include_geometric: bool = False,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
-        max_n_iter: int = 40,
+        max_n_iter: int = 30,
         spectral_radius: float = 1.0,
         rel_disp_tol: Optional[float] = 1e-9,
-        abs_disp_tol: Optional[float] = 1e-15,
+        abs_disp_tol: Optional[float] = 1e-12,
         rel_force_tol: Optional[float] = 1e-9,
-        abs_force_tol: Optional[float] = 1e-15,
+        abs_force_tol: Optional[float] = 1e-12,
+        verbosity: Optional[VerbosityLevel] = None,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
@@ -872,8 +923,6 @@ class Structure:
         :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces
         :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
-        :param include_material: If True, include material stiffness contribution.
-        :param include_geometric: If True, include geometric stiffness contribution.
         :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
         :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
         :param spectral_radius: Spectral radius for the time integrator, in the range [0, 1].
@@ -881,10 +930,13 @@ class Structure:
         :param abs_disp_tol: Absolute tolerance for displacement convergence.
         :param rel_force_tol: Relative tolerance for force convergence.
         :param abs_force_tol: Absolute tolerance for force convergence.
+        :param verbosity: Verbosity level for convergence messages.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
         # add a warning if using 32-bit floats
+        if verbosity is not None:
+            self.verbosity = verbosity
         warn_if_32_bit()
 
         # set up initial state
@@ -995,9 +1047,15 @@ class Structure:
             c_l, c_t = self._make_c_t(
                 d_n, d_dot_n, v_n
             )  # [n_elem, 12, 12], [n_elem, 12, 12]
-            k_t = self._make_k_t(
-                d_n, p_d_n, eps_n, include_material, include_geometric
-            )  # [n_elem, 12, 12]
+            k_t = self._make_k_t(d_n, p_d_n, eps_n)  # [n_elem, 12, 12]
+
+            # add stiffness contribution from dead forces if applicable
+            if f_ext_dead is not None:
+                k_t_dead = self._make_k_t_dead(
+                    hg_n[:, :3, :3], f_ext_dead_steps[i_load_step, i_ts, ...]
+                )
+            else:
+                k_t_dead = None
 
             if self.use_lumped_mass:
                 c_l_lumped, c_t_lumped = self._make_c_t_lumped(
@@ -1027,9 +1085,9 @@ class Structure:
             )
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
-            sys_mat = self._make_sys_matrix(m_t, c_t, c_t_lumped, k_t, time_integrator)[
-                jnp.ix_(solve_dofs, solve_dofs)
-            ]
+            sys_mat = self._make_sys_matrix(
+                m_t, c_t, c_t_lumped, k_t, k_t_dead, time_integrator
+            )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
             d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
@@ -1057,9 +1115,12 @@ class Structure:
                 total_force=f_abs_sum_n,
             )
 
+            if self.verbosity == VerbosityLevel.VERBOSE:
+                converge_status_.print_message(t[i_ts], i_load_step)
+
             return (
-                i_ts,
                 i_load_step,
+                i_ts,
                 converge_status_,
                 hg_n,
                 n_np1,
@@ -1173,8 +1234,8 @@ class Structure:
                 lambda args_: ~args_[2].get_status(),
                 lambda args_: _update(*args_),
                 (
-                    i_ts,
                     i_load_step,
+                    i_ts,
                     converge_status_,
                     hg_n,
                     n_n,
@@ -1183,7 +1244,8 @@ class Structure:
                 ),
             )
 
-            converge_status_.print_message(t[i_ts], i_load_step)
+            if self.verbosity == VerbosityLevel.NORMAL:
+                converge_status_.print_message(t[i_ts], i_load_step)
 
             return i_ts, converge_status_, hg_solve, n_n, v_n, v_dot_n
 
@@ -1234,7 +1296,8 @@ class Structure:
             max_res = jnp.max(jnp.abs(f_res))
             if max_res > 1e-6:
                 warn(
-                    f"Initial state is not in equilibrium, maximum residual force is {max_res:.3e}"
+                    f"Initial state is not in equilibrium, maximum residual force is {max_res:.3e}",
+                    current_level=self.verbosity,
                 )
 
             return DynamicStructureSnapshot(

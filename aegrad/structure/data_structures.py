@@ -97,12 +97,12 @@ class ConvergenceStatus:
         self.i_iter += 1
 
         # check absolute displacement convergence
-        self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.abs(delta_disp).max())
+        self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
         if self.abs_disp_tol is not None:
             self.converged_abs_disp = self.abs_disp_val < self.abs_disp_tol
 
         # check relative displacement convergence:
-        max_total_elem = jnp.abs(total_disp).max()
+        max_total_elem = jnp.linalg.norm(total_disp)
         self.rel_disp_val = self.rel_disp_val.at[...].set(
             self.abs_disp_val / max_total_elem
         )
@@ -112,7 +112,9 @@ class ConvergenceStatus:
             )
 
         # check absolute force convergence
-        self.abs_force_val = self.abs_force_val.at[...].set(jnp.abs(delta_force).max())
+        self.abs_force_val = self.abs_force_val.at[...].set(
+            jnp.linalg.norm(delta_force)
+        )
         if self.abs_force_tol is not None:
             self.converged_abs_force = self.abs_force_val < self.abs_force_tol
 
@@ -157,6 +159,10 @@ class ConvergenceStatus:
         self.converged_rel_disp = self.converged_rel_disp.at[...].set(False)
         self.converged_rel_force = self.converged_rel_force.at[...].set(False)
         self.converged_abs_force = self.converged_abs_force.at[...].set(False)
+        self.rel_disp_val = self.rel_disp_val.at[...].set(0.0)
+        self.abs_disp_val = self.abs_disp_val.at[...].set(0.0)
+        self.rel_force_val = self.rel_force_val.at[...].set(0.0)
+        self.abs_force_val = self.abs_force_val.at[...].set(0.0)
         self.has_nan = self.has_nan.at[...].set(False)
         self.final_iter = self.final_iter.at[...].set(False)
         self.i_iter = self.i_iter.at[...].set(0)
@@ -176,13 +182,13 @@ class ConvergenceStatus:
                 conv=self.converged,
                 rel_disp_val=self.rel_disp_val,
                 abs_disp_val=self.abs_disp_val,
-                rel_force_res=self.rel_force_val,
-                abs_force_res=self.abs_force_val,
+                rel_force_val=self.rel_force_val,
+                abs_force_val=self.abs_force_val,
             )
         else:
             # dynamic message
             jax_print(
-                "| Time: {t:.02e} | Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
+                "| Time: {t:.03e} | Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
                 "Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: {abs_force_val:.02e} |",
                 verbose_level=VerbosityLevel.NORMAL,
                 t=t,
