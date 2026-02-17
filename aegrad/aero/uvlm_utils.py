@@ -1,7 +1,8 @@
 from __future__ import annotations
-from jax import Array, vmap
 from typing import Sequence, Optional, Callable
 from jax import numpy as jnp
+from jax import Array, vmap
+
 from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
 
 
@@ -21,7 +22,7 @@ def make_rectangular_grid(
     return grid.at[..., 0].set((jnp.linspace(0.0, chord, m + 1) - ea * chord)[:, None])
 
 
-def get_surf_c(zeta: Array) -> Array:
+def _get_surf_c(zeta: Array) -> Array:
     r"""
     Compute the colocation points for a given grid of points on a single surface.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
@@ -30,7 +31,7 @@ def get_surf_c(zeta: Array) -> Array:
     return neighbour_average(zeta, axes=(0, 1))
 
 
-def get_surf_nc(zeta: Array) -> Array:
+def _get_surf_nc(zeta: Array) -> Array:
     r"""
     Compute the normal vectors for a given grid of points on a single surface. These have length equal to the area of
     each panel.
@@ -42,25 +43,25 @@ def get_surf_nc(zeta: Array) -> Array:
     return jnp.cross(diag1, diag2)
 
 
-def get_c(zetas: ArrayList) -> ArrayList:
+def _get_c(zetas: ArrayList) -> ArrayList:
     r"""
     Compute the colocation points for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Colocation points [n_surf][zeta_m-1, zeta_n-1, 3]
     """
-    return ArrayList([get_surf_c(zeta) for zeta in zetas])
+    return ArrayList([_get_surf_c(zeta) for zeta in zetas])
 
 
-def get_nc(zetas: ArrayList) -> ArrayList:
+def _get_nc(zetas: ArrayList) -> ArrayList:
     r"""
     Compute the normal vectors for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
     """
-    return ArrayList([get_surf_nc(zeta) for zeta in zetas])
+    return ArrayList([_get_surf_nc(zeta) for zeta in zetas])
 
 
-def propagate_surf_wake(
+def _propagate_surf_wake(
     gamma_b_n: Array,
     gamma_w_n: Array,
     zeta_b_np1: Array,
@@ -155,7 +156,7 @@ def propagate_surf_wake(
         return zeta_w_np1, gamma_w_np1
 
 
-def propagate_wake(
+def _propagate_wake(
     gamma_b_n: ArrayList,
     gamma_w_n: ArrayList,
     zeta_b_np1: ArrayList,
@@ -184,7 +185,7 @@ def propagate_wake(
     gamma_w_np1 = ArrayList([])
 
     for i_surf in range(n_surf):
-        surf_zeta_w, surf_gamma_w = propagate_surf_wake(
+        surf_zeta_w, surf_gamma_w = _propagate_surf_wake(
             gamma_b_n[i_surf],
             gamma_w_n[i_surf],
             zeta_b_np1[i_surf],
@@ -199,7 +200,7 @@ def propagate_wake(
     return zeta_w_np1, gamma_w_np1
 
 
-def steady_forcing(
+def _steady_forcing(
     zeta_b: ArrayList,
     zeta_dot_b: ArrayList,
     gamma_b: ArrayList,
@@ -222,7 +223,7 @@ def steady_forcing(
     f_steady = ArrayList([])
     for i_surf in range(len(zeta_b)):
         f_steady.append(
-            surf_steady_forcing(
+            _surf_steady_forcing(
                 zeta_b[i_surf],
                 zeta_dot_b[i_surf],
                 gamma_b[i_surf],
@@ -235,7 +236,7 @@ def steady_forcing(
     return f_steady
 
 
-def surf_steady_forcing(
+def _surf_steady_forcing(
     zeta_b: Array,
     zeta_dot_b: Array,
     gamma_b: Array,

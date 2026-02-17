@@ -1,6 +1,7 @@
-from aegrad.print_output import warn
 from jax import Array
 from jax import numpy as jnp
+
+from aegrad.print_output import warn
 
 
 class TimeIntregrator:
@@ -28,7 +29,7 @@ class TimeIntregrator:
             self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
-    def predict_n(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def _predict_n(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
         r"""
         Predict the next velocity based on current velocity and acceleration.
         :param v_n: Previous velocity, [n_nodes, 6].
@@ -40,7 +41,7 @@ class TimeIntregrator:
             (0.5 - self.beta) * a_n + self.beta * a_np1_pred
         )
 
-    def predict_v(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def _predict_v(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
         r"""
         Predict the next velocity based on current velocity and acceleration.
         :param v_n: Previous velocity, [n_nodes, 6].
@@ -52,7 +53,7 @@ class TimeIntregrator:
             v_n + (1.0 - self.gamma) * self.dt * a_n + self.gamma * self.dt * a_np1_pred
         )
 
-    def predict_v_dot(self, v_dot_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def _predict_v_dot(self, v_dot_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
         r"""
         Predict the acceleration based on previous pseudoacceleration and acceleration.
         :param v_dot_n: Previous acceleration, [n_nodes, 6].
@@ -66,7 +67,7 @@ class TimeIntregrator:
             - self.alpha_f * v_dot_n
         ) / (1.0 - self.alpha_f)
 
-    def predict_a(self, v_dot_n: Array, a_n: Array) -> Array:
+    def _predict_a(self, v_dot_n: Array, a_n: Array) -> Array:
         r"""
         Predict the pseudoacceleration based on previous pseudoacceleration and acceleration.
         :param v_dot_n: Previous acceleration, [n_nodes, 6].
@@ -75,7 +76,7 @@ class TimeIntregrator:
         """
         return (self.alpha_f * v_dot_n - self.alpha_m * a_n) / (1.0 - self.alpha_m)
 
-    def calculate_a_np1(self, v_dot_n: Array, v_dot_np1: Array, a_n: Array) -> Array:
+    def _calculate_a_np1(self, v_dot_n: Array, v_dot_np1: Array, a_n: Array) -> Array:
         r"""
         Calculate the pseudoacceleration at the next time step.
         :param v_dot_n: Previous acceleration, [n_nodes, 6].

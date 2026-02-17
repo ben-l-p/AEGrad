@@ -1,13 +1,13 @@
 from typing import Optional
 from os import PathLike
-
-from jax import Array
-from jax import numpy as jnp
 from pathlib import Path
 
 import vtk
 from vtk.numpy_interface import algorithms as algs
 from vtk.numpy_interface import dataset_adapter as dsa
+
+from jax import Array
+from jax import numpy as jnp
 
 
 def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructuredGrid:

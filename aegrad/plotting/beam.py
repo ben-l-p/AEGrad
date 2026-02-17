@@ -3,16 +3,16 @@ from os import PathLike
 from pathlib import Path
 from functools import partial
 
-import jax
-from jax import Array
-from jax import numpy as jnp
-from aegrad.algebra.se3 import hg_to_d, exp_se3, hg_inv
-
+import vtk
 from vtk.numpy_interface import algorithms as algs  # type: ignore
 from vtk.numpy_interface import dataset_adapter as dsa  # type: ignore
 from aegrad.print_output import warn
 
-import vtk
+import jax
+from jax import Array
+from jax import numpy as jnp
+
+from aegrad.algebra.se3 import hg_to_d, exp_se3, hg_inv
 
 
 def interpolate_beam(

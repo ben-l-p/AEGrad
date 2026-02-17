@@ -1,8 +1,9 @@
-from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
-import jax
 from jax import vmap
+import jax
+
+from aegrad.structure import BeamStructure
 from aegrad.algebra.se3 import log_se3
 
 jax.config.update("jax_enable_x64", True)

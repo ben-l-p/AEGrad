@@ -1,11 +1,13 @@
-from jax import Array, numpy as jnp
-import jax
-from aegrad.algebra.se3 import q, ha_to_ha_hat, p, q_dot, ha_to_ha_check
-from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
 from typing import Literal
 
+from jax import Array, numpy as jnp
+import jax
 
-def check_connectivity(connectivity: Array, num_nodes: int) -> None:
+from aegrad.algebra.se3 import q, ha_to_ha_hat, p, q_dot, ha_to_ha_check
+from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
+
+
+def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
     r"""
     Check connectivity array for validity
     :param connectivity: Connectivity array of shapes [n_elem, 2]
@@ -29,7 +31,7 @@ def check_connectivity(connectivity: Array, num_nodes: int) -> None:
             )
 
 
-def n_elem_per_node(connectivity: Array) -> Array:
+def _n_elem_per_node(connectivity: Array) -> Array:
     r"""
     Computes the number of elements connected to each node in the structure.
     :param connectivity: Connectivity array of shape [n_elem, 2]
@@ -43,7 +45,7 @@ def n_elem_per_node(connectivity: Array) -> Array:
     )
 
 
-def k_t_entry(
+def _k_t_entry(
     d: Array,
     p_d: Array,
     l: Array,
@@ -89,7 +91,7 @@ def k_t_entry(
     return k_t
 
 
-def integrate_m_l(
+def _integrate_m_l(
     m_cs: Array,
     d: Array,
     ad_inv: Array,
@@ -97,7 +99,7 @@ def integrate_m_l(
     int_order: Literal[3, 4, 5],
 ) -> Array:
     r"""
-    Approximate the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
+    Approximates the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
     :param m_cs: Cross sectional mass matrix, [6, 6].
     :param d: Configuration vector, [6]
     :param ad_inv: Inverse adjoint matrix for element, [6, 6]
@@ -106,7 +108,7 @@ def integrate_m_l(
     :return: Integrated mass matrix, [12, 12]
     """
 
-    def inner_func(s_l) -> Array:
+    def _inner_func(s_l) -> Array:
         q_mat = q(s_l, d, ad_inv)
         return q_mat.T @ m_cs @ q_mat
 
@@ -114,14 +116,14 @@ def integrate_m_l(
     fl = jnp.zeros((12, 12)).at[6:, 6:].set(ad_inv.T @ m_cs @ ad_inv)
 
     return l * gauss_lobatto(
-        inner_func,
+        _inner_func,
         jnp.array((0.0, 1.0)),
         jnp.stack((f0, fl), axis=0),
         int_order=int_order,
     )
 
 
-def integrate_c_t(
+def _integrate_c_t(
     m_cs: Array,
     v_ab: Array,
     d: Array,
@@ -148,7 +150,7 @@ def integrate_c_t(
 
     if include_q_dot:
 
-        def g_iner_ab_integr(s_l: Array, v: Array) -> Array:
+        def _g_iner_ab_integr(s_l: Array, v: Array) -> Array:
             r"""
             Integrand for intertial forcing with zero acceleration
             """
@@ -159,17 +161,17 @@ def integrate_c_t(
                 m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
             )
 
-        def g_iner_ab(v: Array) -> Array:
+        def _g_iner_ab(v: Array) -> Array:
             r"""
             Integrate along the beam to find the inertial loads at each end due to velocity.
             """
             return l * gauss_legendre(
-                lambda s_l_: g_iner_ab_integr(s_l_, v),
+                lambda s_l_: _g_iner_ab_integr(s_l_, v),
                 jnp.array((0.0, 1.0)),
                 int_order=int_order,
             )  # [12]
 
-        def c_l_integr(s_l: Array) -> Array:
+        def _c_l_integr(s_l: Array) -> Array:
             r"""
             Integrand for linear contribution to inertial forcing.
             """
@@ -181,11 +183,11 @@ def integrate_c_t(
 
         # obtain the tangent stiffness as the Jacobian of the inertial forcing with respect to velocity, which includes
         # the contribution from q_dot
-        c_t = jax.jacobian(g_iner_ab, argnums=0)(v_ab)  # [12, 12]
+        c_t = jax.jacobian(_g_iner_ab, argnums=0)(v_ab)  # [12, 12]
 
         # obtain the linear contribution seperately - these are combined when q_dot is omitted for simplicity
         c_l = l * gauss_legendre(
-            c_l_integr,
+            _c_l_integr,
             jnp.array((0.0, 1.0)),
             int_order=int_order,
         )  # [12, 12]
@@ -193,7 +195,7 @@ def integrate_c_t(
         return jnp.stack([c_l, c_t], axis=0)
     else:
 
-        def inner_func(s_l) -> Array:
+        def _inner_func(s_l) -> Array:
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
             c_l = q_mat.T @ (
@@ -203,13 +205,13 @@ def integrate_c_t(
             return jnp.stack((c_l, c_t), axis=0)
 
         return l * gauss_legendre(
-            inner_func,
+            _inner_func,
             jnp.array((0.0, 1.0)),
             int_order=int_order,
         )  # [2, 12, 12]
 
 
-def make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
+def _make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
     r"""
     Construct lumped damping matrix :math:`C_T` from lumped mass matrix :math:`M_{lumped}` and nodal velocities
     :math:`\mathbf{v}`
@@ -218,11 +220,11 @@ def make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
     :return: Stacked gyroscopic matrices, [2, 6, 6]
     """
 
-    def g_iner_func(v_: Array) -> Array:
+    def _g_iner_func(v_: Array) -> Array:
         return -ha_to_ha_hat(v_).T @ m_lumped @ v_
 
     c_l = -ha_to_ha_hat(v).T @ m_lumped  # g_iner = c_l @ v
 
-    c_t = jax.jacobian(g_iner_func)(v)  # d_{g_iner}/d_v
+    c_t = jax.jacobian(_g_iner_func)(v)  # d_{g_iner}/d_v
 
     return jnp.stack((c_l, c_t), axis=0)

@@ -1,7 +1,8 @@
 from jax import numpy as jnp
+from jax import Array
+
 from aegrad.algebra.linear_operators import LinearOperator, BlockLinear
 from aegrad.algebra.base import taylor_series
-from jax import Array
 
 
 class TestLinearOperator:

@@ -1,8 +1,8 @@
 from jax.scipy.linalg import block_diag
-
-from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 import jax
+
+from aegrad.structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 

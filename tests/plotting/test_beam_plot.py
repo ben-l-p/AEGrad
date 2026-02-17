@@ -1,6 +1,8 @@
-from jax import numpy as jnp
 from pathlib import Path
+
+from jax import numpy as jnp
 import jax
+
 from models.geradin_beam import geradin_beam
 
 jax.config.update("jax_enable_x64", True)

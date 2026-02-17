@@ -1,9 +1,10 @@
 from __future__ import annotations
-from jax import Array
 from typing import Sequence, Optional
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
+from jax import Array
+
 from aegrad.plotting.aerogrid import plot_frame_to_vtk
 from aegrad.print_output import warn
 from aegrad.algebra.array_utils import ArrayList

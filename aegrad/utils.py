@@ -1,8 +1,8 @@
 from typing import Any, Sequence
 from typing import Callable, Protocol, TypeVar
-from jax import tree_util
 from dataclasses import fields, is_dataclass
 from functools import wraps
+from jax import tree_util
 
 
 def replace_self(func: Callable[..., object]) -> Callable[..., None]:
@@ -24,7 +24,7 @@ class SupportsPytree(Protocol):
 T = TypeVar("T", bound=SupportsPytree)
 
 
-def make_pytree(cls: type[T]) -> type[T]:
+def _make_pytree(cls: type[T]) -> type[T]:
     """
     Convert an object to a pytree structure.
     :param cls: Class to be converted to a pytree.
@@ -47,7 +47,7 @@ def make_pytree(cls: type[T]) -> type[T]:
     return cls
 
 
-def check_type(obj: Any, type_: type | Sequence[type]) -> None:
+def _check_type(obj: Any, type_: type | Sequence[type]) -> None:
     try:
         len(type_)
     except TypeError:
@@ -60,7 +60,7 @@ def check_type(obj: Any, type_: type | Sequence[type]) -> None:
     raise TypeError(f"Expected {type_}, but got {obj}.")
 
 
-def shallow_asdict(obj):
+def _shallow_asdict(obj):
     if not is_dataclass(obj):
         raise TypeError("object must be a dataclass")
     return {f.name: getattr(obj, f.name) for f in fields(obj)}

@@ -1,13 +1,13 @@
 from __future__ import annotations
-from jax import Array, jit, vmap
-import jax
-import jax.numpy as jnp
 from typing import Sequence, TYPE_CHECKING, Optional, Self
 from functools import reduce
 from operator import mul
 from enum import Enum
 from os import PathLike
 from pathlib import Path
+from jax import Array, jit, vmap
+import jax
+import jax.numpy as jnp
 
 from aegrad.aero.data_structures import (
     AeroSnapshot,
@@ -20,13 +20,13 @@ from aegrad.aero.data_structures import (
     StateUnflattened,
     OutputUnflattened,
 )
-from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
+from aegrad.aero.uvlm_utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
 from aegrad.algebra.array_utils import ArrayList, split_to_vertex
-from aegrad.aero.aic import compute_aic_sys_assembled
+from aegrad.aero.aic import _compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, biot_savart_cutoff
-from aegrad.utils import shallow_asdict, replace_self
+from aegrad.aero.kernels import KernelFunction, _biot_savart_cutoff
+from aegrad.utils import _shallow_asdict, replace_self
 from aegrad.print_output import print_with_time, warn
 from aegrad.plotting.pvd import write_pvd
 
@@ -106,8 +106,8 @@ class LinearUVLM:
         self.gamma0_w: ArrayList = ArrayList(reference.gamma_w)
         self.f_steady0: ArrayList = ArrayList(reference.f_steady)
         self.f_unsteady0: ArrayList = ArrayList(reference.f_unsteady)
-        self.c0: ArrayList = get_c(reference.zeta_b)
-        self.n0: ArrayList = get_nc(reference.zeta_b)
+        self.c0: ArrayList = _get_c(reference.zeta_b)
+        self.n0: ArrayList = _get_nc(reference.zeta_b)
         self.flowfield0: FlowField = case.flowfield
 
         # baseline shapes
@@ -130,8 +130,8 @@ class LinearUVLM:
         self.output_slices, self.n_outputs = self._make_output_slices()
 
         # kernels
-        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [biot_savart_cutoff]
-        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [biot_savart_cutoff]
+        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [_biot_savart_cutoff]
+        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [_biot_savart_cutoff]
 
         # wake propagation deltas
         self.delta_w: Sequence[Optional[Array]] = case.delta_w
@@ -429,7 +429,7 @@ class LinearUVLM:
         :return: InputUnflattened object.
         """
         return InputUnflattened(
-            **self._unpack_vector(u, shallow_asdict(self.input_slices))
+            **self._unpack_vector(u, _shallow_asdict(self.input_slices))
         )
 
     def _unpack_state_vector(self, x: Array) -> StateUnflattened:
@@ -439,7 +439,7 @@ class LinearUVLM:
         :return: StateUnflattened object.
         """
         return StateUnflattened(
-            **self._unpack_vector(x, shallow_asdict(self.state_slices))
+            **self._unpack_vector(x, _shallow_asdict(self.state_slices))
         )
 
     def _unpack_output_vector(self, y: Array) -> OutputUnflattened:
@@ -449,7 +449,7 @@ class LinearUVLM:
         :return: OutputUnflattened object.
         """
         return OutputUnflattened(
-            **self._unpack_vector(y, shallow_asdict(self.output_slices))
+            **self._unpack_vector(y, _shallow_asdict(self.output_slices))
         )
 
     def _unpack_input_vector_t(self, u_t: Array) -> InputUnflattened:
@@ -459,7 +459,7 @@ class LinearUVLM:
         :return: InputUnflattened object.
         """
         return InputUnflattened(
-            **self._unpack_vector(u_t, shallow_asdict(self.input_slices), add_t=True)
+            **self._unpack_vector(u_t, _shallow_asdict(self.input_slices), add_t=True)
         )
 
     def _unpack_state_vector_t(self, x_t: Array) -> StateUnflattened:
@@ -469,7 +469,7 @@ class LinearUVLM:
         :return: StateUnflattened object.
         """
         return StateUnflattened(
-            **self._unpack_vector(x_t, shallow_asdict(self.state_slices), add_t=True)
+            **self._unpack_vector(x_t, _shallow_asdict(self.state_slices), add_t=True)
         )
 
     def _unpack_output_vector_t(self, y_t: Array) -> OutputUnflattened:
@@ -479,7 +479,7 @@ class LinearUVLM:
         :return: OutputUnflattened object.
         """
         return OutputUnflattened(
-            **self._unpack_vector(y_t, shallow_asdict(self.output_slices), add_t=True)
+            **self._unpack_vector(y_t, _shallow_asdict(self.output_slices), add_t=True)
         )
 
     def _pack_vector(
@@ -509,7 +509,7 @@ class LinearUVLM:
         :return: Input vector, [n_inputs]
         """
         return self._pack_vector(
-            shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
+            _shallow_asdict(self.input_slices), self.n_inputs, _shallow_asdict(u_input)
         )
 
     def _pack_state_vector(self, x_state: StateUnflattened) -> Array:
@@ -519,7 +519,7 @@ class LinearUVLM:
         :return: State vector, [n_states]
         """
         return self._pack_vector(
-            shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
+            _shallow_asdict(self.state_slices), self.n_states, _shallow_asdict(x_state)
         )
 
     def _pack_output_vector(self, y_output: OutputUnflattened) -> Array:
@@ -529,7 +529,9 @@ class LinearUVLM:
         :return: Output vector, [n_outputs]
         """
         return self._pack_vector(
-            shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output)
+            _shallow_asdict(self.output_slices),
+            self.n_outputs,
+            _shallow_asdict(y_output),
         )
 
     def _pack_vector_t(
@@ -564,7 +566,7 @@ class LinearUVLM:
         :return: Input vector time history, [n_tstep, n_inputs]
         """
         return self._pack_vector_t(
-            shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
+            _shallow_asdict(self.input_slices), self.n_inputs, _shallow_asdict(u_input)
         )
 
     def _pack_state_vector_t(self, x_state: StateUnflattened) -> Array:
@@ -574,7 +576,7 @@ class LinearUVLM:
         :return: State vector time history, [n_tstep, n_states]
         """
         return self._pack_vector_t(
-            shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
+            _shallow_asdict(self.state_slices), self.n_states, _shallow_asdict(x_state)
         )
 
     def _pack_output_vector_t(self, y_output: OutputUnflattened) -> Array:
@@ -584,7 +586,9 @@ class LinearUVLM:
         :return: Output vector time history, [n_tstep, n_outputs]
         """
         return self._pack_vector_t(
-            shallow_asdict(self.output_slices), self.n_outputs, shallow_asdict(y_output)
+            _shallow_asdict(self.output_slices),
+            self.n_outputs,
+            _shallow_asdict(y_output),
         )
 
     def _get_total(
@@ -624,7 +628,7 @@ class LinearUVLM:
         """
         return InputUnflattened(
             **self._get_total(
-                shallow_asdict(u), shallow_asdict(self.get_reference_inputs())
+                _shallow_asdict(u), _shallow_asdict(self.get_reference_inputs())
             )
         )
 
@@ -636,7 +640,7 @@ class LinearUVLM:
         """
         return StateUnflattened(
             **self._get_total(
-                shallow_asdict(x), shallow_asdict(self.get_reference_states())
+                _shallow_asdict(x), _shallow_asdict(self.get_reference_states())
             )
         )
 
@@ -648,7 +652,7 @@ class LinearUVLM:
         """
         return OutputUnflattened(
             **self._get_total(
-                shallow_asdict(y), shallow_asdict(self.get_reference_outputs())
+                _shallow_asdict(y), _shallow_asdict(self.get_reference_outputs())
             )
         )
 
@@ -660,8 +664,8 @@ class LinearUVLM:
         """
         return InputUnflattened(
             **self._get_total(
-                shallow_asdict(u_t),
-                shallow_asdict(self.get_reference_inputs()),
+                _shallow_asdict(u_t),
+                _shallow_asdict(self.get_reference_inputs()),
                 add_t=True,
             )
         )
@@ -674,8 +678,8 @@ class LinearUVLM:
         """
         return StateUnflattened(
             **self._get_total(
-                shallow_asdict(x_t),
-                shallow_asdict(self.get_reference_states()),
+                _shallow_asdict(x_t),
+                _shallow_asdict(self.get_reference_states()),
                 add_t=True,
             )
         )
@@ -688,8 +692,8 @@ class LinearUVLM:
         """
         return OutputUnflattened(
             **self._get_total(
-                shallow_asdict(y_t),
-                shallow_asdict(self.get_reference_outputs()),
+                _shallow_asdict(y_t),
+                _shallow_asdict(self.get_reference_outputs()),
                 add_t=True,
             )
         )
@@ -718,21 +722,21 @@ class LinearUVLM:
         Get a zero input unflattened object.
         :return: InputUnflattened object with zero arrays.
         """
-        return InputUnflattened(**self._get_zero(shallow_asdict(self.input_slices)))
+        return InputUnflattened(**self._get_zero(_shallow_asdict(self.input_slices)))
 
     def get_zero_state(self) -> StateUnflattened:
         r"""
         Get a zero state unflattened object.
         :return: StateUnflattened object with zero arrays.
         """
-        return StateUnflattened(**self._get_zero(shallow_asdict(self.state_slices)))
+        return StateUnflattened(**self._get_zero(_shallow_asdict(self.state_slices)))
 
     def get_zero_output(self) -> OutputUnflattened:
         r"""
         Get a zero output unflattened object.
         :return: OutputUnflattened object with zero arrays.
         """
-        return OutputUnflattened(**self._get_zero(shallow_asdict(self.output_slices)))
+        return OutputUnflattened(**self._get_zero(_shallow_asdict(self.output_slices)))
 
     def _unflatten_subvec(self, vec: Array, component: _LinearComponent) -> ArrayList:
         r"""
@@ -763,9 +767,9 @@ class LinearUVLM:
             :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Solve matrix, [m_tot*n_tot, m_tot*n_tot]
             """
-            zeta_cs = get_c(zeta_bs)
-            ns = get_nc(zeta_bs)
-            aic_sys = compute_aic_sys_assembled(zeta_cs, zeta_bs, self.kernels_b, ns)
+            zeta_cs = _get_c(zeta_bs)
+            ns = _get_nc(zeta_bs)
+            aic_sys = _compute_aic_sys_assembled(zeta_cs, zeta_bs, self.kernels_b, ns)
             return jnp.linalg.inv(aic_sys)
 
         def _make_v_bc(
@@ -783,11 +787,11 @@ class LinearUVLM:
             :return: Boundary condition velocity at collocation points, [m_tot*n_tot]
             """
             # all values given at time=n+1
-            zeta_cs = get_c(zeta_bs)
-            zeta_cs_dot = get_c(zeta_bs_dot)
+            zeta_cs = _get_c(zeta_bs)
+            zeta_cs_dot = _get_c(zeta_bs_dot)
 
-            ns = get_nc(zeta_bs)
-            aic_w = compute_aic_sys_assembled(
+            ns = _get_nc(zeta_bs)
+            aic_w = _compute_aic_sys_assembled(
                 zeta_cs, zeta_ws, self.kernels_w, ns
             )  # [m_tot*n_tot, m_star_tot*n_tot]
 
@@ -822,7 +826,7 @@ class LinearUVLM:
 
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
-                vertex_influence = compute_aic_sys_assembled(
+                vertex_influence = _compute_aic_sys_assembled(
                     [x], [*zeta_b, *zeta_w], [*self.kernels_b, *self.kernels_w], None
                 )
 
@@ -857,7 +861,7 @@ class LinearUVLM:
                 )
 
             # use wake propagation routines from nonlinear case, as they should be equivalent
-            zeta_w_np1_tot, gamma_w_np1_tot = propagate_wake(
+            zeta_w_np1_tot, gamma_w_np1_tot = _propagate_wake(
                 x_n_tot.gamma_b,
                 x_n_tot.gamma_w,
                 u_np1_tot.zeta_b if self.prescribed_wake else self.zeta0_b,
@@ -889,7 +893,7 @@ class LinearUVLM:
             :return: Perturbations in normal vectors at t=n+1, [n_surf][m, n, 3]
             """
             zeta_b_full = d_zeta_b + self.zeta0_b
-            n_full = get_nc(zeta_b_full)
+            n_full = _get_nc(zeta_b_full)
             return n_full - self.n0
 
         # boundary condition velocity and its derivatives [n_c]
@@ -1031,11 +1035,11 @@ class LinearUVLM:
 
             # perturbations in flow and bound grid at zeta_b
             d_n = _get_dn(u_np1.zeta_b)
-            d_zeta_dot_c = get_c(u_np1.zeta_b_dot)
-            zeta0_c_dot = get_c(self.zeta0_b_dot)
+            d_zeta_dot_c = _get_c(u_np1.zeta_b_dot)
+            zeta0_c_dot = _get_c(self.zeta0_b_dot)
 
             if self.bound_upwash:
-                d_nu_c = get_c(u_np1.nu_b)
+                d_nu_c = _get_c(u_np1.nu_b)
                 d_v_bc += (
                     ArrayList.einsum("ijk,ijk->ij", d_nu_c - d_zeta_dot_c, self.n0)
                     + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
@@ -1129,7 +1133,7 @@ class LinearUVLM:
                         zeta_w if zeta_w is not None else self.zeta0_w,
                     )
 
-                return steady_forcing(
+                return _steady_forcing(
                     self.zeta0_b,
                     self.zeta0_b_dot,
                     gamma_b,
@@ -1176,7 +1180,7 @@ class LinearUVLM:
                         x, self.gamma0_b, self.gamma0_w, zeta_b, self.zeta0_w
                     )
 
-                return steady_forcing(
+                return _steady_forcing(
                     zeta_b,
                     zeta_b_dot,
                     self.gamma0_b,

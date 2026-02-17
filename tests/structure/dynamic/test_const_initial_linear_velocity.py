@@ -1,8 +1,8 @@
-from aegrad.structure.beam import BeamStructure
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
-import numpy as np
 import jax
+
+from aegrad.structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 
@@ -39,11 +39,11 @@ class TestConstXVelocityXBeam:
         output = struct.dynamic_solve(
             init_cond, n_tstep, dt, None, None, None, spectral_radius=1.0
         )
-        x_t = np.array(output.hg[:, 0, cls.v_direction_index, 3])  # [n_tstep]
+        x_t = output.hg[:, 0, cls.v_direction_index, 3]  # [n_tstep]
 
         expected_x_t = jnp.arange(n_tstep) * dt * v_mag  # [n_tstep]
 
-        assert np.allclose(expected_x_t, x_t), (
+        assert jnp.allclose(expected_x_t, x_t), (
             "Beam with constant initial velocity did not maintain constant velocity."
         )
 

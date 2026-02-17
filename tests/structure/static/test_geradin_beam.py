@@ -1,5 +1,6 @@
 from jax import numpy as jnp
 import jax
+
 from aegrad.algebra.so3 import log_so3
 from models.geradin_beam import geradin_beam
 

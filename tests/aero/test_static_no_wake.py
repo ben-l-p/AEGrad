@@ -1,7 +1,6 @@
-from aegrad.aero.uvlm_utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization
 from jax import numpy as jnp
-from aegrad.aero.uvlm import UVLM
+
+from aegrad.aero import make_rectangular_grid, GridDiscretization, UVLM
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 

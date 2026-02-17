@@ -1,14 +1,15 @@
+from typing import Callable
 from jax import numpy as jnp
 import jax
 from jax import Array
 from jax.lax import cond
-from typing import Callable
+
 from aegrad.constants import EPSILON, R_CUTOFF
 
 type KernelFunction = Callable[[Array, Array], Array]
 
 
-def biot_savart(x: Array, y: Array) -> Array:
+def _biot_savart(x: Array, y: Array) -> Array:
     r"""
     Basic Biot-Savart kernel without any smoothing or cutoff.
     :param x: Target point, [3]
@@ -24,7 +25,7 @@ def biot_savart(x: Array, y: Array) -> Array:
 
 
 @jax.custom_jvp
-def make_unit_epsilon(r: Array) -> Array:
+def _make_unit_epsilon(r: Array) -> Array:
     r"""
     Differentiable function to obtain a smoothed unit vector. As r -> 0, the output approaches zero instead of being
     undefined.
@@ -34,8 +35,8 @@ def make_unit_epsilon(r: Array) -> Array:
     return r / jnp.sqrt(jnp.sum(r**2) + EPSILON**2)
 
 
-@make_unit_epsilon.defjvp
-def smooth_unit_vector_jvp(primals, tangents):
+@_make_unit_epsilon.defjvp
+def _smooth_unit_vector_jvp(primals, tangents):
     r"""
     Custom JVP rule for the smoothed unit vector function.
     """
@@ -57,7 +58,7 @@ def smooth_unit_vector_jvp(primals, tangents):
     return y, jvp
 
 
-def biot_savart_epsilon(x: Array, y: Array) -> Array:
+def _biot_savart_epsilon(x: Array, y: Array) -> Array:
     r"""
     Biot-Savart kernel with epsilon term added to remove singularity.
     :param x: Target point, [3]
@@ -68,12 +69,12 @@ def biot_savart_epsilon(x: Array, y: Array) -> Array:
     r1 = x - y[0, :]
     r2 = x - y[1, :]
     r1_x_r2 = jnp.cross(r1, r2)
-    diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
+    diff_r = _make_unit_epsilon(r1) - _make_unit_epsilon(r2)
     r1_x_r2_unit = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2) + EPSILON)
     return r1_x_r2_unit / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
 
-def biot_savart_cutoff(x: Array, y: Array) -> Array:
+def _biot_savart_cutoff(x: Array, y: Array) -> Array:
     r"""
     Biot-Savart kernel with truncation radius to remove singularity.
     :param x: Target point, [3]
@@ -92,7 +93,7 @@ def biot_savart_cutoff(x: Array, y: Array) -> Array:
         # Compute the standard Biot-Savart kernel, called only if r > R_CUTOFF
         r1_x_r2 = jnp.cross(r1, r2)
         r1_x_r2_unit2 = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2))
-        diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
+        diff_r = _make_unit_epsilon(r1) - _make_unit_epsilon(r2)
         return r1_x_r2_unit2 / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
     return cond((r > R_CUTOFF), _kernel_value, lambda: jnp.zeros(3))

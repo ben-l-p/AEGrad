@@ -1,7 +1,8 @@
 from jax import numpy as jnp
+import jax
+
 from structure.beam import BeamStructure
 from algebra.so3 import vec_to_skew
-import jax
 from algebra.se3 import p
 
 jax.config.update("jax_enable_x64", True)

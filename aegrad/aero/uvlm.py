@@ -1,16 +1,17 @@
 from __future__ import annotations
 from functools import singledispatchmethod
 from collections.abc import Sequence
+from typing import Optional, Self
+from os import PathLike
+from pathlib import Path
 import jax
 import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
-from typing import Optional, Self
-from os import PathLike
-from pathlib import Path
-from aegrad.utils import replace_self, make_pytree
+
+from aegrad.utils import replace_self, _make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
-from aegrad.aero.uvlm_utils import get_c, get_nc, propagate_wake, steady_forcing
+from aegrad.aero.uvlm_utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
 from aegrad.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import (
     check_arr_dtype,
@@ -21,12 +22,12 @@ from aegrad.algebra.array_utils import (
 )
 from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, biot_savart_epsilon
+from aegrad.aero.kernels import KernelFunction, _biot_savart_epsilon
 from aegrad.aero.aic import (
-    compute_aic_sys_assembled,
-    assemble_aic_sys,
-    add_wake_influence,
-    compute_aic_sys,
+    _compute_aic_sys_assembled,
+    _assemble_aic_sys,
+    _add_wake_influence,
+    _compute_aic_sys,
 )
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
@@ -35,7 +36,7 @@ from aegrad.print_output import print_with_time, warn, jax_print
 from aegrad.plotting.pvd import write_pvd
 
 
-@make_pytree
+@_make_pytree
 class UVLM:
     r"""
     Class to define an unsteady vortex lattice method aerodynamic case with arbitrary number of aerodynamic surfaces.
@@ -103,7 +104,7 @@ class UVLM:
         self._zeta0_b: Optional[ArrayList] = None
         self._zeta0_w: Optional[ArrayList] = None
 
-        self.gamma_b_slice, self.gamma_w_slice = self.make_gamma_slices()
+        self.gamma_b_slice, self.gamma_w_slice = self._make_gamma_slices()
 
         # store DOF mapping
         if len(dof_mapping) != self.n_surf:
@@ -128,7 +129,7 @@ class UVLM:
 
         # kernel definitions per surface (seperate for wing and wake)
         if kernel is None:
-            kernel = biot_savart_epsilon
+            kernel = _biot_savart_epsilon
             # kernel = biot_savart
         self.kernels_b: Sequence[KernelFunction] = self.n_surf * [kernel]
         self.kernels_w: Sequence[KernelFunction] = self.n_surf * [kernel]
@@ -299,7 +300,7 @@ class UVLM:
 
         # set global grid coordinates for bound and wake
         check_arr_shape(hg0, (None, 4, 4), "hg0")
-        self._zeta0_b = self.hg_to_zeta(hg0)
+        self._zeta0_b = self._hg_to_zeta(hg0)
 
         # set flowfield
         self._flowfield = flowfield
@@ -325,7 +326,7 @@ class UVLM:
         else:
             # auto compute delta_w based on freestream and dt
             self._delta_w = self.n_surf * [None]
-        self.initialise_wake()
+        self._initialise_wake()
 
     @replace_self
     def extend_n_tstep(self, n_tstep: int) -> Self:
@@ -402,11 +403,11 @@ class UVLM:
         :return: Induced velocity at points x, [..., 3].
         """
 
-        gamma_flat = self.get_gamma_vect(i_ts)
+        gamma_flat = self._get_gamma_vect(i_ts)
 
-        aic = compute_aic_sys_assembled(
+        aic = _compute_aic_sys_assembled(
             [x],
-            self.get_zeta(i_ts),
+            self._get_zeta(i_ts),
             [*self.kernels_b, *self.kernels_w],
         )  # shapes [n_x, n_gamma, 3]
 
@@ -430,7 +431,7 @@ class UVLM:
         """
         return self.get_v_ind(x, i_ts) + self.get_v_background(i_ts, x)
 
-    def get_zeta_te_surf(self, i_ts: int, i_surf: int) -> Array:
+    def _get_zeta_te_surf(self, i_ts: int, i_surf: int) -> Array:
         r"""
         Get trailing edge grid coordinates for a single surface at specified time step
         :param i_ts: Timestep index
@@ -439,7 +440,7 @@ class UVLM:
         """
         return self.zeta_b[i_surf][i_ts, -1, ...]
 
-    def get_gamma_te_surf(self, i_ts: int, i_surf: int) -> Array:
+    def _get_gamma_te_surf(self, i_ts: int, i_surf: int) -> Array:
         r"""
         Get trailing edge circulation strengths for a single surface at specified time step
         :param i_ts: Timestep index
@@ -448,7 +449,7 @@ class UVLM:
         """
         return self.gamma_b[i_surf][i_ts, -1, :]
 
-    def get_zeta_b(self, i_ts: int) -> ArrayList:
+    def _get_zeta_b(self, i_ts: int) -> ArrayList:
         r"""
         Get bound grid coordinates for all surfaces at specified time step
         :param i_ts: Timestep index
@@ -456,7 +457,7 @@ class UVLM:
         """
         return self.zeta_b.index_all((i_ts, ...))
 
-    def get_zeta_dot_b(self, i_ts: int) -> ArrayList:
+    def _get_zeta_dot_b(self, i_ts: int) -> ArrayList:
         r"""
         Get bound grid velocities for all surfaces at specified time step
         :param i_ts: Timestep index
@@ -464,7 +465,7 @@ class UVLM:
         """
         return self.zeta_b_dot.index_all((i_ts, ...))
 
-    def get_zeta_w(self, i_ts: int) -> ArrayList:
+    def _get_zeta_w(self, i_ts: int) -> ArrayList:
         r"""
         Get wake grid coordinates for all surfaces at specified time step
         :param i_ts: Timestep index
@@ -472,16 +473,16 @@ class UVLM:
         """
         return self.zeta_w.index_all((i_ts, ...))
 
-    def get_zeta(self, i_ts: int) -> ArrayList:
+    def _get_zeta(self, i_ts: int) -> ArrayList:
         r"""
         Get full grid coordinates all bound and wake surfaces at specified time step. These are stacked in (bound, wake)
         int_order.
         :param i_ts: Timestep index
         :return: List of grid coordinates for each surface, [2 * n_surf][zeta_m | zeta_m_star, zeta_n, 3]
         """
-        return self.get_zeta_b(i_ts).combine(self.get_zeta_w(i_ts))
+        return self._get_zeta_b(i_ts).combine(self._get_zeta_w(i_ts))
 
-    def hg_to_zeta(self, hg: Array) -> ArrayList:
+    def _hg_to_zeta(self, hg: Array) -> ArrayList:
         r"""
         Convert beam global grid coordinates to aerodynamic global grid coordinates.
         :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
@@ -498,7 +499,7 @@ class UVLM:
             )
         return zetas
 
-    def hg_dot_to_zeta_dot(self, hg_dot: Array) -> ArrayList:
+    def _hg_dot_to_zeta_dot(self, hg_dot: Array) -> ArrayList:
         r"""
         Convert beam global grid velocities to aerodynamic global grid velocities.
         :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4]
@@ -516,7 +517,7 @@ class UVLM:
             )
         return zeta_dots
 
-    def get_gamma_w(self, i_ts: int) -> ArrayList:
+    def _get_gamma_w(self, i_ts: int) -> ArrayList:
         r"""
         Get wake circulation strengths for all surfaces at specified time step
         :param i_ts: Timestep index
@@ -524,26 +525,26 @@ class UVLM:
         """
         return self.gamma_w.index_all((i_ts, ...))
 
-    def get_gamma_vect(self, i_ts: int) -> Array:
+    def _get_gamma_vect(self, i_ts: int) -> Array:
         r"""
         Get total circulation strengths vector for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: Total circulation strengths vector, [gamma_tot]
         """
         return jnp.concatenate(
-            [self.get_gamma_b_vect(i_ts), self.get_gamma_w_vect(i_ts)], axis=0
+            [self._get_gamma_b_vect(i_ts), self._get_gamma_w_vect(i_ts)], axis=0
         )
 
-    def get_gamma_w_vect(self, i_ts: int) -> Array:
+    def _get_gamma_w_vect(self, i_ts: int) -> Array:
         r"""
         Get wake circulation strengths vector for all surfaces at specified time step
         :param i_ts: Timestep index
         :return: Wake circulation strengths vector, [gamma_w_tot]
         """
-        return self.get_gamma_w(i_ts).flatten()
+        return self._get_gamma_w(i_ts).flatten()
 
     @replace_self
-    def set_gamma_b(self, gamma_vec: Array, i_ts: int) -> Self:
+    def _set_gamma_b(self, gamma_vec: Array, i_ts: int) -> Self:
         r"""
         Set bound circulation strengths from total circulation strengths vector at specified time step
         :param gamma_vec: Total circulation strengths vector, [gamma_b_tot]
@@ -561,7 +562,7 @@ class UVLM:
             )
         return self
 
-    def get_gamma_b(self, i_ts: int) -> ArrayList:
+    def _get_gamma_b(self, i_ts: int) -> ArrayList:
         r"""
         Get bound circulation strengths for all surfaces at specified time step
         :param i_ts: Timestep index
@@ -569,16 +570,16 @@ class UVLM:
         """
         return self.gamma_b.index_all((i_ts, ...))
 
-    def get_gamma_b_vect(self, i_ts: int) -> Array:
+    def _get_gamma_b_vect(self, i_ts: int) -> Array:
         r"""
         Get bound circulation strengths for all surfaces at specified time step as a vector
         :param i_ts: Timestep index
         :return: Bound circulation strength vector for all surfaces, [n_surf * m * n]
         """
-        return self.get_gamma_b(i_ts).flatten()
+        return self._get_gamma_b(i_ts).flatten()
 
     @replace_self
-    def set_zeta_b(self, zeta_b: ArrayList, i_ts: int) -> Self:
+    def _set_zeta_b(self, zeta_b: ArrayList, i_ts: int) -> Self:
         r"""
         Set bound grid coordinates from list of grid coordinates at specified time step
         :param zeta_b: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
@@ -589,7 +590,7 @@ class UVLM:
         return self
 
     @replace_self
-    def set_zeta_b_dot(self, zeta_b_dot: ArrayList, i_ts: int) -> Self:
+    def _set_zeta_b_dot(self, zeta_b_dot: ArrayList, i_ts: int) -> Self:
         r"""
         Set bound grid velocities from list of grid coordinates at specified time step
         :param zeta_b_dot: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
@@ -602,7 +603,7 @@ class UVLM:
         return self
 
     @replace_self
-    def set_zeta_w(self, zeta_w: ArrayList, i_ts: int) -> Self:
+    def _set_zeta_w(self, zeta_w: ArrayList, i_ts: int) -> Self:
         r"""
         Set wake grid coordinates from list of grid coordinates at specified time step
         :param zeta_w: List of bound grid coordinates for each surface, [n_surf][zeta_m_star, zeta_n, 3]
@@ -614,7 +615,7 @@ class UVLM:
 
     @singledispatchmethod
     @replace_self
-    def set_gamma_w(self, gamma_vec: Array, i_ts: int) -> Self:
+    def _set_gamma_w(self, gamma_vec: Array, i_ts: int) -> Self:
         r"""
         Set wake circulation strengths from total circulation strengths at specified time step. Can be passed either a
         full vector of strengths, or a sequence of strengths per surface.
@@ -633,7 +634,7 @@ class UVLM:
             )
         return self
 
-    @set_gamma_w.register(Sequence)
+    @_set_gamma_w.register(Sequence)
     @replace_self
     def _(self, gamma_list: Sequence[Array], i_ts: int) -> Self:
         for i_surf in range(self.n_surf):
@@ -643,7 +644,7 @@ class UVLM:
         return self
 
     @replace_self
-    def set_gamma_w_static(self, i_ts: int) -> Self:
+    def _set_gamma_w_static(self, i_ts: int) -> Self:
         r"""
         Set wake circulation strengths in static solution to all match trailing edge strengths.
         :param i_ts: Timestep index
@@ -652,11 +653,11 @@ class UVLM:
             self.gamma_w[i_surf] = (
                 self.gamma_w[i_surf]
                 .at[i_ts, ...]
-                .set(self.get_gamma_te_surf(i_ts, i_surf)[None, :])
+                .set(self._get_gamma_te_surf(i_ts, i_surf)[None, :])
             )
         return self
 
-    def make_gamma_slices(self) -> tuple[tuple[slice, ...], tuple[slice, ...]]:
+    def _make_gamma_slices(self) -> tuple[tuple[slice, ...], tuple[slice, ...]]:
         r"""
         Create slices for the bound and wake circulation strengths in their respective solution vectors based on the grid
         discretizations.
@@ -675,7 +676,7 @@ class UVLM:
             cnt_w += n_w
         return tuple(gamma_b_slices), tuple(gamma_w_slices)
 
-    def make_surf_horseshoe_wake(
+    def _make_surf_horseshoe_wake(
         self, i_ts: int, i_surf: int, horseshoe_length: float
     ) -> Array:
         r"""
@@ -685,7 +686,7 @@ class UVLM:
         :param horseshoe_length: Length of horseshoe wake to generate
         :return: Wake grid coordinates, [2, zeta_n, 3]
         """
-        zeta_te = self.get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
+        zeta_te = self._get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
         if self.grid_disc[i_surf].m_star == 0:
             warn("Horseshoe wake requested but m_star == 0, skipping.")
             return zeta_te[None, :]
@@ -696,7 +697,7 @@ class UVLM:
             return jnp.stack((zeta_te, wake_end), axis=0)
 
     @replace_self
-    def initialise_wake(self) -> Self:
+    def _initialise_wake(self) -> Self:
         r"""
         Generate initial wake grid coordinates, based on the bound grid coordinates and the freestream conditions.
         """
@@ -722,16 +723,16 @@ class UVLM:
         return self
 
     @replace_self
-    def calculate_steady_forcing(self, i_ts: int) -> Self:
+    def _calculate_steady_forcing(self, i_ts: int) -> Self:
         r"""
         Calculate steady aerodynamic forcing for all surfaces at specified time step
         :param i_ts: Timestep index
         """
-        f_steady = steady_forcing(
-            self.get_zeta_b(i_ts),
-            self.get_zeta_dot_b(i_ts),
-            self.get_gamma_b(i_ts),
-            self.get_gamma_w(i_ts),
+        f_steady = _steady_forcing(
+            self._get_zeta_b(i_ts),
+            self._get_zeta_dot_b(i_ts),
+            self._get_gamma_b(i_ts),
+            self._get_gamma_w(i_ts),
             lambda x_: self.get_v_tot(i_ts, x_),
             None,
             self.flowfield.rho,
@@ -743,7 +744,7 @@ class UVLM:
         return self
 
     @replace_self
-    def calculate_gamma_dot(self, i_ts: int) -> Self:
+    def _calculate_gamma_dot(self, i_ts: int) -> Self:
         r"""
         Calculate time derivative of bound circulation strengths at specified time step using finite difference.
         :param i_ts: Timestep index
@@ -757,7 +758,7 @@ class UVLM:
         return self
 
     @replace_self
-    def calculate_unsteady_forcing(self, i_ts: int, ncs: ArrayList) -> Self:
+    def _calculate_unsteady_forcing(self, i_ts: int, ncs: ArrayList) -> Self:
         r"""
         Calculate unsteady aerodynamic forcing for all surfaces at specified time step.
         :param i_ts: Timestep index
@@ -767,11 +768,11 @@ class UVLM:
             self.f_unsteady[i_surf] = (
                 self.f_unsteady[i_surf]
                 .at[i_ts, ...]
-                .set(self.calculate_surf_unsteady_forcing(i_ts, i_surf, ncs[i_surf]))
+                .set(self._calculate_surf_unsteady_forcing(i_ts, i_surf, ncs[i_surf]))
             )
         return self
 
-    def calculate_surf_unsteady_forcing(
+    def _calculate_surf_unsteady_forcing(
         self, i_ts: int, i_surf: int, nc: Array
     ) -> Array:
         r"""
@@ -786,7 +787,7 @@ class UVLM:
         )
 
     @replace_self
-    def solve(
+    def _solve(
         self,
         i_ts: int,
         hg: Optional[Array],
@@ -818,18 +819,18 @@ class UVLM:
                 jax.lax.select(i_ts, self.t[i_ts - 1] + self.dt, 0.0)
             )
 
-        zetas_b = self.zeta0_b if hg is None else self.hg_to_zeta(hg)
-        self.set_zeta_b(zetas_b, i_ts)
+        zetas_b = self.zeta0_b if hg is None else self._hg_to_zeta(hg)
+        self._set_zeta_b(zetas_b, i_ts)
 
-        cs = get_c(zetas_b)
-        ncs = get_nc(zetas_b)
+        cs = _get_c(zetas_b)
+        ncs = _get_nc(zetas_b)
 
         if hg_dot is None:
             c_dot = [jnp.zeros_like(c) for c in cs]
         else:
-            zeta_b_dot = self.hg_dot_to_zeta_dot(hg_dot)
+            zeta_b_dot = self._hg_dot_to_zeta_dot(hg_dot)
 
-            self.set_zeta_b_dot(zeta_b_dot, i_ts)
+            self._set_zeta_b_dot(zeta_b_dot, i_ts)
 
             c_dot = [
                 neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot
@@ -839,7 +840,7 @@ class UVLM:
             # initialise wake
             if horseshoe:
                 zeta_ws = [
-                    self.make_surf_horseshoe_wake(i_ts, i_surf, HORSESHOE_LENGTH)
+                    self._make_surf_horseshoe_wake(i_ts, i_surf, HORSESHOE_LENGTH)
                     for i_surf in range(self.n_surf)
                 ]
             else:
@@ -854,36 +855,36 @@ class UVLM:
                     return self.get_v_background(i_ts - 1, x_)
 
             # propagate wake
-            zeta_ws, gamma_ws = propagate_wake(
-                self.get_gamma_b(i_ts - 1),
-                self.get_gamma_w(i_ts - 1),
+            zeta_ws, gamma_ws = _propagate_wake(
+                self._get_gamma_b(i_ts - 1),
+                self._get_gamma_w(i_ts - 1),
                 zetas_b,
-                self.get_zeta_w(i_ts - 1),
+                self._get_zeta_w(i_ts - 1),
                 self.delta_w,
                 v_wake_prop,
                 self.dt,
                 frozen_wake=False,
             )
 
-            self.set_gamma_w(gamma_ws, i_ts)
-            self.set_zeta_w(zeta_ws, i_ts)
+            self._set_gamma_w(gamma_ws, i_ts)
+            self._set_zeta_w(zeta_ws, i_ts)
 
         # set wake grid coordinates
-        self.set_zeta_w(zeta_ws, i_ts) if not horseshoe else self.set_zeta_w(
+        self._set_zeta_w(zeta_ws, i_ts) if not horseshoe else self._set_zeta_w(
             self.zeta0_w, i_ts
         )
 
         # compute AIC matrix for bound-bound interactions, [c_tot, gamma_b_tot]
-        aic_blocks = compute_aic_sys(cs, zetas_b, self.kernels_b, ncs)
+        aic_blocks = _compute_aic_sys(cs, zetas_b, self.kernels_b, ncs)
 
         # compute AIC matrix for bound-wake interactions, [c_tot, gamma_w_tot]
-        aic_w_blocks = compute_aic_sys(cs, zeta_ws, self.kernels_w, ncs)
+        aic_w_blocks = _compute_aic_sys(cs, zeta_ws, self.kernels_w, ncs)
 
         if static:
             # lump wake influence onto trailing edge strengths
-            aic_blocks = add_wake_influence(aic_blocks, aic_w_blocks)
+            aic_blocks = _add_wake_influence(aic_blocks, aic_w_blocks)
 
-        aic = assemble_aic_sys(aic_blocks)
+        aic = _assemble_aic_sys(aic_blocks)
 
         cs_vector = jnp.concatenate([c.reshape(-1, 3) for c in cs], axis=0)
         c_dot_vector = jnp.concatenate([cd.reshape(-1, 3) for cd in c_dot], axis=0)
@@ -893,18 +894,18 @@ class UVLM:
         v_bc_n = jnp.einsum("ij,ij->i", v_bc, n_vect)
 
         if not static:
-            aic_w = assemble_aic_sys(aic_w_blocks)
-            v_bc_n -= aic_w @ self.get_gamma_w_vect(i_ts)
+            aic_w = _assemble_aic_sys(aic_w_blocks)
+            v_bc_n -= aic_w @ self._get_gamma_w_vect(i_ts)
 
         gamma_b_vect: Array = jnp.linalg.solve(aic, v_bc_n)
-        self.set_gamma_b(gamma_b_vect, i_ts)
+        self._set_gamma_b(gamma_b_vect, i_ts)
 
         if static:
-            self.set_gamma_w_static(i_ts)
+            self._set_gamma_w_static(i_ts)
         else:
-            self.calculate_gamma_dot(i_ts)
-            self.calculate_unsteady_forcing(i_ts, ncs)
-        self.calculate_steady_forcing(i_ts)
+            self._calculate_gamma_dot(i_ts)
+            self._calculate_unsteady_forcing(i_ts, ncs)
+        self._calculate_steady_forcing(i_ts)
 
         return self
 
@@ -929,7 +930,7 @@ class UVLM:
             i_ts = self._last_ts + 1
         self._last_ts = i_ts  # update last solved timestep
 
-        self.solve(i_ts, hg, None, static=True, free_wake=False, horseshoe=horseshoe)
+        self._solve(i_ts, hg, None, static=True, free_wake=False, horseshoe=horseshoe)
 
         return self
 
@@ -967,8 +968,8 @@ class UVLM:
             i_ts_start = self._last_ts + 1
         self._last_ts = i_ts_start + n_tstep  # update last solved timestep
 
-        def step_func(i_ts_: int, case: UVLM) -> UVLM:
-            case.solve(
+        def _step_func(i_ts_: int, case: UVLM) -> UVLM:
+            case._solve(
                 i_ts_,
                 hg_t[i_ts_, ...],
                 hg_dot_t[i_ts_, ...],
@@ -982,7 +983,7 @@ class UVLM:
         obj = fori_loop(
             i_ts_start,
             i_ts_start + n_tstep,
-            step_func,
+            _step_func,
             init_val=self,
         )
         jax.block_until_ready(obj)

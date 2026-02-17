@@ -1,6 +1,7 @@
+from typing import Sequence, Literal
+
 from jax import Array, vmap
 import jax.numpy as jnp
-from typing import Sequence, Literal
 
 
 def check_if_so3_g(

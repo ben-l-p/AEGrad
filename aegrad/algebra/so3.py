@@ -1,8 +1,9 @@
 from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
+
 from aegrad.algebra.base import clip_to_pi, matrix2, t_sum, t_inv_sum, exp_sum, log_sum
-from constants import ZERO_ANG_THRESH, SMALL_ANG_THRESH
+from aegrad.constants import SMALL_ANG_THRESH
 
 
 def vec_to_skew(vec: Array) -> Array:
@@ -18,11 +19,16 @@ def vec_to_skew(vec: Array) -> Array:
 
 def skew_to_vec(mat: Array) -> Array:
     r"""
-    Converts a skew-symmetric matrix to a 3D vector.
+    Converts a skew-symmetric matrix to a 3D vector. Note this refers to both skew symmetic entries for consistent
+    gradients.
     :param mat: Skew-symmetric matrix, [3, 3]
     :return: 3D vector, [3]
     """
-    return jnp.array((mat[2, 1], mat[0, 2], mat[1, 0]))
+    a1 = 0.5 * (mat[2, 1] - mat[1, 2])
+    a2 = 0.5 * (mat[0, 2] - mat[2, 0])
+    a3 = 0.5 * (mat[1, 0] - mat[0, 1])
+
+    return jnp.array((a1, a2, a3))
 
 
 def alpha(b: Array) -> Array:
@@ -38,7 +44,10 @@ def alpha(b: Array) -> Array:
     def alpha_full() -> Array:
         return jnp.sin(b_norm) / b_norm
 
-    return cond(b_norm > ZERO_ANG_THRESH, alpha_full, lambda: 1.0)
+    def alpha_small_angle() -> Array:
+        return 1.0 - b_norm**2 / 6.0
+
+    return cond(b_norm > SMALL_ANG_THRESH, alpha_full, alpha_small_angle)
 
 
 def beta(b: Array) -> Array:
@@ -55,7 +64,10 @@ def beta(b: Array) -> Array:
     def beta_full() -> Array:
         return 2.0 * (1.0 - jnp.cos(b_norm)) / b_norm2
 
-    return cond(b_norm > ZERO_ANG_THRESH, beta_full, lambda: 1.0)
+    def beta_small_angle() -> Array:
+        return 0.5 - b_norm2 / 24.0
+
+    return cond(b_norm > SMALL_ANG_THRESH, beta_full, beta_small_angle)
 
 
 def bound_h_omega(h_omega: Array) -> Array:
@@ -71,10 +83,10 @@ def bound_h_omega(h_omega: Array) -> Array:
         bounded_ang = clip_to_pi(ang)
         return bounded_ang * n
 
-    def zero_ang() -> Array:
+    def small_ang() -> Array:
         return h_omega
 
-    return cond(ang > ZERO_ANG_THRESH, nonzero_ang, zero_ang)
+    return cond(ang > SMALL_ANG_THRESH, nonzero_ang, small_ang)
 
 
 def bracket_so3(vec1: Array, vec2: Array) -> Array:
@@ -184,15 +196,18 @@ def log_so3(rmat: Array) -> Array:
     :param rmat: Rotation matrix, [3, 3]
     :return: Rotation vector, [3]
     """
+
+    # applying a condition on theta is not differentiable, that is, d_theta_d_rmat has infinite values for rmat=I
+    # d_theta_d_rmat is infinite for rmat=I
     theta = jnp.acos(0.5 * (jnp.trace(rmat) - 1.0))
-    bounded_theta = clip_to_pi(theta)
 
     def log_so3_full() -> Array:
+        theta = jnp.acos(
+            0.5 * (jnp.trace(rmat) - 1.0)
+        )  # d_theta_d_rmat has infinite values for rmat=I
         return skew_to_vec(theta / (2.0 * jnp.sin(theta)) * (rmat - rmat.T))
 
     def log_so3_small_angle() -> Array:
         return skew_to_vec(log_sum(rmat, 2))
 
-    return bound_h_omega(
-        cond(bounded_theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)
-    )
+    return cond(theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)

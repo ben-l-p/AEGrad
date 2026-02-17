@@ -1,15 +1,13 @@
 from __future__ import annotations
-
 from math import factorial
-
-from jax import numpy as jnp, Array
-from jax._src.scipy.special import bernoulli
-from jax.lax import cond
 from typing import Callable
-import jax
-from jax.scipy.special import factorial
 
-from constants import BASE_SUMMATION_ORDER
+import jax
+from jax import numpy as jnp, Array
+from jax.scipy.special import bernoulli
+from jax.lax import cond
+
+from aegrad.constants import BASE_SUMMATION_ORDER
 
 
 def matrix2(mat: Array) -> Array:

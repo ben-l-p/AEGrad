@@ -1,5 +1,6 @@
-from jax import Array, vmap
 from typing import Callable, Literal
+
+from jax import Array, vmap
 from jax import numpy as jnp
 
 

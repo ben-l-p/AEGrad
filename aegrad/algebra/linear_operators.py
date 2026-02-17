@@ -1,14 +1,15 @@
 from __future__ import annotations
 from typing import Optional, Callable, Sequence, Self
-from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.print_output import print_with_time, warn, jax_print
-from aegrad.utils import make_pytree, replace_self
 
 import jax
 from jax import Array, numpy as jnp, jacobian
 
+from aegrad.algebra.array_utils import check_arr_shape
+from aegrad.print_output import print_with_time, warn, jax_print
+from aegrad.utils import _make_pytree, replace_self
 
-@make_pytree
+
+@_make_pytree
 class LinearOperator:
     r"""
     Linear operator represented by a function, either as A(x) or Ax.
@@ -241,7 +242,7 @@ class BlockLinear:
         return blk
 
 
-@make_pytree
+@_make_pytree
 class LinearSystem:
     r"""
     Linear system represented in state-space form, with tools for time-stepping

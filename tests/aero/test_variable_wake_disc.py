@@ -1,8 +1,7 @@
-from aegrad.aero.uvlm_utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization
 from jax import numpy as jnp
-from jax.scipy.spatial.transform import Rotation as rot
-from aegrad.aero.uvlm import UVLM
+from jax.scipy.spatial.transform import Rotation as Rot
+
+from aegrad.aero import make_rectangular_grid, GridDiscretization, UVLM
 from aegrad.aero.flowfields import Constant
 from aegrad.print_output import set_verbosity, VerbosityLevel
 
@@ -32,7 +31,7 @@ class TestVarWakeDisc:
 
         beam_coords = jnp.zeros((n + 1, 3))
         beam_coords = beam_coords.at[:, 1].set(jnp.linspace(0.0, b_ref, n + 1))
-        rmat = rot.from_euler("xyz", jnp.array((0.0, alpha, 0.0))).as_matrix()
+        rmat = Rot.from_euler("xyz", jnp.array((0.0, alpha, 0.0))).as_matrix()
 
         # static position
         hg = jnp.zeros((n + 1, 4, 4))

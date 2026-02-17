@@ -1,29 +1,31 @@
+from typing import Optional, Sequence, Literal
+from functools import partial
+
 from jax import numpy as jnp
 from jax import Array, vmap
 import jax
 from jax.scipy.linalg import block_diag
-from aegrad.utils import check_type
+
+from aegrad.utils import _check_type
 from aegrad.structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
     ConvergenceStatus,
+    OptionalJacobians,
 )
 from aegrad.print_output import warn, warn_if_32_bit, VerbosityLevel
-from aegrad.structure.structure_utils import check_connectivity, n_elem_per_node
+from aegrad.structure.structure_utils import _check_connectivity, _n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
 from aegrad.structure.structure_utils import (
-    k_t_entry,
-    integrate_m_l,
-    integrate_c_t,
-    make_c_t_lumped,
+    _k_t_entry,
+    _integrate_m_l,
+    _integrate_c_t,
+    _make_c_t_lumped,
 )
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from aegrad.algebra.so3 import vec_to_skew
-from typing import Optional, Sequence, Literal
-from functools import partial
-
-from structure.time_integration import TimeIntregrator
+from aegrad.structure.time_integration import TimeIntregrator
 
 
 class BeamStructure:
@@ -37,8 +39,6 @@ class BeamStructure:
         connectivity: Array,
         y_vector: Array,
         gravity: Optional[Array] = None,
-        include_geometric: bool = False,
-        include_q_dot: bool = False,
     ) -> None:
         r"""
         Initialise BeamStructure class with all non-design parameters
@@ -48,15 +48,15 @@ class BeamStructure:
         :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3]
         """
 
-        check_type(num_nodes, int)
+        _check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
         self.n_dof: int = num_nodes * 6
 
         check_arr_shape(connectivity, (None, 2), "connectivity")
         check_arr_dtype(connectivity, int, "connectivity")
-        check_connectivity(connectivity, num_nodes)
+        _check_connectivity(connectivity, num_nodes)
         self.connectivity: Array = connectivity  # [n_elem, 2]
-        self.n_elem_per_node: Array = n_elem_per_node(connectivity)  # [n_nodes]
+        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes]
         self.n_elem: int = connectivity.shape[0]
 
         self.dof_per_elem: Array = jnp.zeros((self.n_elem, 12), dtype=int)
@@ -82,7 +82,6 @@ class BeamStructure:
         self.m: Array = jnp.zeros((self.n_elem, 6, 6))
         self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
         self.k_cs: Array = jnp.zeros((self.n_elem, 6, 6))
-        self.k_l: Array = jnp.zeros((self.n_elem, 6, 6))
         self.m_lumped: Array = jnp.zeros((num_nodes, 6, 6))
         self.m_t_lumped: Array = jnp.zeros((self.n_dof, self.n_dof))
 
@@ -106,8 +105,7 @@ class BeamStructure:
             self.gravity_vec = jnp.zeros((3,))
 
         self.verbosity: VerbosityLevel = VerbosityLevel.NORMAL
-        self.include_geometric: bool = include_geometric
-        self.include_q_dot: bool = include_q_dot
+        self.optional_jacobians: OptionalJacobians = OptionalJacobians()
 
     def set_design_variables(
         self,
@@ -127,7 +125,9 @@ class BeamStructure:
         self.k_cs = self.k_cs.at[...].set(k_cs)
         if m_cs is not None:
             self.m_cs = self.m_cs.at[...].set(m_cs)
+            self.use_m_cs: bool = True
         else:
+            self.use_m_cs = False
             if self.use_gravity and m_lumped is None:
                 warn(
                     "No mass matrices provided, but gravity is enabled. Assuming zero mass.",
@@ -173,8 +173,6 @@ class BeamStructure:
         )  # [n_nodes, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
-        self.k_l = self.k_l.at[...].set(self.k_cs * self.l0[:, None, None])
-
     def reference_configuration(self) -> StaticStructure:
         r"""
         Get the reference configuration of the structure
@@ -194,7 +192,7 @@ class BeamStructure:
             local=True,
         )
 
-    def _assemble_matrix_from_element_entries(self, entries: Array) -> Array:
+    def _assemble_matrix_from_entries(self, entries: Array) -> Array:
         r"""
         Assemble global matrix from element entries
         :param entries: Array of element matrix entries, [n_elem, 12, 12]
@@ -234,9 +232,9 @@ class BeamStructure:
         # compute stiffness matrix entries
         return vmap(
             partial(
-                k_t_entry,
+                _k_t_entry,
                 include_material=True,
-                include_geometric=self.include_geometric,
+                include_geometric=self.optional_jacobians.d_f_int_d_p_d,
             ),
             (0, 0, 0, 0, 0, 0),
             0,
@@ -267,6 +265,106 @@ class BeamStructure:
 
         return k_t
 
+    def _make_k_t_grav(self, d: Array, p_d: Array, rmat: Array, m_t: Array) -> Array:
+        r"""
+        Compute the contribution to the stiffness matrix from gravity forces.
+        :param d: Element relative configuration, [n_elem, 6]
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param rmat: Nodal rotation matrices, [n_node, 3, 3]
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
+        :return: Stiffness matrix contribution from gravity forces, [n_elem, 12, 12]
+        """
+
+        # pertubations in mass matrix integration
+        g_ab = jnp.zeros(12)
+        g_ab = g_ab.at[:3].set(self.gravity_vec)
+        g_ab = g_ab.at[6:9].set(self.gravity_vec)
+        p_d_g = jnp.einsum("ijk,k->ij", p_d, g_ab)  # [n_elem, 6
+
+        # computes dm/dd @ p @ g_ab
+        d_mg = vmap(
+            lambda m_cs_, d_, ad_, l_, p_d_g_: jax.jvp(
+                lambda d__: _integrate_m_l(m_cs_, d__, ad_, l_, int_order=3),
+                primals=[d_],
+                tangents=[p_d_g_],
+            )[1],
+            (0, 0, 0, 0, 0),
+            0,
+        )(self.m_cs, d, self.ad_inv_o0, self.l0, p_d_g)
+
+        # pertubations in gravity direction
+        # [n_nodes, 3, 3]
+        d_g_d_omega = vmap(vec_to_skew, 0, 0)(
+            jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
+        )
+
+        # adding terms of [n_elem, 12, 3]
+        d_mg = d_mg.at[:, :, 3:6].add(
+            jnp.einsum(
+                "ijk,ikl->ijl",
+                m_t[:, :, :3],
+                d_g_d_omega[self.connectivity[:, 0], :, :],
+            )
+        )
+        d_mg = d_mg.at[:, :, 9:].add(
+            jnp.einsum(
+                "ijk,ikl->ijl",
+                m_t[:, :, 6:9],
+                d_g_d_omega[self.connectivity[:, 1], :, :],
+            )
+        )
+
+        return d_mg
+
+    def _make_k_t_grav_lumped(self, rmat: Array) -> Array:
+        r"""
+        Compute the contribution to the stiffness matrix from gravity forces for the lumped masses.
+        :param rmat: Nodal rotation matrices, [n_node, 3, 3]
+        :return: Stiffness contribution from gravity forces for lumped masses, [n_node, 6, 6]
+        """
+        # [n_nodes, 3, 3]
+        d_g_d_omega = vmap(vec_to_skew, 0, 0)(
+            jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
+        )
+
+        return (
+            jnp.zeros((self.n_nodes, 6, 6))
+            .at[:, :, 3:]
+            .set(jnp.einsum("ijk,ikl->ijl", self.m_lumped[:, :, 3:], d_g_d_omega))
+        )
+
+    def _make_k_t_full(
+        self,
+        d: Array,
+        p_d: Array,
+        eps: Array,
+        f_ext_dead: Optional[Array],
+        rmat: Array,
+        m_t: Optional[Array],
+    ) -> Array:
+        r"""
+        Compute the full tangent stiffness matrix, with contributions from stiffness, dead forces and gravity.
+        :param d: Element relative configuration, [n_elem, 6]
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param eps: Strain vectors, [n_elem, 6]
+        :param f_ext_dead: External dead forces in global reference, [n_node, 6]
+        :param rmat: Nodal rotation matrices, [n_node, 3, 3]
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
+        :return: Tangent stiffness matrix with all contributions, [n_dof, n_dof]
+        """
+
+        k_t = self._assemble_matrix_from_entries(self._make_k_t(d, p_d, eps))
+        if f_ext_dead is not None and self.optional_jacobians.d_f_ext_dead_d_n:
+            k_t += block_diag(*self._make_k_t_dead(rmat, f_ext_dead))
+
+        if self.use_gravity and self.optional_jacobians.d_f_grav_d_n:
+            k_t += self._assemble_matrix_from_entries(
+                self._make_k_t_grav(d, p_d, rmat, m_t)
+            )
+            if self.use_lumped_mass:
+                k_t += block_diag(*self._make_k_t_grav_lumped(rmat))
+        return k_t
+
     def _make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
         r"""
         Assemble tangent mass matrix as a function of the element relative configuration vectors. This does not include
@@ -275,7 +373,7 @@ class BeamStructure:
         :param int_order: Integration order for mass matrix computation
         :return: Elementwise mass matrix, [n_elem, 12, 12]
         """
-        return vmap(partial(integrate_m_l, int_order=int_order), (0, 0, 0, 0), 0)(
+        return vmap(partial(_integrate_m_l, int_order=int_order), (0, 0, 0, 0), 0)(
             self.m_cs, d, self.ad_inv_o0, self.l0
         )
 
@@ -296,7 +394,9 @@ class BeamStructure:
         """
         clt = vmap(
             partial(
-                integrate_c_t, int_order=int_order, include_q_dot=self.include_q_dot
+                _integrate_c_t,
+                int_order=int_order,
+                include_q_dot=self.optional_jacobians.d_f_gyr_d_q_dot,
             ),
             (0, 0, 0, 0, 0, 0),
             0,
@@ -321,7 +421,7 @@ class BeamStructure:
         :param v: Nodal velocities in global frame, [n_node, 6]
         :return: Gyroscopic L and T matrix entries from lumped masses, [n_node, 6, 6], [n_node, 6, 6]
         """
-        c_t_l = vmap(make_c_t_lumped, (0, 0), 0)(self.m_lumped, v)  # [n_node, 2, 6, 6]
+        c_t_l = vmap(_make_c_t_lumped, (0, 0), 0)(self.m_lumped, v)  # [n_node, 2, 6, 6]
         return c_t_l[:, 0, :, :], c_t_l[:, 1, :, :]
 
     def _make_sys_matrix(
@@ -330,7 +430,6 @@ class BeamStructure:
         c_t: Array,
         c_t_lumped: Optional[Array],
         k_t: Array,
-        k_t_dead: Optional[Array],
         ti: TimeIntregrator,
     ) -> Array:
         r"""
@@ -339,17 +438,17 @@ class BeamStructure:
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
         :param k_t: Disassembled system stiffness matrix postmultiplied by increment tangent, [n_elem, 12, 12]
-        :param k_t_dead: Stiffness matrix contribution from dead forces, [n_node, 6, 6]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
 
-        mat = self._assemble_matrix_from_element_entries(
-            m_t * ti.beta_prime + c_t * ti.gamma_prime + k_t
+        # note that k_t is already assembled for convenience
+        mat = (
+            self._assemble_matrix_from_entries(
+                m_t * ti.beta_prime + c_t * ti.gamma_prime
+            )
+            + k_t
         )
-
-        if k_t_dead is not None:
-            mat += block_diag(*k_t_dead)
 
         if self.use_lumped_mass:
             mat += (
@@ -576,7 +675,7 @@ class BeamStructure:
 
     def _make_f_res(
         self,
-        solve_dofs: Array,
+        solve_dofs: Optional[Array],
         p_d: Array,
         eps: Array,
         hg: Array,
@@ -593,7 +692,7 @@ class BeamStructure:
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
         This is the force imbalance that the nonlinear solver will seek to drive to zero. Additionally, returns an
         "absolute sum" of all forces, used for relative convergence checks.
-        :param solve_dofs: Array of degrees of freedom to solve for [n_solve_dofs]
+        :param solve_dofs: Optional array of degrees of freedom to solve for [n_solve_dofs]
         :param p_d: P(d) operator, [n_elem, 6, 12]
         :param eps: Element strain vectors, [n_elem, 6]
         :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
@@ -641,9 +740,12 @@ class BeamStructure:
                 f_res_vect += f_grav_lumped
                 f_abs_sum_vect += jnp.abs(f_grav_lumped)
 
-        return f_res_vect[solve_dofs], f_abs_sum_vect[
-            solve_dofs
-        ]  # [n_solve_dof], [n_solve_dof]
+        if solve_dofs is not None:
+            return f_res_vect[solve_dofs], f_abs_sum_vect[
+                solve_dofs
+            ]  # [n_solve_dof], [n_solve_dof]
+        else:
+            return f_res_vect, f_abs_sum_vect  # [n_dof], [n_dof]
 
     @staticmethod
     def _update_hg(hg: Array, d_ha: Array) -> Array:
@@ -700,6 +802,7 @@ class BeamStructure:
         rel_force_tol: Optional[float] = 1e-8,
         abs_force_tol: Optional[float] = 1e-12,
         verbosity: Optional[VerbosityLevel] = None,
+        optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
@@ -714,6 +817,8 @@ class BeamStructure:
         :param rel_force_tol: Relative force tolerance for convergence.
         :param abs_force_tol: Absolute force tolerance for convergence.
         :param verbosity: Verbosity level for convergence messages.
+        :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
+        to compute for efficiency.
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -733,6 +838,9 @@ class BeamStructure:
 
         if not (0.0 < relaxation_factor <= 1.0):
             raise ValueError("relaxation_factor must be in the range (0, 1]")
+
+        if optional_jacobians is not None:
+            self.optional_jacobians = optional_jacobians
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -765,19 +873,17 @@ class BeamStructure:
             d_n = self._make_d(hg_n)  # [n_elem, 6]
             p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
             eps_n = self._make_eps(d_n)  # [n_elem, 6]
+            m_t = self._make_m_t(d_n) if self.use_gravity else None  # [n_elem, 12, 12]
 
             # assemble tangent stiffness matrix, [n_solve_dof, n_solve_dof]
-            k_t_n = self._assemble_matrix_from_element_entries(
-                self._make_k_t(d_n, p_d_n, eps_n)
+            k_t_solve_n = self._make_k_t_full(
+                d_n,
+                p_d_n,
+                eps_n,
+                f_ext_dead_steps[i_load_step, ...] if f_ext_dead is not None else None,
+                hg_n[:, :3, :3],
+                m_t,
             )[jnp.ix_(solve_dofs, solve_dofs)]
-
-            # add stiffness contribution from dead forces if applicable
-            if f_ext_dead is not None:
-                k_t_n += block_diag(
-                    *self._make_k_t_dead(
-                        hg_n[:, :3, :3], f_ext_dead_steps[i_load_step, ...]
-                    )
-                )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # compute residual forces, [n_solve_dofs]
             f_res_solve_n, f_abs_sum_n = self._make_f_res(
@@ -790,7 +896,7 @@ class BeamStructure:
                 else None,
                 f_ext_dead_steps[i_load_step, ...] if f_ext_dead is not None else None,
                 False,
-                self._make_m_t(d_n) if self.use_gravity else None,
+                m_t,
                 None,
                 None,
                 None,
@@ -798,12 +904,12 @@ class BeamStructure:
             )
 
             # solve for configuration increment, [n_solve_dofs]
-            d_ha_np1 = jnp.linalg.solve(k_t_n, f_res_solve_n) * relaxation_factor
-            d_ha_np1_full = jnp.zeros(self.n_dof)
-            d_ha_np1_full = d_ha_np1_full.at[solve_dofs].set(d_ha_np1)
+            d_ha_np1 = jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * relaxation_factor
 
             # update configuration, [n_nodes, 4, 4]
-            hg_np1_full = self._update_hg(hg_n, d_ha_np1_full)
+            hg_np1_full = self._update_hg(
+                hg_n, jnp.zeros(self.n_dof).at[solve_dofs].set(d_ha_np1)
+            )
 
             # algebra between undeformed and deformed shapes, used to check relative convergence, [n_solve_dofs]
             if rel_disp_tol is not None:
@@ -913,6 +1019,7 @@ class BeamStructure:
         rel_force_tol: Optional[float] = 1e-9,
         abs_force_tol: Optional[float] = 1e-12,
         verbosity: Optional[VerbosityLevel] = None,
+        optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
@@ -931,6 +1038,8 @@ class BeamStructure:
         :param rel_force_tol: Relative tolerance for force convergence.
         :param abs_force_tol: Absolute tolerance for force convergence.
         :param verbosity: Verbosity level for convergence messages.
+        :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
+        to compute for efficiency.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
@@ -954,6 +1063,9 @@ class BeamStructure:
 
         if load_steps <= 0:
             raise ValueError("load_steps must be a positive integer")
+
+        if optional_jacobians is not None:
+            self.optional_jacobians = optional_jacobians
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -1047,16 +1159,18 @@ class BeamStructure:
             c_l, c_t = self._make_c_t(
                 d_n, d_dot_n, v_n
             )  # [n_elem, 12, 12], [n_elem, 12, 12]
-            k_t = self._make_k_t(d_n, p_d_n, eps_n)  # [n_elem, 12, 12]
+            k_t = self._make_k_t_full(
+                d_n,
+                p_d_n,
+                eps_n,
+                f_ext_dead_steps[i_load_step, i_ts, ...]
+                if f_ext_dead is not None
+                else None,
+                hg_n[:, :3, :3],
+                m_t,
+            )  # [n_dof, n_dof]
 
-            # add stiffness contribution from dead forces if applicable
-            if f_ext_dead is not None:
-                k_t_dead = self._make_k_t_dead(
-                    hg_n[:, :3, :3], f_ext_dead_steps[i_load_step, i_ts, ...]
-                )
-            else:
-                k_t_dead = None
-
+            # add lumped mass contributions if applicable
             if self.use_lumped_mass:
                 c_l_lumped, c_t_lumped = self._make_c_t_lumped(
                     v_n
@@ -1086,7 +1200,11 @@ class BeamStructure:
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
             sys_mat = self._make_sys_matrix(
-                m_t, c_t, c_t_lumped, k_t, k_t_dead, time_integrator
+                m_t,
+                c_t,
+                c_t_lumped,
+                k_t,
+                time_integrator,
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
@@ -1140,17 +1258,17 @@ class BeamStructure:
             """
 
             # predictor step
-            a_init = time_integrator.predict_a(
+            a_init = time_integrator._predict_a(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
             )
 
-            n_init = time_integrator.predict_n(
+            n_init = time_integrator._predict_n(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_init = time_integrator.predict_v(
+            v_init = time_integrator._predict_v(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_dot_init = time_integrator.predict_v_dot(
+            v_dot_init = time_integrator._predict_v_dot(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
             )
 
@@ -1199,7 +1317,7 @@ class BeamStructure:
 
             # update pseudoacceleration
             sol.a = sol.a.at[i_ts, ...].set(
-                time_integrator.calculate_a_np1(
+                time_integrator._calculate_a_np1(
                     sol.v_dot[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
                 )
             )

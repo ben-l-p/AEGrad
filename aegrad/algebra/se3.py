@@ -2,6 +2,9 @@ from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
 import jax
+
+from aegrad.constants import SMALL_ANG_THRESH
+from aegrad.algebra.base import chi
 from aegrad.algebra.base import matrix2, log_sum, t_sum, t_inv_sum, exp_sum
 from aegrad.algebra.so3 import (
     vec_to_skew,
@@ -14,8 +17,6 @@ from aegrad.algebra.so3 import (
     alpha,
     beta,
 )
-from constants import SMALL_ANG_THRESH
-from algebra.base import chi
 
 
 def bracket_se3(a_vec: Array, b_vec: Array) -> Array:

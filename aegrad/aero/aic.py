@@ -1,18 +1,18 @@
 from __future__ import annotations
-
 from typing import Sequence, Optional
+from jax import Array, vmap
+from jax import numpy as jnp
+
 from aegrad.aero.kernels import KernelFunction
 from aegrad.algebra.array_utils import block_axis
 
-from jax import Array, vmap
-from jax import numpy as jnp
 
 r"""
 Functions used to create and transform AIC matrices.
 """
 
 
-def compute_aic_grid(
+def _compute_aic_grid(
     c: Array,
     zeta: Array,
     kernel: KernelFunction,
@@ -33,13 +33,13 @@ def compute_aic_grid(
     n_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
 
     # AIC matrices have one entry per filament
-    m_aic = aic_vmap(c, m_vect, kernel)  # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
-    n_aic = aic_vmap(c, n_vect, kernel)  # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
+    m_aic = _aic_vmap(c, m_vect, kernel)  # chordwise AIC [m, n, zeta_m - 1, zeta_n, 3]
+    n_aic = _aic_vmap(c, n_vect, kernel)  # spanwise AIC [m, n, zeta_m, zeta_n - 1, 3]
 
     return -jnp.diff(m_aic, axis=3) + jnp.diff(n_aic, axis=2)
 
 
-def compute_aic_sys(
+def _compute_aic_sys(
     cs: Sequence[Array],
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
@@ -71,7 +71,7 @@ def compute_aic_sys(
         aic_mats.append([])
         for i_z, zeta, kernel in zip(range(len(zetas)), zetas, kernels):
             # compute the AIC matrix, [n_cx, n_cy, n_ex, n_ey, 3]
-            aic_ = compute_aic_grid(
+            aic_ = _compute_aic_grid(
                 c,
                 zeta,
                 kernel,
@@ -84,7 +84,7 @@ def compute_aic_sys(
     return aic_mats
 
 
-def add_wake_influence(
+def _add_wake_influence(
     aic_bs: list[list[Array]], aic_ws: list[list[Array]]
 ) -> list[list[Array]]:
     r"""
@@ -101,7 +101,7 @@ def add_wake_influence(
     return aic_bs
 
 
-def reshape_aic_sys(aic_mat: Array) -> Array:
+def _reshape_aic_sys(aic_mat: Array) -> Array:
     r"""
     Reshape an AIC matrix such that the source and target dimensions are flattened.
     :param aic_mat: Input AIC matrix, [c_m, c_n, zeta_m, zeta_n] or [c_m, c_n, zeta_m, zeta_n, 3].
@@ -114,19 +114,19 @@ def reshape_aic_sys(aic_mat: Array) -> Array:
     return aic_mat.reshape(new_shape)
 
 
-def assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
+def _assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
     r"""
     Assemble a nested sequence of AIC matrices into a single AIC matrix.
     :param aic_mats: Nested sequence of AIC matrices, [][][c_m, c_n, zeta_m, zeta_n] or [][][c_m, c_n, zeta_m, zeta_n, 3].
     :return: Assembled AIC matrix. [c_tot, zeta_tot] or [c_tot, zeta_tot, 3].
     """
     aic_mats_reshaped = [
-        [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
+        [_reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
     ]
     return block_axis(aic_mats_reshaped, axes=(0, 1))
 
 
-def compute_aic_sys_assembled(
+def _compute_aic_sys_assembled(
     cs: Sequence[Array],
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
@@ -141,16 +141,16 @@ def compute_aic_sys_assembled(
     onto these normals.
     :return: Full AIC matrix, [c_tot, zeta_tot, 3], or [c_tot, zeta_tot] if projected onto normals.
     """
-    aic_mats = compute_aic_sys(cs, zetas, kernels, ns)
+    aic_mats = _compute_aic_sys(cs, zetas, kernels, ns)
 
     aic_mats_reshaped = [
-        [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
+        [_reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
     ]
 
     return block_axis(aic_mats_reshaped, axes=(0, 1))
 
 
-def aic_vmap(
+def _aic_vmap(
     c: Array,
     zeta: Array,
     kernel: KernelFunction,

@@ -1,6 +1,7 @@
 from jax import numpy as jnp
 import jax
-from aegrad.structure.beam import BeamStructure
+
+from aegrad.structure import BeamStructure
 from aegrad.algebra.se3 import exp_se3
 
 jax.config.update("jax_enable_x64", True)

@@ -1,6 +1,7 @@
 from jax import numpy as jnp
 import jax
-from aegrad.structure.beam import BeamStructure
+
+from aegrad.structure import BeamStructure
 from aegrad.algebra.test_routines import const_curvature_beam
 from aegrad.algebra.base import chi
 

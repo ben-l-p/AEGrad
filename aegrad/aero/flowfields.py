@@ -1,9 +1,10 @@
+from typing import Sequence
 import jax
 from jax import numpy as jnp
 from jax import Array
+
 from aegrad.algebra.array_utils import ArrayList
-from aegrad.utils import make_pytree
-from typing import Sequence
+from aegrad.utils import _make_pytree
 
 
 class FlowField:
@@ -94,7 +95,7 @@ class FlowField:
         )
 
 
-@make_pytree
+@_make_pytree
 class Constant(FlowField):
     r"""
     Constant velocity flow field:
@@ -107,7 +108,7 @@ class Constant(FlowField):
             return jnp.zeros(3)
 
 
-@make_pytree
+@_make_pytree
 class OneMinusCosine(FlowField):
     r"""
     One minus cosine flow field.

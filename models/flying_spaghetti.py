@@ -1,8 +1,10 @@
-from aegrad.structure.beam import BeamStructure
+from pathlib import Path
+
 from jax import Array
 from jax import numpy as jnp
 import jax
-from pathlib import Path
+
+from aegrad.structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 

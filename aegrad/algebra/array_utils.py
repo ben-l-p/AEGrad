@@ -1,10 +1,10 @@
 from __future__ import annotations
-from jax import Array
 from typing import Optional, Sequence, Union
-from jax import numpy as jnp
 from collections import UserList
-from aegrad.utils import make_pytree
 from functools import singledispatch
+from jax import numpy as jnp
+from jax import Array
+from aegrad.utils import _make_pytree
 
 
 def check_arr_shape(
@@ -128,7 +128,7 @@ def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
         raise TypeError("Axis must be an int or a sequence of ints.")
 
 
-@make_pytree
+@_make_pytree
 class ArrayList(UserList[Array]):
     r"""
     Class to hold a sequence of arrays, with overloaded arithmetic operations. This allows for more elegeant handling of

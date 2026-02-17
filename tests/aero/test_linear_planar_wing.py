@@ -1,16 +1,21 @@
 from __future__ import annotations
-from aegrad.aero.uvlm_utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization, InputUnflattened
-from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero.linear_uvlm import LinearWakeType
+from pathlib import Path
+
 from jax import numpy as jnp
-from jax.scipy.spatial.transform import Rotation as rot
-from aegrad.aero.uvlm import UVLM
+from jax.scipy.spatial.transform import Rotation as Rot
+from jax import Array, vmap
+
+from aegrad.algebra.array_utils import ArrayList
+from aegrad.aero import (
+    make_rectangular_grid,
+    GridDiscretization,
+    InputUnflattened,
+    LinearWakeType,
+    UVLM,
+)
+from aegrad.aero.kernels import _biot_savart_cutoff
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
 from aegrad.print_output import set_verbosity, VerbosityLevel
-from pathlib import Path
-from aegrad.aero.kernels import biot_savart_cutoff
-from jax import Array, vmap
 
 
 class TestLinearAero:
@@ -42,7 +47,7 @@ class TestLinearAero:
 
         beam_coords = jnp.zeros((n + 1, 3))
         beam_coords = beam_coords.at[:, 1].set(jnp.linspace(0.0, b_ref, n + 1))
-        rmat = rot.from_euler("xyz", jnp.array((0.0, alpha, 0.0))).as_matrix()
+        rmat = Rot.from_euler("xyz", jnp.array((0.0, alpha, 0.0))).as_matrix()
 
         # static position
         hg = jnp.zeros((n + 1, 4, 4))
@@ -52,7 +57,7 @@ class TestLinearAero:
 
         # nonlinear case
         case = UVLM(
-            n_tstep, disc, False, jnp.arange(0, n + 1), kernel=biot_savart_cutoff
+            n_tstep, disc, False, jnp.arange(0, n + 1), kernel=_biot_savart_cutoff
         )
         case.set_design_variables(dt, flowfield, None, x_grid, hg)
         case.solve_static()
@@ -157,7 +162,7 @@ class TestLinearAero:
         alpha_dot_t = ampl * omega * 0.5 * jnp.sin(omega * t)
 
         rmat_t = vmap(
-            lambda angle: rot.from_euler(
+            lambda angle: Rot.from_euler(
                 "xyz", jnp.array((0.0, angle, 0.0))
             ).as_matrix()
         )(alpha_t)
@@ -245,7 +250,7 @@ class TestLinearAero:
         alpha_dot_t = ampl * omega * 0.5 * jnp.sin(omega * t)
 
         rmat_t = vmap(
-            lambda angle: rot.from_euler(
+            lambda angle: Rot.from_euler(
                 "xyz", jnp.array((0.0, angle, 0.0))
             ).as_matrix()
         )(alpha_t)

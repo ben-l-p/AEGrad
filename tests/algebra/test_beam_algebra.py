@@ -1,5 +1,8 @@
+import jax
+from jax import numpy as jnp
+
 from aegrad.algebra.base import clip_to_pi, chi
-from constants import SMALL_ANG_THRESH, ZERO_ANG_THRESH
+from constants import SMALL_ANG_THRESH
 from aegrad.algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
@@ -37,9 +40,6 @@ from aegrad.algebra.test_routines import (
 )
 from algebra.base import exp_sum, log_sum, t_sum, t_inv_sum
 
-from jax import numpy as jnp
-import jax
-
 jax.config.update("jax_enable_x64", True)
 
 
@@ -48,12 +48,6 @@ class TestConstants:
     def test_small_ang_thresh():
         assert SMALL_ANG_THRESH > 0.0, (
             f"Small angle threshold should be greater than 0, but got {SMALL_ANG_THRESH}"
-        )
-
-    @staticmethod
-    def test_zero_ang_thresh():
-        assert ZERO_ANG_THRESH > 0.0, (
-            f"Zero angle threshold should be greater than 0, but got {ZERO_ANG_THRESH}"
         )
 
 

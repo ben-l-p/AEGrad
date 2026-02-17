@@ -2,21 +2,30 @@ from __future__ import annotations
 from copy import deepcopy
 from os import PathLike
 from pathlib import Path
+from typing import Optional, Sequence
+from dataclasses import dataclass
 
 from jax import numpy as jnp
-from jax import Array
-from typing import Optional
-from aegrad.utils import make_pytree
-from typing import Sequence
+from jax import Array, vmap
+
+from aegrad.utils import _make_pytree
 from aegrad.print_output import warn, jax_print, VerbosityLevel
 from aegrad.algebra.base import chi
-from jax import vmap
-
 from plotting.beam import plot_beam_to_vtk
 from plotting.pvd import write_pvd
 
 
-@make_pytree
+@dataclass
+class OptionalJacobians:
+    d_f_ext_dead_d_n: bool = False  # stiffness from dead loads
+    d_f_grav_d_n: bool = False  # stiffness from gravitational loads
+    d_f_gyr_d_q_dot: bool = (
+        False  # derivative of gyroscopic forces with respect to Q_dot
+    )
+    d_f_int_d_p_d: bool = False  # geometric stiffness
+
+
+@_make_pytree
 class ConvergenceStatus:
     def __init__(
         self,
@@ -560,7 +569,7 @@ class DynamicStructureSnapshot:
         )
 
 
-@make_pytree
+@_make_pytree
 class DynamicStructure:
     """Object to hold the full state and forces of a dynamic structure analysis across multiple timesteps."""
 
