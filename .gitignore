@@ -3,3 +3,6 @@
 *.vtp
 *.vtu
 *.pvd
+
+# other files
+!/development_plan.py

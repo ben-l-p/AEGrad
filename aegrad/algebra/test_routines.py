@@ -202,7 +202,7 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
         raise ValueError("Coefficients array must be of shapes (6, )")
 
     if isinstance(l, Array) and not jnp.isscalar(l):
-        raise ValueError("Length l must be a scalar value")
+        raise ValueError("Length l0 must be a scalar value")
 
     eax, gay, gaz, gjx, eiy, eiz = coeffs
 

@@ -4,13 +4,13 @@ import jax
 from jax import Array
 
 from aegrad.algebra.so3 import log_so3
-from aegrad.structure.beam import StaticStructure
+from aegrad.structure.base_beam import StaticStructure
 from models.geradin_beam import geradin_beam
 
 jax.config.update("jax_enable_x64", True)
 
 
-class TestGeradinBeamGradients:
+class TestGeradinBeamADGradients:
     n_nodes = 20
     struct = geradin_beam(n_nodes, "x")
     load = 600000.0

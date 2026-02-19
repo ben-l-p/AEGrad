@@ -25,7 +25,7 @@ class TestRotInvariance:
         hg = hg.at[:, :3, :3].set(jnp.eye(3)[None, :, :])
         hg = hg.at[:, :3, 3].set(beam_coords)
 
-        case = UVLM(2, disc, False, jnp.arange(0, mn + 1))
+        case = UVLM(2, [disc], False, jnp.arange(0, mn + 1))
 
         for i_u_inf, u_inf in enumerate(
             [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]

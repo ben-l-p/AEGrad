@@ -45,9 +45,7 @@ class UVLM:
     def __init__(
         self,
         n_tstep: int,
-        grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]]
-        | GridDiscretization
-        | tuple[int, int, int],
+        grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]],
         variable_wake_disc: bool,
         dof_mapping: ArrayList | Sequence[Array] | Array,
         kernel: Optional[KernelFunction] = None,
@@ -64,8 +62,6 @@ class UVLM:
         """
 
         # case for single inputs
-        if isinstance(grid_shapes, (GridDiscretization, tuple[int, int, int])):
-            grid_shapes = [grid_shapes]
         if isinstance(dof_mapping, Array):
             dof_mapping = [dof_mapping]
 

@@ -3,13 +3,14 @@ name = "aegrad"
 version = "0.1.0"
 description = "Solver for automatic differentiation of UVLM/nonlinear beam aeroelastic simulations."
 authors = ["Ben Preston"]
-requires-python = ">=3.13"
+requires-python = "==3.12.*"
 dependencies = [
     "jax==0.9.0.1",
     "pytest==9.0.2",
-    "ruff==0.14.14",
-    "vtk==9.5.2",
-    "xprof==2.21.5",
+    "ruff==0.15.1",
+    "tensorboard==2.20.0",
+    "vtk==9.6.0",
+    "xprof==2.21.6",
 ]
 
 [tool.pytest.ini_options]

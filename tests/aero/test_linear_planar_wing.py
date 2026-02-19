@@ -57,7 +57,7 @@ class TestLinearAero:
 
         # nonlinear case
         case = UVLM(
-            n_tstep, disc, False, jnp.arange(0, n + 1), kernel=_biot_savart_cutoff
+            n_tstep, [disc], False, jnp.arange(0, n + 1), kernel=_biot_savart_cutoff
         )
         case.set_design_variables(dt, flowfield, None, x_grid, hg)
         case.solve_static()

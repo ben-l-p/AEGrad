@@ -32,7 +32,7 @@ class TestBeamPlot:
                 load_steps=3,
             )
 
-            plot_dir = Path("./test_outputs/test_beam_plot_output")
+            plot_dir = Path("./test_beam_plot_output")
             out_file = result.plot(plot_dir).resolve()
             out_file.unlink()  # clean up the generated file after plotting
             plot_dir.rmdir()  # remove the created directory

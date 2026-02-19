@@ -26,9 +26,10 @@ from aegrad.structure.structure_utils import (
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from aegrad.algebra.so3 import vec_to_skew
 from aegrad.structure.time_integration import TimeIntregrator
+from algebra.se3 import t_se3
 
 
-class BeamStructure:
+class BaseBeamStructure:
     r"""
     Class to represent nonlinear beam structural model
     """
@@ -39,9 +40,10 @@ class BeamStructure:
         connectivity: Array,
         y_vector: Array,
         gravity: Optional[Array] = None,
+        verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
     ) -> None:
         r"""
-        Initialise BeamStructure class with all non-design parameters
+        Initialise BaseBeamStructure class with all non-design parameters
         :param num_nodes: Number of nodes in the structure
         :param connectivity: Connectivity array of shapes [n_elem, 2]
         :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
@@ -104,8 +106,9 @@ class BeamStructure:
         else:
             self.gravity_vec = jnp.zeros((3,))
 
-        self.verbosity: VerbosityLevel = VerbosityLevel.NORMAL
+        self.verbosity: VerbosityLevel = verbosity
         self.optional_jacobians: OptionalJacobians = OptionalJacobians()
+        self.use_m_cs: bool = False
 
     def set_design_variables(
         self,
@@ -233,7 +236,6 @@ class BeamStructure:
         return vmap(
             partial(
                 _k_t_entry,
-                include_material=True,
                 include_geometric=self.optional_jacobians.d_f_int_d_p_d,
             ),
             (0, 0, 0, 0, 0, 0),
@@ -430,6 +432,7 @@ class BeamStructure:
         c_t: Array,
         c_t_lumped: Optional[Array],
         k_t: Array,
+        t_n: Array,
         ti: TimeIntregrator,
     ) -> Array:
         r"""
@@ -437,18 +440,22 @@ class BeamStructure:
         :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
-        :param k_t: Disassembled system stiffness matrix postmultiplied by increment tangent, [n_elem, 12, 12]
+        :param k_t: System stiffness matrix, [n_dof, n_dof]
+        :param t_n: Tangent operator T(n), [n_nodes, 6, 6]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
 
         # note that k_t is already assembled for convenience
+        k_t_tan_n = jnp.einsum(
+            "ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_n
+        ).reshape(self.n_dof, self.n_dof)  # [n_dof, n_dof]
+
         mat = (
             self._assemble_matrix_from_entries(
                 m_t * ti.beta_prime + c_t * ti.gamma_prime
             )
-            + k_t
-        )
+        ) + k_t_tan_n
 
         if self.use_lumped_mass:
             mat += (
@@ -801,7 +808,6 @@ class BeamStructure:
         abs_disp_tol: Optional[float] = 1e-12,
         rel_force_tol: Optional[float] = 1e-8,
         abs_force_tol: Optional[float] = 1e-12,
-        verbosity: Optional[VerbosityLevel] = None,
         optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> StaticStructure:
         r"""
@@ -816,7 +822,6 @@ class BeamStructure:
         :param abs_disp_tol: Absolute displacement tolerance for convergence.
         :param rel_force_tol: Relative force tolerance for convergence.
         :param abs_force_tol: Absolute force tolerance for convergence.
-        :param verbosity: Verbosity level for convergence messages.
         :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
         to compute for efficiency.
         :return: StaticStructure dataclass containing results of the static analysis.
@@ -826,8 +831,6 @@ class BeamStructure:
             raise ValueError("load_steps must be at least 1")
 
         # add a warning if using 32-bit floats
-        if verbosity is not None:
-            self.verbosity = verbosity
         warn_if_32_bit()
 
         # check inputs
@@ -927,7 +930,7 @@ class BeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if self.verbosity == VerbosityLevel.VERBOSE:
+            if self.verbosity.value == VerbosityLevel.VERBOSE.value:
                 converge_status.print_message(None, i_load_step)
 
             return i_load_step, converge_status, hg_np1_full
@@ -1018,7 +1021,6 @@ class BeamStructure:
         abs_disp_tol: Optional[float] = 1e-12,
         rel_force_tol: Optional[float] = 1e-9,
         abs_force_tol: Optional[float] = 1e-12,
-        verbosity: Optional[VerbosityLevel] = None,
         optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> DynamicStructure:
         r"""
@@ -1037,15 +1039,12 @@ class BeamStructure:
         :param abs_disp_tol: Absolute tolerance for displacement convergence.
         :param rel_force_tol: Relative tolerance for force convergence.
         :param abs_force_tol: Absolute tolerance for force convergence.
-        :param verbosity: Verbosity level for convergence messages.
         :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
         to compute for efficiency.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
         # add a warning if using 32-bit floats
-        if verbosity is not None:
-            self.verbosity = verbosity
         warn_if_32_bit()
 
         # set up initial state
@@ -1153,6 +1152,7 @@ class BeamStructure:
             p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
             eps_n = self._make_eps(d_n)  # [n_elem, 6]
             d_dot_n = self._make_d_dot(p_d_n, v_n)  # [n_elem, 6]
+            t_n = vmap(t_se3, 0, 0)(n_n)  # [n_node, 6, 6]
 
             # tangent matrices
             m_t = self._make_m_t(d_n)  # [n_elem, 12, 12]
@@ -1200,11 +1200,12 @@ class BeamStructure:
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
             sys_mat = self._make_sys_matrix(
-                m_t,
-                c_t,
-                c_t_lumped,
-                k_t,
-                time_integrator,
+                m_t=m_t,
+                c_t=c_t,
+                c_t_lumped=c_t_lumped,
+                k_t=k_t,
+                t_n=t_n,
+                ti=time_integrator,
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
@@ -1233,7 +1234,7 @@ class BeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if self.verbosity == VerbosityLevel.VERBOSE:
+            if self.verbosity.value == VerbosityLevel.VERBOSE.value:
                 converge_status_.print_message(t[i_ts], i_load_step)
 
             return (
@@ -1362,7 +1363,7 @@ class BeamStructure:
                 ),
             )
 
-            if self.verbosity == VerbosityLevel.NORMAL:
+            if self.verbosity.value == VerbosityLevel.NORMAL.value:
                 converge_status_.print_message(t[i_ts], i_load_step)
 
             return i_ts, converge_status_, hg_solve, n_n, v_n, v_dot_n

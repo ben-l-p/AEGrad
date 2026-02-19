@@ -3,7 +3,11 @@ from os import PathLike
 from pathlib import Path
 
 import vtk
+
+# noinspection PyUnresolvedReferences
 from vtk.numpy_interface import algorithms as algs
+
+# noinspection PyUnresolvedReferences
 from vtk.numpy_interface import dataset_adapter as dsa
 
 from jax import Array

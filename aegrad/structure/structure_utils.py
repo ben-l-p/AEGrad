@@ -1,5 +1,6 @@
-from typing import Literal
+from __future__ import annotations
 
+from typing import Literal
 from jax import Array, numpy as jnp
 import jax
 
@@ -52,7 +53,6 @@ def _k_t_entry(
     eps: Array,
     k: Array,
     ad_inv: Array,
-    include_material: bool = True,
     include_geometric: bool = True,
 ) -> Array:
     r"""
@@ -64,20 +64,11 @@ def _k_t_entry(
     :param eps: Beam strain vector, [6].
     :param k: Beam cross-sectional stiffness matrix, [6, 6].
     :param ad_inv: Inverse adjoint matrix for element, [6, 6].
-    :param include_material: Whether to include material stiffness contribution, bool.
     :param include_geometric: Whether to include geometric stiffness contribution, bool.
     :return: Stiffness matrix entry, [12, 12].
     """
-    if not include_material and not include_geometric:
-        raise ValueError(
-            "At least one of include_material or include_geometric must be True."
-        )
 
-    if include_material:
-        # contribution from perturbations in the strain
-        k_t = p_d.T @ k @ p_d / l  # [12, 12]
-    else:
-        k_t = jnp.zeros((12, 12))
+    k_t = p_d.T @ k @ p_d / l  # [12, 12]
 
     if include_geometric:
         e = jax.jacobian(lambda d__,: p(d__, ad_inv))(d)

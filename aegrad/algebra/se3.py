@@ -341,7 +341,10 @@ def p(
     :return: Matrix, [6, 12].
     """
 
-    return jnp.concatenate((-t_inv_se3(-d) @ ad_inv, t_inv_se3(d) @ ad_inv), axis=1)
+    t_inv_pos = t_inv_se3(d)
+    t_inv_neg = t_inv_pos - ha_to_ha_hat(d)  # t_inv(-d)
+
+    return jnp.concatenate((-t_inv_neg @ ad_inv, t_inv_pos @ ad_inv), axis=1)
 
 
 def t_star(s_l: Array, d: Array) -> Array:
@@ -350,7 +353,7 @@ def t_star(s_l: Array, d: Array) -> Array:
     both ends of the element, :math:`T^*(s, \mathbf{d}) = \frac{d \mathbf{h}(s)}{d \mathbf{h}_A}` or
     :math:`\frac{d \mathbf{h}(s)}{d \mathbf{h}_B}`. Formulation from Geometrically exact beam finite element
     formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.
-    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
     :return: :math:`T^*(s, \mathbf{d})` matrix, [6, 6].
     """
@@ -363,7 +366,7 @@ def q(s_l: Array, d: Array, ad_inv: Array) -> Array:
     both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &
     T^*(s, \mathbf{d})]`. Formulation from "A geometric local frame approach for flexible multibody systems",
     by Sonneville, 2015, Eq 6.145, p. 90.
-    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
     :param ad_inv: Adjoint action for base rotation, [6, 6].
     :return: :math:`Q(s, \mathbf{d})` matrix, [6, 12].
@@ -377,7 +380,7 @@ def q_dot(s_l: Array, d: Array, d_dot: Array, ad_inv: Array) -> Array:
     r"""
     Time derivative of the matrix which described pertubations in the algebra element along an element with respect to
     the algebra elements at both ends of the element, :math:`\dot{Q}(s, \mathbf{d})`.
-    :param s_l: Relative position along the element :math:`\frac{s}{l} \in [0, 1]`, [].
+    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
     :param d_dot: Time derivative of relative se(3) configuration vector, [6].
     :param ad_inv: Adjoint action for base rotation, [6, 6].

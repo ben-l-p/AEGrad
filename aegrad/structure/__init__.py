@@ -1,4 +1,3 @@
-from aegrad.structure.beam import BeamStructure
 from aegrad.structure.data_structures import (
     OptionalJacobians,
     StaticStructure,
@@ -6,8 +5,7 @@ from aegrad.structure.data_structures import (
     DynamicStructureSnapshot,
 )
 from aegrad.structure.gradients import (
-    DesignVariables,
-    BeamGradients,
-    StructuralStates,
+    BeamStructure,
     ObjectiveFunction,
 )
+from structure.data_structures import StructuralStates, DesignVariables

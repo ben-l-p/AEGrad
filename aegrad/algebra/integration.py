@@ -32,12 +32,12 @@ def gauss_lobatto(
         case _:
             raise ValueError("Order must be one of 3, 4, or 5.")
 
-    range = bounds[1] - bounds[0]
-    x_i_scaled = bounds[0] + 0.5 * (x_i + 1.0) * range  # [n_i]
+    range_ = bounds[1] - bounds[0]
+    x_i_scaled = bounds[0] + 0.5 * (x_i + 1.0) * range_  # [n_i]
     f_i = vmap(f, 0, 0)(x_i_scaled)  # [n_i, ...]
 
     return (
-        range
+        range_
         / 2.0
         * (
             2.0 / (int_order * (int_order - 1)) * jnp.sum(f_bounds, axis=0)
@@ -72,8 +72,8 @@ def gauss_legendre(
         case _:
             raise ValueError("Order must be one of 1, 2, or 3.")
 
-    range = bounds[1] - bounds[0]
-    x_i_scaled = bounds[0] + 0.5 * (x_i + 1.0) * range  # [n_i]
+    range_ = bounds[1] - bounds[0]
+    x_i_scaled = bounds[0] + 0.5 * (x_i + 1.0) * range_  # [n_i]
     f_i = vmap(f, 0, 0)(x_i_scaled)  # [n_i, ...]
 
-    return range / 2.0 * jnp.einsum("i,i...->...", w_i, f_i)
+    return range_ / 2.0 * jnp.einsum("i,i...->...", w_i, f_i)

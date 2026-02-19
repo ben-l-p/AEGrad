@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Optional, Sequence
 from dataclasses import dataclass
 
-from jax import numpy as jnp
-from jax import Array, vmap
+import jax
+from jax import numpy as jnp, Array
+from jax import vmap
 
 from aegrad.utils import _make_pytree
 from aegrad.print_output import warn, jax_print, VerbosityLevel
 from aegrad.algebra.base import chi
+from algebra.array_utils import check_arr_shape
 from plotting.beam import plot_beam_to_vtk
 from plotting.pvd import write_pvd
 
@@ -111,28 +113,28 @@ class ConvergenceStatus:
             self.converged_abs_disp = self.abs_disp_val < self.abs_disp_tol
 
         # check relative displacement convergence:
-        max_total_elem = jnp.linalg.norm(total_disp)
-        self.rel_disp_val = self.rel_disp_val.at[...].set(
-            self.abs_disp_val / max_total_elem
-        )
         if self.rel_disp_tol is not None:
+            max_total_elem = jnp.linalg.norm(total_disp)
+            self.rel_disp_val = self.rel_disp_val.at[...].set(
+                self.abs_disp_val / max_total_elem
+            )
             self.converged_rel_disp = self.converged_rel_disp.at[...].set(
                 jnp.nan_to_num(self.rel_disp_val, True, jnp.inf) < self.rel_disp_tol
             )
 
         # check absolute force convergence
-        self.abs_force_val = self.abs_force_val.at[...].set(
-            jnp.linalg.norm(delta_force)
-        )
         if self.abs_force_tol is not None:
+            self.abs_force_val = self.abs_force_val.at[...].set(
+                jnp.linalg.norm(delta_force)
+            )
             self.converged_abs_force = self.abs_force_val < self.abs_force_tol
 
         # check relative force convergence:
-        max_total_elem = jnp.abs(total_force).max()
-        self.rel_force_val = self.rel_force_val.at[...].set(
-            self.abs_force_val / max_total_elem
-        )
         if self.rel_force_tol is not None:
+            max_total_elem = jnp.abs(total_force).max()
+            self.rel_force_val = self.rel_force_val.at[...].set(
+                self.abs_force_val / max_total_elem
+            )
             self.converged_rel_force = self.converged_rel_force.at[...].set(
                 jnp.nan_to_num(self.rel_force_val, True, jnp.inf) < self.rel_force_tol
             )
@@ -773,3 +775,103 @@ class DynamicStructure:
             "f_res",
             "t",
         )
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class StructuralStates:
+    hg: Array
+    d: Array
+    eps: Array
+    f_int: Array
+    f_ext_dead: Optional[Array]
+    f_grav: Optional[Array]
+
+
+@_make_pytree
+class DesignVariables:
+    def __init__(
+        self,
+        x0: Optional[Array],
+        k_cs: Optional[Array],
+        m_cs: Optional[Array],
+        m_lumped: Optional[Array],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+    ):
+        self.x0: Optional[Array] = x0
+        self.k_cs: Optional[Array] = k_cs
+        self.m_cs: Optional[Array] = m_cs
+        self.m_lumped: Optional[Array] = m_lumped
+        self.f_ext_follower: Optional[Array] = f_ext_follower
+        self.f_ext_dead: Optional[Array] = f_ext_dead
+
+        self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
+        self.mapping, self.n_x = self.make_index_mapping()
+
+    def get_vars(self) -> dict[str, Optional[Array]]:
+        return {
+            "x0": self.x0,
+            "k_cs": self.k_cs,
+            "m_cs": self.m_cs,
+            "m_lumped": self.m_lumped,
+            "f_ext_follower": self.f_ext_follower,
+            "f_ext_dead": self.f_ext_dead,
+        }
+
+    def get_shapes(self) -> dict[str, Optional[tuple[int, ...]]]:
+        return {
+            k: var.shape if var is not None else None
+            for k, var in self.get_vars().items()
+        }
+
+    def make_index_mapping(self) -> tuple[dict[str, Optional[Array]], int]:
+        mapping = {}
+        cnt = 0
+        for name, shape in self.shapes.items():
+            if shape is not None:
+                var_size = jnp.prod(jnp.array(shape))
+                mapping[name] = jnp.arange(cnt, cnt + var_size).reshape(shape)
+                cnt += var_size
+            else:
+                mapping[name] = None
+        return mapping, cnt
+
+    def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
+        arr = jnp.concatenate(
+            [
+                var.reshape(f_size, -1)
+                for var in self.get_vars().values()
+                if var is not None
+            ],
+            axis=1,
+        )
+        check_arr_shape(arr, (f_size, x_size), "Internal jacobian")
+        return arr
+
+    def ravel(self) -> Array:
+        return jnp.concatenate(
+            [var.ravel() for var in self.get_vars().values() if var is not None]
+        )
+
+    def reshape(self, *args: int) -> Array:
+        return self.ravel().reshape(*args)
+
+    def from_adjoint(self, f_shape: tuple[int, ...], df_dx: Array) -> DesignVariables:
+        out_dict = {}
+        for name in self.shapes.keys():
+            if self.mapping[name] is not None:
+                out_dict[name] = df_dx[:, self.mapping[name]].reshape(
+                    *f_shape, *self.shapes[name]
+                )
+            else:
+                out_dict[name] = None
+        return DesignVariables(**out_dict)
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "shapes", "mapping"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "x0", "k_cs", "m_cs", "m_lumped", "f_ext_follower", "f_ext_dead"

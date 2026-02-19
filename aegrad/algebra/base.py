@@ -19,7 +19,7 @@ def matrix2(mat: Array) -> Array:
     return mat @ mat
 
 
-def clip_to_pi(val: Array):
+def clip_to_pi(val: float | Array):
     r"""
     Clips an angle value to be within [-pi, pi].
     :param val: Scalar to bound.
