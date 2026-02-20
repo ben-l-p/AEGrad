@@ -47,7 +47,6 @@ class TestConstLinXVelocityLumpedMass:
             None,
             None,
             None,
-            max_n_iter=10,
             spectral_radius=1.0,
         )
 

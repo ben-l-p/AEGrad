@@ -16,7 +16,7 @@ def geradin_beam(
     beam_direction: Literal["x", "y", "z"] = "x",
     m_cs: Optional[Array] = None,
 ) -> BeamStructure:
-    l = jnp.array(5.0)
+    length = jnp.array(5.0)
     n_elem = n_nodes - 1
 
     direction_index = {"x": 0, "y": 1, "z": 2}[beam_direction]
@@ -31,7 +31,9 @@ def geradin_beam(
     conn = conn.at[:, 1].set(jnp.arange(1, n_elem + 1))
 
     coords = (
-        jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
+        jnp.zeros((n_nodes, 3))
+        .at[:, direction_index]
+        .set(jnp.linspace(0, length, n_nodes))
     )
     struct = BeamStructure(n_nodes, conn, y_vect[None, :])
 
@@ -43,17 +45,16 @@ def geradin_beam(
 
 
 if __name__ == "__main__":
-    n_nodes = 20
+    n_nodes_ = 20
     load = 600000.0
-    struct = geradin_beam(n_nodes=n_nodes, beam_direction="x")
-    f_ext = jnp.zeros((n_nodes, 6))
+    struct_ = geradin_beam(n_nodes=n_nodes_, beam_direction="x")
+    f_ext = jnp.zeros((n_nodes_, 6))
     f_ext = f_ext.at[-1, 2].set(-load)
 
-    result = struct.static_solve(
+    result = struct_.static_solve(
         None,
         f_ext,
         jnp.arange(6),
-        max_n_iter=30,
         load_steps=3,
     )
 

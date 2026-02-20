@@ -20,8 +20,6 @@ class TestGeradinBeam:
             f_ext,
             jnp.arange(6),
             load_steps=3,
-            abs_disp_tol=1e-4,
-            max_n_iter=10,
         )
 
         z_tip = result.hg[-1, 2, 3]

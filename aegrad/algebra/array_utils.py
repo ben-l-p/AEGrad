@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence
 from collections import UserList
 from functools import singledispatch
 from jax import numpy as jnp
@@ -202,7 +202,8 @@ class ArrayList(UserList[Array]):
         return flatten_to_1d(self)
 
     def index_all(
-        self, idx: tuple[Union[int, slice, Ellipsis], ...] | slice | int
+        self,
+        *idx: Optional[int | slice | Ellipsis],
     ) -> ArrayList:
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(n).

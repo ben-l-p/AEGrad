@@ -2,5 +2,10 @@
 <project version="4">
   <component name="Statistic">
     <option name="fileTypes" value="class;svn-base;svn-work;Extra;gif;png;jpg;jpeg;bmp;tga;tiff;ear;war;zip;jar;iml;vts;ds_store;iws;ipr;bz2;gz;pyc;" />
+    <option name="excludedDirectories">
+      <list>
+        <option value="$PROJECT_DIR$/tests" />
+      </list>
+    </option>
   </component>
 </project>

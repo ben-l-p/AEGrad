@@ -16,6 +16,7 @@ def flying_spaghetti(
     Creates a flying spaghetti model structure.
     :param n_nodes: Number of nodes.
     :param t: Time array for dead force, [n_tstep]
+    :param use_gravity: Whether to include gravity in the model.
     :return: Beam model, and dead force array corresponding to the passed time array for respective 2D and 3D cases.
     """
 
@@ -72,26 +73,26 @@ def flying_spaghetti(
 
 
 if __name__ == "__main__":
-    n_nodes = 21
-    dt = 0.01
-    t_end = 10.0
-    n_tstep = int(jnp.ceil(t_end / dt)) + 1
+    n_nodes_ = 21
+    dt_ = 0.01
+    t_end_ = 10.0
+    n_tstep_ = int(jnp.ceil(t_end_ / dt_)) + 1
 
     # start one timestep behind to prevent issues with initial condition
-    t = jnp.arange(n_tstep) * dt - dt
+    t_ = jnp.arange(n_tstep_) * dt_ - dt_
 
-    struct, f_dead_2d, f_dead_3d = flying_spaghetti(n_nodes, t)
+    struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(n_nodes_, t_)
 
-    solution = struct.dynamic_solve(
+    solution = struct_.dynamic_solve(
         None,
-        n_tstep,
-        dt,
+        n_tstep_,
+        dt_,
         None,
-        f_dead_2d,  # swap between 2d and 3d to see the difference in response
+        f_dead_2d_,  # swap between 2d and 3d to see the difference in response
         None,
         spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
     )
 
     plot_path = Path("./flying_spaghetti_2d")
     stride = 10
-    solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep, stride))
+    solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep_, stride))

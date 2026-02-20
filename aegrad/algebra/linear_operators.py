@@ -1,12 +1,12 @@
 from __future__ import annotations
-from typing import Optional, Callable, Sequence, Self
+from typing import Optional, Callable, Sequence
 
 import jax
 from jax import Array, numpy as jnp, jacobian
 
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.print_output import print_with_time, warn, jax_print
-from aegrad.utils import _make_pytree, replace_self
+from aegrad.utils import _make_pytree
 
 
 @_make_pytree
@@ -46,8 +46,7 @@ class LinearOperator:
             self.generate_matrix()
         return self._matrix
 
-    @replace_self
-    def generate_matrix(self) -> Self:
+    def generate_matrix(self) -> None:
         r"""
         Generate the matrix representation of the linear operator.
         """
@@ -55,7 +54,6 @@ class LinearOperator:
         self._matrix = jacobian(lambda x_: self.func(x_), argnums=0)(
             jnp.full(self.shape[1], 1.0)
         )
-        return self
 
     def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
         r"""

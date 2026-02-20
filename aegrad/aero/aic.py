@@ -29,7 +29,7 @@ def _compute_aic_grid(
     # vectors in chordwise direction [zeta_m - 1, zeta_n, 2, 3]
     m_vect = jnp.stack((zeta[:-1, :, :], zeta[1:, :, :]), axis=-2)
 
-    # vectors in spanwise directionc [zeta_m, zeta_n - 1, 2, 3]
+    # vectors in spanwise direction [zeta_m, zeta_n - 1, 2, 3]
     n_vect = jnp.stack((zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2)
 
     # AIC matrices have one entry per filament

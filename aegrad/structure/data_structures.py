@@ -27,36 +27,34 @@ class OptionalJacobians:
     d_f_int_d_p_d: bool = False  # geometric stiffness
 
 
+@dataclass
+class BeamConvergenceSettings:
+    max_n_iter: Optional[int] = 40
+    rel_disp_tol: Optional[float] = 1e-8
+    abs_disp_tol: Optional[float] = 1e-12
+    rel_force_tol: Optional[float] = 1e-8
+    abs_force_tol: Optional[float] = 1e-12
+
+
 @_make_pytree
 class ConvergenceStatus:
-    def __init__(
-        self,
-        rel_force_tol: Optional[Array],
-        abs_force_tol: Optional[Array],
-        rel_disp_tol: Optional[Array],
-        abs_disp_tol: Optional[Array],
-        max_n_iter: Optional[Array],
-    ):
+    def __init__(self, convergence_settings: BeamConvergenceSettings):
         r"""
         Object to track convergence status of an iterative solver based on absolute and relative tolerances. Absolute
         convergence is measured for the delta vector, while relative convergence is measured as the ratio of the maximum
         element in the delta vector to the total vector.
-        :param rel_disp_tol: Relative displacement tolerance for convergence.
-        :param abs_disp_tol: Absolute displacement tolerance for convergence.
-        :param rel_force_tol: Relative force tolerance for convergence.
-        :param abs_force_tol: Absolute force tolerance for convergence.
-        :param max_n_iter: Total number of allowed iterations, used to determine if maximum iterations have been reached for
+        :param convergence_settings: Convergence settings object containing tolerances and maximum iteration count for
         convergence failure.
         """
 
         # make sure settings allow for loop to be broken
         if (
-            rel_disp_tol is None
-            and abs_disp_tol is None
-            and rel_force_tol is None
-            and abs_force_tol is None
+            convergence_settings.rel_disp_tol is None
+            and convergence_settings.abs_disp_tol is None
+            and convergence_settings.rel_force_tol is None
+            and convergence_settings.abs_force_tol is None
         ):
-            if max_n_iter is None:
+            if convergence_settings.max_n_iter is None:
                 raise ValueError(
                     "No convergence criteria provided, at least one tolerance or maximum iteration count "
                     "must be specified."
@@ -67,11 +65,7 @@ class ConvergenceStatus:
 
         # base parameters
         self.i_iter: Array = jnp.zeros((), dtype=int)
-        self.max_n_iter: Optional[Array] = max_n_iter
-        self.abs_disp_tol: Optional[Array] = abs_disp_tol
-        self.rel_disp_tol: Optional[Array] = rel_disp_tol
-        self.abs_force_tol: Optional[Array] = abs_force_tol
-        self.rel_force_tol: Optional[Array] = rel_force_tol
+        self.convergence_settings: BeamConvergenceSettings = convergence_settings
 
         # store residual values
         self.rel_disp_val: Array = jnp.zeros(())
@@ -109,34 +103,40 @@ class ConvergenceStatus:
 
         # check absolute displacement convergence
         self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
-        if self.abs_disp_tol is not None:
-            self.converged_abs_disp = self.abs_disp_val < self.abs_disp_tol
+        if self.convergence_settings.abs_disp_tol is not None:
+            self.converged_abs_disp = (
+                self.abs_disp_val < self.convergence_settings.abs_disp_tol
+            )
 
         # check relative displacement convergence:
-        if self.rel_disp_tol is not None:
+        if self.convergence_settings.rel_disp_tol is not None:
             max_total_elem = jnp.linalg.norm(total_disp)
             self.rel_disp_val = self.rel_disp_val.at[...].set(
                 self.abs_disp_val / max_total_elem
             )
             self.converged_rel_disp = self.converged_rel_disp.at[...].set(
-                jnp.nan_to_num(self.rel_disp_val, True, jnp.inf) < self.rel_disp_tol
+                jnp.nan_to_num(self.rel_disp_val, True, jnp.inf)
+                < self.convergence_settings.rel_disp_tol
             )
 
         # check absolute force convergence
-        if self.abs_force_tol is not None:
+        if self.convergence_settings.abs_force_tol is not None:
             self.abs_force_val = self.abs_force_val.at[...].set(
                 jnp.linalg.norm(delta_force)
             )
-            self.converged_abs_force = self.abs_force_val < self.abs_force_tol
+            self.converged_abs_force = (
+                self.abs_force_val < self.convergence_settings.abs_force_tol
+            )
 
         # check relative force convergence:
-        if self.rel_force_tol is not None:
+        if self.convergence_settings.rel_force_tol is not None:
             max_total_elem = jnp.abs(total_force).max()
             self.rel_force_val = self.rel_force_val.at[...].set(
                 self.abs_force_val / max_total_elem
             )
             self.converged_rel_force = self.converged_rel_force.at[...].set(
-                jnp.nan_to_num(self.rel_force_val, True, jnp.inf) < self.rel_force_tol
+                jnp.nan_to_num(self.rel_force_val, True, jnp.inf)
+                < self.convergence_settings.rel_force_tol
             )
 
         # find convergence status of numerics (excluding failure modes such as max iterations or nans)
@@ -151,9 +151,9 @@ class ConvergenceStatus:
         )
 
         # check for failure modes
-        if self.max_n_iter is not None:
+        if self.convergence_settings.max_n_iter is not None:
             self.final_iter = self.final_iter.at[...].set(
-                (self.i_iter >= self.max_n_iter)
+                (self.i_iter >= self.convergence_settings.max_n_iter)
             )
         self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
 
@@ -214,13 +214,7 @@ class ConvergenceStatus:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return (
-            "max_n_iter",
-            "abs_disp_tol",
-            "rel_disp_tol",
-            "abs_force_tol",
-            "rel_force_tol",
-        )
+        return ("convergence_settings",)
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -257,16 +251,16 @@ class StaticStructure:
         f_res: Array,
         local: bool = True,
     ):
-        self.hg: Array = hg  # [n_nodes, 4, 4]
+        self.hg: Array = hg  # [n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
-        self.f_int: Array = f_int  # [n_nodes, 6]
-        self.f_res: Array = f_res  # [n_nodes, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
+        self.f_int: Array = f_int  # [n_nodes_, 6]
+        self.f_res: Array = f_res  # [n_nodes_, 6]
         self.local: bool = local
 
     def to_dynamic(self) -> DynamicStructureSnapshot:
@@ -301,7 +295,7 @@ class StaticStructure:
     def _transform(self, nodal_chi: Array) -> None:
         r"""
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
-        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_nodes, 6, 6]
+        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_nodes_, 6, 6]
         """
         if self.f_ext_follower is not None:
             self.f_ext_follower = self.f_ext_follower.at[...].set(
@@ -330,7 +324,7 @@ class StaticStructure:
         else:
             self.local = False
 
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
@@ -343,7 +337,7 @@ class StaticStructure:
 
         nodal_chi = vmap(chi, 0, 0)(
             jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
-        )  # [n_nodes, 6, 6]
+        )  # [n_nodes_, 6, 6]
 
         self._transform(nodal_chi)
 
@@ -379,20 +373,20 @@ class DynamicStructureSnapshot:
         i_ts: int,
         local: bool = True,
     ):
-        self.hg: Array = hg  # [n_nodes, 4, 4]
+        self.hg: Array = hg  # [n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
-        self.v: Array = v  # [n_nodes, 6]
-        self.v_dot: Array = v_dot  # [n_nodes, 6]
-        self.a: Array = a  # [n_nodes, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
-        self.f_int: Array = f_int  # [n_nodes, 6]
-        self.f_iner: Array = f_iner  # [n_nodes, 6]
-        self.f_res: Array = f_res  # [n_nodes, 6]
+        self.v: Array = v  # [n_nodes_, 6]
+        self.v_dot: Array = v_dot  # [n_nodes_, 6]
+        self.a: Array = a  # [n_nodes_, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
+        self.f_int: Array = f_int  # [n_nodes_, 6]
+        self.f_iner: Array = f_iner  # [n_nodes_, 6]
+        self.f_res: Array = f_res  # [n_nodes_, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
         self.local: bool = local
@@ -416,7 +410,7 @@ class DynamicStructureSnapshot:
     def _transform(self, nodal_chi: Array) -> None:
         r"""
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
-        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_nodes, 6, 6]
+        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_nodes_, 6, 6]
         """
         if self.f_ext_follower is not None:
             self.f_ext_follower = self.f_ext_follower.at[...].set(
@@ -453,7 +447,7 @@ class DynamicStructureSnapshot:
         else:
             self.local = False
 
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
@@ -466,7 +460,7 @@ class DynamicStructureSnapshot:
 
         nodal_chi = vmap(chi, 0, 0)(
             jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
-        )  # [n_nodes, 6, 6]
+        )  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
     def plot(self, directory: PathLike, n_interp: int = 0) -> Path:
@@ -484,48 +478,48 @@ class DynamicStructureSnapshot:
         data.to_global()
 
         # vectors making up local frame rotation matrices
-        local_x = data.hg[:, :3, 0]  # [n_nodes, 3]
-        local_y = data.hg[:, :3, 1]  # [n_nodes, 3]
-        local_z = data.hg[:, :3, 2]  # [n_nodes, 3]
+        local_x = data.hg[:, :3, 0]  # [n_nodes_, 3]
+        local_y = data.hg[:, :3, 1]  # [n_nodes_, 3]
+        local_z = data.hg[:, :3, 2]  # [n_nodes_, 3]
 
         # forcing data
         f_ext_follower = (
             data.f_ext_follower[:, :3] if data.f_ext_follower is not None else None
-        )  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
         m_ext_follower = (
             data.f_ext_follower[:, 3:] if data.f_ext_follower is not None else None
-        )  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
         f_ext_dead = (
             data.f_ext_dead[:, :3] if data.f_ext_dead is not None else None
-        )  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
         m_ext_dead = (
             data.f_ext_dead[:, 3:] if data.f_ext_dead is not None else None
-        )  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
         f_ext_grav = (
             data.f_grav[:, :3] if data.f_grav is not None else None
-        )  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
         m_ext_grav = (
             data.f_grav[:, 3:] if data.f_grav is not None else None
-        )  # [n_nodes, 3]
-        f_iner = data.f_iner[:, :3]  # [n_nodes, 3]
-        m_iner = data.f_iner[:, 3:]  # [n_nodes,
-        f_int = data.f_int[:, :3]  # [n_nodes, 3]
-        m_int = data.f_int[:, 3:]  # [n_nodes, 3]
-        f_res = data.f_res[:, :3]  # [n_nodes, 3]
-        m_res = data.f_res[:, 3:]  # [n_nodes, 3]
+        )  # [n_nodes_, 3]
+        f_iner = data.f_iner[:, :3]  # [n_nodes_, 3]
+        m_iner = data.f_iner[:, 3:]  # [n_nodes_,
+        f_int = data.f_int[:, :3]  # [n_nodes_, 3]
+        m_int = data.f_int[:, 3:]  # [n_nodes_, 3]
+        f_res = data.f_res[:, :3]  # [n_nodes_, 3]
+        m_res = data.f_res[:, 3:]  # [n_nodes_, 3]
 
         # velocity and acceleration data
-        v_lin = data.v[:, :3]  # [n_nodes, 3]
-        v_ang = data.v[:, 3:]  # [n_nodes, 3]
-        v_dot_lin = data.v_dot[:, :3]  # [n_nodes, 3]
-        v_dot_ang = data.v_dot[:, 3:]  # [n_nodes,
+        v_lin = data.v[:, :3]  # [n_nodes_, 3]
+        v_ang = data.v[:, 3:]  # [n_nodes_, 3]
+        v_dot_lin = data.v_dot[:, :3]  # [n_nodes_, 3]
+        v_dot_ang = data.v_dot[:, 3:]  # [n_nodes_,
 
         # beam strain data
         eps_lin = data.eps[:, :3]  # [n_elem, 3]
         eps_ang = data.eps[:, 3:]  # [n_elem, 3]
 
         # node and element numbers for plotting
-        node_num = jnp.arange(data.hg.shape[0])  # [n_nodes]
+        node_num = jnp.arange(data.hg.shape[0])  # [n_nodes_]
         elem_num = jnp.arange(data.conn.shape[0])  # [n_elems]
 
         node_scalar_data = {"node_number": node_num}
@@ -594,20 +588,20 @@ class DynamicStructure:
         t: Array,
         n_tstep: int,
     ):
-        self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
+        self.hg: Array = hg  # [n_tstep, n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
-        self.v: Array = v  # [n_tstep, n_nodes, 6]
-        self.v_dot: Array = v_dot  # [n_tstep, n_nodes, 6]
-        self.a: Array = a  # [n_tstep, n_nodes, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes, 6]
-        self.f_int: Array = f_int  # [n_tstep, n_nodes, 6]
-        self.f_iner: Array = f_iner  # [n_tstep, n_nodes, 6]
-        self.f_res: Array = f_res  # [n_tstep, n_nodes, 6]
+        self.v: Array = v  # [n_tstep, n_nodes_, 6]
+        self.v_dot: Array = v_dot  # [n_tstep, n_nodes_, 6]
+        self.a: Array = a  # [n_tstep, n_nodes_, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes_, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes_, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes_, 6]
+        self.f_int: Array = f_int  # [n_tstep, n_nodes_, 6]
+        self.f_iner: Array = f_iner  # [n_tstep, n_nodes_, 6]
+        self.f_res: Array = f_res  # [n_tstep, n_nodes_, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
 

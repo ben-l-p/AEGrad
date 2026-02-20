@@ -148,8 +148,8 @@ class TestTaylorSeries:
         Check that the Taylor series expansion of a function evaluated at the expansion point is equal to the function
         value at that point"""
 
-        def func(x: Array) -> Array:
-            return x
+        def func(x_: Array) -> Array:
+            return x_
 
         x = jnp.array([1.0, 2.0, 3.0])
 
@@ -164,8 +164,8 @@ class TestTaylorSeries:
         the expansion point.
         """
 
-        def func(x: Array) -> Array:
-            return 2.0 * x
+        def func(x_: Array) -> Array:
+            return 2.0 * x_
 
         x0 = jnp.zeros((1,))
 
@@ -183,8 +183,8 @@ class TestTaylorSeries:
         the expansion point, when the order of the Taylor series expansion is 2 or higher.
         """
 
-        def func(x: Array) -> Array:
-            return 3.0 * x**2 + 8.0 * x + 7.0
+        def func(x_: Array) -> Array:
+            return 3.0 * x_**2 + 8.0 * x_ + 7.0
 
         x0 = jnp.array([3.0, 5.0])
 

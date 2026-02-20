@@ -1,19 +1,7 @@
 from typing import Any, Sequence
-from typing import Callable, Protocol, TypeVar
+from typing import Protocol, TypeVar
 from dataclasses import fields, is_dataclass
-from functools import wraps
 from jax import tree_util
-
-
-def replace_self(func: Callable[..., object]) -> Callable[..., None]:
-    # the beauty and the pain behind this codebase
-    @wraps(func)
-    def wrapper(*args, **kwargs) -> None:
-        args[0].__dict__.update(
-            func(*args, **kwargs).__dict__
-        )  # self is always the first argument
-
-    return wrapper
 
 
 class SupportsPytree(Protocol):

@@ -202,9 +202,6 @@ def log_so3(rmat: Array) -> Array:
     theta = jnp.acos(0.5 * (jnp.trace(rmat) - 1.0))
 
     def log_so3_full() -> Array:
-        theta = jnp.acos(
-            0.5 * (jnp.trace(rmat) - 1.0)
-        )  # d_theta_d_rmat has infinite values for rmat=I
         return skew_to_vec(theta / (2.0 * jnp.sin(theta)) * (rmat - rmat.T))
 
     def log_so3_small_angle() -> Array:

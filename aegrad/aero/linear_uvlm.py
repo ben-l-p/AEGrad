@@ -1,13 +1,13 @@
 from __future__ import annotations
-from typing import Sequence, TYPE_CHECKING, Optional, Self
+from typing import Sequence, TYPE_CHECKING, Optional
 from functools import reduce
 from operator import mul
 from enum import Enum
-from os import PathLike
-from pathlib import Path
 from jax import Array, jit, vmap
 import jax
 import jax.numpy as jnp
+from os import PathLike
+from pathlib import Path
 
 from aegrad.aero.data_structures import (
     AeroSnapshot,
@@ -26,9 +26,9 @@ from aegrad.algebra.array_utils import ArrayList, split_to_vertex
 from aegrad.aero.aic import _compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction, _biot_savart_cutoff
-from aegrad.utils import _shallow_asdict, replace_self
+from aegrad.utils import _shallow_asdict
 from aegrad.print_output import print_with_time, warn
-from aegrad.plotting.pvd import write_pvd
+from aegrad.aero.data_structures import AeroLinearResult
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -141,114 +141,6 @@ class LinearUVLM:
 
         # final system - this is overwritten for updating models
         self.sys: LinearSystem = self.base_sys
-
-        # system results, if simulated
-        self._u_t: Optional[InputUnflattened] = None
-        self._x_t: Optional[StateUnflattened] = None
-        self._y_t: Optional[OutputUnflattened] = None
-        self._u_t_tot: Optional[InputUnflattened] = None
-        self._x_t_tot: Optional[StateUnflattened] = None
-        self._y_t_tot: Optional[OutputUnflattened] = None
-        self._n_tstep: Optional[int] = None
-        self._t: Optional[Array] = None
-
-    @property
-    def u_t(self) -> InputUnflattened:
-        r"""
-        Get the time history of the system input perturbations.
-        :return: InputUnflattened object representing the time history.
-        :raises ValueError: If input history is not available, likely because the linear system has not been run.
-        """
-        if self._u_t is None:
-            raise ValueError(
-                "No input time history available. Run a linear system first."
-            )
-        return self._u_t
-
-    @property
-    def x_t(self) -> StateUnflattened:
-        r"""
-        Get the time history of the system state perturbations.
-        :return: StateUnflattened object representing the time history.
-        :raises ValueError: If state history is not available, likely because the linear system has not been run.
-        """
-        if self._x_t is None:
-            raise ValueError(
-                "No state time history available. Run a linear system first."
-            )
-        return self._x_t
-
-    @property
-    def y_t(self):
-        r"""
-        Get the time history of the system output perturbations.
-        :return: OutputUnflattened object representing the time history.
-        :raises ValueError: If output history is not available, likely because the linear system has not been run.
-        """
-        if self._y_t is None:
-            raise ValueError(
-                "No output time history available. Run a linear system first."
-            )
-        return self._y_t
-
-    @property
-    def u_t_tot(self):
-        r"""
-        Get the time history of the total system inputs (reference plus perturbation).
-        :return: InputUnflattened object representing the time history.
-        :raises ValueError: If input history is not available, likely because the linear system has not been run.
-        """
-        if self._u_t_tot is None:
-            raise ValueError(
-                "No total input time history available. Run a linear system first."
-            )
-        return self._u_t_tot
-
-    @property
-    def x_t_tot(self):
-        r"""
-        Get the time history of the total system states (reference plus perturbation).
-        :return: StateUnflattened object representing the time history.
-        :raises ValueError: If state history is not available, likely because the linear system has not been run.
-        """
-        if self._x_t_tot is None:
-            raise ValueError(
-                "No total state time history available. Run a linear system first."
-            )
-        return self._x_t_tot
-
-    @property
-    def y_t_tot(self):
-        r"""
-        Get the time history of the total system outputs (reference plus perturbation).
-        :return: OutputUnflattened object representing the time history.
-        :raises ValueError: If output history is not available, likely because the linear system has not been run.
-        """
-        if self._y_t_tot is None:
-            raise ValueError(
-                "No total output time history available. Run a linear system first."
-            )
-        return self._y_t_tot
-
-    @property
-    def n_tstep_tot(self) -> int:
-        r"""
-        Get the number of timesteps in the time history.
-        :return: Number of timesteps.
-        """
-        if self._n_tstep is None:
-            raise ValueError("No solution available. Run a linear system first.")
-        return self._n_tstep
-
-    @property
-    def t(self) -> Array:
-        r"""
-        Get the time array for the time history.
-        :return: Time array, [n_tstep]
-        """
-        if self._t is None:
-            raise ValueError("No time available. Run a linear system first.")
-        return self._t
 
     def get_reference_inputs(self) -> InputUnflattened:
         r"""
@@ -1225,14 +1117,13 @@ class LinearUVLM:
 
         return LinearSystem(a, b, c, d)
 
-    @replace_self
     def run(
         self,
         u: InputUnflattened,
         x0: Optional[StateUnflattened] = None,
         flowfield: Optional[FlowField] = None,
         use_matrix=False,
-    ) -> Self:
+    ) -> AeroLinearResult:
         r"""
         Run the linear system for one time step.
         :param u: Input perturbations over time.
@@ -1250,10 +1141,10 @@ class LinearUVLM:
         else:
             x0_vec = self._pack_state_vector_t(x0)
 
-        self._n_tstep: int = u.zeta_b[0].shape[
+        n_tstep: int = u.zeta_b[0].shape[
             0
         ]  # number of time steps from first surface, first entry
-        self._t = self.t0 + jnp.arange(0, self._n_tstep) * self.dt  # time vector
+        t = self.t0 + jnp.arange(0, n_tstep) * self.dt  # time vector
 
         u_tot = u
 
@@ -1262,7 +1153,7 @@ class LinearUVLM:
                 "No flowfield or bound upwash perturbations provided. Assuming zero bound upwash perturbations."
             )
             u_tot.nu_b = ArrayList(
-                [jnp.zeros((self._n_tstep, *zb.shape)) for zb in self.zeta0_b]
+                [jnp.zeros((n_tstep, *zb.shape)) for zb in self.zeta0_b]
             )
 
         if self.wake_upwash and flowfield is None and u_tot.nu_w is None:
@@ -1270,7 +1161,7 @@ class LinearUVLM:
                 "No flowfield or wake upwash perturbations provided. Assuming zero wake upwash perturbations."
             )
             u_tot.nu_w = ArrayList(
-                [jnp.zeros((self._n_tstep, *zw.shape)) for zw in self.zeta0_w]
+                [jnp.zeros((n_tstep, *zw.shape)) for zw in self.zeta0_w]
             )
 
         # add flowfield contributions to input upwash if provided
@@ -1280,11 +1171,9 @@ class LinearUVLM:
                 for i_surf in range(self.n_surf):
                     nu_b_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.zeta0_b[i_surf], self.t
+                            self.zeta0_b[i_surf], t
                         )
-                        - flowfield.vmap_call(self.zeta0_b[i_surf], self.t[0])[
-                            None, ...
-                        ]
+                        - flowfield.vmap_call(self.zeta0_b[i_surf], t[0])[None, ...]
                     )
                 if u_tot.nu_b is None:
                     u_tot.nu_b = nu_b_flow
@@ -1295,11 +1184,9 @@ class LinearUVLM:
                 for i_surf in range(self.n_surf):
                     nu_w_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.zeta0_w[i_surf], self.t
+                            self.zeta0_w[i_surf], t
                         )
-                        - flowfield.vmap_call(self.zeta0_w[i_surf], self.t[0])[
-                            None, ...
-                        ]
+                        - flowfield.vmap_call(self.zeta0_w[i_surf], t[0])[None, ...]
                     )
                 if u_tot.nu_w is None:
                     u_tot.nu_w = nu_w_flow
@@ -1310,16 +1197,26 @@ class LinearUVLM:
         # run linear system
         x_t, y_t = self.sys.run(u_vec, x0_vec, use_matrix=use_matrix)
 
-        # save results to object
-        self._u_t = u
-        self._x_t = self._unpack_state_vector_t(x_t)
-        self._y_t = self._unpack_output_vector_t(y_t)
-        self._u_t_tot = self.get_total_input_t(self._u_t)
-        self._x_t_tot = self.get_total_state_t(self._x_t)
-        self._y_t_tot = self.get_total_output_t(self._y_t)
+        x_t_obj = self._unpack_state_vector_t(x_t)
+        y_t_obj = self._unpack_output_vector_t(y_t)
+        u_t_tot_obj = self.get_total_input_t(u_tot)
+        x_t_tot_obj = self.get_total_state_t(x_t_obj)
+        y_t_tot_obj = self.get_total_output_t(y_t_obj)
 
-        jax.block_until_ready(self)
-        return self
+        # save results to object
+        return AeroLinearResult(
+            u_t=u,
+            x_t=x_t_obj,
+            y_t=y_t_obj,
+            u_t_tot=u_t_tot_obj,
+            x_t_tot=x_t_tot_obj,
+            y_t_tot=y_t_tot_obj,
+            n_tstep=n_tstep,
+            t=t,
+            n_surf=self.n_surf,
+            surf_b_names=self.surf_b_names,
+            surf_w_names=self.surf_w_names,
+        )
 
     @print_with_time(
         "Computing eigenvalues of linear system...",
@@ -1337,84 +1234,6 @@ class LinearUVLM:
             return jnp.stack((evals.real, evals.imag), axis=-1)
         else:
             return evals
-
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
-        r"""
-        Get snapshot of aerodynamic surface at a single time step
-        :param i_ts: Timestep index
-        :return: AeroSnapshot at specified time step
-        """
-
-        if i_ts < 0 or i_ts >= self._n_tstep:
-            raise IndexError("Timestep index out of range")
-
-        # always exist
-        zeta_b_tot = ArrayList(
-            [self.u_t_tot.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        zeta_b_dot_tot = ArrayList(
-            [
-                self.u_t_tot.zeta_b_dot[i_surf][i_ts, ...]
-                for i_surf in range(self.n_surf)
-            ]
-        )
-        gamma_b_tot = ArrayList(
-            [self.x_t_tot.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        gamma_w_tot = ArrayList(
-            [self.x_t_tot.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        f_steady_tot = ArrayList(
-            [self.y_t_tot.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-
-        # optional
-        gamma_b_dot_tot = (
-            ArrayList(
-                [
-                    self.x_t_tot.gamma_b_dot[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
-            if self.gamma_dot_state
-            else self.gamma0_b_dot
-        )
-        zeta_w_tot = (
-            ArrayList(
-                [
-                    self.x_t_tot.zeta_w[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
-            if self.prescribed_wake
-            else self.zeta0_w
-        )
-        f_unsteady_tot = (
-            ArrayList(
-                [
-                    self.y_t_tot.f_unsteady[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
-            if self.unsteady_force
-            else self.f_unsteady0
-        )
-
-        return AeroSnapshot(
-            zeta_b=zeta_b_tot,
-            zeta_b_dot=zeta_b_dot_tot,
-            zeta_w=zeta_w_tot,
-            gamma_b=gamma_b_tot,
-            gamma_b_dot=gamma_b_dot_tot,
-            gamma_w=gamma_w_tot,
-            f_steady=f_steady_tot,
-            f_unsteady=f_unsteady_tot,
-            surf_b_names=self.surf_b_names,
-            surf_w_names=self.surf_w_names,
-            i_ts=i_ts,
-            t=self.t[i_ts],
-            n_surf=self.n_surf,
-        )
 
     def reference_snapshot(self) -> AeroSnapshot:
         r"""
@@ -1436,51 +1255,6 @@ class LinearUVLM:
             t=jnp.zeros(()),
             n_surf=self.n_surf,
         )
-
-    @print_with_time(
-        "Plotting linear aerodynamic grid...",
-        "Linear aerodynamic grid plotted in {:.2f} seconds.",
-    )
-    def plot(
-        self,
-        directory: PathLike,
-        index: Optional[slice | Sequence[int] | int | Array] = None,
-        plot_wake: bool = True,
-    ) -> None:
-        r"""
-        Plot the aerodynamic grid at specified time steps.
-        :param directory: Directory to save the plots to
-        :param index: Index or slice of time steps to plot. If None, plot all time steps.
-        :param plot_wake: If True, plot the wake grid
-        """
-        if isinstance(index, slice):
-            index_ = jnp.arange(self.n_tstep_tot)[index]
-        elif isinstance(index, Sequence):
-            index_ = jnp.array(index)
-        elif isinstance(index, Array):
-            index_ = index
-        elif isinstance(index, int):
-            index_ = (index,)
-        elif index is None:
-            index_ = jnp.arange(self.n_tstep_tot)
-        else:
-            raise TypeError("index must be a slices, sequence of ints, or Array")
-
-        directory = Path(directory).resolve()
-        directory.mkdir(parents=True, exist_ok=True)
-
-        paths: list[Sequence[Path]] = []
-        for i_ts in index_:
-            snapshot = self[i_ts]
-            paths.append(snapshot.plot(directory, plot_wake=plot_wake))
-
-        for i_surf in range(2 * self.n_surf):
-            try:
-                surf_paths = [paths[i][i_surf] for i in range(len(index_))]
-                name = (self.surf_b_names + self.surf_w_names)[i_surf] + "_ts"
-                write_pvd(directory, name, surf_paths, list(self.t[index_]))
-            except IndexError:
-                pass
 
     @print_with_time(
         "Plotting linear reference aerodynamic grid...",

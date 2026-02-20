@@ -16,10 +16,10 @@ from jax import numpy as jnp
 
 def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructuredGrid:
     r"""
-    Create a VTK structured grid from a JAX array
-    :param grid_arr: Array of grid points, [m, n, 3] or [m, n, p, 3]
-    :param is_planar: If true, the grid is planar (2D), otherwise volumetric (3D)
-    :return: VTK structured grid
+    Create a VTK structured grid from a JAX array.
+    :param grid_arr: Array of grid points, [m, n, 3] or [m, n, p, 3].
+    :param is_planar: If true, the grid is planar (2D), otherwise volumetric (3D).
+    :return: VTK structured grid.
     """
     # add a dummy third dimension of zeros if only 2D data is provided, where y=0
     sg = vtk.vtkStructuredGrid()

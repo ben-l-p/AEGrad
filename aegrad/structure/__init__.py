@@ -3,6 +3,7 @@ from aegrad.structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
+    BeamConvergenceSettings,
 )
 from aegrad.structure.gradients import (
     BeamStructure,

@@ -44,8 +44,6 @@ class TestGeradinBeamADGradients:
                 cls.f_ext,
                 jnp.arange(6),
                 load_steps=3,
-                abs_disp_tol=1e-4,
-                max_n_iter=10,
             )
 
             return cls.get_tip_disp_rot(result)
@@ -79,8 +77,6 @@ class TestGeradinBeamADGradients:
                 cls.f_ext,
                 jnp.arange(6),
                 load_steps=3,
-                abs_disp_tol=1e-4,
-                max_n_iter=10,
             )
 
             return cls.get_tip_disp_rot(result)
@@ -110,8 +106,6 @@ class TestGeradinBeamADGradients:
                 cls.f_ext * f_fact,
                 jnp.arange(6),
                 load_steps=3,
-                abs_disp_tol=1e-4,
-                max_n_iter=10,
             )
 
             return cls.get_tip_disp_rot(result)

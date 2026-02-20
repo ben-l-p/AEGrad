@@ -41,8 +41,8 @@ class BeamStructure(BaseBeamStructure):
             coords=dv.x0, k_cs=dv.k_cs, m_cs=dv.m_cs, m_lumped=dv.m_lumped
         )
 
-        exp_n = vmap(exp_se3)(n.reshape(-1, 6))  # [n_nodes, 4, 4]
-        hg = jnp.einsum("ijk,ikl->ijl", inner_case.hg0, exp_n)  # [n_nodes, 4, 4]
+        exp_n = vmap(exp_se3)(n.reshape(-1, 6))  # [n_nodes_, 4, 4]
+        hg = jnp.einsum("ijk,ikl->ijl", inner_case.hg0, exp_n)  # [n_nodes_, 4, 4]
         d = inner_case._make_d(hg)
         p_d = inner_case._make_p_d(d)
         eps = inner_case._make_eps(d)
@@ -110,7 +110,7 @@ class BeamStructure(BaseBeamStructure):
 
         # base parameters
         n = vmap(hg_to_d)(self.hg0, structure.hg).ravel()  # [n_dof]
-        t_n = vmap(t_se3, 0, 0)(n.reshape(-1, 6))  # [n_nodes, 6, 6]
+        t_n = vmap(t_se3, 0, 0)(n.reshape(-1, 6))  # [n_nodes_, 6, 6]
         d = structure.d
         eps = structure.eps
         p_d = self._make_p_d(d)
@@ -161,7 +161,7 @@ class BeamStructure(BaseBeamStructure):
         # h and n have different tangent spaces, p_h_p_n = t(n)
         d_res_d_h = -self._make_k_t_full(
             d, p_d, eps, structure.f_ext_dead, structure.hg[:, :3, :3], m_t
-        ).reshape(n_u_full, -1, 6)  # [n_u_full, n_nodes, 6]
+        ).reshape(n_u_full, -1, 6)  # [n_u_full, n_nodes_, 6]
         d_res_d_n = jnp.einsum("ijk,jkl->ijl", d_res_d_h, t_n).reshape(
             n_u_full, n_u_full
         )[jnp.ix_(solve_dofs, solve_dofs)]

@@ -13,6 +13,7 @@ from aegrad.structure.data_structures import (
     DynamicStructureSnapshot,
     ConvergenceStatus,
     OptionalJacobians,
+    BeamConvergenceSettings,
 )
 from aegrad.print_output import warn, warn_if_32_bit, VerbosityLevel
 from aegrad.structure.structure_utils import _check_connectivity, _n_elem_per_node
@@ -41,6 +42,8 @@ class BaseBeamStructure:
         y_vector: Array,
         gravity: Optional[Array] = None,
         verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
+        optional_jacobians: Optional[OptionalJacobians] = None,
+        convergence_settings: Optional[BeamConvergenceSettings] = None,
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
@@ -58,7 +61,7 @@ class BaseBeamStructure:
         check_arr_dtype(connectivity, int, "connectivity")
         _check_connectivity(connectivity, num_nodes)
         self.connectivity: Array = connectivity  # [n_elem, 2]
-        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes]
+        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes_]
         self.n_elem: int = connectivity.shape[0]
 
         self.dof_per_elem: Array = jnp.zeros((self.n_elem, 12), dtype=int)
@@ -106,9 +109,20 @@ class BaseBeamStructure:
         else:
             self.gravity_vec = jnp.zeros((3,))
 
+        # other settings
         self.verbosity: VerbosityLevel = verbosity
-        self.optional_jacobians: OptionalJacobians = OptionalJacobians()
         self.use_m_cs: bool = False
+
+        self.optional_jacobians: OptionalJacobians = (
+            optional_jacobians
+            if optional_jacobians is not None
+            else OptionalJacobians()
+        )
+        self.convergence_settings: BeamConvergenceSettings = (
+            convergence_settings
+            if convergence_settings is not None
+            else BeamConvergenceSettings()
+        )
 
     def set_design_variables(
         self,
@@ -119,10 +133,10 @@ class BaseBeamStructure:
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities
-        :param coords: Node coordinates, [n_nodes, 3]
+        :param coords: Node coordinates, [n_nodes_, 3]
         :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6]
         :param m_cs: Cross-section mass matrices, [n_elem, 6, 6]
-        :param m_lumped: Lumped mass matrices at nodes, [n_nodes, 6, 6]
+        :param m_lumped: Lumped mass matrices at nodes, [n_nodes_, 6, 6]
         """
         # populate arrays
         self.k_cs = self.k_cs.at[...].set(k_cs)
@@ -173,7 +187,7 @@ class BaseBeamStructure:
 
         self.hg0 = jnp.broadcast_to(
             jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
-        )  # [n_nodes, 4, 4]
+        )  # [n_nodes_, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
     def reference_configuration(self) -> StaticStructure:
@@ -295,7 +309,7 @@ class BaseBeamStructure:
         )(self.m_cs, d, self.ad_inv_o0, self.l0, p_d_g)
 
         # pertubations in gravity direction
-        # [n_nodes, 3, 3]
+        # [n_nodes_, 3, 3]
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
             jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
         )
@@ -324,7 +338,7 @@ class BaseBeamStructure:
         :param rmat: Nodal rotation matrices, [n_node, 3, 3]
         :return: Stiffness contribution from gravity forces for lumped masses, [n_node, 6, 6]
         """
-        # [n_nodes, 3, 3]
+        # [n_nodes_, 3, 3]
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
             jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
         )
@@ -441,7 +455,7 @@ class BaseBeamStructure:
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
         :param k_t: System stiffness matrix, [n_dof, n_dof]
-        :param t_n: Tangent operator T(n), [n_nodes, 6, 6]
+        :param t_n: Tangent operator T(n), [n_nodes_, 6, 6]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
@@ -579,7 +593,7 @@ class BaseBeamStructure:
     def _make_d(self, hg: Array) -> Array:
         r"""
         Compute the element relative configuration vectors from the nodal homogeneous transformation matrices
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
         :return: Element relative configuration vectors, [n_elem, 6]
         """
 
@@ -623,7 +637,7 @@ class BaseBeamStructure:
     ]:
         r"""
         Obtain all components of the force from a final solution
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
         :param dynamic: Whether to compute dynamic forces
         :param f_ext_dead: External dead forces in global reference, [n_node, 6]
         :param v: Nodal velocities in global frame, [n_node, 6]
@@ -702,7 +716,7 @@ class BaseBeamStructure:
         :param solve_dofs: Optional array of degrees of freedom to solve for [n_solve_dofs]
         :param p_d: P(d) operator, [n_elem, 6, 12]
         :param eps: Element strain vectors, [n_elem, 6]
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
         :param f_ext_follower_n: Nodal follower forces, [n_node, 6]
         :param f_ext_dead_n: Nodal dead forces, [n_node, 6]
         :param dynamic: Flag for whether to compute dynamic entries
@@ -758,9 +772,9 @@ class BaseBeamStructure:
     def _update_hg(hg: Array, d_ha: Array) -> Array:
         r"""
         Update the nodal homogeneous transformation matrices with the configuration increments.
-        :param hg: Existing nodal homogeneous transformation matrices, [n_nodes, 4, 4]
-        :param d_ha: Perturbation to the configuration vector, [n_nodes, 6]
-        :return: Updated nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param hg: Existing nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
+        :param d_ha: Perturbation to the configuration vector, [n_nodes_, 6]
+        :return: Updated nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
         """
         return jnp.einsum(
             "ijk,ikl->ijl",
@@ -771,7 +785,7 @@ class BaseBeamStructure:
     def get_cg(self, hg: Array):
         r"""
         Compute the total mass and the coordinate of center of gravity.
-        :param hg: Node locations in SE(3), [n_nodes, 4, 4]
+        :param hg: Node locations in SE(3), [n_nodes_, 4, 4]
         :return: Total mass, x coordinate of center of gravity, [3]
         """
 
@@ -803,12 +817,6 @@ class BaseBeamStructure:
         prescribed_dofs: Sequence[int] | Array | slice | int,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
-        max_n_iter: Optional[int] = 40,
-        rel_disp_tol: Optional[float] = 1e-8,
-        abs_disp_tol: Optional[float] = 1e-12,
-        rel_force_tol: Optional[float] = 1e-8,
-        abs_force_tol: Optional[float] = 1e-12,
-        optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads
@@ -817,13 +825,6 @@ class BaseBeamStructure:
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
-        :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
-        :param rel_disp_tol: Relative displacement tolerance for convergence.
-        :param abs_disp_tol: Absolute displacement tolerance for convergence.
-        :param rel_force_tol: Relative force tolerance for convergence.
-        :param abs_force_tol: Absolute force tolerance for convergence.
-        :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
-        to compute for efficiency.
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -841,9 +842,6 @@ class BaseBeamStructure:
 
         if not (0.0 < relaxation_factor <= 1.0):
             raise ValueError("relaxation_factor must be in the range (0, 1]")
-
-        if optional_jacobians is not None:
-            self.optional_jacobians = optional_jacobians
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -909,13 +907,14 @@ class BaseBeamStructure:
             # solve for configuration increment, [n_solve_dofs]
             d_ha_np1 = jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * relaxation_factor
 
-            # update configuration, [n_nodes, 4, 4]
+            # update configuration, [n_nodes_, 4, 4]
             hg_np1_full = self._update_hg(
                 hg_n, jnp.zeros(self.n_dof).at[solve_dofs].set(d_ha_np1)
             )
 
             # algebra between undeformed and deformed shapes, used to check relative convergence, [n_solve_dofs]
-            if rel_disp_tol is not None:
+            if self.convergence_settings.rel_disp_tol is not None:
+                # TODO: this is relative expensive to compute
                 h_full = vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_np1_full).ravel()[
                     solve_dofs
                 ]
@@ -951,19 +950,7 @@ class BaseBeamStructure:
                 (
                     i_load_step,
                     ConvergenceStatus(
-                        rel_disp_tol=jnp.array(rel_disp_tol)
-                        if rel_disp_tol is not None
-                        else None,
-                        abs_disp_tol=jnp.array(abs_disp_tol)
-                        if abs_disp_tol is not None
-                        else None,
-                        rel_force_tol=jnp.array(rel_force_tol)
-                        if rel_force_tol is not None
-                        else None,
-                        abs_force_tol=jnp.array(abs_force_tol)
-                        if abs_force_tol is not None
-                        else None,
-                        max_n_iter=jnp.array(max_n_iter),
+                        self.convergence_settings,
                     ),
                     hg_init,
                 ),
@@ -1015,13 +1002,7 @@ class BaseBeamStructure:
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
-        max_n_iter: int = 30,
         spectral_radius: float = 1.0,
-        rel_disp_tol: Optional[float] = 1e-9,
-        abs_disp_tol: Optional[float] = 1e-12,
-        rel_force_tol: Optional[float] = 1e-9,
-        abs_force_tol: Optional[float] = 1e-12,
-        optional_jacobians: Optional[OptionalJacobians] = None,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
@@ -1032,15 +1013,9 @@ class BaseBeamStructure:
         :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces
         :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
+        :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
-        :param max_n_iter: Maximum number of Newton-Raphson iterations per load step.
         :param spectral_radius: Spectral radius for the time integrator, in the range [0, 1].
-        :param rel_disp_tol: Relative tolerance for displacement convergence.
-        :param abs_disp_tol: Absolute tolerance for displacement convergence.
-        :param rel_force_tol: Relative tolerance for force convergence.
-        :param abs_force_tol: Absolute tolerance for force convergence.
-        :param optional_jacobians: Optional Jacobians object, which can be used to specify which Jacobian contributions
-        to compute for efficiency.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
@@ -1062,9 +1037,6 @@ class BaseBeamStructure:
 
         if load_steps <= 0:
             raise ValueError("load_steps must be a positive integer")
-
-        if optional_jacobians is not None:
-            self.optional_jacobians = optional_jacobians
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -1136,10 +1108,10 @@ class BaseBeamStructure:
             :param i_ts: Time step index
             :param converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
             print messages.
-            :param hg_n: Transformation matrices at iteration n, [n_nodes, 4, 4]
-            :param n_n: Incremental configuration at iteration n, [n_nodes, 6]
-            :param v_n: Velocities at iteration n, [n_nodes, 6]
-            :param v_dot_n: Accelerations at iteration n, [n_nodes, 6]
+            :param hg_n: Transformation matrices at iteration n, [n_nodes_, 4, 4]
+            :param n_n: Incremental configuration at iteration n, [n_nodes_, 6]
+            :param v_n: Velocities at iteration n, [n_nodes_, 6]
+            :param v_dot_n: Accelerations at iteration n, [n_nodes_, 6]
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration n+1.
             """
@@ -1259,17 +1231,17 @@ class BaseBeamStructure:
             """
 
             # predictor step
-            a_init = time_integrator._predict_a(
+            a_init = time_integrator.predict_a(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
             )
 
-            n_init = time_integrator._predict_n(
+            n_init = time_integrator.predict_n(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_init = time_integrator._predict_v(
+            v_init = time_integrator.predict_v(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_dot_init = time_integrator._predict_v_dot(
+            v_dot_init = time_integrator.predict_v_dot(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
             )
 
@@ -1318,7 +1290,7 @@ class BaseBeamStructure:
 
             # update pseudoacceleration
             sol.a = sol.a.at[i_ts, ...].set(
-                time_integrator._calculate_a_np1(
+                time_integrator.calculate_a_np1(
                     sol.v_dot[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
                 )
             )
@@ -1340,10 +1312,10 @@ class BaseBeamStructure:
             :param i_ts: Time step index
             :param converge_status_: ConvergenceStatus object to update with convergence information during load
             stepping.
-            :param hg_n: Node transformations at the beginning of the load step, [n_nodes, 4, 4]
-            :param n_n: Node configuration increments in algebra space, [n_nodes, 6]
-            :param v_n: Node velocities, [n_nodes, 6]
-            :param v_dot_n: Node accelerations, [n_nodes, 6]
+            :param hg_n: Node transformations at the beginning of the load step, [n_nodes_, 4, 4]
+            :param n_n: Node configuration increments in algebra space, [n_nodes_, 6]
+            :param v_n: Node velocities, [n_nodes_, 6]
+            :param v_dot_n: Node accelerations, [n_nodes_, 6]
             :return: Time step index, convergence status, and updated configuration, velocities and accelerations.
             """
 
@@ -1380,10 +1352,10 @@ class BaseBeamStructure:
             Performs load stepping iterations for a given time step
             :param i_ts: Timestep index for which to perform load stepping
             :param converge_status_: ConvergenceStatus object to update with load stepping convergence information
-            :param hg_n: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4]
-            :param n_n: Nodal updates to the configuration in the algebra space, [n_nodes, 6]
-            :param v_n: Nodal velocities, [n_nodes, 6]
-            :param v_dot_n: Nodal accelerations, [n_nodes, 6]
+            :param hg_n: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes_, 4, 4]
+            :param n_n: Nodal updates to the configuration in the algebra space, [n_nodes_, 6]
+            :param v_n: Nodal velocities, [n_nodes_, 6]
+            :param v_dot_n: Nodal accelerations, [n_nodes_, 6]
             :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
             """
             return jax.lax.fori_loop(
@@ -1394,22 +1366,22 @@ class BaseBeamStructure:
             )
 
         def evaluate_initial_equilibrium(
-            init_state_: DynamicStructureSnapshot,
+            init_state__: DynamicStructureSnapshot,
         ) -> DynamicStructureSnapshot:
             r"""
             Evaluates the forces for a given initial state to check whether it is in equilibrium. If not, a warning is
             raised with the maximum residual force. This is important to ensure that the time integration starts from a
             consistent state.
-            :param init_state_: DynamicStructureSnapshot containing the initial state to evaluate.
+            :param init_state__: DynamicStructureSnapshot containing the initial state to evaluate.
             :return: DynamicStructureSnapshot with the forces evaluated for the initial state.
             """
             d, eps, f_ext_dead_, f_grav, f_int, f_iner, f_res = self._resolve_forces(
-                hg=init_state_.hg,
+                hg=init_state__.hg,
                 dynamic=True,
-                f_ext_dead=init_state_.f_ext_dead,
-                f_ext_follower=init_state_.f_ext_follower,
-                v=init_state_.v,
-                v_dot=init_state_.v_dot,
+                f_ext_dead=init_state__.f_ext_dead,
+                f_ext_follower=init_state__.f_ext_follower,
+                v=init_state__.v,
+                v_dot=init_state__.v_dot,
             )
 
             max_res = jnp.max(jnp.abs(f_res))
@@ -1420,22 +1392,22 @@ class BaseBeamStructure:
                 )
 
             return DynamicStructureSnapshot(
-                hg=init_state_.hg,
+                hg=init_state__.hg,
                 conn=self.connectivity,
                 o0=self.o0,
                 d=d,
                 eps=eps,
-                v=init_state_.v,
-                v_dot=init_state_.v_dot,
-                a=init_state_.v_dot,  # initial pseudoacceleration set equal to initial acceleration
-                f_ext_follower=init_state_.f_ext_follower,
+                v=init_state__.v,
+                v_dot=init_state__.v_dot,
+                a=init_state__.v_dot,  # initial pseudoacceleration set equal to initial acceleration
+                f_ext_follower=init_state__.f_ext_follower,
                 f_ext_dead=f_ext_dead_,
                 f_grav=f_grav,
                 f_int=f_int,
                 f_iner=f_iner,
                 f_res=f_res,
-                t=init_state_.t,
-                i_ts=init_state_.i_ts,
+                t=init_state__.t,
+                i_ts=init_state__.i_ts,
             )
 
         # initialise problem
@@ -1443,15 +1415,7 @@ class BaseBeamStructure:
         init_state_eval = evaluate_initial_equilibrium(init_state_)
         init_dynamic_state = DynamicStructure.initialise(init_state_eval, t)
         converge_status = ConvergenceStatus(
-            rel_disp_tol=jnp.array(rel_disp_tol) if rel_disp_tol is not None else None,
-            abs_disp_tol=jnp.array(abs_disp_tol) if abs_disp_tol is not None else None,
-            rel_force_tol=jnp.array(rel_force_tol)
-            if rel_force_tol is not None
-            else None,
-            abs_force_tol=jnp.array(abs_force_tol)
-            if abs_force_tol is not None
-            else None,
-            max_n_iter=jnp.array(max_n_iter),
+            convergence_settings=self.convergence_settings
         )
 
         # solve

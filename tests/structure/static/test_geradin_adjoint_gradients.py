@@ -23,7 +23,6 @@ class TestGeradinBeamAdjointGradients:
             None,
             cls.f_ext,
             jnp.arange(6),
-            max_n_iter=50,
             load_steps=3,
         )
 
@@ -36,7 +35,7 @@ class TestGeradinBeamAdjointGradients:
         )
 
         # AD solve
-        def resolve_obj(dv: DesignVariables) -> Array:
+        def resolve_obj(dv_: DesignVariables) -> Array:
             n_elem = cls.n_nodes - 1
 
             y_vect = jnp.array([0.0, 1.0, 0.0])
@@ -45,28 +44,27 @@ class TestGeradinBeamAdjointGradients:
             conn = conn.at[:, 0].set(jnp.arange(n_elem))
             conn = conn.at[:, 1].set(jnp.arange(1, n_elem + 1))
 
-            struct = BeamStructure(cls.n_nodes, conn, y_vect[None, :])
+            struct_ = BeamStructure(cls.n_nodes, conn, y_vect[None, :])
 
-            struct.set_design_variables(dv.x0, dv.k_cs, dv.m_cs)
+            struct_.set_design_variables(dv_.x0, dv_.k_cs, dv_.m_cs)
 
-            result = struct.static_solve(
+            result_ = struct_.static_solve(
                 None,
                 cls.f_ext,
                 jnp.arange(6),
-                max_n_iter=50,
                 load_steps=3,
             )
 
             ss = StructuralStates(
-                hg=result.hg,
-                d=result.d,
-                eps=result.eps,
-                f_int=result.f_int,
-                f_ext_dead=result.f_ext_dead,
-                f_grav=result.f_grav,
+                hg=result_.hg,
+                d=result_.d,
+                eps=result_.eps,
+                f_int=result_.f_int,
+                f_ext_dead=result_.f_ext_dead,
+                f_grav=result_.f_grav,
             )
 
-            return obj(ss, dv)
+            return obj(ss, dv_)
 
         dv = DesignVariables(
             x0=struct.x0,

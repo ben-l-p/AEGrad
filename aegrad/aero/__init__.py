@@ -2,6 +2,7 @@ from aegrad.aero.data_structures import (
     GridDiscretization,
     AeroSnapshot,
     AeroSurfaceSnapshot,
+    AeroTimeSeries,
     InputUnflattened,
     StateUnflattened,
     OutputUnflattened,

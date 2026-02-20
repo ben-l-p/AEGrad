@@ -1,15 +1,16 @@
 from __future__ import annotations
-from functools import singledispatchmethod
 from collections.abc import Sequence
-from typing import Optional, Self
+from typing import Optional
 from os import PathLike
 from pathlib import Path
+from functools import singledispatchmethod
+
 import jax
 import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
-from aegrad.utils import replace_self, _make_pytree
+from aegrad.utils import _make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
 from aegrad.aero.uvlm_utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
 from aegrad.constants import HORSESHOE_LENGTH
@@ -17,10 +18,9 @@ from aegrad.algebra.array_utils import (
     check_arr_dtype,
     neighbour_average,
     check_arr_shape,
-    split_to_vertex,
     ArrayList,
 )
-from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot
+from aegrad.aero.data_structures import GridDiscretization, AeroSnapshot, AeroTimeSeries
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction, _biot_savart_epsilon
 from aegrad.aero.aic import (
@@ -29,11 +29,9 @@ from aegrad.aero.aic import (
     _add_wake_influence,
     _compute_aic_sys,
 )
-from aegrad.algebra.base import finite_difference
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.linear_uvlm import LinearUVLM, LinearWakeType
 from aegrad.print_output import print_with_time, warn, jax_print
-from aegrad.plotting.pvd import write_pvd
 
 
 @_make_pytree
@@ -44,7 +42,6 @@ class UVLM:
 
     def __init__(
         self,
-        n_tstep: int,
         grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]],
         variable_wake_disc: bool,
         dof_mapping: ArrayList | Sequence[Array] | Array,
@@ -52,7 +49,6 @@ class UVLM:
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters
-        :param n_tstep: Number of time steps to initialise arrays for.
         :param grid_shapes: Discretisation(s) for the number of chordwise, spanwise and wake-wise panels for each surface.
         May be passed using either the GridDiscretization class or a tuple of integers (m, n, m_star). Multiple surfaces
         may be defined by passing a sequence of GridDiscretization instances or tuples.
@@ -134,38 +130,6 @@ class UVLM:
         self.surf_b_names: list[str] = [f"surf_{i}_bound" for i in range(self.n_surf)]
         self.surf_w_names: list[str] = [f"surf_{i}_wake" for i in range(self.n_surf)]
 
-        # placeholder for time domain case
-        self.zeta_b: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        )
-        self.zeta_b_dot: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        )
-        self.zeta_w: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m_star + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        )
-        self.gamma_b: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
-        )
-        self.gamma_b_dot: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
-        )
-        self.gamma_w: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m_star, gd.n)) for gd in self.grid_disc]
-        )
-        self.f_steady: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        )
-        self.f_unsteady: ArrayList = ArrayList(
-            [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
-        )
-        self.n_tstep_tot: int = n_tstep
-        self.t: Array = jnp.zeros(n_tstep)
-
-        self._last_ts: int = (
-            -1
-        )  # used to store the last step where a solution was computed
-
     @property
     def flowfield(self) -> FlowField:
         r"""
@@ -228,7 +192,7 @@ class UVLM:
 
     def linearise(
         self,
-        i_ts: int,
+        reference: AeroSnapshot,
         wake_type: LinearWakeType = LinearWakeType.FREE,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
@@ -236,19 +200,19 @@ class UVLM:
         gamma_dot_state: bool = True,
     ) -> LinearUVLM:
         r"""
-        Create linearised aerodynamic model at specified time step
-        :param i_ts: Time step index to linearise about
+        Create linearised aerodynamic model.
+        :param reference: Reference AeroSnapshot around which to linearise.
         :param wake_type: Type of wake model to use in linearisation, with options given from the LinearWakeType class
-         (frozen, prescribed, or free)
-        :param bound_upwash: If true, linearise for flowfield pertubations at the bound vortex vertex
-        :param wake_upwash: If true, linearise for flowfield pertubations at the wake vortex vertex
-        :param unsteady_force: If true, include unsteady force terms in linearisation
-        :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model
-        :return: LinearUVLM model linearised at specified time step
+         (frozen, prescribed, or free).
+        :param bound_upwash: If true, linearise for flowfield perturbations at the bound vortex vertex.
+        :param wake_upwash: If true, linearise for flowfield perturbations at the wake vortex vertex.
+        :param unsteady_force: If true, include unsteady force terms in linearisation.
+        :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model.
+        :return: LinearUVLM model linearised at specified time step.
         """
         return LinearUVLM(
             self,
-            self[i_ts],
+            reference,
             wake_type=wake_type,
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
@@ -324,159 +288,63 @@ class UVLM:
             self._delta_w = self.n_surf * [None]
         self._initialise_wake()
 
-    @replace_self
-    def extend_n_tstep(self, n_tstep: int) -> Self:
-        r"""
-        Extend the time domain arrays in the case object by the specified number of time steps
-        :param n_tstep: Number of time steps to extend solution by
-        """
-        for var in (
-            self.zeta_b,
-            self.zeta_b_dot,
-            self.zeta_w,
-            self.gamma_b,
-            self.gamma_b_dot,
-            self.gamma_w,
-            self.f_steady,
-            self.f_unsteady,
-            self.t,
-        ):
-            for i_surf in range(self.n_surf):
-                curr_val = var[i_surf]
-                var[i_surf] = jnp.concatenate(
-                    (curr_val, jnp.zeros((n_tstep, *curr_val.shape[1:])))
-                )
-        self.n_tstep_tot += n_tstep
-        return self
-
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
-        r"""
-        Get snapshot of aerodynamic surface at a single time step
-        :param i_ts: Timestep index
-        :return: AeroSnapshot object at specified time step
-        """
-
-        if i_ts < 0 or i_ts >= self.n_tstep_tot:
-            raise IndexError("Timestep index out of range")
-
-        return AeroSnapshot(
-            zeta_b=ArrayList(
-                [self.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            zeta_b_dot=ArrayList(
-                [self.zeta_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            zeta_w=ArrayList(
-                [self.zeta_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            gamma_b=ArrayList(
-                [self.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            gamma_b_dot=ArrayList(
-                [self.gamma_b_dot[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            gamma_w=ArrayList(
-                [self.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            f_steady=ArrayList(
-                [self.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            f_unsteady=ArrayList(
-                [self.f_unsteady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-            ),
-            surf_b_names=self.surf_b_names,
-            surf_w_names=self.surf_w_names,
-            i_ts=i_ts,
-            t=self.t[i_ts],
-            n_surf=self.n_surf,
-        )
-
-    def get_v_ind(self, x: Array, i_ts: int) -> Array:
+    def get_v_ind(self, case: AeroTimeSeries, x: Array, i_ts: int) -> Array:
         """
         Compute the induced velocity at points in space due to vortex elements.
+        :param case: AeroTimeSeries object
         :param x: Points at which to compute induced velocity, [..., 3]
         :param i_ts: Timestep index
         :return: Induced velocity at points x, [..., 3].
         """
 
-        gamma_flat = self._get_gamma_vect(i_ts)
+        gamma_flat = case.get_gamma_vect(i_ts)
 
         aic = _compute_aic_sys_assembled(
             [x],
-            self._get_zeta(i_ts),
+            case.get_zeta(i_ts),
             [*self.kernels_b, *self.kernels_w],
         )  # shapes [n_x, n_gamma, 3]
 
         return jnp.einsum("ijk,j->ik", aic, gamma_flat).reshape(x.shape)
 
-    def get_v_background(self, i_ts: int, x: Array) -> Array:
+    def get_v_background(self, t: Array, x: Array) -> Array:
         r"""
         Get background velocity at specified points and time step
-        :param i_ts: Timestep index
+        :param t: Current time
         :param x: Points to evaluate background velocity at, [..., 3]
         :return: Background velocity at points, [..., 3]
         """
-        return self.flowfield.vmap_call(x.reshape(-1, 3), self.t[i_ts]).reshape(x.shape)
+        return self.flowfield.vmap_call(x.reshape(-1, 3), t).reshape(x.shape)
 
-    def get_v_tot(self, i_ts: int, x: Array) -> Array:
+    def get_v_tot(self, case: AeroTimeSeries, i_ts: int, x: Array) -> Array:
         r"""
         Get velocity at specified points and time step induced by both the elements in the flow and the freesteam.
+        :param case: AeroTimeSeries object
         :param i_ts: Timestep index
         :param x: Points to evaluate induced velocity at, [..., 3]
         :return: Induced velocity at points, [..., 3]
         """
-        return self.get_v_ind(x, i_ts) + self.get_v_background(i_ts, x)
+        return self.get_v_ind(case, x, i_ts) + self.get_v_background(case.t[i_ts], x)
 
-    def _get_zeta_te_surf(self, i_ts: int, i_surf: int) -> Array:
+    def calculate_steady_forcing(self, case: AeroTimeSeries, i_ts: int) -> None:
         r"""
-        Get trailing edge grid coordinates for a single surface at specified time step
+        Calculate steady aerodynamic forcing for all surfaces at specified time step
+        :param case: AeroTimeSeries object
         :param i_ts: Timestep index
-        :param i_surf: Surface index
-        :return: Trailing edge grid coordinates, [zeta_n, 3]
         """
-        return self.zeta_b[i_surf][i_ts, -1, ...]
-
-    def _get_gamma_te_surf(self, i_ts: int, i_surf: int) -> Array:
-        r"""
-        Get trailing edge circulation strengths for a single surface at specified time step
-        :param i_ts: Timestep index
-        :param i_surf: Surface index
-        :return: Trailing edge circulation strengths, [gamma_n]
-        """
-        return self.gamma_b[i_surf][i_ts, -1, :]
-
-    def _get_zeta_b(self, i_ts: int) -> ArrayList:
-        r"""
-        Get bound grid coordinates for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
-        """
-        return self.zeta_b.index_all((i_ts, ...))
-
-    def _get_zeta_dot_b(self, i_ts: int) -> ArrayList:
-        r"""
-        Get bound grid velocities for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
-        """
-        return self.zeta_b_dot.index_all((i_ts, ...))
-
-    def _get_zeta_w(self, i_ts: int) -> ArrayList:
-        r"""
-        Get wake grid coordinates for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: List of bound grid coordinates for each surface, [n_surf][zeta_m_star, zeta_n, 3]
-        """
-        return self.zeta_w.index_all((i_ts, ...))
-
-    def _get_zeta(self, i_ts: int) -> ArrayList:
-        r"""
-        Get full grid coordinates all bound and wake surfaces at specified time step. These are stacked in (bound, wake)
-        int_order.
-        :param i_ts: Timestep index
-        :return: List of grid coordinates for each surface, [2 * n_surf][zeta_m | zeta_m_star, zeta_n, 3]
-        """
-        return self._get_zeta_b(i_ts).combine(self._get_zeta_w(i_ts))
+        f_steady = _steady_forcing(
+            case.get_zeta_b(i_ts),
+            case.get_zeta_dot_b(i_ts),
+            case.get_gamma_b(i_ts),
+            case.get_gamma_w(i_ts),
+            lambda x_: self.get_v_tot(case, i_ts, x_),
+            None,
+            self.flowfield.rho,
+        )
+        for i_surf in range(self.n_surf):
+            case.f_steady[i_surf] = (
+                case.f_steady[i_surf].at[i_ts, ...].set(f_steady[i_surf])
+            )
 
     def _hg_to_zeta(self, hg: Array) -> ArrayList:
         r"""
@@ -513,146 +381,6 @@ class UVLM:
             )
         return zeta_dots
 
-    def _get_gamma_w(self, i_ts: int) -> ArrayList:
-        r"""
-        Get wake circulation strengths for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: Wake circulation strengths for each surface, [n_surf][m_star, n]
-        """
-        return self.gamma_w.index_all((i_ts, ...))
-
-    def _get_gamma_vect(self, i_ts: int) -> Array:
-        r"""
-        Get total circulation strengths vector for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: Total circulation strengths vector, [gamma_tot]
-        """
-        return jnp.concatenate(
-            [self._get_gamma_b_vect(i_ts), self._get_gamma_w_vect(i_ts)], axis=0
-        )
-
-    def _get_gamma_w_vect(self, i_ts: int) -> Array:
-        r"""
-        Get wake circulation strengths vector for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: Wake circulation strengths vector, [gamma_w_tot]
-        """
-        return self._get_gamma_w(i_ts).flatten()
-
-    @replace_self
-    def _set_gamma_b(self, gamma_vec: Array, i_ts: int) -> Self:
-        r"""
-        Set bound circulation strengths from total circulation strengths vector at specified time step
-        :param gamma_vec: Total circulation strengths vector, [gamma_b_tot]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.gamma_b[i_surf] = (
-                self.gamma_b[i_surf]
-                .at[i_ts, ...]
-                .set(
-                    gamma_vec[self.gamma_b_slice[i_surf]].reshape(
-                        self.grid_disc[i_surf].m, self.grid_disc[i_surf].n
-                    )
-                )
-            )
-        return self
-
-    def _get_gamma_b(self, i_ts: int) -> ArrayList:
-        r"""
-        Get bound circulation strengths for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: Bound circulation strengths for each surface, [n_surf][m, n]
-        """
-        return self.gamma_b.index_all((i_ts, ...))
-
-    def _get_gamma_b_vect(self, i_ts: int) -> Array:
-        r"""
-        Get bound circulation strengths for all surfaces at specified time step as a vector
-        :param i_ts: Timestep index
-        :return: Bound circulation strength vector for all surfaces, [n_surf * m * n]
-        """
-        return self._get_gamma_b(i_ts).flatten()
-
-    @replace_self
-    def _set_zeta_b(self, zeta_b: ArrayList, i_ts: int) -> Self:
-        r"""
-        Set bound grid coordinates from list of grid coordinates at specified time step
-        :param zeta_b: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.zeta_b[i_surf] = self.zeta_b[i_surf].at[i_ts, ...].set(zeta_b[i_surf])
-        return self
-
-    @replace_self
-    def _set_zeta_b_dot(self, zeta_b_dot: ArrayList, i_ts: int) -> Self:
-        r"""
-        Set bound grid velocities from list of grid coordinates at specified time step
-        :param zeta_b_dot: List of bound grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.zeta_b_dot[i_surf] = (
-                self.zeta_b_dot[i_surf].at[i_ts, ...].set(zeta_b_dot[i_surf])
-            )
-        return self
-
-    @replace_self
-    def _set_zeta_w(self, zeta_w: ArrayList, i_ts: int) -> Self:
-        r"""
-        Set wake grid coordinates from list of grid coordinates at specified time step
-        :param zeta_w: List of bound grid coordinates for each surface, [n_surf][zeta_m_star, zeta_n, 3]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.zeta_w[i_surf] = self.zeta_w[i_surf].at[i_ts, ...].set(zeta_w[i_surf])
-        return self
-
-    @singledispatchmethod
-    @replace_self
-    def _set_gamma_w(self, gamma_vec: Array, i_ts: int) -> Self:
-        r"""
-        Set wake circulation strengths from total circulation strengths at specified time step. Can be passed either a
-        full vector of strengths, or a sequence of strengths per surface.
-        :param gamma_vec: Total circulation strengths vector, [gamma_w_tot]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.gamma_w[i_surf] = (
-                self.gamma_w[i_surf]
-                .at[i_ts, ...]
-                .set(
-                    gamma_vec[self.gamma_w_slice[i_surf]].reshape(
-                        self.grid_disc[i_surf].m_star, self.grid_disc[i_surf].n
-                    )
-                )
-            )
-        return self
-
-    @_set_gamma_w.register(Sequence)
-    @replace_self
-    def _(self, gamma_list: Sequence[Array], i_ts: int) -> Self:
-        for i_surf in range(self.n_surf):
-            self.gamma_w[i_surf] = (
-                self.gamma_w[i_surf].at[i_ts, ...].set(gamma_list[i_surf])
-            )
-        return self
-
-    @replace_self
-    def _set_gamma_w_static(self, i_ts: int) -> Self:
-        r"""
-        Set wake circulation strengths in static solution to all match trailing edge strengths.
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            self.gamma_w[i_surf] = (
-                self.gamma_w[i_surf]
-                .at[i_ts, ...]
-                .set(self._get_gamma_te_surf(i_ts, i_surf)[None, :])
-            )
-        return self
-
     def _make_gamma_slices(self) -> tuple[tuple[slice, ...], tuple[slice, ...]]:
         r"""
         Create slices for the bound and wake circulation strengths in their respective solution vectors based on the grid
@@ -673,7 +401,7 @@ class UVLM:
         return tuple(gamma_b_slices), tuple(gamma_w_slices)
 
     def _make_surf_horseshoe_wake(
-        self, i_ts: int, i_surf: int, horseshoe_length: float
+        self, case: AeroTimeSeries, i_ts: int, i_surf: int, horseshoe_length: float
     ) -> Array:
         r"""
         Create a horseshoe wake grid for a given surface at a given time step.
@@ -682,7 +410,7 @@ class UVLM:
         :param horseshoe_length: Length of horseshoe wake to generate
         :return: Wake grid coordinates, [2, zeta_n, 3]
         """
-        zeta_te = self._get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
+        zeta_te = case.get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
         if self.grid_disc[i_surf].m_star == 0:
             warn("Horseshoe wake requested but m_star == 0, skipping.")
             return zeta_te[None, :]
@@ -692,8 +420,7 @@ class UVLM:
             )  # [zeta_n, 3]
             return jnp.stack((zeta_te, wake_end), axis=0)
 
-    @replace_self
-    def _initialise_wake(self) -> Self:
+    def _initialise_wake(self) -> None:
         r"""
         Generate initial wake grid coordinates, based on the bound grid coordinates and the freestream conditions.
         """
@@ -716,85 +443,68 @@ class UVLM:
                 zeta_te[None, :, :]
                 + jnp.outer(grid_s, self.flowfield.u_inf_dir)[:, None, :]
             )
-        return self
 
-    @replace_self
-    def _calculate_steady_forcing(self, i_ts: int) -> Self:
+    def set_gamma_b(self, case: AeroTimeSeries, gamma_vec: Array, i_ts: int) -> None:
         r"""
-        Calculate steady aerodynamic forcing for all surfaces at specified time step
-        :param i_ts: Timestep index
-        """
-        f_steady = _steady_forcing(
-            self._get_zeta_b(i_ts),
-            self._get_zeta_dot_b(i_ts),
-            self._get_gamma_b(i_ts),
-            self._get_gamma_w(i_ts),
-            lambda x_: self.get_v_tot(i_ts, x_),
-            None,
-            self.flowfield.rho,
-        )
-        for i_surf in range(self.n_surf):
-            self.f_steady[i_surf] = (
-                self.f_steady[i_surf].at[i_ts, ...].set(f_steady[i_surf])
-            )
-        return self
-
-    @replace_self
-    def _calculate_gamma_dot(self, i_ts: int) -> Self:
-        r"""
-        Calculate time derivative of bound circulation strengths at specified time step using finite difference.
+        Set bound circulation strengths from total circulation strengths vector at specified time step
+        :param case: AeroTimeSeries object
+        :param gamma_vec: Total circulation strengths vector, [gamma_b_tot]
         :param i_ts: Timestep index
         """
         for i_surf in range(self.n_surf):
-            self.gamma_b_dot[i_surf] = (
-                self.gamma_b_dot[i_surf]
+            case.gamma_b[i_surf] = (
+                case.gamma_b[i_surf]
                 .at[i_ts, ...]
-                .set(finite_difference(i_ts, self.gamma_b[i_surf], self.dt, 0, order=1))
+                .set(
+                    gamma_vec[self.gamma_b_slice[i_surf]].reshape(
+                        self.grid_disc[i_surf].m, self.grid_disc[i_surf].n
+                    )
+                )
             )
-        return self
 
-    @replace_self
-    def _calculate_unsteady_forcing(self, i_ts: int, ncs: ArrayList) -> Self:
+    @singledispatchmethod
+    def set_gamma_w(self, gamma_vec: Array, case: AeroTimeSeries, i_ts: int) -> None:
         r"""
-        Calculate unsteady aerodynamic forcing for all surfaces at specified time step.
+        Set wake circulation strengths from total circulation strengths at specified time step. Can be passed either a
+        full vector of strengths, or a sequence of strengths per surface.
+        :param case: AeroTimeSeries object
+        :param gamma_vec: Total circulation strengths vector, [gamma_w_tot]
         :param i_ts: Timestep index
-        :param ncs: Bound normal vectors for each surface, [n_surf][m, n, 3]
         """
         for i_surf in range(self.n_surf):
-            self.f_unsteady[i_surf] = (
-                self.f_unsteady[i_surf]
+            case.gamma_w[i_surf] = (
+                case.gamma_w[i_surf]
                 .at[i_ts, ...]
-                .set(self._calculate_surf_unsteady_forcing(i_ts, i_surf, ncs[i_surf]))
+                .set(
+                    gamma_vec[self.gamma_w_slice[i_surf]].reshape(
+                        self.grid_disc[i_surf].m_star, self.grid_disc[i_surf].n
+                    )
+                )
             )
-        return self
 
-    def _calculate_surf_unsteady_forcing(
-        self, i_ts: int, i_surf: int, nc: Array
-    ) -> Array:
-        r"""
-        Calculate unsteady aerodynamic forcing for a single surfaces at specified time step.
-        :param i_ts: Timestep index
-        :param i_surf: Surface index
-        :param nc: Bound normal vectors, [m, n, 3]
-        :return: Unsteady aerodynamic forcing for surface at grid vertex, [zeta_m, zeta_n, 3]
-        """
-        return split_to_vertex(
-            self.flowfield.rho * self.gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)
-        )
+    @set_gamma_w.register(Sequence)
+    def _(
+        self, gamma_list: Sequence[Array] | ArrayList, case: AeroTimeSeries, i_ts: int
+    ) -> None:
+        for i_surf in range(self.n_surf):
+            case.gamma_w[i_surf] = (
+                case.gamma_w[i_surf].at[i_ts, ...].set(gamma_list[i_surf])
+            )
 
-    @replace_self
     def _solve(
         self,
+        case: AeroTimeSeries,
         i_ts: int,
         hg: Optional[Array],
         hg_dot: Optional[Array],
         static: bool,
         free_wake: bool,
         horseshoe: bool,
-    ) -> Self:
+    ) -> AeroTimeSeries:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
-        :param i_ts: Timestep index
+        :param case: AeroTimeSeries object containing solution at previous time steps
+        :param i_ts: Timestep index to solve for
         :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
         :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4]
         :param static: If true, perform a static solve
@@ -808,15 +518,13 @@ class UVLM:
             horseshoe = False
 
         # set the current time step
-        if static:
-            self.t = self.t.at[i_ts].set(jax.lax.select(i_ts, self.t[i_ts - 1], 0.0))
-        else:
-            self.t = self.t.at[i_ts].set(
-                jax.lax.select(i_ts, self.t[i_ts - 1] + self.dt, 0.0)
+        if not static:
+            case.t = case.t.at[i_ts].set(
+                jax.lax.select(i_ts, case.t[i_ts - 1] + self.dt, 0.0)
             )
 
         zetas_b = self.zeta0_b if hg is None else self._hg_to_zeta(hg)
-        self._set_zeta_b(zetas_b, i_ts)
+        case.set_zeta_b(zetas_b, i_ts)
 
         cs = _get_c(zetas_b)
         ncs = _get_nc(zetas_b)
@@ -826,7 +534,7 @@ class UVLM:
         else:
             zeta_b_dot = self._hg_dot_to_zeta_dot(hg_dot)
 
-            self._set_zeta_b_dot(zeta_b_dot, i_ts)
+            case.set_zeta_b_dot(zeta_b_dot, i_ts)
 
             c_dot = [
                 neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot
@@ -836,7 +544,7 @@ class UVLM:
             # initialise wake
             if horseshoe:
                 zeta_ws = [
-                    self._make_surf_horseshoe_wake(i_ts, i_surf, HORSESHOE_LENGTH)
+                    self._make_surf_horseshoe_wake(case, i_ts, i_surf, HORSESHOE_LENGTH)
                     for i_surf in range(self.n_surf)
                 ]
             else:
@@ -846,27 +554,27 @@ class UVLM:
 
             def v_wake_prop(x_: Array) -> Array:
                 if free_wake:
-                    return self.get_v_tot(i_ts - 1, x_)
+                    return self.get_v_tot(case, i_ts - 1, x_)
                 else:
-                    return self.get_v_background(i_ts - 1, x_)
+                    return self.get_v_background(case.t[i_ts - 1], x_)
 
             # propagate wake
             zeta_ws, gamma_ws = _propagate_wake(
-                self._get_gamma_b(i_ts - 1),
-                self._get_gamma_w(i_ts - 1),
+                case.get_gamma_b(i_ts - 1),
+                case.get_gamma_w(i_ts - 1),
                 zetas_b,
-                self._get_zeta_w(i_ts - 1),
+                case.get_zeta_w(i_ts - 1),
                 self.delta_w,
                 v_wake_prop,
                 self.dt,
                 frozen_wake=False,
             )
 
-            self._set_gamma_w(gamma_ws, i_ts)
-            self._set_zeta_w(zeta_ws, i_ts)
+            self.set_gamma_w(gamma_ws, case, i_ts)
+            case.set_zeta_w(zeta_ws, i_ts)
 
         # set wake grid coordinates
-        self._set_zeta_w(zeta_ws, i_ts) if not horseshoe else self._set_zeta_w(
+        case.set_zeta_w(zeta_ws, i_ts) if not horseshoe else case.set_zeta_w(
             self.zeta0_w, i_ts
         )
 
@@ -884,70 +592,110 @@ class UVLM:
 
         cs_vector = jnp.concatenate([c.reshape(-1, 3) for c in cs], axis=0)
         c_dot_vector = jnp.concatenate([cd.reshape(-1, 3) for cd in c_dot], axis=0)
-        v_bc = c_dot_vector - self.get_v_background(i_ts, cs_vector)
+        v_bc = c_dot_vector - self.get_v_background(case.t[i_ts], cs_vector)
 
         n_vect = jnp.concatenate([nc.reshape(-1, 3) for nc in ncs], axis=0)
         v_bc_n = jnp.einsum("ij,ij->i", v_bc, n_vect)
 
         if not static:
             aic_w = _assemble_aic_sys(aic_w_blocks)
-            v_bc_n -= aic_w @ self._get_gamma_w_vect(i_ts)
+            v_bc_n -= aic_w @ case.get_gamma_w_vect(i_ts)
 
         gamma_b_vect: Array = jnp.linalg.solve(aic, v_bc_n)
-        self._set_gamma_b(gamma_b_vect, i_ts)
+        self.set_gamma_b(case, gamma_b_vect, i_ts)
 
         if static:
-            self._set_gamma_w_static(i_ts)
+            case.set_gamma_w_static(i_ts)
         else:
-            self._calculate_gamma_dot(i_ts)
-            self._calculate_unsteady_forcing(i_ts, ncs)
-        self._calculate_steady_forcing(i_ts)
+            case.calculate_gamma_dot(i_ts, self.dt)
+            case.calculate_unsteady_forcing(i_ts, ncs, self.flowfield.rho)
+        self.calculate_steady_forcing(case, i_ts)
 
-        return self
+        return case
 
-    @replace_self
+    def initialise_case_object(self, n_tstep: int) -> AeroTimeSeries:
+        r"""
+        Initialise an AeroTimeSeries object to store the solution of the aerodynamic case, with the correct dimensions and
+        initial conditions.
+        :param n_tstep: Number of time steps to solve for in dynamic solution
+        :return: AeroTimeSeries object with initial conditions set
+        """
+
+        # zero initialise
+        return AeroTimeSeries(
+            zeta_b=ArrayList(
+                [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+            ),
+            zeta_b_dot=ArrayList(
+                [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+            ),
+            zeta_w=ArrayList(
+                [
+                    jnp.zeros((n_tstep, gd.m_star + 1, gd.n + 1, 3))
+                    for gd in self.grid_disc
+                ]
+            ),
+            gamma_b=ArrayList(
+                [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
+            ),
+            gamma_b_dot=ArrayList(
+                [jnp.zeros((n_tstep, gd.m, gd.n)) for gd in self.grid_disc]
+            ),
+            gamma_w=ArrayList(
+                [jnp.zeros((n_tstep, gd.m_star, gd.n)) for gd in self.grid_disc]
+            ),
+            f_steady=ArrayList(
+                [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+            ),
+            f_unsteady=ArrayList(
+                [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
+            ),
+            surf_b_names=self.surf_b_names,
+            surf_w_names=self.surf_w_names,
+            t=jnp.zeros(n_tstep),
+        )
+
     @print_with_time(
         "Computing static solution...", "Static solution complete in {:.2f} seconds."
     )
     # TODO: add free wake
     def solve_static(
         self,
-        i_ts: Optional[int] = None,
         hg: Optional[Array] = None,
+        t: Array | float = 0.0,
         horseshoe: bool = False,
-    ) -> Self:
+    ) -> AeroSnapshot:
         r"""
         Solve the VLM.
-        :param i_ts: Timestep index. If None, will use last solved timestep + 1
         :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
+        :param t: Time at which to solve static solution, used for flowfield evaluation
         :param horseshoe: If true, replace the wake with a horseshoe wake which extends a fixed distance
         """
-        if i_ts is None:
-            i_ts = self._last_ts + 1
-        self._last_ts = i_ts  # update last solved timestep
 
-        self._solve(i_ts, hg, None, static=True, free_wake=False, horseshoe=horseshoe)
+        case = self.initialise_case_object(1)
+        case.t = case.t.at[0].set(t)
 
-        return self
+        return self._solve(
+            case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe
+        )[0]
 
-    @replace_self
     @print_with_time(
         "Computing prescribed dynamic solution...",
         "Prescribed dynamic solution complete in {:.2f} seconds.",
     )
     def solve_prescribed_dynamic(
         self,
+        init_case: AeroSnapshot,
         hg_t: Array,
         hg_dot_t: Array,
         free_wake: bool = False,
-        i_ts_start: Optional[int] = None,
-    ) -> Self:
+    ) -> AeroTimeSeries:
         r"""
         Solve the UVLM for prescribed grid motions.
-        :param hg_t: Beam global grid coordinates over time, [n_tstep, zeta_n, 4, 4]
-        :param hg_dot_t: Beam global grid velocities over time, [n_tstep, zeta_n, 4, 4]
-        :param free_wake: If true, use free wake propagation
-        :param i_ts_start: Starting timestep index. If None, will use last solved timestep + 1
+        :param init_case: AeroSnapshot object containing initial conditions for the solution at time step 0.
+        :param hg_t: Beam global grid coordinates over time, [n_tstep, zeta_n, 4, 4].
+        :param hg_dot_t: Beam global grid velocities over time, [n_tstep, zeta_n, 4, 4].
+        :param free_wake: If true, use free wake propagation.
         """
         check_arr_shape(hg_t, (None, None, 4, 4), "hg")
         check_if_all_se3_g(hg_t, True)
@@ -960,12 +708,12 @@ class UVLM:
 
         n_tstep = hg_t.shape[0]
 
-        if i_ts_start is None:
-            i_ts_start = self._last_ts + 1
-        self._last_ts = i_ts_start + n_tstep  # update last solved timestep
+        case = self.initialise_case_object(n_tstep)
+        case[0] = init_case
 
-        def _step_func(i_ts_: int, case: UVLM) -> UVLM:
-            case._solve(
+        def _step_func(i_ts_: int, case_: AeroTimeSeries) -> AeroTimeSeries:
+            case_ = self._solve(
+                case_,
                 i_ts_,
                 hg_t[i_ts_, ...],
                 hg_dot_t[i_ts_, ...],
@@ -974,62 +722,15 @@ class UVLM:
                 horseshoe=False,
             )
             jax_print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
-            return case
+            return case_
 
-        obj = fori_loop(
-            i_ts_start,
-            i_ts_start + n_tstep,
+        case = fori_loop(
+            1,
+            n_tstep,
             _step_func,
-            init_val=self,
+            init_val=case,
         )
-        jax.block_until_ready(obj)
-        return obj
-
-    @print_with_time(
-        "Plotting aerodynamic grid...",
-        "Aerodynamic grid plotted in {:.2f} seconds.",
-    )
-    def plot(
-        self,
-        directory: PathLike,
-        index: Optional[slice | Sequence[int] | int | Array] = None,
-        plot_wake: bool = True,
-    ) -> None:
-        r"""
-        Plot the aerodynamic grid for specified time steps to VTU files in the specified directory. Additionally, a PVD
-        file is created to allow easy loading of all time steps in Paraview.
-        :param directory: Path to write files to
-        :param index: Single or multiple time step indices to plot. If None, all time steps are plotted
-        :param plot_wake: If True, plot the wake grid
-        """
-        if isinstance(index, slice):
-            index_ = jnp.arange(self.n_tstep_tot)[index]
-        elif isinstance(index, Sequence):
-            index_ = jnp.array(index)
-        elif isinstance(index, Array):
-            index_ = index
-        elif isinstance(index, int):
-            index_ = (index,)
-        elif index is None:
-            index_ = jnp.arange(self.n_tstep_tot)
-        else:
-            raise TypeError("index must be a slices, sequence of ints, or Array")
-
-        directory = Path(directory).resolve()
-        directory.mkdir(parents=True, exist_ok=True)
-
-        paths: list[Sequence[Path]] = []
-        for i_ts in index_:
-            snapshot = self[i_ts]
-            paths.append(snapshot.plot(directory, plot_wake=plot_wake))
-
-        for i_surf in range(2 * self.n_surf):
-            try:
-                surf_paths = [paths[i][i_surf] for i in range(len(index_))]
-                name = (self.surf_b_names + self.surf_w_names)[i_surf] + "_ts"
-                write_pvd(directory, name, surf_paths, list(self.t[index_]))
-            except IndexError:
-                pass
+        return case
 
     def reference_snapshot(self) -> AeroSnapshot:
         r"""
@@ -1109,15 +810,4 @@ class UVLM:
             "_dt",
             "_flowfield",
             "_delta_w",
-            "zeta_b",
-            "zeta_b_dot",
-            "zeta_w",
-            "gamma_b",
-            "gamma_b_dot",
-            "gamma_w",
-            "f_steady",
-            "f_unsteady",
-            "n_tstep_tot",
-            "t",
-            "_last_ts",
         )

@@ -59,7 +59,7 @@ def create_beam_unstructured_grid(
 ) -> tuple[vtk.vtkUnstructuredGrid, Optional[Array], Optional[Array]]:
     """
     Create a VTK UnstructuredGrid representing line (beam) elements.
-    :param hg: Array of node SE(3) transformations, [n_nodes, 4, 4]
+    :param hg: Array of node SE(3) transformations, [n_nodes_, 4, 4]
     :param conn: Connectivity array with shape, [n_elems, 2]
     :param o0: Array of local beam orientation transformations, [n_elems, 3, 3]
     :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints)
@@ -71,9 +71,9 @@ def create_beam_unstructured_grid(
 
     coords = hg[
         :, :3, 3
-    ]  # extract node coordinates from SE(3) transforms, [n_nodes, 3]
+    ]  # extract node coordinates from SE(3) transforms, [n_nodes_, 3]
     if coords.ndim != 2 or coords.shape[1] != 3:
-        raise ValueError("coords must be a 2D array with shape (n_nodes, 3)")
+        raise ValueError("coords must be a 2D array with shape (n_nodes_, 3)")
 
     conn = jnp.asarray(conn)
     if conn.ndim != 2 or conn.shape[1] != 2:
@@ -108,7 +108,7 @@ def create_beam_unstructured_grid(
 
         interp_coords = jnp.concatenate(
             (coords, interp_hg[:, :, :3, 3].reshape(-1, 3)), axis=0
-        )  # [n_nodes + n_interp * n_elems, 3])
+        )  # [n_nodes_ + n_interp * n_elems, 3])
 
         # add points
         points = vtk.vtkPoints()
@@ -177,11 +177,14 @@ def plot_beam_to_vtk(
     """
     Write beam (line element) data to a VTU file.
 
-    :param hg: Array of SE(3) elements, [n_nodes, 4, 4]
-    :param conn: Connectivity array, shape (n_elems, 2)
+    :param hg: Array of SE(3) elements, [n_nodes_, 4, 4]
+    :param conn: Connectivity array, [n_elem, 2]
+    :param o0: Array of local beam orientation transformations, [n_elem, 3, 3]
+    :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints)
     :param filename: Base filename (directory + base name); _ts_<i_ts> will be appended if i_ts provided
-    :param node_scalar_data: dict of [name, [n_nodes]]
-    :param node_vector_data: dict of [name, [n_nodes, 3]]
+    :param i_ts: Optional time step index to append to filename
+    :param node_scalar_data: dict of [name, [n_nodes_]]
+    :param node_vector_data: dict of [name, [n_nodes_, 3]]
     :param cell_scalar_data: dict of [name, [n_elems]]
     :param cell_vector_data: dict of [name, [n_elems, 3]]
     :return: Path of the written VTU file

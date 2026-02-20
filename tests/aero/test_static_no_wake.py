@@ -25,22 +25,23 @@ class TestRotInvariance:
         hg = hg.at[:, :3, :3].set(jnp.eye(3)[None, :, :])
         hg = hg.at[:, :3, 3].set(beam_coords)
 
-        case = UVLM(2, [disc], False, jnp.arange(0, mn + 1))
+        uvlm = UVLM([disc], False, jnp.arange(0, mn + 1))
 
+        cases = []
         for i_u_inf, u_inf in enumerate(
             [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
         ):
             flowfield = Constant(u_inf, 1.225, True)
-            case.set_design_variables(1.0, flowfield, None, x_grid, hg)
-            case.solve_static(i_u_inf, None, False)
+            uvlm.set_design_variables(1.0, flowfield, None, x_grid, hg)
+            cases.append(uvlm.solve_static())
 
-        if not jnp.allclose(case.gamma_b[0][0, ...], case.gamma_b[0][1, ...]):
+        if not jnp.allclose(cases[0].gamma_b[0], cases[1].gamma_b[0]):
             raise ValueError(
                 "Gamma distribution is not equal for both flow directions in no-wake case."
             )
 
         if not jnp.allclose(
-            f_tot := jnp.sum(case.f_steady[0][0, ...], axis=(0, 1)),
+            f_tot := jnp.sum(cases[0].f_steady[0]),
             0.0,
             atol=1e-5,
             rtol=1e-4,
@@ -48,8 +49,8 @@ class TestRotInvariance:
             raise ValueError(f"Total force in flow is not zero: {f_tot}")
 
         if not jnp.allclose(
-            case.f_steady[0][0, ...],
-            jnp.transpose(case.f_steady[0][1, ...], (1, 0, 2))[..., (1, 0, 2)],
+            cases[0].f_steady[0],
+            jnp.transpose(cases[1].f_steady[0], (1, 0, 2))[..., (1, 0, 2)],
             atol=1e-5,
             rtol=1e-4,
         ):

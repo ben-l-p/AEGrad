@@ -63,14 +63,16 @@ class TestVarWakeDisc:
             variable_wake = delta_w_ is not None
             disc = GridDiscretization(m, n, m_star)
 
-            case = UVLM(n_tstep, [disc], variable_wake, jnp.arange(0, n + 1))
+            uvlm = UVLM([disc], variable_wake, jnp.arange(0, n + 1))
 
-            case.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
+            uvlm.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
 
-            case.solve_static()
+            static_case = uvlm.solve_static()
 
-            case.solve_prescribed_dynamic(hg_t, hg_dot_t, False)
-            gamma_b.append(case.gamma_b[0])
+            dynamic_case = uvlm.solve_prescribed_dynamic(
+                static_case, hg_t, hg_dot_t, False
+            )
+            gamma_b.append(dynamic_case.gamma_b[0])
 
         assert jnp.allclose(gamma_b[0], gamma_b[1], atol=1e-3), (
             "Heaving cantilever wing bound circulation strengths does not match between variable and base wake models."
