@@ -48,12 +48,13 @@ class TestLinXForcePoint:
         init_cond.a = init_cond.a.at[0, cls.f_direction_index].set(v_dot_expected)
 
         output = struct.dynamic_solve(
-            init_cond,
-            n_tstep,
-            dt,
-            jnp.zeros((1, 6)).at[0, cls.f_direction_index].set(cls.f),
-            None,
-            None,
+            init_state=init_cond,
+            n_tstep=n_tstep,
+            dt=dt,
+            prescribed_dofs=None,
+            f_ext_follower=jnp.zeros((1, 6)).at[0, cls.f_direction_index].set(cls.f),
+            f_ext_dead=None,
+            f_ext_aero=None,
             spectral_radius=1.0,
             relaxation_factor=1.0,
         )

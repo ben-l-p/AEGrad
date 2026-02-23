@@ -10,7 +10,7 @@ from jax import numpy as jnp, Array
 from jax import vmap
 
 from aegrad.utils import _make_pytree
-from aegrad.print_output import warn, jax_print, VerbosityLevel
+from aegrad.print_output import warn
 from aegrad.algebra.base import chi
 from algebra.array_utils import check_arr_shape
 from plotting.beam import plot_beam_to_vtk
@@ -27,213 +27,7 @@ class OptionalJacobians:
     d_f_int_d_p_d: bool = False  # geometric stiffness
 
 
-@dataclass
-class BeamConvergenceSettings:
-    max_n_iter: Optional[int] = 40
-    rel_disp_tol: Optional[float] = 1e-8
-    abs_disp_tol: Optional[float] = 1e-12
-    rel_force_tol: Optional[float] = 1e-8
-    abs_force_tol: Optional[float] = 1e-12
-
-
 @_make_pytree
-class ConvergenceStatus:
-    def __init__(self, convergence_settings: BeamConvergenceSettings):
-        r"""
-        Object to track convergence status of an iterative solver based on absolute and relative tolerances. Absolute
-        convergence is measured for the delta vector, while relative convergence is measured as the ratio of the maximum
-        element in the delta vector to the total vector.
-        :param convergence_settings: Convergence settings object containing tolerances and maximum iteration count for
-        convergence failure.
-        """
-
-        # make sure settings allow for loop to be broken
-        if (
-            convergence_settings.rel_disp_tol is None
-            and convergence_settings.abs_disp_tol is None
-            and convergence_settings.rel_force_tol is None
-            and convergence_settings.abs_force_tol is None
-        ):
-            if convergence_settings.max_n_iter is None:
-                raise ValueError(
-                    "No convergence criteria provided, at least one tolerance or maximum iteration count "
-                    "must be specified."
-                )
-            warn(
-                "No convergence tolerances provided, will iterate until maximum iteration counter."
-            )
-
-        # base parameters
-        self.i_iter: Array = jnp.zeros((), dtype=int)
-        self.convergence_settings: BeamConvergenceSettings = convergence_settings
-
-        # store residual values
-        self.rel_disp_val: Array = jnp.zeros(())
-        self.abs_disp_val: Array = jnp.zeros(())
-        self.rel_force_val: Array = jnp.zeros(())
-        self.abs_force_val: Array = jnp.zeros(())
-
-        # convergence status
-        self.converged: Array = jnp.zeros((), dtype=bool)
-        self.converged_abs_disp: Array = jnp.zeros((), dtype=bool)
-        self.converged_rel_disp: Array = jnp.zeros((), dtype=bool)
-        self.converged_rel_force: Array = jnp.zeros((), dtype=bool)
-        self.converged_abs_force: Array = jnp.zeros((), dtype=bool)
-
-        # flags for other convergence failure modes
-        self.final_iter: Array = jnp.zeros((), dtype=bool)
-        self.has_nan: Array = jnp.zeros((), dtype=bool)
-
-    def update(
-        self,
-        delta_disp: Optional[Array],
-        total_disp: Optional[Array],
-        delta_force: Optional[Array],
-        total_force: Optional[Array],
-    ) -> None:
-        r"""
-        :param delta_disp: Difference in displacement vector between current and previous iteration.
-        :param total_disp: Total displacement for time step, used for relative convergence calculation, typically the
-        current solution vector.
-        :param delta_force: Residual force vector, used for force convergence calculation.
-        :param total_force: Total force vector for time step, used for relative convergence calculation.
-        """
-        # update iteration counter
-        self.i_iter += 1
-
-        # check absolute displacement convergence
-        self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
-        if self.convergence_settings.abs_disp_tol is not None:
-            self.converged_abs_disp = (
-                self.abs_disp_val < self.convergence_settings.abs_disp_tol
-            )
-
-        # check relative displacement convergence:
-        if self.convergence_settings.rel_disp_tol is not None:
-            max_total_elem = jnp.linalg.norm(total_disp)
-            self.rel_disp_val = self.rel_disp_val.at[...].set(
-                self.abs_disp_val / max_total_elem
-            )
-            self.converged_rel_disp = self.converged_rel_disp.at[...].set(
-                jnp.nan_to_num(self.rel_disp_val, True, jnp.inf)
-                < self.convergence_settings.rel_disp_tol
-            )
-
-        # check absolute force convergence
-        if self.convergence_settings.abs_force_tol is not None:
-            self.abs_force_val = self.abs_force_val.at[...].set(
-                jnp.linalg.norm(delta_force)
-            )
-            self.converged_abs_force = (
-                self.abs_force_val < self.convergence_settings.abs_force_tol
-            )
-
-        # check relative force convergence:
-        if self.convergence_settings.rel_force_tol is not None:
-            max_total_elem = jnp.abs(total_force).max()
-            self.rel_force_val = self.rel_force_val.at[...].set(
-                self.abs_force_val / max_total_elem
-            )
-            self.converged_rel_force = self.converged_rel_force.at[...].set(
-                jnp.nan_to_num(self.rel_force_val, True, jnp.inf)
-                < self.convergence_settings.rel_force_tol
-            )
-
-        # find convergence status of numerics (excluding failure modes such as max iterations or nans)
-        self.converged = self.converged.at[...].set(
-            (
-                self.converged_rel_disp
-                | self.converged_abs_disp
-                | self.converged_rel_force
-                | self.converged_abs_force
-            )
-            & (self.i_iter > 0)
-        )
-
-        # check for failure modes
-        if self.convergence_settings.max_n_iter is not None:
-            self.final_iter = self.final_iter.at[...].set(
-                (self.i_iter >= self.convergence_settings.max_n_iter)
-            )
-        self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
-
-    def get_status(self) -> Array:
-        """Get overall convergence status."""
-        return self.converged | self.has_nan | self.final_iter
-
-    def reset_status(self) -> None:
-        r"""
-        Reset convergence status for next load step, setting all convergence flags to False.
-        """
-        self.converged = self.converged.at[...].set(False)
-        self.converged_abs_disp = self.converged_abs_disp.at[...].set(False)
-        self.converged_rel_disp = self.converged_rel_disp.at[...].set(False)
-        self.converged_rel_force = self.converged_rel_force.at[...].set(False)
-        self.converged_abs_force = self.converged_abs_force.at[...].set(False)
-        self.rel_disp_val = self.rel_disp_val.at[...].set(0.0)
-        self.abs_disp_val = self.abs_disp_val.at[...].set(0.0)
-        self.rel_force_val = self.rel_force_val.at[...].set(0.0)
-        self.abs_force_val = self.abs_force_val.at[...].set(0.0)
-        self.has_nan = self.has_nan.at[...].set(False)
-        self.final_iter = self.final_iter.at[...].set(False)
-        self.i_iter = self.i_iter.at[...].set(0)
-
-    def print_message(self, t: Optional[Array], i_load_step: int) -> None:
-        """Print convergence message based on status."""
-
-        if t is None:
-            # static message
-            jax_print(
-                "| Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
-                "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
-                "{abs_force_val:.02e} |",
-                verbose_level=VerbosityLevel.NORMAL,
-                i_load_step=i_load_step,
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
-        else:
-            # dynamic message
-            jax_print(
-                "| Time: {t:.03e} | Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
-                "Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: {abs_force_val:.02e} |",
-                verbose_level=VerbosityLevel.NORMAL,
-                t=t,
-                i_load_step=i_load_step,
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ("convergence_settings",)
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "i_iter",
-            "rel_disp_val",
-            "abs_disp_val",
-            "rel_force_val",
-            "abs_force_val",
-            "converged",
-            "converged_abs_disp",
-            "converged_rel_disp",
-            "converged_rel_force",
-            "converged_abs_force",
-            "final_iter",
-            "has_nan",
-        )
-
-
 class StaticStructure:
     """Object to hold the full state and forces of a static structure analysis."""
 
@@ -246,6 +40,7 @@ class StaticStructure:
         eps: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
         f_res: Array,
@@ -258,6 +53,7 @@ class StaticStructure:
         self.eps: Array = eps  # [n_elem, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
         self.f_int: Array = f_int  # [n_nodes_, 6]
         self.f_res: Array = f_res  # [n_nodes_, 6]
@@ -284,6 +80,7 @@ class StaticStructure:
             a=zero_a,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
+            f_ext_aero=self.f_ext_aero,
             f_grav=self.f_grav,
             f_int=self.f_int,
             f_iner=zero_f_iner,
@@ -304,6 +101,10 @@ class StaticStructure:
         if self.f_ext_dead is not None:
             self.f_ext_dead = self.f_ext_dead.at[...].set(
                 jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_dead)
+            )
+        if self.f_ext_aero is not None:
+            self.f_ext_aero = self.f_ext_aero.at[...].set(
+                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_aero)
             )
         if self.f_grav is not None:
             self.f_grav = self.f_grav.at[...].set(
@@ -349,6 +150,25 @@ class StaticStructure:
         """
         return self.to_dynamic().plot(directory, n_interp)
 
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "conn", "o0"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return (
+            "hg",
+            "d",
+            "eps",
+            "f_ext_follower",
+            "f_ext_dead",
+            "f_ext_aero",
+            "f_grav",
+            "f_int",
+            "f_res",
+            "local",
+        )
+
 
 class DynamicStructureSnapshot:
     """Object to hold the full state and forces of a dynamic structure analysis timestep."""
@@ -365,6 +185,7 @@ class DynamicStructureSnapshot:
         a: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
         f_iner: Array,
@@ -383,6 +204,7 @@ class DynamicStructureSnapshot:
         self.a: Array = a  # [n_nodes_, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
         self.f_int: Array = f_int  # [n_nodes_, 6]
         self.f_iner: Array = f_iner  # [n_nodes_, 6]
@@ -402,6 +224,7 @@ class DynamicStructureSnapshot:
             eps=self.eps,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
+            f_ext_aero=self.f_ext_aero,
             f_grav=self.f_grav,
             f_int=self.f_int,
             f_res=self.f_res,
@@ -419,6 +242,10 @@ class DynamicStructureSnapshot:
         if self.f_ext_dead is not None:
             self.f_ext_dead = self.f_ext_dead.at[...].set(
                 jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_dead)
+            )
+        if self.f_ext_aero is not None:
+            self.f_ext_aero = self.f_ext_aero.at[...].set(
+                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_aero)
             )
         if self.f_grav is not None:
             self.f_grav = self.f_grav.at[...].set(
@@ -495,6 +322,12 @@ class DynamicStructureSnapshot:
         m_ext_dead = (
             data.f_ext_dead[:, 3:] if data.f_ext_dead is not None else None
         )  # [n_nodes_, 3]
+        f_ext_aero = (
+            data.f_ext_aero[:, :3] if data.f_ext_aero is not None else None
+        )  # [n_nodes_, 3]
+        m_ext_aero = (
+            data.f_ext_aero[:, 3:] if data.f_ext_aero is not None else None
+        )  # [n_nodes_, 3]
         f_ext_grav = (
             data.f_grav[:, :3] if data.f_grav is not None else None
         )  # [n_nodes_, 3]
@@ -531,6 +364,8 @@ class DynamicStructureSnapshot:
             "m_ext_follower": m_ext_follower,
             "f_ext_dead": f_ext_dead,
             "m_ext_dead": m_ext_dead,
+            "f_ext_aero": f_ext_aero,
+            "m_ext_aero": m_ext_aero,
             "f_ext_grav": f_ext_grav,
             "m_ext_grav": m_ext_grav,
             "f_iner": f_iner,
@@ -581,6 +416,7 @@ class DynamicStructure:
         a: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
         f_iner: Array,
@@ -598,6 +434,7 @@ class DynamicStructure:
         self.a: Array = a  # [n_tstep, n_nodes_, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes_, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes_, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_tstep, n_nodes_, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes_, 6]
         self.f_int: Array = f_int  # [n_tstep, n_nodes_, 6]
         self.f_iner: Array = f_iner  # [n_tstep, n_nodes_, 6]
@@ -618,6 +455,9 @@ class DynamicStructure:
             else None,
             f_ext_dead=self.f_ext_dead[i_ts, ...]
             if self.f_ext_dead is not None
+            else None,
+            f_ext_aero=self.f_ext_aero[i_ts, ...]
+            if self.f_ext_aero is not None
             else None,
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_int=self.f_int[i_ts, ...],
@@ -640,6 +480,9 @@ class DynamicStructure:
             else None,
             f_ext_dead=self.f_ext_dead[i_ts, ...]
             if self.f_ext_dead is not None
+            else None,
+            f_ext_aero=self.f_ext_aero[i_ts, ...]
+            if self.f_ext_aero is not None
             else None,
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_iner=self.f_iner[i_ts, ...],
@@ -679,6 +522,9 @@ class DynamicStructure:
         f_ext_dead = (
             jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_dead)
         )
+        f_ext_aero = (
+            jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_aero)
+        )
         f_grav = (
             jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
             if initial_snapshot.f_grav is not None
@@ -698,6 +544,7 @@ class DynamicStructure:
             a=a,
             f_ext_follower=f_ext_follower,
             f_ext_dead=f_ext_dead,
+            f_ext_aero=f_ext_aero,
             f_grav=f_grav,
             f_int=f_int,
             f_iner=f_iner,
@@ -763,6 +610,7 @@ class DynamicStructure:
             "a",
             "f_ext_follower",
             "f_ext_dead",
+            "f_ext_aero",
             "f_grav",
             "f_int",
             "f_iner",
@@ -783,7 +631,7 @@ class StructuralStates:
 
 
 @_make_pytree
-class DesignVariables:
+class StructuralDesignVariables:
     def __init__(
         self,
         x0: Optional[Array],
@@ -851,7 +699,9 @@ class DesignVariables:
     def reshape(self, *args: int) -> Array:
         return self.ravel().reshape(*args)
 
-    def from_adjoint(self, f_shape: tuple[int, ...], df_dx: Array) -> DesignVariables:
+    def from_adjoint(
+        self, f_shape: tuple[int, ...], df_dx: Array
+    ) -> StructuralDesignVariables:
         out_dict = {}
         for name in self.shapes.keys():
             if self.mapping[name] is not None:
@@ -860,7 +710,7 @@ class DesignVariables:
                 )
             else:
                 out_dict[name] = None
-        return DesignVariables(**out_dict)
+        return StructuralDesignVariables(**out_dict)
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -868,4 +718,11 @@ class DesignVariables:
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "x0", "k_cs", "m_cs", "m_lumped", "f_ext_follower", "f_ext_dead"
+        return (
+            "x0",
+            "k_cs",
+            "m_cs",
+            "m_lumped",
+            "f_ext_follower",
+            "f_ext_dead",
+        )

@@ -13,7 +13,7 @@ class TestMultiXElementStrainsForces:
     Test the strains and forces for a two-node beam element with prescribed displacements
     """
 
-    l = jnp.array(2.0)
+    length = jnp.array(2.0)
     n_nodes = 10
     n_elem = n_nodes - 1
     conn = jnp.zeros((n_elem, 2), dtype=int)
@@ -23,7 +23,9 @@ class TestMultiXElementStrainsForces:
     beam_direction = "x"
     direction_index = 0
     coords = (
-        jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
+        jnp.zeros((n_nodes, 3))
+        .at[:, direction_index]
+        .set(jnp.linspace(0, length, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 1].set(1.0)
     struct = BeamStructure(n_nodes, conn, y_vect)
@@ -36,7 +38,7 @@ class TestMultiXElementStrainsForces:
 
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        d = jnp.zeros((cls.n_elem, 6)).at[:, 0].set(cls.l / cls.n_elem)
+        d = jnp.zeros((cls.n_elem, 6)).at[:, 0].set(cls.length / cls.n_elem)
         eps = cls.struct._make_eps(d)
         assert jnp.allclose(eps, 0.0), (
             f"Strain calculation incorrect, expected zero strain, got {eps}"
@@ -55,10 +57,10 @@ class TestMultiXElementStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         dx = 0.1
         d = jnp.zeros((cls.n_elem, 6))
-        d = d.at[:, 0].set((cls.l + dx) / cls.n_elem)
+        d = d.at[:, 0].set((cls.length + dx) / cls.n_elem)
         eps = cls.struct._make_eps(d)
-        expected_eps = jnp.array((dx / cls.l, 0.0, 0.0, 0.0, 0.0, 0.0))[None, :]
-        expected_f = k_coeffs[0] * dx / cls.l
+        expected_eps = jnp.array((dx / cls.length, 0.0, 0.0, 0.0, 0.0, 0.0))[None, :]
+        expected_f = k_coeffs[0] * dx / cls.length
 
         assert jnp.allclose(eps, expected_eps), (
             f"Axial strain calculation incorrect, expected {expected_eps}, got {eps}"
@@ -93,12 +95,12 @@ class TestMultiXElementStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         dx = 0.1
         d = jnp.zeros((cls.n_elem, 6))
-        d = d.at[:, 0].set(cls.l / cls.n_elem)
+        d = d.at[:, 0].set(cls.length / cls.n_elem)
         d = d.at[:, 3].set(dx / cls.n_elem)
 
         eps = cls.struct._make_eps(d)
-        expected_strain = jnp.array((0.0, 0.0, 0.0, dx / cls.l, 0.0, 0.0))[None, :]
-        expected_f = k_coeffs[3] * dx / cls.l
+        expected_strain = jnp.array((0.0, 0.0, 0.0, dx / cls.length, 0.0, 0.0))[None, :]
+        expected_f = k_coeffs[3] * dx / cls.length
 
         assert jnp.allclose(eps, expected_strain), (
             f"Torsional strain calculation incorrect, expected {expected_strain}, got {eps}"
@@ -133,14 +135,14 @@ class TestMultiXElementStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         dx = 0.1
         d = jnp.zeros((cls.n_elem, 6))
-        d = d.at[:, 0].set(cls.l / cls.n_elem)
+        d = d.at[:, 0].set(cls.length / cls.n_elem)
         d = d.at[:, 4].set(dx / cls.n_elem)
 
         eps = cls.struct._make_eps(d)
-        expected_bending_strain = jnp.array((0.0, 0.0, 0.0, 0.0, dx / cls.l, 0.0))[
+        expected_bending_strain = jnp.array((0.0, 0.0, 0.0, 0.0, dx / cls.length, 0.0))[
             None, :
         ]
-        expected_f = k_coeffs[4] * dx / cls.l
+        expected_f = k_coeffs[4] * dx / cls.length
 
         assert jnp.allclose(eps, expected_bending_strain), (
             f"Bending strain calculation incorrect, expected {expected_bending_strain}, got {eps}"
@@ -174,12 +176,12 @@ class TestMultiXElementStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         dx = 0.1
         d = jnp.zeros((cls.n_elem, 6))
-        d = d.at[:, 0].set(cls.l / cls.n_elem)
+        d = d.at[:, 0].set(cls.length / cls.n_elem)
         d = d.at[:, 5].set(dx / cls.n_elem)
 
         eps = cls.struct._make_eps(d)
-        expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, dx / cls.l))[None, :]
-        expected_f = k_coeffs[5] * dx / cls.l
+        expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, dx / cls.length))[None, :]
+        expected_f = k_coeffs[5] * dx / cls.length
 
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
@@ -212,14 +214,21 @@ class TestMultiXElementStrainsForces:
 
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        result = cls.struct.static_solve(None, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=None,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         assert jnp.allclose(result.hg, cls.struct.hg0), (
             f"Unloaded static solve contained deformation, expected {cls.struct.hg0}, got {result.hg}"
         )
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l / cls.n_elem, 0.0, 0.0, 0.0, 0.0, 0.0))[None, :],
+            exp := jnp.array((cls.length / cls.n_elem, 0.0, 0.0, 0.0, 0.0, 0.0))[
+                None, :
+            ],
         ), (
             f"Incorrect configuration for unloaded static solve, expected {exp}, got {result.d}"
         )
@@ -240,14 +249,19 @@ class TestMultiXElementStrainsForces:
             .at[-1, :3]
             .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_eps = load / k_coeffs[0]
-        expected_disp = expected_eps * cls.l
+        expected_disp = expected_eps * cls.length
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                ((cls.l + expected_disp) / cls.n_elem, 0.0, 0.0, 0.0, 0.0, 0.0)
+                ((cls.length + expected_disp) / cls.n_elem, 0.0, 0.0, 0.0, 0.0, 0.0)
             )[None, :],
         ), (
             f"Incorrect configuration for axial load static solve, expected {exp}, got {result.d}"
@@ -285,14 +299,26 @@ class TestMultiXElementStrainsForces:
             .at[-1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_strain = load / k_coeffs[3]
-        expected_disp = expected_strain * cls.l
+        expected_disp = expected_strain * cls.length
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                (cls.l / cls.n_elem, 0.0, 0.0, expected_disp / cls.n_elem, 0.0, 0.0)
+                (
+                    cls.length / cls.n_elem,
+                    0.0,
+                    0.0,
+                    expected_disp / cls.n_elem,
+                    0.0,
+                    0.0,
+                )
             )[None, :],
         ), f"Incorrect configuration for static solve, expected {exp}, got {result.d}"
 
@@ -327,14 +353,26 @@ class TestMultiXElementStrainsForces:
             .at[-1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_strain = load / k_coeffs[4]
-        expected_disp = expected_strain * cls.l
+        expected_disp = expected_strain * cls.length
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                (cls.l / cls.n_elem, 0.0, 0.0, 0.0, expected_disp / cls.n_elem, 0.0)
+                (
+                    cls.length / cls.n_elem,
+                    0.0,
+                    0.0,
+                    0.0,
+                    expected_disp / cls.n_elem,
+                    0.0,
+                )
             )[None, :],
         ), f"Incorrect configuration for static solve, expected {exp}, got {result.d}"
 
@@ -358,7 +396,9 @@ class TestMultiXElementStrainsForces:
 
         coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
 
-        expected_coord_tip = const_curvature_beam(expected_strain, cls.l, direction="y")
+        expected_coord_tip = const_curvature_beam(
+            expected_strain, cls.length, direction="y"
+        )
 
         assert jnp.allclose(
             coord_tip,
@@ -381,14 +421,26 @@ class TestMultiXElementStrainsForces:
             .at[-1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_strain = load / k_coeffs[5]
-        expected_disp = expected_strain * cls.l
+        expected_disp = expected_strain * cls.length
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                (cls.l / cls.n_elem, 0.0, 0.0, 0.0, 0.0, expected_disp / cls.n_elem)
+                (
+                    cls.length / cls.n_elem,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    expected_disp / cls.n_elem,
+                )
             )[None, :],
         ), f"Incorrect configuration for static solve, expected {exp}, got {result.d}"
 
@@ -412,7 +464,9 @@ class TestMultiXElementStrainsForces:
 
         coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
 
-        expected_coord_tip = const_curvature_beam(expected_strain, cls.l, direction="z")
+        expected_coord_tip = const_curvature_beam(
+            expected_strain, cls.length, direction="z"
+        )
 
         assert jnp.allclose(
             coord_tip,
@@ -439,20 +493,30 @@ class TestMultiXElementStrainsForces:
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
         result = cls.struct.static_solve(
-            f_ext,
-            None,
-            jnp.concatenate((jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))),
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.concatenate(
+                (jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))
+            ),
             load_steps=4,
         )
 
         expected_eps = load / k_coeffs[1]
-        expected_disp = expected_eps * cls.l
-        expected_moment = -0.5 * load * cls.l
+        expected_disp = expected_eps * cls.length
+        expected_moment = -0.5 * load * cls.length
 
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                (cls.l / cls.n_elem, expected_disp / cls.n_elem, 0.0, 0.0, 0.0, 0.0)
+                (
+                    cls.length / cls.n_elem,
+                    expected_disp / cls.n_elem,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                )
             )[None, :],
             atol=1e-5,
             rtol=1e-3,
@@ -496,20 +560,30 @@ class TestMultiXElementStrainsForces:
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
         result = cls.struct.static_solve(
-            f_ext,
-            None,
-            jnp.concatenate((jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))),
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.concatenate(
+                (jnp.arange(6), (cls.n_nodes - 1) * 6 + jnp.arange(3, 6))
+            ),
             load_steps=4,
         )
 
         expected_eps = load / k_coeffs[2]
-        expected_disp = expected_eps * cls.l
-        expected_moment = 0.5 * load * cls.l
+        expected_disp = expected_eps * cls.length
+        expected_moment = 0.5 * load * cls.length
 
         assert jnp.allclose(
             result.d,
             exp := jnp.array(
-                (cls.l / cls.n_elem, 0.0, expected_disp / cls.n_elem, 0.0, 0.0, 0.0)
+                (
+                    cls.length / cls.n_elem,
+                    0.0,
+                    expected_disp / cls.n_elem,
+                    0.0,
+                    0.0,
+                    0.0,
+                )
             )[None, :],
             atol=1e-5,
             rtol=1e-3,
@@ -541,12 +615,14 @@ class TestMultiYElementStrainsForces(TestMultiXElementStrainsForces):
     n_nodes = TestMultiXElementStrainsForces.n_nodes
     n_elem = TestMultiXElementStrainsForces.n_elem
     conn = TestMultiXElementStrainsForces.conn
-    l = 2.5
+    length = 2.5
 
     beam_direction = "y"
     direction_index = 1
     coords = (
-        jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
+        jnp.zeros((n_nodes, 3))
+        .at[:, direction_index]
+        .set(jnp.linspace(0, length, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 2].set(1.0)
     struct = BeamStructure(n_nodes, conn, y_vect)
@@ -556,12 +632,14 @@ class TestMultiZElementStrainsForces(TestMultiXElementStrainsForces):
     n_nodes = TestMultiXElementStrainsForces.n_nodes
     n_elem = TestMultiXElementStrainsForces.n_elem
     conn = TestMultiXElementStrainsForces.conn
-    l = 2.5
+    length = 2.5
 
     beam_direction = "z"
     direction_index = 2
     coords = (
-        jnp.zeros((n_nodes, 3)).at[:, direction_index].set(jnp.linspace(0, l, n_nodes))
+        jnp.zeros((n_nodes, 3))
+        .at[:, direction_index]
+        .set(jnp.linspace(0, length, n_nodes))
     )
     y_vect = jnp.zeros((n_elem, 3)).at[:, 0].set(1.0)
     struct = BeamStructure(n_nodes, conn, y_vect)

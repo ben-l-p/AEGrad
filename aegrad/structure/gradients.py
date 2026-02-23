@@ -10,19 +10,19 @@ from aegrad.structure.base_beam import BaseBeamStructure
 from aegrad.structure import OptionalJacobians
 from aegrad.structure.data_structures import (
     StaticStructure,
-    DesignVariables,
+    StructuralDesignVariables,
     StructuralStates,
 )
 from aegrad.algebra.se3 import hg_to_d
 from algebra.se3 import exp_se3, t_se3
 
-type ObjectiveFunction = Callable[[StructuralStates, DesignVariables], Array]
+type ObjectiveFunction = Callable[[StructuralStates, StructuralDesignVariables], Array]
 
 
 class BeamStructure(BaseBeamStructure):
     def _structural_states_res_from_dv_n(
         self,
-        dv: DesignVariables,
+        dv: StructuralDesignVariables,
         n: Array,
     ) -> tuple[StructuralStates, Array]:
         r"""
@@ -92,7 +92,7 @@ class BeamStructure(BaseBeamStructure):
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
-    ) -> DesignVariables:
+    ) -> StructuralDesignVariables:
         r"""
         Computes the static adjoint of the structure, which is used to compute gradients of the loss with respect to
         the structure's parameters.
@@ -121,7 +121,7 @@ class BeamStructure(BaseBeamStructure):
         gs.to_global()
 
         # make design variables for current state of structure
-        dv = DesignVariables(
+        dv = StructuralDesignVariables(
             x0=self.x0,
             k_cs=self.k_cs,
             m_cs=self.m_cs if self.use_m_cs else None,

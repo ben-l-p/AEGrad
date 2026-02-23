@@ -14,12 +14,12 @@ class TestXGravityXBeamDrop:
 
     @classmethod
     def test_beam_drop(cls):
-        l = 3.14
+        length = 3.14
         g = -9.81
 
         g_vec = jnp.zeros(3).at[cls.g_direction_index].set(g)
 
-        coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(l)
+        coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(length)
         conn = jnp.array([[0, 1]])
 
         k_cs = jnp.diag(jnp.full(6, 1e3))
@@ -37,10 +37,17 @@ class TestXGravityXBeamDrop:
         init_cond.v_dot = init_cond.v_dot.at[:, :3].set(g_vec[None, :])
 
         output = struct.dynamic_solve(
-            init_cond, n_tstep, dt, None, None, None, spectral_radius=1.0
+            init_state=init_cond,
+            n_tstep=n_tstep,
+            dt=dt,
+            prescribed_dofs=None,
+            f_ext_follower=None,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            spectral_radius=1.0,
         )
 
-        expected_nodal_fg = 0.5 * m_bar[0, 0] * l * g
+        expected_nodal_fg = 0.5 * m_bar[0, 0] * length * g
         expected_v = jnp.arange(1, n_tstep) * dt * g
         expected_x0 = 0.5 * g * (jnp.arange(1, n_tstep) * dt) ** 2
         expected_x1 = expected_x0 + coords[1, cls.g_direction_index]

@@ -5,7 +5,7 @@ import jax
 from jax import Array, numpy as jnp, jacobian
 
 from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.print_output import print_with_time, warn, jax_print
+from aegrad.print_output import warn, jax_print
 from aegrad.utils import _make_pytree
 
 
@@ -271,10 +271,6 @@ class LinearSystem:
         self.n_outputs: int = c.shape[0]
         self.removed_u_np1: bool = removed_u_np1
 
-    @print_with_time(
-        "Computing matrices for linear system...",
-        "Computed matrices for linear system in {:.2f} seconds.",
-    )
     def compute_matrices(self) -> None:
         r"""
         Compute the matrix representations of the linear operators in the system.
@@ -284,10 +280,6 @@ class LinearSystem:
         self.c.generate_matrix()
         self.d.generate_matrix()
 
-    @print_with_time(
-        "Removing u_np1 from linear system...",
-        "Removed u_np1 from linear system in {:.2f} seconds.",
-    )
     def remove_u_np1(self) -> None:
         r"""
         Remove the dependence on u at time n+1 from the linear system, modifying b and d accordingly.
@@ -300,10 +292,6 @@ class LinearSystem:
             self.b = self.a @ self.b
             self.removed_u_np1 = True
 
-    @print_with_time(
-        "Running linear system...",
-        "Ran linear system in {:.2f} seconds.",
-    )
     def run(
         self, u: Array, x0: Optional[Array] = None, use_matrix=False
     ) -> tuple[Array, Array]:

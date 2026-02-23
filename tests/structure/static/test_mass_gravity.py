@@ -21,7 +21,7 @@ class TestTwoNodeXGravityZ:
     l = jnp.array(2.5)
     coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
 
-    m_bar = 10.0  # mass per unit length
+    m_bar = 10.0  # mass per unit b_ref
 
     k_cs = jnp.eye(6) * 1e6  # stiffness matrix
     m_cs = jnp.zeros((6, 6)).at[:3, :3].set(m_bar * jnp.eye(3))

@@ -63,7 +63,11 @@ class TestVarWakeDisc:
             variable_wake = delta_w_ is not None
             disc = GridDiscretization(m, n, m_star)
 
-            uvlm = UVLM([disc], variable_wake, jnp.arange(0, n + 1))
+            uvlm = UVLM(
+                grid_shapes=[disc],
+                dof_mapping=jnp.arange(0, n + 1),
+                variable_wake_disc=variable_wake,
+            )
 
             uvlm.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
 

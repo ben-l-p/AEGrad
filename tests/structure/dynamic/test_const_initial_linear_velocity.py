@@ -15,9 +15,9 @@ class TestConstXVelocityXBeam:
     @classmethod
     def test_const_velocity_beam(cls):
         v_mag: float = 50.0
-        l = 3.14
+        length = 3.14
 
-        coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(l)
+        coords = jnp.zeros((2, 3)).at[1, cls.beam_direction_index].set(length)
         conn = jnp.array([[0, 1]])
 
         k_cs = jnp.diag(jnp.full(6, 1e3))
@@ -37,7 +37,14 @@ class TestConstXVelocityXBeam:
         init_cond.v = v_init
 
         output = struct.dynamic_solve(
-            init_cond, n_tstep, dt, None, None, None, spectral_radius=1.0
+            init_state=init_cond,
+            n_tstep=n_tstep,
+            dt=dt,
+            prescribed_dofs=None,
+            f_ext_follower=None,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            spectral_radius=1.0,
         )
         x_t = output.hg[:, 0, cls.v_direction_index, 3]  # [n_tstep]
 

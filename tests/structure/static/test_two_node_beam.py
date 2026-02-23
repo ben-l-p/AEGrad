@@ -18,8 +18,8 @@ class TestTwoNodeXBeamStrainsForces:
     direction_index = 0
     y_vector = jnp.array([[0.0, 1.0, 0.0]])
 
-    l = jnp.array(3.45)
-    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    length = jnp.array(3.45)
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(length)
     struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)
 
     @classmethod
@@ -30,7 +30,7 @@ class TestTwoNodeXBeamStrainsForces:
 
         k_coeffs = jnp.ones(6)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        d = jnp.zeros((1, 6)).at[0, 0].set(cls.l)
+        d = jnp.zeros((1, 6)).at[0, 0].set(cls.length)
         eps = cls.struct._make_eps(d)
         assert jnp.allclose(eps, 0.0), (
             f"Axial strain calculation incorrect, expected zero strain, got {eps}"
@@ -51,9 +51,9 @@ class TestTwoNodeXBeamStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         dx = 0.1
         d = jnp.zeros((1, 6))
-        d = d.at[0, 0].set(cls.l + dx)
+        d = d.at[0, 0].set(cls.length + dx)
         eps = cls.struct._make_eps(d)
-        expected_eps = jnp.array((dx / cls.l, 0.0, 0.0, 0.0, 0.0, 0.0))
+        expected_eps = jnp.array((dx / cls.length, 0.0, 0.0, 0.0, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Axial strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
@@ -61,8 +61,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[0].set(k_coeffs[0] * dx / cls.l)
-        expected_f_int = expected_f_int.at[6].set(-k_coeffs[0] * dx / cls.l)
+        expected_f_int = expected_f_int.at[0].set(k_coeffs[0] * dx / cls.length)
+        expected_f_int = expected_f_int.at[6].set(-k_coeffs[0] * dx / cls.length)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
 
         assert jnp.allclose(f_int, expected_f_int), (
@@ -78,10 +78,10 @@ class TestTwoNodeXBeamStrainsForces:
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         theta_x = 0.1
         d = jnp.zeros((1, 6))
-        d = d.at[0, 0].set(cls.l)
+        d = d.at[0, 0].set(cls.length)
         d = d.at[0, 3].set(theta_x)
         eps = cls.struct._make_eps(d)
-        expected_eps = jnp.array((0.0, 0.0, 0.0, theta_x / cls.l, 0.0, 0.0))
+        expected_eps = jnp.array((0.0, 0.0, 0.0, theta_x / cls.length, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Torsional strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
@@ -89,8 +89,8 @@ class TestTwoNodeXBeamStrainsForces:
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
-        expected_f_int = expected_f_int.at[3].set(k_coeffs[3] * theta_x / cls.l)
-        expected_f_int = expected_f_int.at[9].set(-k_coeffs[3] * theta_x / cls.l)
+        expected_f_int = expected_f_int.at[3].set(k_coeffs[3] * theta_x / cls.length)
+        expected_f_int = expected_f_int.at[9].set(-k_coeffs[3] * theta_x / cls.length)
         expected_f_int = chi(chi(cls.struct.o0[0, ...])) @ expected_f_int
         assert jnp.allclose(f_int, expected_f_int), (
             f"Torsional force calculation incorrect, expected {expected_f_int}, got {f_int}"
@@ -110,8 +110,8 @@ class TestTwoNodeXBeamStrainsForces:
         kappa_y = 1.0
 
         d = jnp.zeros((1, 6))
-        d = d.at[0, 0].set(cls.l)
-        d = d.at[0, 4].set(kappa_y * cls.l)
+        d = d.at[0, 0].set(cls.length)
+        d = d.at[0, 4].set(kappa_y * cls.length)
 
         eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, kappa_y, 0.0))
@@ -145,8 +145,8 @@ class TestTwoNodeXBeamStrainsForces:
         kappa_z = 1.0
 
         d = jnp.zeros((1, 6))
-        d = d.at[0, 0].set(cls.l)
-        d = d.at[0, 5].set(kappa_z * cls.l)
+        d = d.at[0, 0].set(cls.length)
+        d = d.at[0, 5].set(kappa_z * cls.length)
 
         eps = cls.struct._make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, kappa_z))
@@ -174,13 +174,18 @@ class TestTwoNodeXBeamStrainsForces:
 
         k_coeffs = jnp.full(6, 4.56)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
-        result = cls.struct.static_solve(None, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=None,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         assert jnp.allclose(result.hg, cls.struct.hg0), (
             f"Unloaded static solve contained deformation, expected {cls.struct.hg0}, got {result.hg}"
         )
         assert jnp.allclose(
-            result.d, exp := jnp.array((cls.l, 0.0, 0.0, 0.0, 0.0, 0.0))
+            result.d, exp := jnp.array((cls.length, 0.0, 0.0, 0.0, 0.0, 0.0))
         ), (
             f"Incorrect configuration for unloaded static solve, expected {exp}, got {result.d}"
         )
@@ -201,13 +206,18 @@ class TestTwoNodeXBeamStrainsForces:
             .at[1, :3]
             .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_eps = load / k_coeffs[0]
-        expected_disp = expected_eps * cls.l
+        expected_disp = expected_eps * cls.length
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l + expected_disp, 0.0, 0.0, 0.0, 0.0, 0.0)),
+            exp := jnp.array((cls.length + expected_disp, 0.0, 0.0, 0.0, 0.0, 0.0)),
         ), (
             f"Incorrect configuration for axial load static solve, expected {exp}, got {result.d}"
         )
@@ -241,13 +251,18 @@ class TestTwoNodeXBeamStrainsForces:
             .at[1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([load, 0.0, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_strain = load / k_coeffs[3]
-        expected_disp = expected_strain * cls.l
+        expected_disp = expected_strain * cls.length
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l, 0.0, 0.0, expected_disp, 0.0, 0.0)),
+            exp := jnp.array((cls.length, 0.0, 0.0, expected_disp, 0.0, 0.0)),
         ), (
             f"Incorrect configuration for torsional load static solve, expected {exp}, got {result.d}"
         )
@@ -281,14 +296,19 @@ class TestTwoNodeXBeamStrainsForces:
             .at[1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_curvature = load / k_coeffs[4]
-        expected_angle = expected_curvature * cls.l
+        expected_angle = expected_curvature * cls.length
 
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l, 0.0, 0.0, 0.0, expected_angle, 0.0)),
+            exp := jnp.array((cls.length, 0.0, 0.0, 0.0, expected_angle, 0.0)),
             atol=2e-5,
         ), (
             f"Incorrect configuration for axial load static solve, expected {exp}, got {result.d}"
@@ -313,7 +333,7 @@ class TestTwoNodeXBeamStrainsForces:
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
 
         expected_coord_tip = const_curvature_beam(
-            expected_curvature, cls.l, direction="y"
+            expected_curvature, cls.length, direction="y"
         )
 
         assert jnp.allclose(
@@ -337,14 +357,19 @@ class TestTwoNodeXBeamStrainsForces:
             .at[1, 3:]
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
-        result = cls.struct.static_solve(f_ext, None, jnp.arange(6))
+        result = cls.struct.static_solve(
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.arange(6),
+        )
 
         expected_curvature = load / k_coeffs[5]
-        expected_angle = expected_curvature * cls.l
+        expected_angle = expected_curvature * cls.length
 
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l, 0.0, 0.0, 0.0, 0.0, expected_angle)),
+            exp := jnp.array((cls.length, 0.0, 0.0, 0.0, 0.0, expected_angle)),
             atol=2e-5,
         ), (
             f"Incorrect configuration for axial load static solve, expected {exp}, got {result.d}"
@@ -369,7 +394,7 @@ class TestTwoNodeXBeamStrainsForces:
         coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
 
         expected_coord_tip = const_curvature_beam(
-            expected_curvature, cls.l, direction="z"
+            expected_curvature, cls.length, direction="z"
         )
 
         assert jnp.allclose(
@@ -394,16 +419,19 @@ class TestTwoNodeXBeamStrainsForces:
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, load, 0.0]))
         )
         result = cls.struct.static_solve(
-            f_ext, None, jnp.concatenate((jnp.arange(6), jnp.arange(9, 12)))
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.concatenate((jnp.arange(6), jnp.arange(9, 12))),
         )
 
         expected_strain = load / k_coeffs[1]
-        expected_disp = expected_strain * cls.l
-        expected_moment = -0.5 * load * cls.l
+        expected_disp = expected_strain * cls.length
+        expected_moment = -0.5 * load * cls.length
 
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l, expected_disp, 0.0, 0.0, 0.0, 0.0)),
+            exp := jnp.array((cls.length, expected_disp, 0.0, 0.0, 0.0, 0.0)),
         ), (
             f"Incorrect configuration for shear_y load static solve, expected {exp}, got {result.d}"
         )
@@ -446,16 +474,19 @@ class TestTwoNodeXBeamStrainsForces:
             .set(cls.struct.o0[0, ...] @ jnp.array([0.0, 0.0, load]))
         )
         result = cls.struct.static_solve(
-            f_ext, None, jnp.concatenate((jnp.arange(6), jnp.arange(9, 12)))
+            f_ext_follower=f_ext,
+            f_ext_dead=None,
+            f_ext_aero=None,
+            prescribed_dofs=jnp.concatenate((jnp.arange(6), jnp.arange(9, 12))),
         )
 
         expected_strain = load / k_coeffs[2]
-        expected_disp = expected_strain * cls.l
-        expected_moment = 0.5 * load * cls.l
+        expected_disp = expected_strain * cls.length
+        expected_moment = 0.5 * load * cls.length
 
         assert jnp.allclose(
             result.d,
-            exp := jnp.array((cls.l, 0.0, expected_disp, 0.0, 0.0, 0.0)),
+            exp := jnp.array((cls.length, 0.0, expected_disp, 0.0, 0.0, 0.0)),
         ), (
             f"Incorrect configuration for shear_y load static solve, expected {exp}, got {result.d}"
         )
@@ -490,8 +521,8 @@ class TestTwoNodeYBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
     direction_index = 1
     y_vector = jnp.array([[0.0, 0.0, 1.0]])
 
-    l = jnp.array(3.45)
-    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    length = jnp.array(3.45)
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(length)
     struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)
 
 
@@ -500,6 +531,6 @@ class TestTwoNodeZBeamStrainsForces(TestTwoNodeXBeamStrainsForces):
     direction_index = 2
     y_vector = jnp.array([[1.0, 0.0, 0.0]])
 
-    l = jnp.array(3.45)
-    coords = jnp.zeros((2, 3)).at[1, direction_index].set(l)
+    length = jnp.array(3.45)
+    coords = jnp.zeros((2, 3)).at[1, direction_index].set(length)
     struct = BeamStructure(2, jnp.array([[0, 1]]), y_vector)

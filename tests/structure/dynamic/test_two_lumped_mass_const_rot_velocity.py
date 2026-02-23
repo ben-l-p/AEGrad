@@ -75,12 +75,13 @@ class TestTwoXLumpedMassConstXRotVelocity:
             init_cond.hg = init_cond.hg.at[1, cls.beam_direction_index, 3].set(r_ext)
 
         output = struct.dynamic_solve(
-            init_cond,
-            n_tstep,
-            dt,
-            None,
-            None,
-            None,
+            init_state=init_cond,
+            n_tstep=n_tstep,
+            dt=dt,
+            prescribed_dofs=None,
+            f_ext_aero=None,
+            f_ext_dead=None,
+            f_ext_follower=None,
             spectral_radius=1.0,
             relaxation_factor=1.0,
         )

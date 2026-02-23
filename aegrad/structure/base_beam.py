@@ -11,10 +11,9 @@ from aegrad.structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
-    ConvergenceStatus,
     OptionalJacobians,
-    BeamConvergenceSettings,
 )
+from utils import ConvergenceSettings, ConvergenceStatus
 from aegrad.print_output import warn, warn_if_32_bit, VerbosityLevel
 from aegrad.structure.structure_utils import _check_connectivity, _n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
@@ -43,7 +42,7 @@ class BaseBeamStructure:
         gravity: Optional[Array] = None,
         verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
         optional_jacobians: Optional[OptionalJacobians] = None,
-        convergence_settings: Optional[BeamConvergenceSettings] = None,
+        convergence_settings: Optional[ConvergenceSettings] = None,
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
@@ -118,10 +117,10 @@ class BaseBeamStructure:
             if optional_jacobians is not None
             else OptionalJacobians()
         )
-        self.convergence_settings: BeamConvergenceSettings = (
+        self.convergence_settings: ConvergenceSettings = (
             convergence_settings
             if convergence_settings is not None
-            else BeamConvergenceSettings()
+            else ConvergenceSettings()
         )
 
     def set_design_variables(
@@ -190,7 +189,13 @@ class BaseBeamStructure:
         )  # [n_nodes_, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
-    def reference_configuration(self) -> StaticStructure:
+    def reference_configuration(
+        self,
+        use_f_ext_follower: bool = True,
+        use_f_ext_dead: bool = True,
+        use_f_aero: bool = True,
+        use_f_grav: bool = True,
+    ) -> StaticStructure:
         r"""
         Get the reference configuration of the structure
         :return: StaticStructure dataclass containing reference configuration
@@ -201,9 +206,10 @@ class BaseBeamStructure:
             o0=self.o0,
             d=self.d0,
             eps=jnp.zeros((self.n_elem, 6)),
-            f_ext_follower=jnp.zeros((self.n_nodes, 6)),
-            f_ext_dead=jnp.zeros((self.n_nodes, 6)),
-            f_grav=jnp.zeros((self.n_nodes, 6)),
+            f_ext_follower=jnp.zeros((self.n_nodes, 6)) if use_f_ext_follower else None,
+            f_ext_dead=jnp.zeros((self.n_nodes, 6)) if use_f_ext_dead else None,
+            f_ext_aero=jnp.zeros((self.n_nodes, 6)) if use_f_aero else None,
+            f_grav=jnp.zeros((self.n_nodes, 6)) if use_f_grav else None,
             f_int=jnp.zeros((self.n_nodes, 6)),
             f_res=jnp.zeros((self.n_nodes, 6)),
             local=True,
@@ -234,6 +240,31 @@ class BaseBeamStructure:
         vect = jnp.zeros(self.n_dof)
         vect = vect.at[self.dof_per_elem[:, :6]].add(entries[:, :6])
         return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
+
+    @staticmethod
+    def _make_load_steps_f(f: Optional[Array], weighting: Array) -> Optional[Array]:
+        if f is not None:
+            f_steps = jnp.einsum("i,...->i...", weighting, f)  # [load_steps, ...]
+        else:
+            f_steps = None
+        return f_steps
+
+    @staticmethod
+    def _make_f_ext_dead_tot(
+        f_ext_dead_steps: Optional[Array],
+        f_ext_aero_steps: Optional[Array],
+        i_load_step: int,
+        i_ts: Optional[int],
+    ) -> Optional[Array]:
+        idx = (i_load_step, ...) if i_ts is None else (i_load_step, i_ts, ...)
+        if f_ext_dead_steps is None and f_ext_aero_steps is None:
+            return None
+        elif f_ext_dead_steps is None and f_ext_aero_steps is not None:
+            return f_ext_aero_steps[idx]
+        elif f_ext_dead_steps is not None and f_ext_aero_steps is None:
+            return f_ext_dead_steps[idx]
+        else:
+            return f_ext_dead_steps[idx] + f_ext_aero_steps[idx]
 
     def _make_k_t(
         self,
@@ -630,16 +661,26 @@ class BaseBeamStructure:
         dynamic: bool,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         v: Optional[Array],
         v_dot: Optional[Array],
     ) -> tuple[
-        Array, Array, Optional[Array], Optional[Array], Array, Optional[Array], Array
+        Array,
+        Array,
+        Optional[Array],
+        Optional[Array],
+        Optional[Array],
+        Array,
+        Optional[Array],
+        Array,
     ]:
         r"""
         Obtain all components of the force from a final solution
         :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
         :param dynamic: Whether to compute dynamic forces
+        :param f_ext_follower: External follower forces in local reference, [n_node, 6]
         :param f_ext_dead: External dead forces in global reference, [n_node, 6]
+        :param f_ext_aero: External aero forces in global reference, [n_node, 6]
         :param v: Nodal velocities in global frame, [n_node, 6]
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
         :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces,
@@ -663,6 +704,12 @@ class BaseBeamStructure:
             this_f_res += this_f_ext_dead
         else:
             this_f_ext_dead = None
+
+        if f_ext_aero is not None:
+            this_f_ext_aero = self._make_f_dead_ext(f_ext_aero, hg[:, :3, :3])
+            this_f_res += this_f_ext_aero
+        else:
+            this_f_ext_aero = None
 
         if self.use_gravity:
             this_f_grav = self._assemble_vector_from_entries(
@@ -692,7 +739,16 @@ class BaseBeamStructure:
         if f_ext_follower is not None:
             this_f_res += f_ext_follower
 
-        return d, eps, this_f_ext_dead, this_f_grav, this_f_int, this_f_iner, this_f_res
+        return (
+            d,
+            eps,
+            this_f_ext_dead,
+            this_f_ext_aero,
+            this_f_grav,
+            this_f_int,
+            this_f_iner,
+            this_f_res,
+        )
 
     def _make_f_res(
         self,
@@ -814,6 +870,7 @@ class BaseBeamStructure:
         self,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
@@ -822,6 +879,7 @@ class BaseBeamStructure:
         Perform static solve of the structure under external loads
         :param f_ext_follower: External forces array of follower forces [n_node, 6]
         :param f_ext_dead: External forces array of dead loads [n_node, 6]
+        :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6]
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
@@ -845,25 +903,20 @@ class BaseBeamStructure:
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
+        solve_dofs = jnp.setdiff1d(
+            jnp.arange(self.n_dof),
+            prescribed_dofs_arr,
+            size=self.n_dof - prescribed_dofs_arr.size,
+        )
 
         # process external forces for load stepping
         load_step_weight: Array = jnp.linspace(0.0, 1.0, load_steps + 1)[
             1:
         ]  # [load_steps]
-        if f_ext_follower is not None:
-            f_ext_follower_steps = jnp.einsum(
-                "i,jk->ijk", load_step_weight, f_ext_follower
-            )  # [load_steps, n_node, 6]
-        else:
-            f_ext_follower_steps = None
 
-        if f_ext_dead is not None:
-            f_ext_dead_steps = jnp.einsum(
-                "i,jk->ijk", load_step_weight, f_ext_dead
-            )  # [load_steps, n_node, 6]
-        else:
-            f_ext_dead_steps = None
+        f_ext_follower_steps = self._make_load_steps_f(f_ext_follower, load_step_weight)
+        f_ext_dead_steps = self._make_load_steps_f(f_ext_dead, load_step_weight)
+        f_ext_aero_steps = self._make_load_steps_f(f_ext_aero, load_step_weight)
 
         def _update(
             i_load_step: int,
@@ -876,12 +929,17 @@ class BaseBeamStructure:
             eps_n = self._make_eps(d_n)  # [n_elem, 6]
             m_t = self._make_m_t(d_n) if self.use_gravity else None  # [n_elem, 12, 12]
 
+            # get total dead forces for this load step, [n_node, 6]
+            total_f_ext_dead_step = self._make_f_ext_dead_tot(
+                f_ext_dead_steps, f_ext_aero_steps, i_load_step, i_ts=None
+            )
+
             # assemble tangent stiffness matrix, [n_solve_dof, n_solve_dof]
             k_t_solve_n = self._make_k_t_full(
                 d_n,
                 p_d_n,
                 eps_n,
-                f_ext_dead_steps[i_load_step, ...] if f_ext_dead is not None else None,
+                total_f_ext_dead_step,
                 hg_n[:, :3, :3],
                 m_t,
             )[jnp.ix_(solve_dofs, solve_dofs)]
@@ -895,7 +953,7 @@ class BaseBeamStructure:
                 f_ext_follower_steps[i_load_step, ...]
                 if f_ext_follower is not None
                 else None,
-                f_ext_dead_steps[i_load_step, ...] if f_ext_dead is not None else None,
+                total_f_ext_dead_step,
                 False,
                 m_t,
                 None,
@@ -930,7 +988,7 @@ class BaseBeamStructure:
             )
 
             if self.verbosity.value == VerbosityLevel.VERBOSE.value:
-                converge_status.print_message(None, i_load_step)
+                converge_status.print_struct_message(None, i_load_step)
 
             return i_load_step, converge_status, hg_np1_full
 
@@ -957,7 +1015,7 @@ class BaseBeamStructure:
             )
 
             if self.verbosity == VerbosityLevel.NORMAL:
-                convergence_status.print_message(None, i_load_step)
+                convergence_status.print_struct_message(None, i_load_step)
 
             return hg_solve
 
@@ -970,13 +1028,16 @@ class BaseBeamStructure:
         )
 
         # postprocess final results
-        d, eps, f_ext_dead_local, f_grav, f_int, _, f_res = self._resolve_forces(
-            hg=hg,
-            dynamic=False,
-            f_ext_dead=f_ext_dead,
-            f_ext_follower=f_ext_follower,
-            v=None,
-            v_dot=None,
+        d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, _, f_res = (
+            self._resolve_forces(
+                hg=hg,
+                dynamic=False,
+                f_ext_dead=f_ext_dead,
+                f_ext_follower=f_ext_follower,
+                f_ext_aero=f_ext_aero,
+                v=None,
+                v_dot=None,
+            )
         )
 
         return StaticStructure(
@@ -988,6 +1049,7 @@ class BaseBeamStructure:
             f_int=f_int,
             f_ext_follower=f_ext_follower,
             f_ext_dead=f_ext_dead_local,
+            f_ext_aero=f_ext_aero_local,
             f_grav=f_grav,
             f_res=f_res,
         )
@@ -999,6 +1061,7 @@ class BaseBeamStructure:
         dt: Array | float,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         load_steps: int = 1,
         relaxation_factor: float = 1.0,
@@ -1012,6 +1075,7 @@ class BaseBeamStructure:
         :param dt: Time step length
         :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces
         :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces
+        :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
         :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
@@ -1062,24 +1126,15 @@ class BaseBeamStructure:
         f_ext_follower = check_force(
             f_ext_follower, "f_ext_follower"
         )  # [n_tstep, n_node, 6]
+        f_ext_aero = check_force(f_ext_aero, "f_ext_aero")  # [n_tstep, n_node, 6]
 
         # process external forces for load stepping
         load_step_weight: Array = jnp.linspace(0.0, 1.0, load_steps + 1)[
             1:
         ]  # [load_steps]
-        if f_ext_follower is not None:
-            f_ext_follower_steps = jnp.einsum(
-                "i,jkl->ijkl", load_step_weight, f_ext_follower
-            )  # [n_load_steps, n_tstep, n_node, 6]
-        else:
-            f_ext_follower_steps = None
-
-        if f_ext_dead is not None:
-            f_ext_dead_steps = jnp.einsum(
-                "i,jkl->ijkl", load_step_weight, f_ext_dead
-            )  # [n_load_steps, n_tstep, n_node, 6]
-        else:
-            f_ext_dead_steps = None
+        f_ext_follower_steps = self._make_load_steps_f(f_ext_follower, load_step_weight)
+        f_ext_dead_steps = self._make_load_steps_f(f_ext_dead, load_step_weight)
+        f_ext_aero_steps = self._make_load_steps_f(f_ext_aero, load_step_weight)
 
         # time integration parameters
         dt: Array = jnp.array(dt)
@@ -1131,13 +1186,16 @@ class BaseBeamStructure:
             c_l, c_t = self._make_c_t(
                 d_n, d_dot_n, v_n
             )  # [n_elem, 12, 12], [n_elem, 12, 12]
+
+            total_f_ext_dead = self._make_f_ext_dead_tot(
+                f_ext_dead_steps, f_ext_aero_steps, i_load_step, i_ts
+            )  # [n_node, 6]
+
             k_t = self._make_k_t_full(
                 d_n,
                 p_d_n,
                 eps_n,
-                f_ext_dead_steps[i_load_step, i_ts, ...]
-                if f_ext_dead is not None
-                else None,
+                total_f_ext_dead,
                 hg_n[:, :3, :3],
                 m_t,
             )  # [n_dof, n_dof]
@@ -1159,9 +1217,7 @@ class BaseBeamStructure:
                 f_ext_follower_steps[i_load_step, i_ts, ...]
                 if f_ext_follower is not None
                 else None,
-                f_ext_dead_steps[i_load_step, i_ts, ...]
-                if f_ext_dead is not None
-                else None,
+                total_f_ext_dead,
                 True,
                 m_t,
                 c_l,
@@ -1207,7 +1263,7 @@ class BaseBeamStructure:
             )
 
             if self.verbosity.value == VerbosityLevel.VERBOSE.value:
-                converge_status_.print_message(t[i_ts], i_load_step)
+                converge_status_.print_struct_message(t[i_ts], i_load_step)
 
             return (
                 i_load_step,
@@ -1257,7 +1313,7 @@ class BaseBeamStructure:
 
             # postprocess results for time step and store in solution object
             hg_np1 = self._update_hg(sol.hg[i_ts - 1, ...], n)
-            d, eps, f_ext_dead_local, f_grav, f_int, f_iner, f_res = (
+            d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, f_iner, f_res = (
                 self._resolve_forces(
                     hg=hg_np1,
                     dynamic=True,
@@ -1266,6 +1322,9 @@ class BaseBeamStructure:
                     else None,
                     f_ext_follower=f_ext_follower[i_ts, ...]
                     if f_ext_follower is not None
+                    else None,
+                    f_ext_aero=f_ext_aero[i_ts, ...]
+                    if f_ext_aero is not None
                     else None,
                     v=v,
                     v_dot=v_dot,
@@ -1282,6 +1341,8 @@ class BaseBeamStructure:
                 )
             if f_ext_dead is not None:
                 sol.f_ext_dead = sol.f_ext_dead.at[i_ts, ...].set(f_ext_dead_local)
+            if f_ext_aero is not None:
+                sol.f_ext_aero = sol.f_ext_aero.at[i_ts, ...].set(f_ext_aero_local)
             if self.use_gravity:
                 sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
             sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
@@ -1336,7 +1397,7 @@ class BaseBeamStructure:
             )
 
             if self.verbosity.value == VerbosityLevel.NORMAL.value:
-                converge_status_.print_message(t[i_ts], i_load_step)
+                converge_status_.print_struct_message(t[i_ts], i_load_step)
 
             return i_ts, converge_status_, hg_solve, n_n, v_n, v_dot_n
 
@@ -1375,13 +1436,16 @@ class BaseBeamStructure:
             :param init_state__: DynamicStructureSnapshot containing the initial state to evaluate.
             :return: DynamicStructureSnapshot with the forces evaluated for the initial state.
             """
-            d, eps, f_ext_dead_, f_grav, f_int, f_iner, f_res = self._resolve_forces(
-                hg=init_state__.hg,
-                dynamic=True,
-                f_ext_dead=init_state__.f_ext_dead,
-                f_ext_follower=init_state__.f_ext_follower,
-                v=init_state__.v,
-                v_dot=init_state__.v_dot,
+            d, eps, f_ext_dead_, f_ext_aero_, f_grav, f_int, f_iner, f_res = (
+                self._resolve_forces(
+                    hg=init_state__.hg,
+                    dynamic=True,
+                    f_ext_dead=init_state__.f_ext_dead,
+                    f_ext_aero=init_state__.f_ext_aero,
+                    f_ext_follower=init_state__.f_ext_follower,
+                    v=init_state__.v,
+                    v_dot=init_state__.v_dot,
+                )
             )
 
             max_res = jnp.max(jnp.abs(f_res))
@@ -1402,6 +1466,7 @@ class BaseBeamStructure:
                 a=init_state__.v_dot,  # initial pseudoacceleration set equal to initial acceleration
                 f_ext_follower=init_state__.f_ext_follower,
                 f_ext_dead=f_ext_dead_,
+                f_ext_aero=f_ext_aero_,
                 f_grav=f_grav,
                 f_int=f_int,
                 f_iner=f_iner,

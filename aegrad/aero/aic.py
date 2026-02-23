@@ -12,6 +12,21 @@ Functions used to create and transform AIC matrices.
 """
 
 
+def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array:
+    """
+    Mirror a grid of points across a plane defined by a point and a normal vector.
+    :param zeta: Grid of points, [zeta_m, zeta_n, 3].
+    :param mirror_point: Point in mirror plane, [3].
+    :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalized.
+    :return: Mirrored grid of points, [zeta_m, zeta_n, 3].
+    """
+    diff = zeta - mirror_point[None, None, :]  # [zeta_m, zeta_n, 3]
+    diff_n = jnp.einsum("ijk,k->ij", diff, mirror_normal)  # [zeta_m, zeta_n]
+    return (
+        zeta - 2.0 * diff_n[:, :, None] * mirror_normal[None, None, :]
+    )  # [zeta_m, zeta_n, 3]
+
+
 def _compute_aic_grid(
     c: Array,
     zeta: Array,
@@ -43,6 +58,8 @@ def _compute_aic_sys(
     cs: Sequence[Array],
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
+    mirror_point: Optional[Array],
+    mirror_normal: Optional[Array],
     ns: Optional[Sequence[Array]] = None,
 ) -> list[list[Array]]:
     """
@@ -76,6 +93,14 @@ def _compute_aic_sys(
                 zeta,
                 kernel,
             )
+
+            if mirror_point is not None and mirror_normal is not None:
+                # add influence from mirrored grid, if specified
+                zeta_mirror = mirror_grid(
+                    zeta, mirror_point=mirror_point, mirror_normal=mirror_normal
+                )
+                aic_ -= _compute_aic_grid(c, zeta_mirror, kernel)
+
             if ns is not None:
                 aic_ = jnp.einsum(
                     "ijklm,ijm->ijkl", aic_, ns[i_c]
@@ -130,6 +155,8 @@ def _compute_aic_sys_assembled(
     cs: Sequence[Array],
     zetas: Sequence[Array],
     kernels: Sequence[KernelFunction],
+    mirror_point: Optional[Array],
+    mirror_normal: Optional[Array],
     ns: Optional[Sequence[Array]] = None,
 ) -> Array:
     """
@@ -141,7 +168,14 @@ def _compute_aic_sys_assembled(
     onto these normals.
     :return: Full AIC matrix, [c_tot, zeta_tot, 3], or [c_tot, zeta_tot] if projected onto normals.
     """
-    aic_mats = _compute_aic_sys(cs, zetas, kernels, ns)
+    aic_mats = _compute_aic_sys(
+        cs=cs,
+        zetas=zetas,
+        kernels=kernels,
+        ns=ns,
+        mirror_point=mirror_point,
+        mirror_normal=mirror_normal,
+    )
 
     aic_mats_reshaped = [
         [_reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats

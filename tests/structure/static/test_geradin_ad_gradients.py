@@ -40,9 +40,10 @@ class TestGeradinBeamADGradients:
             )
 
             result = this_struct.static_solve(
-                None,
-                cls.f_ext,
-                jnp.arange(6),
+                f_ext_follower=None,
+                f_ext_dead=cls.f_ext,
+                f_ext_aero=None,
+                prescribed_dofs=jnp.arange(6),
                 load_steps=3,
             )
 
@@ -62,7 +63,7 @@ class TestGeradinBeamADGradients:
     @classmethod
     def test_coordinate_gradient(cls):
         r"""
-        Evaluate the gradients of the tip deflection and rotation with respect to the length of the beam using both
+        Evaluate the gradients of the tip deflection and rotation with respect to the b_ref of the beam using both
         finite differences and automatic differentiation.
         """
         base_coords = cls.struct.x0
@@ -73,9 +74,10 @@ class TestGeradinBeamADGradients:
             this_struct.set_design_variables(coords, this_struct.k_cs, None, None)
 
             result = this_struct.static_solve(
-                None,
-                cls.f_ext,
-                jnp.arange(6),
+                f_ext_follower=None,
+                f_ext_dead=cls.f_ext,
+                f_ext_aero=None,
+                prescribed_dofs=jnp.arange(6),
                 load_steps=3,
             )
 
@@ -102,9 +104,10 @@ class TestGeradinBeamADGradients:
         def func(f_fact: Array) -> Array:
             this_struct = deepcopy(cls.struct)
             result = this_struct.static_solve(
-                None,
-                cls.f_ext * f_fact,
-                jnp.arange(6),
+                f_ext_follower=None,
+                f_ext_dead=cls.f_ext * f_fact,
+                f_ext_aero=None,
+                prescribed_dofs=jnp.arange(6),
                 load_steps=3,
             )
 

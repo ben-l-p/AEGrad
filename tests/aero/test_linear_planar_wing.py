@@ -9,7 +9,7 @@ from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero import (
     make_rectangular_grid,
     GridDiscretization,
-    AeroSnapshot,
+    StaticAero,
     InputUnflattened,
     LinearWakeType,
     UVLM,
@@ -40,7 +40,7 @@ class TestLinearAero:
         cls,
         flowfield: FlowField,
         ea: float = 0.0,
-    ) -> tuple[UVLM, AeroSnapshot, Array]:
+    ) -> tuple[UVLM, StaticAero, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
         """
@@ -58,9 +58,7 @@ class TestLinearAero:
         hg = hg.at[:, :3, 3].set(beam_coords)
 
         # nonlinear case
-        uvlm = UVLM(
-            [cls.disc], False, jnp.arange(0, cls.n + 1), kernel=_biot_savart_cutoff
-        )
+        uvlm = UVLM([cls.disc], jnp.arange(0, cls.n + 1), kernel=_biot_savart_cutoff)
         uvlm.set_design_variables(cls.dt, flowfield, None, x_grid, hg)
         case = uvlm.solve_static()
 

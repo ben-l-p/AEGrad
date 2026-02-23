@@ -4,16 +4,18 @@ from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 
+import jax
 from jax import numpy as jnp
 from jax import Array
 
 from aegrad.utils import _make_pytree
 from aegrad.plotting.aerogrid import plot_frame_to_vtk
 from aegrad.plotting.pvd import write_pvd
-from aegrad.print_output import warn, print_with_time
-from aegrad.algebra.array_utils import ArrayList
+from aegrad.print_output import warn
+from aegrad.algebra.array_utils import ArrayList, check_arr_shape
 from aegrad.algebra.base import finite_difference
 from aegrad.algebra.array_utils import split_to_vertex
+from aero.flowfields import FlowField
 
 
 @dataclass
@@ -155,7 +157,7 @@ class OutputUnflattened:
 
 
 @_make_pytree
-class AeroTimeSeries:
+class DynamicAero:
     r"""
     Class to hold time series of multiple aerodynamic surfaces.
     """
@@ -201,14 +203,14 @@ class AeroTimeSeries:
         self.n_surf: int = len(surf_b_names)
         self.n_tstep: int = len(t)
 
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
+    def __getitem__(self, i_ts: int) -> StaticAero:
         r"""
         Get snapshot for all aerodynamic surfaces.
         :param i_ts: Timestep index
-        :return: AeroSnapshot for the specified timestep
+        :return: StaticAero for the specified timestep
         """
 
-        return AeroSnapshot(
+        return StaticAero(
             zeta_b=self.zeta_b.index_all(i_ts),
             zeta_b_dot=self.zeta_b_dot.index_all(i_ts),
             zeta_w=self.zeta_w.index_all(i_ts),
@@ -227,7 +229,7 @@ class AeroTimeSeries:
     def __setitem__(
         self,
         i_ts: int,
-        snapshot: AeroSnapshot,
+        snapshot: StaticAero,
     ) -> None:
         self.t = self.t.at[i_ts].set(snapshot.t)
         for i_surf in range(self.n_surf):
@@ -439,15 +441,46 @@ class AeroTimeSeries:
                 )
             )
 
-    def project_forcing_to_beam(self, i_ts: int, include_unsteady: bool) -> Array:
+    def project_forcing_to_beam(
+        self,
+        i_ts: int,
+        rmat: Array,
+        x0_aero: ArrayList,
+        dof_mapping: tuple[Array, ...],
+        include_unsteady: bool,
+    ) -> Array:
         r"""
         Project aerodynamic forcing at specified time step onto the beam grid.
-        :param i_ts: Timestep index
+        :param i_ts: Timestep index.
+        :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
+        :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
+        :param dof_mapping: Tuple of arrays mapping aerodynamic grid points to beam nodes for each surface, [n_surf][zeta_n]
         :param include_unsteady: If true, include unsteady forcing in projection, otherwise only project steady forcing.
-        :return: Steady and unsteady forcing projected onto the beam grid, each of shape [zeta_n, 4, 4].
+        :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
         """
 
-        raise NotImplementedError
+        n_nodes = rmat.shape[0]
+        result = jnp.zeros((n_nodes, 6))
+
+        for i_surf in range(self.n_surf):
+            # forcing for this surface
+            this_force = self.f_steady[i_surf][i_ts, ...]  # [ zeta_m, zeta_n, 3]
+            if include_unsteady:
+                this_force += self.f_unsteady[i_surf][i_ts, ...]
+
+            # rotate relative distances to get moment arms
+            this_rmat = rmat[dof_mapping[i_surf], ...]  # [zeta_n, 3, 3]
+            r_x0 = jnp.einsum(
+                "ijk,lik->lij", this_rmat, x0_aero[i_surf]
+            )  # relative distance [zeta_n, zeta_m, 3]
+
+            result = result.at[dof_mapping[i_surf], :3].set(
+                this_force.sum(axis=0)
+            )  # forcing is sum along strip [zeta_n, 3]
+            result = result.at[dof_mapping[i_surf], 3:].set(
+                jnp.cross(r_x0, this_force).sum(axis=0)
+            )  # moment is r x f summed along strip [zeta_n, 3]
+        return result
 
     def _calculate_surf_unsteady_forcing(
         self, i_ts: int, i_surf: int, nc: Array, rho: Array
@@ -482,7 +515,8 @@ class AeroTimeSeries:
         )
 
 
-class AeroSnapshot:
+@_make_pytree
+class StaticAero:
     r"""
     Class to hold snapshot of multiple aerodynamic surfaces at a single time step.
     """
@@ -499,7 +533,7 @@ class AeroSnapshot:
         f_unsteady: ArrayList,
         surf_b_names: Sequence[str],
         surf_w_names: Sequence[str],
-        i_ts: int,
+        i_ts: Optional[int],
         t: Array,
         n_surf: int,
     ) -> None:
@@ -528,7 +562,7 @@ class AeroSnapshot:
         self.f_unsteady: ArrayList = f_unsteady
         self.surf_b_names: Sequence[str] = surf_b_names
         self.surf_w_names: Sequence[str] = surf_w_names
-        self.i_ts: int = i_ts
+        self.i_ts: Optional[int] = i_ts
         self.t: Array = t
         self.n_surf: int = n_surf
 
@@ -539,7 +573,7 @@ class AeroSnapshot:
         :return: AeroSurfaceSnapshot for the specified surface
         """
         if i_surf < 0 or i_surf >= self.n_surf:
-            raise IndexError("AeroSnapshot index out of range")
+            raise IndexError("StaticAero index out of range")
 
         return AeroSurfaceSnapshot(
             zeta_b=self.zeta_b[i_surf],
@@ -556,8 +590,47 @@ class AeroSnapshot:
             t=self.t,
         )
 
+    def project_forcing_to_beam(
+        self,
+        rmat: Array,
+        x0_aero: ArrayList,
+        dof_mapping: tuple[Array, ...],
+        include_unsteady: bool,
+    ) -> Array:
+        r"""
+        Project aerodynamic forcing at specified time step onto the beam grid.
+        :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
+        :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
+        :param dof_mapping: Tuple of arrays mapping aerodynamic grid points to beam nodes for each surface, [n_surf][zeta_n]
+        :param include_unsteady: If true, include unsteady forcing in projection, otherwise only project steady forcing.
+        :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
+        """
+
+        n_nodes = rmat.shape[0]
+        result = jnp.zeros((n_nodes, 6))
+
+        for i_surf in range(self.n_surf):
+            # forcing for this surface
+            this_force = self.f_steady[i_surf]  # [ zeta_m, zeta_n, 3]
+            if include_unsteady:
+                this_force += self.f_unsteady[i_surf]
+
+            # rotate relative distances to get moment arms
+            this_rmat = rmat[dof_mapping[i_surf], ...]  # [zeta_n, 3, 3]
+            r_x0 = jnp.einsum(
+                "ijk,lik->lij", this_rmat, x0_aero[i_surf]
+            )  # relative distance [zeta_n, zeta_m, 3]
+
+            result = result.at[dof_mapping[i_surf], :3].set(
+                this_force.sum(axis=0)
+            )  # forcing is sum along strip [zeta_n, 3]
+            result = result.at[dof_mapping[i_surf], 3:].set(
+                jnp.cross(r_x0, this_force).sum(axis=0)
+            )  # moment is r x f summed along strip [zeta_n, 3]
+        return result
+
     def plot(
-        self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True
+        self, directory: str | PathLike, plot_bound: bool = True, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
         Plot all aerodynamic surfaces in the snapshot to VTU files.
@@ -566,12 +639,34 @@ class AeroSnapshot:
         :param plot_wake: If True, plot the wake surfaces.
         :return: Sequence of paths to the saved VTU files.
         """
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
         paths = []
         for i_surf in range(self.n_surf):
             paths.extend(
                 self[i_surf].plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)
             )
         return paths
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "surf_b_names", "surf_w_names", "n_surf"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return (
+            "zeta_b",
+            "zeta_b_dot",
+            "zeta_w",
+            "gamma_b",
+            "gamma_b_dot",
+            "gamma_w",
+            "f_steady",
+            "f_unsteady",
+            "t",
+            "i_ts",
+        )
 
 
 @dataclass
@@ -623,7 +718,7 @@ class AeroSurfaceSnapshot:
         self.t: Array = t
 
     def plot(
-        self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True
+        self, directory: str | PathLike, plot_bound: bool = True, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
         Plot aerodynamic surface in the snapshot to VTU files.
@@ -632,6 +727,9 @@ class AeroSurfaceSnapshot:
         :param plot_wake: If True, plot the wake surfaces.
         :return: Sequence of paths to the saved VTU files.
         """
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
         paths = []
         if plot_bound:
             bound_filename = Path(directory).joinpath(self.surf_b_name)
@@ -695,13 +793,9 @@ class AeroLinearResult:
         self.surf_b_names: list[str] = surf_b_names
         self.surf_w_names: list[str] = surf_w_names
 
-    @print_with_time(
-        "Plotting linear aerodynamic grid...",
-        "Linear aerodynamic grid plotted in {:.2f} seconds.",
-    )
     def plot(
         self,
-        directory: PathLike,
+        directory: str | PathLike,
         index: Optional[slice | Sequence[int] | int | Array] = None,
         plot_wake: bool = True,
     ) -> None:
@@ -740,11 +834,11 @@ class AeroLinearResult:
             except IndexError:
                 pass
 
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
+    def __getitem__(self, i_ts: int) -> StaticAero:
         r"""
         Get snapshot of aerodynamic surface at a single time step
         :param i_ts: Timestep index
-        :return: AeroSnapshot at specified time step
+        :return: StaticAero at specified time step
         """
 
         if i_ts < 0 or i_ts >= self.n_tstep:
@@ -802,7 +896,7 @@ class AeroLinearResult:
             else None
         )
 
-        return AeroSnapshot(
+        return StaticAero(
             zeta_b=zeta_b_tot,
             zeta_b_dot=zeta_b_dot_tot,
             zeta_w=zeta_w_tot,
@@ -817,3 +911,93 @@ class AeroLinearResult:
             t=self.t[i_ts],
             n_surf=self.n_surf,
         )
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class AeroStates:
+    f_steady: Array
+    f_unsteady: Array
+    gamma_b: Array
+    gamma_w: Array
+
+
+@_make_pytree
+class AeroDesignVariables:
+    def __init__(
+        self,
+        x0_aero: Optional[ArrayList | Sequence[Array] | Array],
+        flowfield: Optional[FlowField],
+    ):
+        self.x0_aero: Optional[ArrayList] = (
+            ArrayList(x0_aero) if x0_aero is not None else None
+        )
+        self.flowfield: Optional[FlowField] = flowfield
+
+        self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
+        self.mapping, self.n_x = self.make_index_mapping()
+
+    def get_vars(self) -> dict[str, Optional[Array]]:
+        return {
+            "x0_aero": self.x0_aero,
+            "flowfield": self.flowfield,
+        }
+
+    def get_shapes(self) -> dict[str, Optional[tuple[int, ...]]]:
+        return {
+            k: var.shape if var is not None else None
+            for k, var in self.get_vars().items()
+        }
+
+    def make_index_mapping(self) -> tuple[dict[str, Optional[Array]], int]:
+        mapping = {}
+        cnt = 0
+        for name, shape in self.shapes.items():
+            if shape is not None:
+                var_size = jnp.prod(jnp.array(shape))
+                mapping[name] = jnp.arange(cnt, cnt + var_size).reshape(shape)
+                cnt += var_size
+            else:
+                mapping[name] = None
+        return mapping, cnt
+
+    def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
+        arr = jnp.concatenate(
+            [
+                var.reshape(f_size, -1)
+                for var in self.get_vars().values()
+                if var is not None
+            ],
+            axis=1,
+        )
+        check_arr_shape(arr, (f_size, x_size), "Internal jacobian")
+        return arr
+
+    def ravel(self) -> Array:
+        return jnp.concatenate(
+            [var.ravel() for var in self.get_vars().values() if var is not None]
+        )
+
+    def reshape(self, *args: int) -> Array:
+        return self.ravel().reshape(*args)
+
+    def from_adjoint(
+        self, f_shape: tuple[int, ...], df_dx: Array
+    ) -> AeroDesignVariables:
+        out_dict = {}
+        for name in self.shapes.keys():
+            if self.mapping[name] is not None:
+                out_dict[name] = df_dx[:, self.mapping[name]].reshape(
+                    *f_shape, *self.shapes[name]
+                )
+            else:
+                out_dict[name] = None
+        return AeroDesignVariables(**out_dict)
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return "shapes", "mapping"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "x0_aero", "flowfield"

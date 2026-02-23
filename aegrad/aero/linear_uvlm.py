@@ -10,7 +10,7 @@ from os import PathLike
 from pathlib import Path
 
 from aegrad.aero.data_structures import (
-    AeroSnapshot,
+    StaticAero,
     InputSlices,
     StateSlices,
     OutputSlices,
@@ -27,7 +27,7 @@ from aegrad.aero.aic import _compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.kernels import KernelFunction, _biot_savart_cutoff
 from aegrad.utils import _shallow_asdict
-from aegrad.print_output import print_with_time, warn
+from aegrad.print_output import warn
 from aegrad.aero.data_structures import AeroLinearResult
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ class LinearUVLM:
     def __init__(
         self,
         case: UVLM,
-        reference: AeroSnapshot,
+        reference: StaticAero,
         wake_type: LinearWakeType = LinearWakeType.FREE,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
@@ -59,7 +59,7 @@ class LinearUVLM:
         r"""
         Initialize linear UVLM system about a reference state.
         :param case: UVLM case object to linearise.
-        :param reference: AeroSnapshot representing the reference state for linearisation.
+        :param reference: StaticAero representing the reference state for linearisation.
         :param wake_type: Instance of LinearWakeType enum to specify wake treatment.
         :param bound_upwash: If true, include bound surface upwash velocities as inputs.
         :param wake_upwash: If true, include wake surface upwash velocities as inputs.
@@ -77,6 +77,10 @@ class LinearUVLM:
         # save names from case
         self.surf_b_names: list[str] = [f"linear_{name}" for name in case.surf_b_names]
         self.surf_w_names: list[str] = [f"linear_{name}" for name in case.surf_w_names]
+
+        # mirroring info
+        self.mirror_point: Optional[Array] = case.mirror_point
+        self.mirror_normal: Optional[Array] = case.mirror_normal
 
         # time info
         self.dt: Array = case.dt
@@ -644,9 +648,6 @@ class LinearUVLM:
             arrs.append(vec[cnt : cnt + size].reshape(component.shapes[i_surf]))
         return arrs
 
-    @print_with_time(
-        "Linearising aerodynamic system...", "Linearisation complete in {:.2f} seconds."
-    )
     def linearise(self) -> LinearSystem:
         r"""
         Linearise the UVLM system about the reference state.
@@ -661,7 +662,14 @@ class LinearUVLM:
             """
             zeta_cs = _get_c(zeta_bs)
             ns = _get_nc(zeta_bs)
-            aic_sys = _compute_aic_sys_assembled(zeta_cs, zeta_bs, self.kernels_b, ns)
+            aic_sys = _compute_aic_sys_assembled(
+                cs=zeta_cs,
+                zetas=zeta_bs,
+                kernels=self.kernels_b,
+                ns=ns,
+                mirror_point=self.mirror_point,
+                mirror_normal=self.mirror_normal,
+            )
             return jnp.linalg.inv(aic_sys)
 
         def _make_v_bc(
@@ -684,7 +692,12 @@ class LinearUVLM:
 
             ns = _get_nc(zeta_bs)
             aic_w = _compute_aic_sys_assembled(
-                zeta_cs, zeta_ws, self.kernels_w, ns
+                cs=zeta_cs,
+                zetas=zeta_ws,
+                kernels=self.kernels_w,
+                ns=ns,
+                mirror_point=self.mirror_point,
+                mirror_normal=self.mirror_normal,
             )  # [m_tot*n_tot, m_star_tot*n_tot]
 
             v_zeta_n = ArrayList.einsum(
@@ -719,7 +732,12 @@ class LinearUVLM:
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
                 vertex_influence = _compute_aic_sys_assembled(
-                    [x], [*zeta_b, *zeta_w], [*self.kernels_b, *self.kernels_w], None
+                    cs=[x],
+                    zetas=[*zeta_b, *zeta_w],
+                    kernels=[*self.kernels_b, *self.kernels_w],
+                    ns=None,
+                    mirror_point=self.mirror_point,
+                    mirror_normal=self.mirror_normal,
                 )
 
                 # add influence from panels
@@ -1218,10 +1236,6 @@ class LinearUVLM:
             surf_w_names=self.surf_w_names,
         )
 
-    @print_with_time(
-        "Computing eigenvalues of linear system...",
-        "Eigenvalues computed in {:.2f} seconds.",
-    )
     def eigenvalues(self, to_components: bool = True) -> Array:
         r"""
         Compute stability eigenvalues of the linear system A matrix.
@@ -1235,12 +1249,12 @@ class LinearUVLM:
         else:
             return evals
 
-    def reference_snapshot(self) -> AeroSnapshot:
+    def reference_snapshot(self) -> StaticAero:
         r"""
         Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
-        :return: AeroSnapshot at reference state
+        :return: StaticAero at reference state
         """
-        return AeroSnapshot(
+        return StaticAero(
             zeta_b=self.zeta0_b,
             zeta_b_dot=self.zeta0_b_dot,
             zeta_w=self.zeta0_w,
@@ -1256,10 +1270,6 @@ class LinearUVLM:
             n_surf=self.n_surf,
         )
 
-    @print_with_time(
-        "Plotting linear reference aerodynamic grid...",
-        "Reference aerodynamic grid plotted in {:.2f} seconds.",
-    )
     def plot_reference(
         self, directory: PathLike, plot_wake: bool = True
     ) -> Sequence[Path]:

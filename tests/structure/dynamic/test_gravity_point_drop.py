@@ -41,12 +41,13 @@ class TestXGravityPointDrop:
         init_cond.v_dot = init_cond.v_dot.at[:, cls.g_direction_index].set(cls.g)
 
         output = struct.dynamic_solve(
-            init_cond,
-            n_tstep,
-            dt,
-            None,
-            None,
-            None,
+            init_state=init_cond,
+            n_tstep=n_tstep,
+            dt=dt,
+            prescribed_dofs=None,
+            f_ext_follower=None,
+            f_ext_dead=None,
+            f_ext_aero=None,
             spectral_radius=1.0,
         )
 
