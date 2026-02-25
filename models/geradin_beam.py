@@ -52,9 +52,10 @@ if __name__ == "__main__":
     f_ext = f_ext.at[-1, 2].set(-load)
 
     result = struct_.static_solve(
-        None,
-        f_ext,
-        jnp.arange(6),
+        f_ext_follower=None,
+        f_ext_dead=f_ext,
+        f_ext_aero=None,
+        prescribed_dofs=jnp.arange(6),
         load_steps=3,
     )
 

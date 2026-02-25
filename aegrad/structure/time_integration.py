@@ -1,7 +1,7 @@
 from jax import Array
 from jax import numpy as jnp
 
-from aegrad.print_output import warn
+from aegrad.print_utils import warn
 
 
 class TimeIntregrator:

@@ -11,8 +11,8 @@ from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
 def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
     r"""
     Check connectivity array for validity
-    :param connectivity: Connectivity array of shapes [n_elem, 2]
-    :param num_nodes: Number of nodes in the structure
+    :param connectivity: Connectivity array of arr_list_shapes [n_elem, 2]
+    :param num_nodes: Number of nodes in the structure_dv
     :raises ValueError: If connectivity array contains invalid node indices, or is missing nodes
     """
 
@@ -28,13 +28,13 @@ def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
     else:
         if connectivity.size != 0:
             raise ValueError(
-                f"Connectivity array must be empty for a structure with a single node, but got: {connectivity}."
+                f"Connectivity array must be empty for a structure_dv with a single node, but got: {connectivity}."
             )
 
 
 def _n_elem_per_node(connectivity: Array) -> Array:
     r"""
-    Computes the number of elements connected to each node in the structure.
+    Computes the number of elements connected to each node in the structure_dv.
     :param connectivity: Connectivity array of shape [n_elem, 2]
     :return: Number of elements connected to each node, [num_nodes]
     """

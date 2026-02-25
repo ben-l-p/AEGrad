@@ -3,7 +3,7 @@ from typing import Sequence, Optional
 from jax import Array, vmap
 from jax import numpy as jnp
 
-from aegrad.aero.kernels import KernelFunction
+from aegrad.aero.utils import KernelFunction
 from aegrad.algebra.array_utils import block_axis
 
 

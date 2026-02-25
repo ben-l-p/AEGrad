@@ -17,10 +17,10 @@ def check_if_so3_g(
     column_mags = jnp.linalg.norm(rmat, axis=0)
     row_mags = jnp.linalg.norm(rmat, axis=1)
 
-    # if not correct shapes
+    # if not correct arr_list_shapes
     if rmat.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not SO3 as shapes is not (3, 3)")
+            raise ValueError("Matrix not SO3 as arr_list_shapes is not (3, 3)")
         return False
 
     # if not unit magnitude
@@ -49,10 +49,10 @@ def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is so3
     """
-    # check shapes
+    # check arr_list_shapes
     if h_tilde.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not so3 as shapes is not (3, 3)")
+            raise ValueError("Matrix not so3 as arr_list_shapes is not (3, 3)")
         return False
 
     # check for nonzero diagonal elements
@@ -76,10 +76,10 @@ def check_if_se3_g(hg: Array, raise_if_false: bool = True) -> bool:
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is SE(3)
     """
-    # check shapes
+    # check arr_list_shapes
     if hg.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not SE3 as shapes is not (4, 4)")
+            raise ValueError("Matrix not SE3 as arr_list_shapes is not (4, 4)")
         return False
 
     # check rotational component
@@ -141,10 +141,10 @@ def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is se(3)
     """
-    # check shapes
+    # check arr_list_shapes
     if h_tilde.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not se3 as shapes is not (4, 4)")
+            raise ValueError("Matrix not se3 as arr_list_shapes is not (4, 4)")
         return False
 
     # check so3 component
@@ -199,7 +199,7 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     if (isinstance(coeffs, Array) and coeffs.shape != (6,)) or (
         isinstance(coeffs, Sequence) and len(coeffs) != 6
     ):
-        raise ValueError("Coefficients array must be of shapes (6, )")
+        raise ValueError("Coefficients array must be of arr_list_shapes (6, )")
 
     if isinstance(l, Array) and not jnp.isscalar(l):
         raise ValueError("Length l0 must be a scalar value")

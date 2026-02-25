@@ -2,15 +2,18 @@ from __future__ import annotations
 from typing import Optional, Sequence
 from collections import UserList
 from functools import singledispatch
+from dataclasses import dataclass
+
 from jax import numpy as jnp
 from jax import Array
+
 from aegrad.utils import _make_pytree
 
 
 def check_arr_shape(
     arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
 ) -> None:
-    """Asserts that the shapes of the given array matches the expected shapes.
+    """Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.
     :param arr: Input array to check.
     :param expected_shape: Expected shape of the array, as a tuple of integers, with None used for dimensions that can
     be of any size.
@@ -27,7 +30,7 @@ def check_arr_shape(
         else:
             return
 
-    message = f"Expected shapes {expected_shape}, but got shapes {actual_shape}."
+    message = f"Expected arr_list_shapes {expected_shape}, but got arr_list_shapes {actual_shape}."
     if name is not None:
         message += f"Issue with input '{name}'"
     raise ValueError(message)
@@ -201,6 +204,22 @@ class ArrayList(UserList[Array]):
         """
         return flatten_to_1d(self)
 
+    @classmethod
+    def unravel(cls, vect: Array, arr_list_shapes: ArrayListShape) -> ArrayList:
+        r"""
+        Unravel a 1D vector into a sequence of arrays with the given shapes.
+        :param vect: Input 1D vector to unravel.
+        :param arr_list_shapes: ArrayListShape containing the shapes of the arrays to unravel into.
+        :return: ArrayList containing the unraveled arrays.
+        """
+        arrs = []
+        idx = 0
+        for shape in arr_list_shapes.shapes:
+            size = jnp.prod(jnp.array(shape))
+            arrs.append(vect[idx : idx + size].reshape(shape))
+            idx += size
+        return cls(arrs)
+
     def index_all(
         self,
         *idx: Optional[int | slice | Ellipsis],
@@ -240,6 +259,14 @@ class ArrayList(UserList[Array]):
         """
         return ArrayList([jnp.zeros_like(a) for a in arr])
 
+    @property
+    def shape(self) -> ArrayListShape:
+        r"""
+        Get the arr_list_shapes of the arrays in the ArrayList.
+        :return: ArrayListShape containing the arr_list_shapes of the arrays in the ArrayList.
+        """
+        return ArrayListShape(n_arrays=len(self), shapes=[arr.shape for arr in self])
+
     @staticmethod
     def _static_names() -> Sequence[str]:
         r"""
@@ -255,6 +282,16 @@ class ArrayList(UserList[Array]):
         :return: Sequence of dynamic field names.
         """
         return ("data",)
+
+
+@dataclass
+class ArrayListShape:
+    r"""
+    Class to hold the arr_list_shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.
+    """
+
+    n_arrays: int
+    shapes: Sequence[tuple[int, ...]]
 
 
 @singledispatch

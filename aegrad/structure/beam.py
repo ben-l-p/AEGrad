@@ -13,11 +13,11 @@ from aegrad.structure.data_structures import (
     DynamicStructureSnapshot,
     OptionalJacobians,
 )
-from utils import ConvergenceSettings, ConvergenceStatus
-from aegrad.print_output import warn, warn_if_32_bit, VerbosityLevel
-from aegrad.structure.structure_utils import _check_connectivity, _n_elem_per_node
+from data_structures import ConvergenceSettings, ConvergenceStatus
+from aegrad.print_utils import warn, warn_if_32_bit, VerbosityLevel
+from aegrad.structure.utils import _check_connectivity, _n_elem_per_node
 from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.structure.structure_utils import (
+from aegrad.structure.utils import (
     _k_t_entry,
     _integrate_m_l,
     _integrate_c_t,
@@ -31,7 +31,7 @@ from algebra.se3 import t_se3
 
 class BaseBeamStructure:
     r"""
-    Class to represent nonlinear beam structural model
+    Class to represent nonlinear beam structure_dv model
     """
 
     def __init__(
@@ -46,8 +46,8 @@ class BaseBeamStructure:
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
-        :param num_nodes: Number of nodes in the structure
-        :param connectivity: Connectivity array of shapes [n_elem, 2]
+        :param num_nodes: Number of nodes in the structure_dv
+        :param connectivity: Connectivity array of arr_list_shapes [n_elem, 2]
         :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
         :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3]
         """
@@ -129,6 +129,8 @@ class BaseBeamStructure:
         k_cs: Array,
         m_cs: Optional[Array],
         m_lumped: Optional[Array] = None,
+        *,
+        remove_checks: bool = False,
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities
@@ -136,6 +138,7 @@ class BaseBeamStructure:
         :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6]
         :param m_cs: Cross-section mass matrices, [n_elem, 6, 6]
         :param m_lumped: Lumped mass matrices at nodes, [n_nodes_, 6, 6]
+        :param remove_checks: Flag to ignore input checks, used when Jitted.
         """
         # populate arrays
         self.k_cs = self.k_cs.at[...].set(k_cs)
@@ -161,11 +164,14 @@ class BaseBeamStructure:
         dx = x_elem[:, 1, :] - x_elem[:, 0, :]  # [n_elem, 3]
 
         # ensure out-of-plane vector and beam vector are not collinear
-        if jnp.any(jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6):
-            raise ValueError(
-                "y_vector is collinear with beam element direction for at least one element. "
-                "Please provide a different y_vector."
-            )
+        if not remove_checks:
+            if jnp.any(
+                jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6
+            ):
+                raise ValueError(
+                    "y_vector is collinear with beam element direction for at least one element. "
+                    "Please provide a different y_vector."
+                )
 
         self.l0 = self.l0.at[...].set(jnp.linalg.norm(dx, axis=-1))  # [n_elem]
         self.d0 = self.d0.at[:, 0].set(self.l0)
@@ -195,9 +201,10 @@ class BaseBeamStructure:
         use_f_ext_dead: bool = True,
         use_f_aero: bool = True,
         use_f_grav: bool = True,
+        prescribed_dofs: Optional[Array] = None,
     ) -> StaticStructure:
         r"""
-        Get the reference configuration of the structure
+        Get the reference configuration of the structure_dv
         :return: StaticStructure dataclass containing reference configuration
         """
         return StaticStructure(
@@ -213,6 +220,7 @@ class BaseBeamStructure:
             f_int=jnp.zeros((self.n_nodes, 6)),
             f_res=jnp.zeros((self.n_nodes, 6)),
             local=True,
+            prescribed_dofs=prescribed_dofs,
         )
 
     def _assemble_matrix_from_entries(self, entries: Array) -> Array:
@@ -251,20 +259,28 @@ class BaseBeamStructure:
 
     @staticmethod
     def _make_f_ext_dead_tot(
-        f_ext_dead_steps: Optional[Array],
-        f_ext_aero_steps: Optional[Array],
-        i_load_step: int,
+        f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
+        i_load_step: Optional[int],
         i_ts: Optional[int],
     ) -> Optional[Array]:
-        idx = (i_load_step, ...) if i_ts is None else (i_load_step, i_ts, ...)
-        if f_ext_dead_steps is None and f_ext_aero_steps is None:
-            return None
-        elif f_ext_dead_steps is None and f_ext_aero_steps is not None:
-            return f_ext_aero_steps[idx]
-        elif f_ext_dead_steps is not None and f_ext_aero_steps is None:
-            return f_ext_dead_steps[idx]
+        if i_ts is None and i_load_step is None:
+            idx = (...,)
+        elif i_ts is None and i_load_step is not None:
+            idx = (i_load_step, ...)
+        elif i_ts is not None and i_load_step is None:
+            idx = (i_ts, ...)
         else:
-            return f_ext_dead_steps[idx] + f_ext_aero_steps[idx]
+            idx = (i_load_step, i_ts, ...)
+
+        if f_ext_dead is None and f_ext_aero is None:
+            return None
+        elif f_ext_dead is None and f_ext_aero is not None:
+            return f_ext_aero[idx]
+        elif f_ext_dead is not None and f_ext_aero is None:
+            return f_ext_dead[idx]
+        else:
+            return f_ext_dead[idx] + f_ext_aero[idx]
 
     def _make_k_t(
         self,
@@ -876,7 +892,7 @@ class BaseBeamStructure:
         relaxation_factor: float = 1.0,
     ) -> StaticStructure:
         r"""
-        Perform static solve of the structure under external loads
+        Perform static solve of the structure_dv under external loads
         :param f_ext_follower: External forces array of follower forces [n_node, 6]
         :param f_ext_dead: External forces array of dead loads [n_node, 6]
         :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6]
@@ -970,7 +986,7 @@ class BaseBeamStructure:
                 hg_n, jnp.zeros(self.n_dof).at[solve_dofs].set(d_ha_np1)
             )
 
-            # algebra between undeformed and deformed shapes, used to check relative convergence, [n_solve_dofs]
+            # algebra between undeformed and deformed arr_list_shapes, used to check relative convergence, [n_solve_dofs]
             if self.convergence_settings.rel_disp_tol is not None:
                 # TODO: this is relative expensive to compute
                 h_full = vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_np1_full).ravel()[
@@ -1052,6 +1068,7 @@ class BaseBeamStructure:
             f_ext_aero=f_ext_aero_local,
             f_grav=f_grav,
             f_res=f_res,
+            prescribed_dofs=prescribed_dofs_arr,
         )
 
     def dynamic_solve(
@@ -1068,8 +1085,8 @@ class BaseBeamStructure:
         spectral_radius: float = 1.0,
     ) -> DynamicStructure:
         r"""
-        Perform dynamic solve of the structure under external loads
-        :param init_state: Initial state of the structure, either as a DynamicStructureSnapshot or StaticStructure. If
+        Perform dynamic solve of the structure_dv under external loads
+        :param init_state: Initial state of the structure_dv, either as a DynamicStructureSnapshot or StaticStructure. If
         None, the reference configuration is used with zero velocities.
         :param n_tstep: Number of time steps to simulate
         :param dt: Time step length
@@ -1473,12 +1490,15 @@ class BaseBeamStructure:
                 f_res=f_res,
                 t=init_state__.t,
                 i_ts=init_state__.i_ts,
+                prescribed_dofs=prescribed_dofs_arr,
             )
 
         # initialise problem
         t = jnp.arange(n_tstep) * dt + init_state_.t
         init_state_eval = evaluate_initial_equilibrium(init_state_)
-        init_dynamic_state = DynamicStructure.initialise(init_state_eval, t)
+        init_dynamic_state = DynamicStructure.initialise(
+            initial_snapshot=init_state_eval, t=t, prescribed_dofs=prescribed_dofs_arr
+        )
         converge_status = ConvergenceStatus(
             convergence_settings=self.convergence_settings
         )

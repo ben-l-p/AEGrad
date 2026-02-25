@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from os import PathLike
 from dataclasses import dataclass
 
@@ -12,7 +14,7 @@ class StaticAeroelastic:
 
     def plot(
         self,
-        directory: PathLike,
+        directory: PathLike | str,
         n_interp: int = 0,
         plot_bound: bool = True,
         plot_wake: bool = True,

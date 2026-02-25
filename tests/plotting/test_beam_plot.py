@@ -10,7 +10,7 @@ jax.config.update("jax_enable_x64", True)
 
 class TestBeamPlot:
     r"""
-    Ensures no errors are thrown during plotting of a beam structure.
+    Ensures no errors are thrown during plotting of a beam structure_dv.
     """
 
     @staticmethod
@@ -39,4 +39,4 @@ class TestBeamPlot:
             plot_dir.rmdir()  # remove the created directory
 
         except Exception as e:
-            assert False, f"Plotting Geradin beam structure failed with error: {e}"
+            assert False, f"Plotting Geradin beam structure_dv failed with error: {e}"

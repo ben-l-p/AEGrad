@@ -43,7 +43,7 @@ class TestBlockLinear:
             pass
         else:
             raise AssertionError(
-                "Expected ValueError due to incorrect block shapes, but none was raised."
+                "Expected ValueError due to incorrect block arr_list_shapes, but none was raised."
             )
 
     @staticmethod

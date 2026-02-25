@@ -1,6 +1,6 @@
 from jax import numpy as jnp
 
-from aegrad.aero.kernels import _biot_savart, _biot_savart_epsilon, _biot_savart_cutoff
+from aero.utils import _biot_savart, _biot_savart_epsilon, _biot_savart_cutoff
 from aegrad.constants import R_CUTOFF
 
 

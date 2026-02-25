@@ -2,7 +2,8 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.structure import BeamStructure, StructuralStates, StructuralDesignVariables
+from aegrad.structure import BeamStructure
+from structure import StructuralStates, StructuralDesignVariables
 from models.geradin_beam import geradin_beam
 
 jax.config.update("jax_enable_x64", True)
@@ -31,9 +32,7 @@ class TestGeradinBeamAdjointGradients:
             return states.hg[-1, 2, 3]  # vertical displacement of the last node
 
         # adjoint solve
-        grads_adj = struct.static_adjoint(
-            structure=result, objective=obj, prescribed_dofs=jnp.arange(6)
-        )
+        grads_adj = struct.static_adjoint(structure=result, objective=obj)
 
         # AD solve
         def resolve_obj(dv_: StructuralDesignVariables) -> Array:
@@ -64,6 +63,7 @@ class TestGeradinBeamAdjointGradients:
                 f_int=result_.f_int,
                 f_ext_dead=result_.f_ext_dead,
                 f_grav=result_.f_grav,
+                f_ext_aero=result_.f_ext_aero,
             )
 
             return obj(ss, dv_)

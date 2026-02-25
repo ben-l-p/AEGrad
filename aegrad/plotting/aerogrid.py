@@ -41,7 +41,7 @@ def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructure
     return sg
 
 
-def plot_frame_to_vtk(
+def plot_grid_to_vtk(
     grid_arr: Array,
     filename: str | PathLike,
     i_ts: Optional[int] = None,

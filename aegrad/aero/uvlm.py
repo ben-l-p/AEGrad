@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections.abc import Sequence
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from os import PathLike
 from pathlib import Path
 from functools import singledispatchmethod
@@ -12,7 +12,7 @@ from jax.lax import fori_loop
 
 from aegrad.utils import _make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
-from aegrad.aero.uvlm_utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
+from aegrad.aero.utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
 from aegrad.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import (
     check_arr_dtype,
@@ -22,16 +22,19 @@ from aegrad.algebra.array_utils import (
 )
 from aegrad.aero.data_structures import GridDiscretization, StaticAero, DynamicAero
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, _biot_savart_epsilon
+from aegrad.aero.utils import KernelFunction, _biot_savart_epsilon
 from aegrad.aero.aic import (
     _compute_aic_sys_assembled,
     _assemble_aic_sys,
     _add_wake_influence,
     _compute_aic_sys,
 )
+
 from aegrad.algebra.se3 import vect_product as se3_vect_product
-from aegrad.aero.linear_uvlm import LinearUVLM, LinearWakeType
-from aegrad.print_output import warn, jax_print
+
+if TYPE_CHECKING:
+    from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
+from aegrad.print_utils import warn, jax_print
 
 
 @_make_pytree
@@ -54,10 +57,11 @@ class UVLM:
         :param grid_shapes: Discretisation(s) for the number of chordwise, spanwise and wake-wise panels for each surface.
         May be passed using either the GridDiscretization class or a tuple of integers (m, n, m_star). Multiple surfaces
         may be defined by passing a sequence of GridDiscretization instances or tuples.
-        :param dof_mapping: Mapping from aerodynamic grid points to structural grid points for each surface.
+        :param dof_mapping: Mapping from aerodynamic grid points to structure_dv grid points for each surface.
         :param variable_wake_disc: If true, allow for variable wake discretisation per surface.
-        :param mirror_plane: Mirror plane for each surface. Passed as a tuple of (point, normal) defining the plane
-        to mirror about. If None, no mirroring is applied.
+        :param mirror_point: Optional point in mirror plane. If provided, this will apply mirroring of the aerodynamic
+        geometry and flow about the plane defined by this point and the mirror normal, [3].
+        :param mirror_normal: Optional normal vector for mirror plane, [3].
         :param kernel: Input for custom kernel function to use for induced velocity calculations.
         """
 
@@ -75,14 +79,14 @@ class UVLM:
             if isinstance(grid, Sequence):
                 if len(grid) != 3:
                     raise ValueError(
-                        "Grid shapes tuple must have exactly three elements (m, n, m_star)"
+                        "Grid arr_list_shapes tuple must have exactly three elements (m, n, m_star)"
                     )
                 grid_disc.append(GridDiscretization(*grid))
             elif isinstance(grid, GridDiscretization):
                 grid_disc.append(grid)
             else:
                 raise TypeError(
-                    "Grid shapes must be either a Sequence of three integers or a GridDiscretization instance"
+                    "Grid arr_list_shapes must be either a Sequence of three integers or a GridDiscretization instance"
                 )
         self.grid_disc: tuple[GridDiscretization] = tuple(grid_disc)
 
@@ -111,7 +115,7 @@ class UVLM:
             check_arr_dtype(map_, int, "dof_mapping")
             check_arr_shape(map_, (self.grid_disc[i_surf].n + 1,), "grid_disc")
 
-        self.dof_mapping: tuple[Array, ...] = tuple(dof_mapping)
+        self.dof_mapping: ArrayList = ArrayList(dof_mapping)
 
         # this must be optional as it is set as a design variable later
         self._flowfield: Optional[FlowField] = None
@@ -214,7 +218,7 @@ class UVLM:
     def linearise(
         self,
         reference: StaticAero,
-        wake_type: LinearWakeType = LinearWakeType.FREE,
+        wake_type: Optional[LinearWakeType] = None,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
         unsteady_force: bool = True,
@@ -224,13 +228,20 @@ class UVLM:
         Create linearised aerodynamic model.
         :param reference: Reference StaticAero around which to linearise.
         :param wake_type: Type of wake model to use in linearisation, with options given from the LinearWakeType class
-         (frozen, prescribed, or free).
+         (frozen, prescribed, or free). Value of None defaults to prescribed.
         :param bound_upwash: If true, linearise for flowfield perturbations at the bound vortex vertex.
         :param wake_upwash: If true, linearise for flowfield perturbations at the wake vortex vertex.
         :param unsteady_force: If true, include unsteady force terms in linearisation.
         :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model.
         :return: LinearUVLM model linearised at specified time step.
         """
+
+        # local import used to prevent circular import issues
+        from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
+
+        if wake_type is None:
+            wake_type = LinearWakeType.PRESCRIBED
+
         return LinearUVLM(
             self,
             reference,
@@ -326,7 +337,7 @@ class UVLM:
             kernels=[*self.kernels_b, *self.kernels_w],
             mirror_normal=self.mirror_normal,
             mirror_point=self.mirror_point,
-        )  # shapes [n_x, n_gamma, 3]
+        )  # arr_list_shapes [n_x, n_gamma, 3]
 
         return jnp.einsum("ijk,j->ik", aic, gamma_flat).reshape(x.shape)
 
@@ -578,8 +589,8 @@ class UVLM:
                     for i_surf in range(self.n_surf)
                 ]
             else:
-                # re-initialise wake. This is wasteful when there is no coupled structure as zeta_ws will equal zeta0_w
-                # but is necessary to update the wake grid coordinates when there is a coupled structure as the bound
+                # re-initialise wake. This is wasteful when there is no coupled structure_dv as zeta_ws will equal zeta0_w
+                # but is necessary to update the wake grid coordinates when there is a coupled structure_dv as the bound
                 # grid coordinates will have changed from the initial configuration.
                 zeta_ws = self.initialise_wake(zetas_b)
         else:
@@ -605,9 +616,9 @@ class UVLM:
             self.set_gamma_w(gamma_ws, case, i_ts)
             case.set_zeta_w(zeta_ws, i_ts)
 
-        # set wake grid coordinates
+        # set wake grid coordinates. If using horseshoe, it will still create a regular wake for plotting
         case.set_zeta_w(zeta_ws, i_ts) if not horseshoe else case.set_zeta_w(
-            self.zeta0_w, i_ts
+            self.initialise_wake(zetas_b), i_ts
         )
 
         # compute AIC matrix for bound-bound interactions, [c_tot, gamma_b_tot]
@@ -699,6 +710,7 @@ class UVLM:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             t=jnp.zeros(n_tstep),
+            dof_mapping=self.dof_mapping,
         )
 
     def solve_static(
@@ -718,9 +730,12 @@ class UVLM:
         case = self.initialise_case_object(1)
         case.t = case.t.at[0].set(t)
 
-        return self._solve(
+        out_case = self._solve(
             case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe
         )[0]
+
+        out_case.horseshoe = horseshoe
+        return out_case
 
     def solve_prescribed_dynamic(
         self,
@@ -741,7 +756,7 @@ class UVLM:
         if hg_dot_t is not None:
             if hg_t.shape != hg_dot_t.shape:
                 raise ValueError(
-                    f"hg_dot must have the same shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
+                    f"hg_dot must have the same arr_list_shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
                 )
         check_if_all_se3_a(hg_dot_t, True)
 
@@ -796,6 +811,8 @@ class UVLM:
             i_ts=-1,
             t=jnp.zeros(()),
             n_surf=self.n_surf,
+            horseshoe=False,
+            dof_mapping=self.dof_mapping,
         )
 
     def plot_reference(

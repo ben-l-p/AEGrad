@@ -13,7 +13,7 @@ def flying_spaghetti(
     n_nodes: int, t: Array, use_gravity: bool = False
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
-    Creates a flying spaghetti model structure.
+    Creates a flying spaghetti model structure_dv.
     :param n_nodes: Number of nodes.
     :param t: Time array for dead force, [n_tstep]
     :param use_gravity: Whether to include gravity in the model.
@@ -84,13 +84,14 @@ if __name__ == "__main__":
     struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(n_nodes_, t_)
 
     solution = struct_.dynamic_solve(
-        None,
-        n_tstep_,
-        dt_,
-        None,
-        f_dead_2d_,  # swap between 2d and 3d to see the difference in response
-        None,
+        init_state=None,
+        n_tstep=n_tstep_,
+        dt=dt_,
+        f_ext_follower=None,
+        f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
+        f_ext_aero=None,
         spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
+        prescribed_dofs=None,
     )
 
     plot_path = Path("./flying_spaghetti_2d")

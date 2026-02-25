@@ -3,7 +3,7 @@ from jax.scipy.spatial.transform import Rotation as Rot
 
 from aegrad.aero import make_rectangular_grid, GridDiscretization, UVLM
 from aegrad.aero.flowfields import Constant
-from aegrad.print_output import set_verbosity, VerbosityLevel
+from aegrad.print_utils import set_verbosity, VerbosityLevel
 
 
 class TestVarWakeDisc:

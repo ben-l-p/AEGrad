@@ -1,20 +1,19 @@
 from __future__ import annotations
+
 from copy import deepcopy
 from os import PathLike
 from pathlib import Path
 from typing import Optional, Sequence
 from dataclasses import dataclass
 
-import jax
 from jax import numpy as jnp, Array
 from jax import vmap
 
-from aegrad.utils import _make_pytree
-from aegrad.print_output import warn
+from aegrad.print_utils import warn
 from aegrad.algebra.base import chi
-from algebra.array_utils import check_arr_shape
-from plotting.beam import plot_beam_to_vtk
-from plotting.pvd import write_pvd
+from aegrad.plotting.beam import plot_beam_to_vtk
+from aegrad.plotting.pvd import write_pvd
+from aegrad.utils import _make_pytree
 
 
 @dataclass
@@ -29,7 +28,7 @@ class OptionalJacobians:
 
 @_make_pytree
 class StaticStructure:
-    """Object to hold the full state and forces of a static structure analysis."""
+    """Object to hold the full state and forces of a static structure_dv analysis."""
 
     def __init__(
         self,
@@ -44,6 +43,7 @@ class StaticStructure:
         f_grav: Optional[Array],
         f_int: Array,
         f_res: Array,
+        prescribed_dofs: Optional[Array],
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes_, 4, 4]
@@ -57,10 +57,11 @@ class StaticStructure:
         self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
         self.f_int: Array = f_int  # [n_nodes_, 6]
         self.f_res: Array = f_res  # [n_nodes_, 6]
+        self.prescribed_dofs: Optional[Array] = prescribed_dofs
         self.local: bool = local
 
     def to_dynamic(self) -> DynamicStructureSnapshot:
-        """Convert static structure results to a dynamic structure snapshot, with zeroed velocity/acceleration dependent
+        """Convert static structure_dv results to a dynamic structure_dv snapshot, with zeroed velocity/acceleration dependent
         entries."""
         n_nodes = self.hg.shape[0]
         zero_v = jnp.zeros((n_nodes, 6))
@@ -118,7 +119,7 @@ class StaticStructure:
         )
 
     def to_global(self) -> None:
-        """Convert local structure results to global frame."""
+        """Convert local structure_dv results to global frame."""
         if not self.local:
             warn("Results already in global frame, skipping conversion.")
             return
@@ -129,7 +130,7 @@ class StaticStructure:
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
-        """Convert global structure results to local frame."""
+        """Convert global structure_dv results to local frame."""
         if self.local:
             warn("Results already in local frame, skipping conversion.")
             return
@@ -142,7 +143,7 @@ class StaticStructure:
 
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike, n_interp: int = 0) -> Path:
+    def plot(self, directory: PathLike | str, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory.
         :param directory: Path to write files to.
@@ -152,7 +153,7 @@ class StaticStructure:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "conn", "o0"
+        return "conn", "o0", "prescribed_dofs"
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -171,7 +172,7 @@ class StaticStructure:
 
 
 class DynamicStructureSnapshot:
-    """Object to hold the full state and forces of a dynamic structure analysis timestep."""
+    """Object to hold the full state and forces of a dynamic structure_dv analysis timestep."""
 
     def __init__(
         self,
@@ -192,6 +193,7 @@ class DynamicStructureSnapshot:
         f_res: Array,
         t: Array,
         i_ts: int,
+        prescribed_dofs: Optional[Array] = None,
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes_, 4, 4]
@@ -211,10 +213,11 @@ class DynamicStructureSnapshot:
         self.f_res: Array = f_res  # [n_nodes_, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
+        self.prescribed_dofs: Optional[Array] = prescribed_dofs
         self.local: bool = local
 
     def to_static(self) -> StaticStructure:
-        """Convert dynamic structure snapshot results to a static structure, dropping velocity/acceleration dependent
+        """Convert dynamic structure_dv snapshot results to a static structure_dv, dropping velocity/acceleration dependent
         entries."""
         return StaticStructure(
             hg=self.hg,
@@ -228,6 +231,7 @@ class DynamicStructureSnapshot:
             f_grav=self.f_grav,
             f_int=self.f_int,
             f_res=self.f_res,
+            prescribed_dofs=self.prescribed_dofs,
         )
 
     def _transform(self, nodal_chi: Array) -> None:
@@ -267,7 +271,7 @@ class DynamicStructureSnapshot:
         # TODO: should pseudoacceleration also be transformed?
 
     def to_global(self) -> None:
-        """Convert local structure results to global frame."""
+        """Convert local structure_dv results to global frame."""
         if not self.local:
             warn("Results already in global frame, skipping conversion.")
             return
@@ -278,7 +282,7 @@ class DynamicStructureSnapshot:
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
-        """Convert global structure results to local frame."""
+        """Convert global structure_dv results to local frame."""
         if self.local:
             warn("Results already in local frame, skipping conversion.")
             return
@@ -290,7 +294,7 @@ class DynamicStructureSnapshot:
         )  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike, n_interp: int = 0) -> Path:
+    def plot(self, directory: PathLike | str, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory. Other beam object types will first convert to a
         DynmaicStructureSnapshot before plotting.
@@ -402,7 +406,7 @@ class DynamicStructureSnapshot:
 
 @_make_pytree
 class DynamicStructure:
-    """Object to hold the full state and forces of a dynamic structure analysis across multiple timesteps."""
+    """Object to hold the full state and forces of a dynamic structure_dv analysis across multiple timesteps."""
 
     def __init__(
         self,
@@ -423,6 +427,7 @@ class DynamicStructure:
         f_res: Array,
         t: Array,
         n_tstep: int,
+        prescribed_dofs: Optional[Array],
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -441,9 +446,10 @@ class DynamicStructure:
         self.f_res: Array = f_res  # [n_tstep, n_nodes_, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
+        self.prescribed_dofs: Optional[Array] = prescribed_dofs
 
     def to_static(self, i_ts: int) -> StaticStructure:
-        """Extract static structure results at a specific time index."""
+        """Extract static structure_dv results at a specific time index."""
         return StaticStructure(
             hg=self.hg[i_ts, ...],
             conn=self.conn,
@@ -462,10 +468,11 @@ class DynamicStructure:
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_int=self.f_int[i_ts, ...],
             f_res=self.f_res[i_ts, ...],
+            prescribed_dofs=self.prescribed_dofs,
         )
 
     def __getitem__(self, i_ts: int) -> DynamicStructureSnapshot:
-        """Extract dynamic structure snapshot at a specific time index."""
+        """Extract dynamic structure_dv snapshot at a specific time index."""
         return DynamicStructureSnapshot(
             hg=self.hg[i_ts, ...],
             conn=self.conn,
@@ -490,16 +497,21 @@ class DynamicStructure:
             f_res=self.f_res[i_ts, ...],
             t=self.t[i_ts],
             i_ts=i_ts,
+            prescribed_dofs=self.prescribed_dofs,
         )
 
     @classmethod
     def initialise(
-        cls, initial_snapshot: DynamicStructureSnapshot, t: Array
+        cls,
+        initial_snapshot: DynamicStructureSnapshot,
+        t: Array,
+        prescribed_dofs: Optional[Array],
     ) -> DynamicStructure:
         r"""
         Initialise a DynamicStructure object given an initial snapshot and number of time steps.
         :param initial_snapshot: Snapshot at initial time step.
         :param t: Time step array, [n_tstep]
+        :param prescribed_dofs: Array of prescribed DOF indices.
         :return: DynamicStructure object with arrays initialised to zero except for the first time step.
         """
         n_node = initial_snapshot.hg.shape[0]
@@ -551,6 +563,7 @@ class DynamicStructure:
             f_res=f_res,
             t=t,
             n_tstep=n_tstep,
+            prescribed_dofs=prescribed_dofs,
         )
 
     def plot(
@@ -594,7 +607,12 @@ class DynamicStructure:
         r"""
         Get names of static attributes in dynamic beam
         """
-        return "conn", "o0", "n_tstep"
+        return (
+            "conn",
+            "o0",
+            "n_tstep",
+            "prescribed_dofs",
+        )
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -616,113 +634,4 @@ class DynamicStructure:
             "f_iner",
             "f_res",
             "t",
-        )
-
-
-@jax.tree_util.register_dataclass
-@dataclass
-class StructuralStates:
-    hg: Array
-    d: Array
-    eps: Array
-    f_int: Array
-    f_ext_dead: Optional[Array]
-    f_grav: Optional[Array]
-
-
-@_make_pytree
-class StructuralDesignVariables:
-    def __init__(
-        self,
-        x0: Optional[Array],
-        k_cs: Optional[Array],
-        m_cs: Optional[Array],
-        m_lumped: Optional[Array],
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-    ):
-        self.x0: Optional[Array] = x0
-        self.k_cs: Optional[Array] = k_cs
-        self.m_cs: Optional[Array] = m_cs
-        self.m_lumped: Optional[Array] = m_lumped
-        self.f_ext_follower: Optional[Array] = f_ext_follower
-        self.f_ext_dead: Optional[Array] = f_ext_dead
-
-        self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
-        self.mapping, self.n_x = self.make_index_mapping()
-
-    def get_vars(self) -> dict[str, Optional[Array]]:
-        return {
-            "x0": self.x0,
-            "k_cs": self.k_cs,
-            "m_cs": self.m_cs,
-            "m_lumped": self.m_lumped,
-            "f_ext_follower": self.f_ext_follower,
-            "f_ext_dead": self.f_ext_dead,
-        }
-
-    def get_shapes(self) -> dict[str, Optional[tuple[int, ...]]]:
-        return {
-            k: var.shape if var is not None else None
-            for k, var in self.get_vars().items()
-        }
-
-    def make_index_mapping(self) -> tuple[dict[str, Optional[Array]], int]:
-        mapping = {}
-        cnt = 0
-        for name, shape in self.shapes.items():
-            if shape is not None:
-                var_size = jnp.prod(jnp.array(shape))
-                mapping[name] = jnp.arange(cnt, cnt + var_size).reshape(shape)
-                cnt += var_size
-            else:
-                mapping[name] = None
-        return mapping, cnt
-
-    def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
-        arr = jnp.concatenate(
-            [
-                var.reshape(f_size, -1)
-                for var in self.get_vars().values()
-                if var is not None
-            ],
-            axis=1,
-        )
-        check_arr_shape(arr, (f_size, x_size), "Internal jacobian")
-        return arr
-
-    def ravel(self) -> Array:
-        return jnp.concatenate(
-            [var.ravel() for var in self.get_vars().values() if var is not None]
-        )
-
-    def reshape(self, *args: int) -> Array:
-        return self.ravel().reshape(*args)
-
-    def from_adjoint(
-        self, f_shape: tuple[int, ...], df_dx: Array
-    ) -> StructuralDesignVariables:
-        out_dict = {}
-        for name in self.shapes.keys():
-            if self.mapping[name] is not None:
-                out_dict[name] = df_dx[:, self.mapping[name]].reshape(
-                    *f_shape, *self.shapes[name]
-                )
-            else:
-                out_dict[name] = None
-        return StructuralDesignVariables(**out_dict)
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return "shapes", "mapping"
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "x0",
-            "k_cs",
-            "m_cs",
-            "m_lumped",
-            "f_ext_follower",
-            "f_ext_dead",
         )

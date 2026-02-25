@@ -4,7 +4,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.coupled import CoupledAeroelastic
+from coupled.gradients.coupled import CoupledAeroelastic
 from aegrad.structure import BeamStructure
 from aegrad.aero import UVLM, make_rectangular_grid, GridDiscretization
 from aegrad.aero.flowfields import Constant
@@ -17,8 +17,8 @@ def make_cantilever_wing(
     b_ref: float = 5.0,
     c_ref: float = 1.0,
     ea: float = 0.25,
-    m: int = 15,
-    m_star: int = 40,
+    m: int = 10,
+    m_star: int = 20,
     k_cs: Array = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2))),
     u_inf=jnp.array((10.0, 0.0, 1.0)),
     rho=1.225,
@@ -42,14 +42,14 @@ def make_cantilever_wing(
         mirror_normal=jnp.array((0.0, 1.0, 0.0)),
     )
 
-    coupled_system = CoupledAeroelastic(beam, uvlm)
+    wing = CoupledAeroelastic(beam, uvlm)
 
     beam_coords = jnp.zeros((n_nodes, 3)).at[:, 1].set(jnp.linspace(0, b_ref, n_nodes))
     grid = make_rectangular_grid(m, n, c_ref, ea)
     dt = c_ref / (jnp.linalg.norm(u_inf) * m)
     flowfield = Constant(u_inf=u_inf, rho=rho, relative_motion=True)
 
-    coupled_system.set_design_variables(
+    wing.set_design_variables(
         coords=beam_coords,
         k_cs=k_cs,
         m_cs=None,
@@ -60,7 +60,7 @@ def make_cantilever_wing(
         x0_aero=grid,
     )
 
-    return coupled_system
+    return wing
 
 
 if __name__ == "__main__":
@@ -71,5 +71,5 @@ if __name__ == "__main__":
         prescribed_dofs=jnp.arange(6),
     )
 
-    dir = Path("./coupled_cantilever")
-    result.plot(dir)
+    dir_ = Path("./coupled_cantilever")
+    result.plot(dir_)

@@ -4,9 +4,11 @@ from aegrad.structure.data_structures import (
     DynamicStructure,
     DynamicStructureSnapshot,
 )
-from utils import ConvergenceSettings
-from aegrad.structure.gradients import (
+from structure.gradients.beam import (
     BeamStructure,
-    ObjectiveFunction,
+    StructuralObjectiveFunction,
 )
-from structure.data_structures import StructuralStates, StructuralDesignVariables
+from structure.gradients.data_structures import (
+    StructuralStates,
+    StructuralDesignVariables,
+)

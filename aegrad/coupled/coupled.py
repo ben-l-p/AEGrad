@@ -8,15 +8,15 @@ from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero import UVLM
 from aegrad.aero.flowfields import FlowField
 from aegrad.structure import BeamStructure
-from aegrad.utils import ConvergenceSettings, ConvergenceStatus
+from data_structures import ConvergenceSettings, ConvergenceStatus
 from aegrad.coupled import StaticAeroelastic, DynamicAeroelastic
-from aegrad.print_output import warn_if_32_bit
+from aegrad.print_utils import warn_if_32_bit
 from aero import StaticAero
 from structure import StaticStructure
-from aegrad.print_output import VerbosityLevel
+from aegrad.print_utils import VerbosityLevel
 
 
-class CoupledAeroelastic:
+class BaseCoupledAeroelastic:
     def __init__(
         self,
         structure: BeamStructure,
@@ -42,9 +42,15 @@ class CoupledAeroelastic:
         flowfield: FlowField,
         delta_w: Optional[Sequence[Array] | Array],
         x0_aero: ArrayList | Sequence[Array] | Array,
+        *,
+        remove_checks: bool = False,
     ):
         self.structure.set_design_variables(
-            coords=coords, k_cs=k_cs, m_cs=m_cs, m_lumped=m_lumped
+            coords=coords,
+            k_cs=k_cs,
+            m_cs=m_cs,
+            m_lumped=m_lumped,
+            remove_checks=remove_checks,
         )
         self.uvlm.set_design_variables(
             dt=dt,
@@ -76,7 +82,6 @@ class CoupledAeroelastic:
             f_aero_n = aero_case_n.project_forcing_to_beam(
                 rmat=struct_case_n.hg[:, :3, :3],
                 x0_aero=self.uvlm.x0_b,
-                dof_mapping=self.uvlm.dof_mapping,
                 include_unsteady=False,
             )  # [n_nodes_, 6]
 
@@ -125,6 +130,7 @@ class CoupledAeroelastic:
                     use_f_ext_dead=f_ext_dead is not None,
                     use_f_ext_follower=f_ext_follower is not None,
                     use_f_aero=True,
+                    prescribed_dofs=prescribed_dofs,
                 ),
                 self.uvlm.solve_static(t=t, hg=self.structure.hg0, horseshoe=horseshoe),
             ),

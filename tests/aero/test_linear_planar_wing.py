@@ -10,13 +10,12 @@ from aegrad.aero import (
     make_rectangular_grid,
     GridDiscretization,
     StaticAero,
-    InputUnflattened,
-    LinearWakeType,
     UVLM,
 )
-from aegrad.aero.kernels import _biot_savart_cutoff
+from aegrad.aero.linear import LinearWakeType, InputUnflattened
+from aero.utils import _biot_savart_cutoff
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
-from aegrad.print_output import set_verbosity, VerbosityLevel
+from aegrad.print_utils import set_verbosity, VerbosityLevel
 
 
 class TestLinearAero:

@@ -1,9 +1,10 @@
-from typing import Sequence
+from __future__ import annotations
+from typing import Sequence, Optional
 import jax
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.algebra.array_utils import ArrayList
+from aegrad.algebra.array_utils import ArrayList, check_arr_shape
 from aegrad.utils import _make_pytree
 
 
@@ -19,17 +20,15 @@ class FlowField:
         u_inf: Array,
         rho: float | Array,
         relative_motion: bool,
-        **kwargs,
     ):
         r"""
         Initialise the flow field.
         :param u_inf: Base flow velocity, [3]
         :param rho: Flow density
         :param relative_motion: If True, the air moves, if false, the plane moves.
-        :param kwargs: Additional keyword arguments for specific flow fields.
         """
         if u_inf.shape != (3,):
-            raise ValueError("u_inf must have shapes (3,)")
+            raise ValueError("u_inf must have arr_list_shapes (3,)")
         self.u_inf: Array = u_inf
         self.rho: Array = jnp.array(rho)
         self.u_inf_mag: Array = jnp.linalg.norm(u_inf)
@@ -121,40 +120,41 @@ class OneMinusCosine(FlowField):
     """
 
     def __init__(
-        self, u_inf: Array, rho: float | Array, relative_motion: bool, **kwargs
+        self,
+        u_inf: Array,
+        rho: float | Array,
+        relative_motion: bool,
+        gust_length: float | Array,
+        gust_amplitude: float | Array,
+        gust_travel_direction: Optional[Array] = None,
+        gust_amplitude_direction: Array = jnp.array((0.0, 0.0, 1.0)),
+        gust_x0: Array = jnp.zeros(3),
     ):
-        super().__init__(u_inf, rho, relative_motion, **kwargs)
+        super().__init__(u_inf, rho, relative_motion)
 
         # base gust parameters
-        try:
-            self.gust_amplitude: Array = kwargs["gust_amplitude"]
-            self.gust_length: Array = kwargs["gust_length"]
-        except KeyError:
-            raise ValueError(
-                "gust_amplitude and gust_length must be provided as keyword arguments."
-            )
+        self.gust_amplitude: Array = jnp.array(gust_amplitude)
+        self.gust_length: Array = jnp.array(gust_length)
 
         # direction of travel for the gust - use background flow direction as default
         # even for a gust frozen in place, this defines the orientation of the ridge
-        self.gust_travel_direction: Array = kwargs.get(
-            "gust_travel_direction", self.u_inf
+        self.gust_travel_direction: Array = (
+            gust_travel_direction
+            if gust_travel_direction is not None
+            else self.u_inf_dir
         )
-        if self.gust_travel_direction.shape != (3,):
-            raise ValueError("gust_travel_direction must have shapes (3,)")
+        check_arr_shape(self.gust_travel_direction, (3,), "gust_travel_direction")
         self.gust_travel_direction /= jnp.linalg.norm(self.gust_travel_direction)
 
         # lateral direction of the gust (direction in which the gust acts), default is in Z
-        self.gust_amplitude_direction: Array = kwargs.get(
-            "gust_amplitude_direction", jnp.array((0.0, 0.0, 1.0))
+        check_arr_shape(gust_amplitude_direction, (3,), "gust_amplitude")
+        self.gust_amplitude_direction: Array = (
+            gust_amplitude_direction / jnp.linalg.norm(gust_amplitude_direction)
         )
-        if self.gust_amplitude_direction.shape != (3,):
-            raise ValueError("gust_amplitude_direction must have shapes (3,)")
-        self.gust_amplitude_direction /= jnp.linalg.norm(self.gust_amplitude_direction)
 
         # base coordinate at the start of the gust at t=0
-        self.gust_x0: Array = kwargs.get("gust_x0", jnp.zeros(3))
-        if self.gust_x0.shape != (3,):
-            raise ValueError("gust_x0 must have shapes (3,)")
+        self.gust_x0: Array = gust_x0
+        check_arr_shape(self.gust_x0, (3,), "gust_x0")
 
     def __call__(self, x: Array, t: Array) -> Array:
         """

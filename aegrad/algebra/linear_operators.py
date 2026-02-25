@@ -5,7 +5,7 @@ import jax
 from jax import Array, numpy as jnp, jacobian
 
 from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.print_output import warn, jax_print
+from aegrad.print_utils import warn, jax_print
 from aegrad.utils import _make_pytree
 
 
@@ -34,7 +34,7 @@ class LinearOperator:
 
         self.func = func if func is not None else lambda x: jnp.zeros(shape[1])
         self._matrix: Optional[Array] = mat
-        self.shape = shape  # shapes of equivalent matrix
+        self.shape = shape  # arr_list_shapes of equivalent matrix
 
     @property
     def matrix(self) -> Array:
@@ -91,7 +91,9 @@ class LinearOperator:
         # runtime dispatch for addition as well
         if isinstance(rhs, LinearOperator):
             if self.shape != rhs.shape:
-                raise ValueError("Cannot add LinearOperators with different shapes.")
+                raise ValueError(
+                    "Cannot add LinearOperators with different arr_list_shapes."
+                )
 
             def new_func(x: Array) -> Array:
                 return self.func(x) + rhs.func(x)
@@ -300,7 +302,7 @@ class LinearSystem:
         :param u: Time history of input vectors, shape [n_tstep, n_inputs]
         :param x0: Initial state vector, [n_states]. If None, assumed to be zero.
         :param use_matrix: If true, use the matrix representations of the linear operators.
-        :return: State history and output history, shapes [n_tstep, n_states] and [n_tstep, n_outputs]
+        :return: State history and output history, arr_list_shapes [n_tstep, n_states] and [n_tstep, n_outputs]
         """
         if x0 is not None:
             check_arr_shape(x0, (None, self.n_states), "x0")

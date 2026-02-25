@@ -1,22 +1,26 @@
 from __future__ import annotations
 from copy import copy
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable
 
 import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from aegrad.structure.base_beam import BaseBeamStructure
+from aegrad.structure.beam import BaseBeamStructure
 from aegrad.structure import OptionalJacobians
 from aegrad.structure.data_structures import (
     StaticStructure,
-    StructuralDesignVariables,
+)
+from aegrad.structure.gradients.data_structures import (
     StructuralStates,
+    StructuralDesignVariables,
 )
 from aegrad.algebra.se3 import hg_to_d
 from algebra.se3 import exp_se3, t_se3
 
-type ObjectiveFunction = Callable[[StructuralStates, StructuralDesignVariables], Array]
+type StructuralObjectiveFunction = Callable[
+    [StructuralStates, StructuralDesignVariables], Array
+]
 
 
 class BeamStructure(BaseBeamStructure):
@@ -29,12 +33,15 @@ class BeamStructure(BaseBeamStructure):
         Obtain useful states and forcing residual from design variables and a minimal configuration vector.
         """
 
-        # make a copy of the structure object to prevent modifying the original states
+        # make a copy of the structure_dv object to prevent modifying the original states
         inner_case = BeamStructure(
-            self.n_nodes,
-            self.connectivity,
-            self.y_vector,
-            self.gravity_vec,
+            num_nodes=self.n_nodes,
+            connectivity=self.connectivity,
+            y_vector=self.y_vector,
+            gravity=self.gravity_vec,
+            verbosity=self.verbosity,
+            optional_jacobians=self.optional_jacobians,
+            convergence_settings=self.convergence_settings,
         )
 
         inner_case.set_design_variables(
@@ -64,7 +71,13 @@ class BeamStructure(BaseBeamStructure):
             f_ext_dead = None
 
         ss = StructuralStates(
-            hg=hg, d=d, eps=eps, f_int=f_int, f_ext_dead=f_ext_dead, f_grav=f_grav
+            hg=hg,
+            d=d,
+            eps=eps,
+            f_int=f_int,
+            f_ext_dead=f_ext_dead,
+            f_ext_aero=None,
+            f_grav=f_grav,
         )
 
         f_res = inner_case._make_f_res(
@@ -87,24 +100,21 @@ class BeamStructure(BaseBeamStructure):
     def static_adjoint(
         self,
         structure: StaticStructure,
-        objective: ObjectiveFunction,
-        prescribed_dofs: Sequence[int] | Array | slice | int,
+        objective: StructuralObjectiveFunction,
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
     ) -> StructuralDesignVariables:
         r"""
-        Computes the static adjoint of the structure, which is used to compute gradients of the loss with respect to
-        the structure's parameters.
-        :param structure: StaticStructure containing the current state of the structure.
-        :param objective: Objective function that takes the structure and design variables and returns an array
-        :param prescribed_dofs: Degrees of freedom that are prescribed (i.e., not solved for).
+        Computes the static adjoint of the structure_dv, which is used to compute gradients of the loss with respect to
+        the structure_dv's parameters.
+        :param structure: StaticStructure containing the current state of the structure_dv.
+        :param objective: Objective function that takes the structure_dv and design variables and returns an array
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
         :return: Gradient of objective function output with respect to design variables.
         """
 
-        prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
+        solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), structure.prescribed_dofs)
         if optional_jacobians is not None:
             self.optional_jacobians = optional_jacobians
 
@@ -116,11 +126,11 @@ class BeamStructure(BaseBeamStructure):
         p_d = self._make_p_d(d)
         m_t = self._make_m_t(d) if self.use_gravity else None
 
-        # make copy of structure which has been converted to global coordinates.
+        # make copy of structure_dv which has been converted to global coordinates.
         gs = copy(structure)
         gs.to_global()
 
-        # make design variables for current state of structure
+        # make design variables for current state of structure_dv
         dv = StructuralDesignVariables(
             x0=self.x0,
             k_cs=self.k_cs,
@@ -136,6 +146,7 @@ class BeamStructure(BaseBeamStructure):
             eps=eps,
             f_int=structure.f_int,
             f_ext_dead=structure.f_ext_dead,
+            f_ext_aero=None,
             f_grav=structure.f_grav,
         )
 
@@ -182,4 +193,4 @@ class BeamStructure(BaseBeamStructure):
             d_f_d_res = jnp.linalg.solve(d_res_d_n.T, p_f_p_n.T).T  # [n_f, n_u]
             rhs = d_f_d_res @ p_res_p_x  # [n_f, n_x]
 
-        return dv.from_adjoint(f_shape, p_f_p_x - rhs)
+        return StructuralDesignVariables(**dv.from_adjoint(f_shape, p_f_p_x - rhs))

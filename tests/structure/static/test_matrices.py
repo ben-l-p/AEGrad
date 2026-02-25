@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 import jax
 
-from structure.base_beam import BaseBeamStructure
+from structure.beam import BaseBeamStructure
 from algebra.so3 import vec_to_skew
 from algebra.se3 import p
 

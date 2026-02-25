@@ -11,24 +11,28 @@ from pathlib import Path
 
 from aegrad.aero.data_structures import (
     StaticAero,
-    InputSlices,
-    StateSlices,
-    OutputSlices,
-    _LinearComponent,
-    _SliceEntry,
+)
+from aegrad.aero.linear.data_structures import (
     InputUnflattened,
     StateUnflattened,
     OutputUnflattened,
 )
-from aegrad.aero.uvlm_utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
+from aegrad.aero.linear.data_structures import (
+    _LinearComponent,
+    _SliceEntry,
+    InputSlices,
+    StateSlices,
+    OutputSlices,
+    AeroLinearResult,
+)
+from aegrad.aero.utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
 from aegrad.algebra.array_utils import ArrayList, split_to_vertex
 from aegrad.aero.aic import _compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
-from aegrad.aero.kernels import KernelFunction, _biot_savart_cutoff
+from aegrad.aero.utils import _biot_savart_cutoff, KernelFunction
 from aegrad.utils import _shallow_asdict
-from aegrad.print_output import warn
-from aegrad.aero.data_structures import AeroLinearResult
+from aegrad.print_utils import warn
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -114,7 +118,7 @@ class LinearUVLM:
         self.n0: ArrayList = _get_nc(reference.zeta_b)
         self.flowfield0: FlowField = case.flowfield
 
-        # baseline shapes
+        # baseline arr_list_shapes
         self.zeta_b_shapes: Sequence[tuple[int, ...]] = [
             arr.shape for arr in self.zeta0_b
         ]
@@ -638,7 +642,7 @@ class LinearUVLM:
         r"""
         Obtain an ArrayList of arrays from a subvector based on the provided component.
         :param vec: Total vector, [n_elements]
-        :param component: LinearComponent defining the slices and shapes.
+        :param component: LinearComponent defining the slices and arr_list_shapes.
         :return: ArrayList of arrays for each surface for the given component.
         """
         arrs = ArrayList([])
@@ -790,7 +794,7 @@ class LinearUVLM:
 
             # add pertubations from input velocities
             # note that we here use the inputs at t=n+1 to convect the wake to t=n+1, as this best suits the linear
-            # system structure. For the full nonlinear UVLM, we use the inputs at t=n, which can lead to a discrepancy.
+            # system structure_dv. For the full nonlinear UVLM, we use the inputs at t=n, which can lead to a discrepancy.
             if self.prescribed_wake and self.wake_upwash:
                 d_zeta_w_np1 += u_np1_tot.nu_w * self.dt
 
