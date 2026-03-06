@@ -6,14 +6,11 @@ from jax.scipy.spatial.transform import Rotation as Rot
 from jax import Array, vmap
 
 from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero import (
-    make_rectangular_grid,
-    GridDiscretization,
-    StaticAero,
-    UVLM,
-)
+from aegrad.aero.data_structures import GridDiscretization
+from aegrad.aero.uvlm import UVLM
 from aegrad.aero.linear import LinearWakeType, InputUnflattened
-from aero.utils import _biot_savart_cutoff
+from aero.data_structures import AeroSnapshot
+from aero.utils import _biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
 from aegrad.print_utils import set_verbosity, VerbosityLevel
 
@@ -39,7 +36,7 @@ class TestLinearAero:
         cls,
         flowfield: FlowField,
         ea: float = 0.0,
-    ) -> tuple[UVLM, StaticAero, Array]:
+    ) -> tuple[UVLM, AeroSnapshot, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
         """
@@ -95,15 +92,15 @@ class TestLinearAero:
 
         # linear case
         linear_model = uvlm.linearise(
-            static_case,
-            LinearWakeType.PRESCRIBED,
+            reference=static_case,
+            wake_type=LinearWakeType.PRESCRIBED,
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
         )
 
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
-            [zeta[None, ...] for zeta in linear_model.zeta0_b]
+            [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
         u_linear = InputUnflattened(
             zeta_b=delta_zeta_b,
@@ -182,15 +179,15 @@ class TestLinearAero:
 
         # linear case
         linear_model = uvlm.linearise(
-            static_case,
-            LinearWakeType.PRESCRIBED,
+            reference=static_case,
+            wake_type=LinearWakeType.PRESCRIBED,
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
         )
 
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
-            [zeta[None, ...] for zeta in linear_model.zeta0_b]
+            [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
         u_linear = InputUnflattened(
             zeta_b=delta_zeta_b,
@@ -271,15 +268,15 @@ class TestLinearAero:
 
         # linear case
         linear_model = uvlm.linearise(
-            static_case,
-            LinearWakeType.FROZEN,
+            reference=static_case,
+            wake_type=LinearWakeType.FROZEN,
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
         )
 
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
-            [zeta[None, ...] for zeta in linear_model.zeta0_b]
+            [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
         u_linear = InputUnflattened(
             zeta_b=delta_zeta_b,
@@ -346,15 +343,15 @@ class TestLinearAero:
 
         # linear case
         linear_model = uvlm.linearise(
-            static_case,
-            LinearWakeType.PRESCRIBED,
+            reference=static_case,
+            wake_type=LinearWakeType.PRESCRIBED,
             bound_upwash=True,
             wake_upwash=True,
             unsteady_force=True,
         )
 
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
-            [zeta[None, ...] for zeta in linear_model.zeta0_b]
+            [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
         u_linear = InputUnflattened(
             zeta_b=delta_zeta_b,

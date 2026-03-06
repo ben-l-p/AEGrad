@@ -50,7 +50,7 @@ class FlowField:
 
     def vmap_call(self, x: Array, t: Array) -> Array:
         """
-        Vectorized version of the __call__ method. This maps over all leading dimensions of x.
+        Vectorized version of the __call__ method. This maps over all leading dimensions of x_target.
         :param x: Spatial coordinates, [..., 3]
         :param t: Time. []
         :return: Flow field values at the specified coordinates, [..., 3]

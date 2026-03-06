@@ -12,7 +12,7 @@ jax.config.update("jax_enable_x64", True)
 
 class TestGeradinBeamADGradients:
     n_nodes = 20
-    struct = geradin_beam(n_nodes, "x")
+    struct = geradin_beam(n_nodes, "x_target")
     load = 600000.0
     f_ext = jnp.zeros((n_nodes, 6)).at[-1, 2].set(-load)
 

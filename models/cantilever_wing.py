@@ -6,7 +6,9 @@ from jax import Array
 
 from coupled.gradients.coupled import CoupledAeroelastic
 from aegrad.structure import BeamStructure
-from aegrad.aero import UVLM, make_rectangular_grid, GridDiscretization
+from aegrad.aero.uvlm import UVLM
+from aegrad.aero.utils import make_rectangular_grid
+from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.flowfields import Constant
 
 jax.config.update("jax_enable_x64", True)

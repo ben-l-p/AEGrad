@@ -12,7 +12,7 @@ from jax.lax import fori_loop
 
 from aegrad.utils import _make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
-from aegrad.aero.utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
+from aegrad.aero.utils import _propagate_wake, _steady_forcing, compute_c, compute_nc
 from aegrad.constants import HORSESHOE_LENGTH
 from aegrad.algebra.array_utils import (
     check_arr_dtype,
@@ -20,15 +20,13 @@ from aegrad.algebra.array_utils import (
     check_arr_shape,
     ArrayList,
 )
-from aegrad.aero.data_structures import GridDiscretization, StaticAero, DynamicAero
+from aegrad.aero.data_structures import (
+    GridDiscretization,
+    DynamicAeroCase,
+    AeroSnapshot,
+)
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.utils import KernelFunction, _biot_savart_epsilon
-from aegrad.aero.aic import (
-    _compute_aic_sys_assembled,
-    _assemble_aic_sys,
-    _add_wake_influence,
-    _compute_aic_sys,
-)
 
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 
@@ -217,7 +215,7 @@ class UVLM:
 
     def linearise(
         self,
-        reference: StaticAero,
+        reference: AeroSnapshot,
         wake_type: Optional[LinearWakeType] = None,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
@@ -244,7 +242,7 @@ class UVLM:
 
         return LinearUVLM(
             self,
-            reference,
+            reference=reference,
             wake_type=wake_type,
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
@@ -320,58 +318,18 @@ class UVLM:
             self._delta_w = self.n_surf * [None]
         self._zeta0_w = self.initialise_wake()
 
-    def get_v_ind(self, case: DynamicAero, x: Array, i_ts: int) -> Array:
-        """
-        Compute the induced velocity at points in space due to vortex elements.
-        :param case: DynamicAero object
-        :param x: Points at which to compute induced velocity, [..., 3]
-        :param i_ts: Timestep index
-        :return: Induced velocity at points x, [..., 3].
-        """
-
-        gamma_flat = case.get_gamma_vect(i_ts)
-
-        aic = _compute_aic_sys_assembled(
-            cs=[x],
-            zetas=case.get_zeta(i_ts),
-            kernels=[*self.kernels_b, *self.kernels_w],
-            mirror_normal=self.mirror_normal,
-            mirror_point=self.mirror_point,
-        )  # arr_list_shapes [n_x, n_gamma, 3]
-
-        return jnp.einsum("ijk,j->ik", aic, gamma_flat).reshape(x.shape)
-
-    def get_v_background(self, t: Array, x: Array) -> Array:
-        r"""
-        Get background velocity at specified points and time step
-        :param t: Current time
-        :param x: Points to evaluate background velocity at, [..., 3]
-        :return: Background velocity at points, [..., 3]
-        """
-        return self.flowfield.vmap_call(x.reshape(-1, 3), t).reshape(x.shape)
-
-    def get_v_tot(self, case: DynamicAero, i_ts: int, x: Array) -> Array:
-        r"""
-        Get velocity at specified points and time step induced by both the elements in the flow and the freesteam.
-        :param case: DynamicAero object
-        :param i_ts: Timestep index
-        :param x: Points to evaluate induced velocity at, [..., 3]
-        :return: Induced velocity at points, [..., 3]
-        """
-        return self.get_v_ind(case, x, i_ts) + self.get_v_background(case.t[i_ts], x)
-
-    def calculate_steady_forcing(self, case: DynamicAero, i_ts: int) -> None:
+    def calculate_steady_forcing(self, case: DynamicAeroCase, i_ts: int) -> None:
         r"""
         Calculate steady aerodynamic forcing for all surfaces at specified time step
-        :param case: DynamicAero object
+        :param case: DynamicAeroCase object
         :param i_ts: Timestep index
         """
         f_steady = _steady_forcing(
-            case.get_zeta_b(i_ts),
-            case.get_zeta_dot_b(i_ts),
-            case.get_gamma_b(i_ts),
-            case.get_gamma_w(i_ts),
-            lambda x_: self.get_v_tot(case, i_ts, x_),
+            case.zeta_b.index_all(i_ts, ...),
+            case.zeta_b_dot.index_all(i_ts, ...),
+            case.gamma_b.index_all(i_ts, ...),
+            case.gamma_w.index_all(i_ts, ...),
+            lambda x_: case.get_v_tot(i_ts=i_ts, x=ArrayList([x_]))[0],
             None,
             self.flowfield.rho,
         )
@@ -435,7 +393,7 @@ class UVLM:
         return tuple(gamma_b_slices), tuple(gamma_w_slices)
 
     def _make_surf_horseshoe_wake(
-        self, case: DynamicAero, i_ts: int, i_surf: int, horseshoe_length: float
+        self, case: DynamicAeroCase, i_ts: int, i_surf: int, horseshoe_length: float
     ) -> Array:
         r"""
         Create a horseshoe wake grid for a given surface at a given time step.
@@ -444,7 +402,7 @@ class UVLM:
         :param horseshoe_length: Length of horseshoe wake to generate
         :return: Wake grid coordinates, [2, zeta_n, 3]
         """
-        zeta_te = case.get_zeta_te_surf(i_ts, i_surf)  # [zeta_n, 3]
+        zeta_te = case.zeta_b[i_surf][i_ts, -1, ...]  # [zeta_n, 3]
         if self.grid_disc[i_surf].m_star == 0:
             warn("Horseshoe wake requested but m_star == 0, skipping.")
             return zeta_te[None, :]
@@ -484,10 +442,10 @@ class UVLM:
             )
         return zeta0_w
 
-    def set_gamma_b(self, case: DynamicAero, gamma_vec: Array, i_ts: int) -> None:
+    def set_gamma_b(self, case: DynamicAeroCase, gamma_vec: Array, i_ts: int) -> None:
         r"""
         Set bound circulation strengths from total circulation strengths vector at specified time step
-        :param case: DynamicAero object
+        :param case: DynamicAeroCase object
         :param gamma_vec: Total circulation strengths vector, [gamma_b_tot]
         :param i_ts: Timestep index
         """
@@ -503,11 +461,11 @@ class UVLM:
             )
 
     @singledispatchmethod
-    def set_gamma_w(self, gamma_vec: Array, case: DynamicAero, i_ts: int) -> None:
+    def set_gamma_w(self, gamma_vec: Array, case: DynamicAeroCase, i_ts: int) -> None:
         r"""
         Set wake circulation strengths from total circulation strengths at specified time step. Can be passed either a
         full vector of strengths, or a sequence of strengths per surface.
-        :param case: DynamicAero object
+        :param case: DynamicAeroCase object
         :param gamma_vec: Total circulation strengths vector, [gamma_w_tot]
         :param i_ts: Timestep index
         """
@@ -524,7 +482,7 @@ class UVLM:
 
     @set_gamma_w.register(Sequence)
     def _(
-        self, gamma_list: Sequence[Array] | ArrayList, case: DynamicAero, i_ts: int
+        self, gamma_list: Sequence[Array] | ArrayList, case: DynamicAeroCase, i_ts: int
     ) -> None:
         for i_surf in range(self.n_surf):
             case.gamma_w[i_surf] = (
@@ -533,17 +491,17 @@ class UVLM:
 
     def _solve(
         self,
-        case: DynamicAero,
+        case: DynamicAeroCase,
         i_ts: int,
         hg: Optional[Array],
         hg_dot: Optional[Array],
         static: bool,
         free_wake: bool,
         horseshoe: bool,
-    ) -> DynamicAero:
+    ) -> DynamicAeroCase:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
-        :param case: DynamicAero object containing solution at previous time steps
+        :param case: DynamicAeroCase object containing solution at previous time steps
         :param i_ts: Timestep index to solve for
         :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
         :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4]
@@ -564,21 +522,20 @@ class UVLM:
             )
 
         zetas_b = self.zeta0_b if hg is None else self._hg_to_zeta(hg)
-        case.set_zeta_b(zetas_b, i_ts)
-
-        cs = _get_c(zetas_b)
-        ncs = _get_nc(zetas_b)
+        case.set_arraylist_at_ts("_zeta_b", values=zetas_b, i_ts=i_ts)
+        case.compute_c(i_ts=i_ts)
+        case.compute_nc(i_ts=i_ts)
 
         if hg_dot is None:
-            c_dot = [jnp.zeros_like(c) for c in cs]
+            c_dot = ArrayList([jnp.zeros_like(c) for c in case.get_c(i_ts)])
         else:
             zeta_b_dot = self._hg_dot_to_zeta_dot(hg_dot)
 
-            case.set_zeta_b_dot(zeta_b_dot, i_ts)
+            case.set_arraylist_at_ts("_zeta_b_dot", values=zeta_b_dot, i_ts=i_ts)
 
-            c_dot = [
-                neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot
-            ]
+            c_dot = ArrayList(
+                [neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot]
+            )
 
         if static:
             # initialise wake
@@ -597,16 +554,18 @@ class UVLM:
 
             def v_wake_prop(x_: Array) -> Array:
                 if free_wake:
-                    return self.get_v_tot(case, i_ts - 1, x_)
+                    return case.get_v_tot(i_ts=i_ts - 1, x=ArrayList([x_]))[0]
                 else:
-                    return self.get_v_background(case.t[i_ts - 1], x_)
+                    return case.get_v_background(
+                        i_ts=i_ts - 1, x_target=ArrayList([x_])
+                    )[0]
 
             # propagate wake
             zeta_ws, gamma_ws = _propagate_wake(
-                case.get_gamma_b(i_ts - 1),
-                case.get_gamma_w(i_ts - 1),
+                case.gamma_b.index_all(i_ts - 1, ...),
+                case.gamma_w.index_all(i_ts - 1, ...),
                 zetas_b,
-                case.get_zeta_w(i_ts - 1),
+                case.zeta_w.index_all(i_ts - 1, ...),
                 self.delta_w,
                 v_wake_prop,
                 self.dt,
@@ -614,72 +573,70 @@ class UVLM:
             )
 
             self.set_gamma_w(gamma_ws, case, i_ts)
-            case.set_zeta_w(zeta_ws, i_ts)
+            case.set_arraylist_at_ts("_zeta_w", values=zeta_ws, i_ts=i_ts)
 
         # set wake grid coordinates. If using horseshoe, it will still create a regular wake for plotting
-        case.set_zeta_w(zeta_ws, i_ts) if not horseshoe else case.set_zeta_w(
-            self.initialise_wake(zetas_b), i_ts
+        case.set_arraylist_at_ts(
+            "_zeta_w", values=zeta_ws, i_ts=i_ts
+        ) if not horseshoe else case.set_arraylist_at_ts(
+            "_zeta_w", values=self.initialise_wake(zetas_b), i_ts=i_ts
         )
 
         # compute AIC matrix for bound-bound interactions, [c_tot, gamma_b_tot]
-        aic_blocks = _compute_aic_sys(
-            cs=cs,
-            zetas=zetas_b,
+        aic_b_blocks = case.compute_aic_sys(
+            x_target=case.c.index_all(i_ts, ...),
+            x_source=case.zeta_b.index_all(i_ts, ...),
+            nc=case.nc.index_all(i_ts, ...),
             kernels=self.kernels_b,
-            ns=ncs,
-            mirror_point=self.mirror_point,
-            mirror_normal=self.mirror_normal,
         )
 
         # compute AIC matrix for bound-wake interactions, [c_tot, gamma_w_tot]
-        aic_w_blocks = _compute_aic_sys(
-            cs=cs,
-            zetas=zeta_ws,
+        aic_w_blocks = case.compute_aic_sys(
+            x_target=case.c.index_all(i_ts, ...),
+            x_source=case.zeta_w.index_all(i_ts, ...),
+            nc=case.nc.index_all(i_ts, ...),
             kernels=self.kernels_w,
-            ns=ncs,
-            mirror_point=self.mirror_point,
-            mirror_normal=self.mirror_normal,
         )
 
         if static:
             # lump wake influence onto trailing edge strengths
-            aic_blocks = _add_wake_influence(aic_blocks, aic_w_blocks)
+            aic_b_blocks = case.add_wake_influence(aic_b_blocks, aic_w_blocks)
 
-        aic = _assemble_aic_sys(aic_blocks)
+        aic = case.assemble_aic_sys(aic_b_blocks)
 
-        cs_vector = jnp.concatenate([c.reshape(-1, 3) for c in cs], axis=0)
-        c_dot_vector = jnp.concatenate([cd.reshape(-1, 3) for cd in c_dot], axis=0)
-        v_bc = c_dot_vector - self.get_v_background(case.t[i_ts], cs_vector)
+        v_bc = c_dot - case.get_v_background(
+            i_ts=i_ts, x_target=case.get_c(i_ts=i_ts)
+        )  # [n_surf][m, n, 3]
 
-        n_vect = jnp.concatenate([nc.reshape(-1, 3) for nc in ncs], axis=0)
-        v_bc_n = jnp.einsum("ij,ij->i", v_bc, n_vect)
+        v_bc_n = ArrayList.einsum(
+            "ijk,ijk->ij", v_bc, case.nc.index_all(i_ts, ...)
+        ).flatten()  # [c_tot]
 
         if not static:
-            aic_w = _assemble_aic_sys(aic_w_blocks)
-            v_bc_n -= aic_w @ case.get_gamma_w_vect(i_ts)
+            aic_w = case.assemble_aic_sys(aic_w_blocks)
+            v_bc_n -= aic_w @ case.gamma_w.index_all(i_ts, ...).flatten()
 
-        gamma_b_vect: Array = jnp.linalg.solve(aic, v_bc_n)
+        gamma_b_vect = case.aic_solve(i_ts=i_ts, aic=aic, rhs=v_bc_n)
         self.set_gamma_b(case, gamma_b_vect, i_ts)
 
         if static:
             case.set_gamma_w_static(i_ts)
         else:
             case.calculate_gamma_dot(i_ts, self.dt)
-            case.calculate_unsteady_forcing(i_ts, ncs, self.flowfield.rho)
+            case.calculate_unsteady_forcing(i_ts=i_ts)
         self.calculate_steady_forcing(case, i_ts)
 
         return case
 
-    def initialise_case_object(self, n_tstep: int) -> DynamicAero:
+    def initialise_case_object(self, n_tstep: int, horseshoe: bool) -> DynamicAeroCase:
         r"""
-        Initialise an DynamicAero object to store the solution of the aerodynamic case, with the correct dimensions and
+        Initialise an DynamicAeroCase object to store the solution of the aerodynamic case, with the correct dimensions and
         initial conditions.
         :param n_tstep: Number of time steps to solve for in dynamic solution
-        :return: DynamicAero object with initial conditions set
+        :return: DynamicAeroCase object with initial conditions set
         """
-
         # zero initialise
-        return DynamicAero(
+        return DynamicAeroCase(
             zeta_b=ArrayList(
                 [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
@@ -707,10 +664,24 @@ class UVLM:
             f_unsteady=ArrayList(
                 [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
+            c=ArrayList([jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]),
+            nc=ArrayList(
+                [jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]
+            ),
+            aic_lu=jnp.zeros(
+                (n_tstep, sum(self.n_bound_panels), sum(self.n_bound_panels))
+            ),
+            aic_piv=jnp.zeros((n_tstep, sum(self.n_bound_panels))),
+            kernels=[*self.kernels_b, *self.kernels_w],
+            mirror_point=self.mirror_point,
+            mirror_normal=self.mirror_normal,
+            flowfield=self.flowfield,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
+            i_ts=jnp.arange(n_tstep),
             t=jnp.zeros(n_tstep),
             dof_mapping=self.dof_mapping,
+            horseshoe=horseshoe,
         )
 
     def solve_static(
@@ -718,7 +689,7 @@ class UVLM:
         hg: Optional[Array] = None,
         t: Array | float = 0.0,
         horseshoe: bool = False,
-    ) -> StaticAero:
+    ) -> AeroSnapshot:
         r"""
         Solve the VLM.
         :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
@@ -727,23 +698,22 @@ class UVLM:
         # TODO: add free wake
         """
 
-        case = self.initialise_case_object(1)
+        case = self.initialise_case_object(1, horseshoe=horseshoe)
         case.t = case.t.at[0].set(t)
 
         out_case = self._solve(
             case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe
         )[0]
 
-        out_case.horseshoe = horseshoe
         return out_case
 
     def solve_prescribed_dynamic(
         self,
-        init_case: StaticAero,
+        init_case: AeroSnapshot,
         hg_t: Array,
         hg_dot_t: Array,
         free_wake: bool = False,
-    ) -> DynamicAero:
+    ) -> DynamicAeroCase:
         r"""
         Solve the UVLM for prescribed grid motions.
         :param init_case: StaticAero object containing initial conditions for the solution at time step 0.
@@ -762,10 +732,9 @@ class UVLM:
 
         n_tstep = hg_t.shape[0]
 
-        case = self.initialise_case_object(n_tstep)
-        case[0] = init_case
+        case = init_case.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
-        def _step_func(i_ts_: int, case_: DynamicAero) -> DynamicAero:
+        def _step_func(i_ts_: int, case_: DynamicAeroCase) -> DynamicAeroCase:
             case_ = self._solve(
                 case_,
                 i_ts_,
@@ -786,17 +755,19 @@ class UVLM:
         )
         return case
 
-    def reference_snapshot(self) -> StaticAero:
+    def reference_snapshot(self) -> AeroSnapshot:
         r"""
         Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
         :return: StaticAero object at initial time step
         """
-        return StaticAero(
+        return AeroSnapshot(
             zeta_b=self.zeta0_b,
             zeta_b_dot=ArrayList(
                 [jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
             zeta_w=self.zeta0_w,
+            c=compute_c(self.zeta0_b),
+            nc=compute_nc(self.zeta0_b),
             gamma_b=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
             gamma_b_dot=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
             gamma_w=ArrayList([jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc]),
@@ -809,10 +780,15 @@ class UVLM:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,
-            t=jnp.zeros(()),
-            n_surf=self.n_surf,
+            t=jnp.array((0.0,)),
             horseshoe=False,
             dof_mapping=self.dof_mapping,
+            flowfield=self.flowfield,
+            mirror_point=self.mirror_point,
+            mirror_normal=self.mirror_normal,
+            kernels=[*self.kernels_b, *self.kernels_w],
+            aic_lu=jnp.zeros((sum(self.n_bound_panels), sum(self.n_bound_panels))),
+            aic_piv=jnp.zeros((sum(self.n_bound_panels),)),
         )
 
     def plot_reference(

@@ -11,7 +11,7 @@ jax.config.update("jax_enable_x64", True)
 
 class TestGeradinBeamAdjointGradients:
     n_nodes = 20
-    struct = geradin_beam(n_nodes, "x")
+    struct = geradin_beam(n_nodes, "x_target")
     load = 600000.0
     f_ext = jnp.zeros((n_nodes, 6)).at[-1, 2].set(-load)
 
@@ -58,12 +58,8 @@ class TestGeradinBeamAdjointGradients:
 
             ss = StructuralStates(
                 hg=result_.hg,
-                d=result_.d,
                 eps=result_.eps,
                 f_int=result_.f_int,
-                f_ext_dead=result_.f_ext_dead,
-                f_grav=result_.f_grav,
-                f_ext_aero=result_.f_ext_aero,
             )
 
             return obj(ss, dv_)

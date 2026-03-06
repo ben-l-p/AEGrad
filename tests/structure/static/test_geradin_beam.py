@@ -8,7 +8,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 class TestGeradinBeam:
-    struct = geradin_beam(20, "x")
+    struct = geradin_beam(20, "x_target")
 
     @classmethod
     def run_load_case(cls, load: float) -> tuple[float, float]:

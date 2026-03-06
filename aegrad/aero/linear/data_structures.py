@@ -7,8 +7,8 @@ from typing import Optional, Sequence
 
 from jax import Array, numpy as jnp
 
-from aero import StaticAero
-from algebra.array_utils import ArrayList
+from aero.data_structures import AeroSnapshot
+from algebra.array_utils import ArrayList, ArrayListShape
 from plotting.pvd import write_pvd
 
 
@@ -37,7 +37,7 @@ class _SliceEntry:
 
     name: str
     enabled: bool
-    shapes: Optional[Sequence[tuple[int, ...]]]
+    shapes: Optional[Sequence[tuple[int, ...]] | ArrayListShape]
 
 
 @dataclass
@@ -139,6 +139,7 @@ class OutputUnflattened:
 class AeroLinearResult:
     def __init__(
         self,
+        reference: AeroSnapshot,
         u_t: Optional[InputUnflattened],
         x_t: Optional[StateUnflattened],
         y_t: Optional[OutputUnflattened],
@@ -163,6 +164,7 @@ class AeroLinearResult:
         self.t: Optional[Array] = t
         self.surf_b_names: list[str] = surf_b_names
         self.surf_w_names: list[str] = surf_w_names
+        self.reference: AeroSnapshot = reference
 
     def plot(
         self,
@@ -205,69 +207,41 @@ class AeroLinearResult:
             except IndexError:
                 pass
 
-    def __getitem__(self, i_ts: int) -> StaticAero:
+    def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
         Get snapshot of aerodynamic surface at a single time step
         :param i_ts: Timestep index
-        :return: StaticAero at specified time step
+        :return: DynamicAeroCase at specified time step
         """
 
         if i_ts < 0 or i_ts >= self.n_tstep:
             raise IndexError("Timestep index out of range")
 
         # always exist
-        zeta_b_tot = ArrayList(
-            [self.u_t_tot.zeta_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        zeta_b_dot_tot = ArrayList(
-            [
-                self.u_t_tot.zeta_b_dot[i_surf][i_ts, ...]
-                for i_surf in range(self.n_surf)
-            ]
-        )
-        gamma_b_tot = ArrayList(
-            [self.x_t_tot.gamma_b[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        gamma_w_tot = ArrayList(
-            [self.x_t_tot.gamma_w[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
-        f_steady_tot = ArrayList(
-            [self.y_t_tot.f_steady[i_surf][i_ts, ...] for i_surf in range(self.n_surf)]
-        )
+        zeta_b_tot = self.u_t_tot.zeta_b.index_all(i_ts, ...)
+        zeta_b_dot_tot = self.u_t_tot.zeta_b_dot.index_all(i_ts, ...)
+        gamma_b_tot = self.x_t_tot.gamma_b.index_all(i_ts, ...)
+        gamma_w_tot = self.x_t_tot.gamma_w.index_all(i_ts, ...)
+        f_steady_tot = self.y_t_tot.f_steady.index_all(i_ts, ...)
 
         # optional
         gamma_b_dot_tot = (
-            ArrayList(
-                [
-                    self.x_t_tot.gamma_b_dot[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
+            self.x_t_tot.gamma_b_dot.index_all(i_ts, ...)
             if self.x_t_tot.gamma_b_dot is not None
             else None
         )
         zeta_w_tot = (
-            ArrayList(
-                [
-                    self.x_t_tot.zeta_w[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
+            self.x_t_tot.zeta_w.index_all(i_ts, ...)
             if self.x_t_tot.zeta_w is not None
             else None
         )
         f_unsteady_tot = (
-            ArrayList(
-                [
-                    self.y_t_tot.f_unsteady[i_surf][i_ts, ...]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
+            self.y_t_tot.f_unsteady.index_all(i_ts, ...)
             if self.y_t_tot.f_unsteady is not None
             else None
         )
 
-        return StaticAero(
+        return AeroSnapshot(
             zeta_b=zeta_b_tot,
             zeta_b_dot=zeta_b_dot_tot,
             zeta_w=zeta_w_tot,
@@ -279,7 +253,15 @@ class AeroLinearResult:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,
-            t=self.t[i_ts],
-            n_surf=self.n_surf,
+            t=self.t,
             horseshoe=False,
+            c=None,
+            nc=None,
+            aic_piv=None,
+            aic_lu=None,
+            kernels=self.reference.kernels,
+            mirror_point=None,
+            mirror_normal=None,
+            flowfield=self.reference.flowfield,
+            dof_mapping=self.reference.dof_mapping,
         )

@@ -28,7 +28,7 @@ def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructure
     else:
         sg.SetDimensions(*grid_arr.shape[:-1])
 
-    i_swap = 2 - int(is_planar)  # we swap axes as VTK likes z, y, x int_order
+    i_swap = 2 - int(is_planar)  # we swap axes as VTK likes z, y, x_target int_order
 
     # add point coordinate data
     points = vtk.vtkPoints()
@@ -74,7 +74,7 @@ def plot_grid_to_vtk(
                 f"grid_arr must have 3 or 4 dimensions, got {grid_arr.ndim}-D array"
             )
 
-    i_swap = 2 - int(is_planar)  # we swap axes as VTK likes z, y, x int_order
+    i_swap = 2 - int(is_planar)  # we swap axes as VTK likes z, y, x_target int_order
 
     sg = create_structured_grid(grid_arr, is_planar)
 

@@ -10,7 +10,7 @@ jax.config.update("jax_enable_x64", True)
 class TestTwoXLumpedMassConstXRotVelocity:
     r"""
     Test a two-node beam with lumped masses at each node, rotating with constant angular velocity about one of the
-    principal axes (x, y, or z).
+    principal axes (x_target, y, or z).
     """
 
     v_direction_index: int = 0

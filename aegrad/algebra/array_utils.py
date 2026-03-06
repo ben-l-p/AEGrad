@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Optional, Sequence
 from collections import UserList
 from functools import singledispatch
-from dataclasses import dataclass
 
 from jax import numpy as jnp
 from jax import Array
@@ -284,14 +283,23 @@ class ArrayList(UserList[Array]):
         return ("data",)
 
 
-@dataclass
 class ArrayListShape:
     r"""
     Class to hold the arr_list_shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.
     """
 
-    n_arrays: int
-    shapes: Sequence[tuple[int, ...]]
+    def __init__(self, n_arrays: int, shapes: Sequence[tuple[int, ...]]) -> None:
+        self.n_arrays = n_arrays
+        self.shapes = shapes
+
+    def __iter__(self):
+        return iter(self.shapes)
+
+    def __len__(self):
+        return self.n_arrays
+
+    def __getitem__(self, i):
+        return self.shapes[i]
 
 
 @singledispatch

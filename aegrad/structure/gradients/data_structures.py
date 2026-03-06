@@ -21,12 +21,14 @@ from data_structures import DesignVariables
 @dataclass
 class StructuralStates:
     hg: Array
-    d: Array
     eps: Array
     f_int: Array
-    f_ext_dead: Optional[Array]
-    f_ext_aero: Optional[Array]
-    f_grav: Optional[Array]
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class StructuralStateGradients:
+    d_hg_d_u: Array
 
 
 @_make_pytree

@@ -3,14 +3,14 @@ from __future__ import annotations
 from os import PathLike
 from dataclasses import dataclass
 
-from aegrad.aero import StaticAero, DynamicAero
+from aegrad.aero.data_structures import DynamicAeroCase
 from aegrad.structure import StaticStructure, DynamicStructure
 
 
 class StaticAeroelastic:
-    def __init__(self, structure: StaticStructure, aero: StaticAero):
+    def __init__(self, structure: StaticStructure, aero: DynamicAeroCase):
         self.structure: StaticStructure = structure
-        self.aero: StaticAero = aero
+        self.aero: DynamicAeroCase = aero
 
     def plot(
         self,
@@ -26,4 +26,4 @@ class StaticAeroelastic:
 @dataclass
 class DynamicAeroelastic:
     structure: DynamicStructure
-    aero: DynamicAero
+    aero: DynamicAeroCase

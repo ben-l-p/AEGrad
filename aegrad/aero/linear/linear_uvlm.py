@@ -9,9 +9,7 @@ import jax.numpy as jnp
 from os import PathLike
 from pathlib import Path
 
-from aegrad.aero.data_structures import (
-    StaticAero,
-)
+from aegrad.aero.data_structures import DynamicAeroCase, AeroSnapshot
 from aegrad.aero.linear.data_structures import (
     InputUnflattened,
     StateUnflattened,
@@ -25,10 +23,9 @@ from aegrad.aero.linear.data_structures import (
     OutputSlices,
     AeroLinearResult,
 )
-from aegrad.aero.utils import _get_c, _get_nc, _propagate_wake, _steady_forcing
+from aegrad.aero.utils import compute_c, compute_nc, _propagate_wake, _steady_forcing
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
 from aegrad.algebra.array_utils import ArrayList, split_to_vertex
-from aegrad.aero.aic import _compute_aic_sys_assembled
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.utils import _biot_savart_cutoff, KernelFunction
 from aegrad.utils import _shallow_asdict
@@ -53,7 +50,7 @@ class LinearUVLM:
     def __init__(
         self,
         case: UVLM,
-        reference: StaticAero,
+        reference: AeroSnapshot,
         wake_type: LinearWakeType = LinearWakeType.FREE,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
@@ -88,7 +85,6 @@ class LinearUVLM:
 
         # time info
         self.dt: Array = case.dt
-        self.t0: Array = reference.t
 
         # check that the reference state is steady
         # whilst linearisation can be performed about unsteady states, the current implementation omits some terms
@@ -105,32 +101,7 @@ class LinearUVLM:
             )
 
         # reference state
-        self.n_surf: int = reference.n_surf
-        self.zeta0_b: ArrayList = ArrayList(reference.zeta_b)
-        self.zeta0_b_dot: ArrayList = ArrayList(reference.zeta_b_dot)
-        self.zeta0_w: ArrayList = ArrayList(reference.zeta_w)
-        self.gamma0_b: ArrayList = ArrayList(reference.gamma_b)
-        self.gamma0_b_dot: ArrayList = ArrayList(reference.gamma_b_dot)
-        self.gamma0_w: ArrayList = ArrayList(reference.gamma_w)
-        self.f_steady0: ArrayList = ArrayList(reference.f_steady)
-        self.f_unsteady0: ArrayList = ArrayList(reference.f_unsteady)
-        self.c0: ArrayList = _get_c(reference.zeta_b)
-        self.n0: ArrayList = _get_nc(reference.zeta_b)
-        self.flowfield0: FlowField = case.flowfield
-
-        # baseline arr_list_shapes
-        self.zeta_b_shapes: Sequence[tuple[int, ...]] = [
-            arr.shape for arr in self.zeta0_b
-        ]
-        self.zeta_w_shapes: Sequence[tuple[int, ...]] = [
-            arr.shape for arr in self.zeta0_w
-        ]
-        self.gamma_b_shapes: Sequence[tuple[int, ...]] = [
-            arr.shape for arr in self.gamma0_b
-        ]
-        self.gamma_w_shapes: Sequence[tuple[int, ...]] = [
-            arr.shape for arr in self.gamma0_w
-        ]
+        self.reference: AeroSnapshot = reference
 
         # slices of individial surface components in full vector
         self.input_slices, self.n_inputs = self._make_input_slices()
@@ -138,8 +109,12 @@ class LinearUVLM:
         self.output_slices, self.n_outputs = self._make_output_slices()
 
         # kernels
-        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [_biot_savart_cutoff]
-        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [_biot_savart_cutoff]
+        self.kernels_b: Sequence[KernelFunction] = self.reference.n_surf * [
+            _biot_savart_cutoff
+        ]
+        self.kernels_w: Sequence[KernelFunction] = self.reference.n_surf * [
+            _biot_savart_cutoff
+        ]
 
         # wake propagation deltas
         self.delta_w: Sequence[Optional[Array]] = case.delta_w
@@ -156,12 +131,10 @@ class LinearUVLM:
         :return: InputUnflattened object representing the reference inputs.
         """
         return InputUnflattened(
-            self.zeta0_b,
-            self.zeta0_b_dot,
-            [jnp.zeros_like(arr) for arr in self.zeta0_b]
-            if self.bound_upwash
-            else None,
-            [jnp.zeros_like(arr) for arr in self.zeta0_w] if self.wake_upwash else None,
+            self.reference.zeta_b,
+            self.reference.zeta_b_dot,
+            ArrayList.zeros_like(self.reference.zeta_b) if self.bound_upwash else None,
+            ArrayList.zeros_like(self.reference.zeta_w) if self.wake_upwash else None,
         )
 
     def get_reference_states(self) -> StateUnflattened:
@@ -170,12 +143,12 @@ class LinearUVLM:
         :return: StateUnflattened object representing the reference states.
         """
         return StateUnflattened(
-            self.gamma0_b,
-            self.gamma0_w,
-            self.gamma0_b if self.unsteady_force else None,
-            self.gamma0_b_dot if self.gamma_dot_state else None,
-            self.zeta0_w if self.prescribed_wake else None,
-            self.zeta0_b if self.prescribed_wake else None,
+            self.reference.gamma_b,
+            self.reference.gamma_w,
+            self.reference.gamma_b if self.unsteady_force else None,
+            self.reference.gamma_b_dot if self.gamma_dot_state else None,
+            self.reference.zeta_w if self.prescribed_wake else None,
+            self.reference.zeta_b if self.prescribed_wake else None,
         )
 
     def get_reference_outputs(self) -> OutputUnflattened:
@@ -184,7 +157,8 @@ class LinearUVLM:
         :return: OutputUnflattened object representing the reference outputs.
         """
         return OutputUnflattened(
-            self.f_steady0, self.f_unsteady0 if self.unsteady_force else None
+            self.reference.f_steady,
+            self.reference.f_unsteady if self.unsteady_force else None,
         )
 
     @staticmethod
@@ -218,15 +192,23 @@ class LinearUVLM:
         :return: InputSlices instance and total number of input elements.
         """
         slice_entries = (
-            _SliceEntry("zeta_b", True, self.zeta_b_shapes),
-            _SliceEntry("zeta_b_dot", True, self.zeta_b_shapes),
+            _SliceEntry("zeta_b", True, self.reference.zeta_b.shape),
+            _SliceEntry("zeta_b_dot", True, self.reference.zeta_b.shape),
             _SliceEntry(
                 "nu_b",
-                *((True, self.zeta_b_shapes) if self.bound_upwash else (False, None)),
+                *(
+                    (True, self.reference.zeta_b.shape)
+                    if self.bound_upwash
+                    else (False, None)
+                ),
             ),
             _SliceEntry(
                 "nu_w",
-                *((True, self.zeta_w_shapes) if self.wake_upwash else (False, None)),
+                *(
+                    (True, self.reference.zeta_w.shape)
+                    if self.wake_upwash
+                    else (False, None)
+                ),
             ),
         )
         return self._make_slices(slice_entries, InputSlices)
@@ -237,12 +219,12 @@ class LinearUVLM:
         :return: StateSlices instance and total number of state elements.
         """
         slice_entries = (
-            _SliceEntry("gamma_b", True, self.gamma_b_shapes),
-            _SliceEntry("gamma_w", True, self.gamma_w_shapes),
+            _SliceEntry("gamma_b", True, self.reference.gamma_b.shape),
+            _SliceEntry("gamma_w", True, self.reference.gamma_w.shape),
             _SliceEntry(
                 "gamma_bm1",
                 *(
-                    (True, self.gamma_b_shapes)
+                    (True, self.reference.gamma_b.shape)
                     if self.unsteady_force
                     else (False, None)
                 ),
@@ -250,7 +232,7 @@ class LinearUVLM:
             _SliceEntry(
                 "gamma_b_dot",
                 *(
-                    (True, self.gamma_b_shapes)
+                    (True, self.reference.gamma_b.shape)
                     if self.gamma_dot_state
                     else (False, None)
                 ),
@@ -258,7 +240,7 @@ class LinearUVLM:
             _SliceEntry(
                 "zeta_w",
                 *(
-                    (True, self.zeta_w_shapes)
+                    (True, self.reference.zeta_w.shape)
                     if self.prescribed_wake
                     else (False, None)
                 ),
@@ -266,7 +248,7 @@ class LinearUVLM:
             _SliceEntry(
                 "zeta_b",
                 *(
-                    (True, self.zeta_b_shapes)
+                    (True, self.reference.zeta_b.shape)
                     if self.prescribed_wake
                     else (False, None)
                 ),
@@ -280,10 +262,14 @@ class LinearUVLM:
         :return: OutputSlices instance and total number of output elements.
         """
         slice_entries = (
-            _SliceEntry("f_steady", True, self.zeta_b_shapes),
+            _SliceEntry("f_steady", True, self.reference.zeta_b.shape),
             _SliceEntry(
                 "f_unsteady",
-                *((True, self.zeta_b_shapes) if self.unsteady_force else (False, None)),
+                *(
+                    (True, self.reference.zeta_b.shape)
+                    if self.unsteady_force
+                    else (False, None)
+                ),
             ),
         )
         return self._make_slices(slice_entries, OutputSlices)
@@ -295,7 +281,7 @@ class LinearUVLM:
         Unpack a vector into its components based on the provided slices.
         :param x: Vector to unpack, [n_elements] or [n_tstep, n_elements]
         :param slices: Slice name and linear component mapping.
-        :param add_t: If true, the first dimension of x is time steps.
+        :param add_t: If true, the first dimension of x_target is time steps.
         :return: Dictionary mapping of names to unpacked ArrayLists.
         """
         out = {}
@@ -310,14 +296,14 @@ class LinearUVLM:
                             x[:, entry.slices[i_surf]].reshape(
                                 n_tstep, *entry.shapes[i_surf]
                             )
-                            for i_surf in range(self.n_surf)
+                            for i_surf in range(self.reference.n_surf)
                         ]
                     )
                 else:
                     out[name] = ArrayList(
                         [
                             x[entry.slices[i_surf]].reshape(entry.shapes[i_surf])
-                            for i_surf in range(self.n_surf)
+                            for i_surf in range(self.reference.n_surf)
                         ]
                     )
         return out
@@ -398,7 +384,7 @@ class LinearUVLM:
         vec = jnp.zeros(vec_length)
         for name, entry in slices.items():
             if entry.enabled:
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     vec = vec.at[entry.slices[i_surf]].set(arrs[name][i_surf].ravel())
         return vec
 
@@ -453,7 +439,7 @@ class LinearUVLM:
         vec_t = jnp.zeros((n_tstep, vec_length))
         for name, entry in slices.items():
             if entry.enabled:
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     vec_t = vec_t.at[:, entry.slices[i_surf]].set(
                         arrs[name][i_surf].reshape(n_tstep, -1)
                     )
@@ -510,7 +496,7 @@ class LinearUVLM:
                 out[name] = None
             else:
                 arrs = ArrayList([])
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     if add_t:
                         arrs.append(
                             reference[name][i_surf][None, ...] + input_[name][i_surf]
@@ -612,7 +598,7 @@ class LinearUVLM:
                 out[name] = None
             else:
                 arrs = ArrayList([])
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     arrs.append(jnp.zeros(entry.shapes[i_surf]))
                 out[name] = arrs
         return out
@@ -647,7 +633,7 @@ class LinearUVLM:
         """
         arrs = ArrayList([])
         cnt = 0
-        for i_surf in range(self.n_surf):
+        for i_surf in range(self.reference.n_surf):
             size = reduce(mul, component.shapes[i_surf])
             arrs.append(vec[cnt : cnt + size].reshape(component.shapes[i_surf]))
         return arrs
@@ -664,15 +650,15 @@ class LinearUVLM:
             :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Solve matrix, [m_tot*n_tot, m_tot*n_tot]
             """
-            zeta_cs = _get_c(zeta_bs)
-            ns = _get_nc(zeta_bs)
-            aic_sys = _compute_aic_sys_assembled(
-                cs=zeta_cs,
-                zetas=zeta_bs,
-                kernels=self.kernels_b,
-                ns=ns,
-                mirror_point=self.mirror_point,
-                mirror_normal=self.mirror_normal,
+            zeta_cs = compute_c(zeta_bs)
+            ns = compute_nc(zeta_bs)
+            aic_sys = self.reference.compute_aic_sys_assembled(
+                i_ts=0,
+                project_to_normals=True,
+                x_target=zeta_cs,
+                custom_nc=ns,
+                custom_x_source=zeta_bs,
+                custom_kernels=self.kernels_b,
             )
             return jnp.linalg.inv(aic_sys)
 
@@ -691,22 +677,24 @@ class LinearUVLM:
             :return: Boundary condition velocity at collocation points, [m_tot*n_tot]
             """
             # all values given at time=n+1
-            zeta_cs = _get_c(zeta_bs)
-            zeta_cs_dot = _get_c(zeta_bs_dot)
+            zeta_cs = compute_c(zeta_bs)
+            zeta_cs_dot = compute_c(zeta_bs_dot)
 
-            ns = _get_nc(zeta_bs)
-            aic_w = _compute_aic_sys_assembled(
-                cs=zeta_cs,
-                zetas=zeta_ws,
-                kernels=self.kernels_w,
-                ns=ns,
-                mirror_point=self.mirror_point,
-                mirror_normal=self.mirror_normal,
+            ns = compute_nc(zeta_bs)
+            aic_w = self.reference.compute_aic_sys_assembled(
+                i_ts=0,
+                project_to_normals=True,
+                x_target=zeta_cs,
+                custom_nc=ns,
+                custom_x_source=zeta_ws,
+                custom_kernels=self.kernels_w,
             )  # [m_tot*n_tot, m_star_tot*n_tot]
 
             v_zeta_n = ArrayList.einsum(
                 "ijk,ijk->ij",
-                self.flowfield0.surf_vmap_call(zeta_cs, jnp.array(self.t0))
+                self.reference.flowfield.surf_vmap_call(
+                    zeta_cs, jnp.array(self.reference.t)
+                )
                 - zeta_cs_dot,
                 ns,
             )
@@ -721,27 +709,26 @@ class LinearUVLM:
             zeta_w: Optional[ArrayList],
         ) -> Array:
             r"""
-            Flow velocity at points x due to the flowfield and the bound and wake surfaces. Entries of None are replaced
+            Flow velocity at points x_target due to the flowfield and the bound and wake surfaces. Entries of None are replaced
             with the reference value.
             :param x: Points to evaluate flow velocity at, [..., 3]
             :param gamma_b: Bound circulation strengths at t=n+1, [n_surf][m, n, 3]
             :param gamma_w: Wake circulation strengths at t=n+1, [n_surf][m_star, n, 3]
             :param zeta_b: Bound vertex positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
             :param zeta_w: Wake vertex positions at t=n+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :return: Flow velocity at points x, [..., 3]
+            :return: Flow velocity at points x_target, [..., 3]
             """
             # sample flowfield
-            v_x = self.flowfield0.vmap_call(x, jnp.array(self.t0))
+            v_x = self.reference.flowfield.vmap_call(x, jnp.array(self.reference.t))
 
             # add influence from elements if gamma is provided
             if gamma_b is not None and gamma_w is not None:
-                vertex_influence = _compute_aic_sys_assembled(
-                    cs=[x],
-                    zetas=[*zeta_b, *zeta_w],
-                    kernels=[*self.kernels_b, *self.kernels_w],
-                    ns=None,
-                    mirror_point=self.mirror_point,
-                    mirror_normal=self.mirror_normal,
+                vertex_influence = self.reference.compute_aic_sys_assembled(
+                    i_ts=0,
+                    x_target=ArrayList([x]),
+                    custom_x_source=ArrayList([*zeta_b, *zeta_w]),
+                    custom_kernels=self.reference.kernels,
+                    project_to_normals=False,
                 )
 
                 # add influence from panels
@@ -778,8 +765,8 @@ class LinearUVLM:
             zeta_w_np1_tot, gamma_w_np1_tot = _propagate_wake(
                 x_n_tot.gamma_b,
                 x_n_tot.gamma_w,
-                u_np1_tot.zeta_b if self.prescribed_wake else self.zeta0_b,
-                x_n_tot.zeta_w if self.prescribed_wake else self.zeta0_w,
+                u_np1_tot.zeta_b if self.prescribed_wake else self.reference.zeta_b,
+                x_n_tot.zeta_w if self.prescribed_wake else self.reference.zeta_w,
                 self.delta_w,
                 _v_wake_prop,
                 self.dt,
@@ -787,9 +774,11 @@ class LinearUVLM:
             )
 
             # obtain the delta for the linear system
-            d_gamma_w_np1 = gamma_w_np1_tot - self.gamma0_w
+            d_gamma_w_np1 = gamma_w_np1_tot - self.reference.gamma_w
             d_zeta_w_np1 = (
-                (zeta_w_np1_tot - self.zeta0_w) if self.prescribed_wake else None
+                (zeta_w_np1_tot - self.reference.zeta_w)
+                if self.prescribed_wake
+                else None
             )
 
             # add pertubations from input velocities
@@ -806,12 +795,17 @@ class LinearUVLM:
             :param d_zeta_b: Perturbations in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Perturbations in normal vectors at t=n+1, [n_surf][m, n, 3]
             """
-            zeta_b_full = d_zeta_b + self.zeta0_b
-            n_full = _get_nc(zeta_b_full)
-            return n_full - self.n0
+            zeta_b_full = d_zeta_b + self.reference.zeta_b
+            n_full = compute_nc(zeta_b_full)
+            return n_full - self.reference.nc
 
         # boundary condition velocity and its derivatives [n_c]
-        v_bc0 = _make_v_bc(self.zeta0_b, self.zeta0_w, self.gamma0_w, self.zeta0_b_dot)
+        v_bc0 = _make_v_bc(
+            self.reference.zeta_b,
+            self.reference.zeta_w,
+            self.reference.gamma_w,
+            self.reference.zeta_b_dot,
+        )
 
         def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> Array:
             r"""
@@ -823,11 +817,11 @@ class LinearUVLM:
             primals, tangents = jax.jvp(
                 lambda dzb_: _make_v_bc(
                     zeta_bs=dzb_,
-                    zeta_ws=self.zeta0_w,
-                    gamma_ws=self.gamma0_w,
-                    zeta_bs_dot=self.zeta0_b_dot,
+                    zeta_ws=self.reference.zeta_w,
+                    gamma_ws=self.reference.gamma_w,
+                    zeta_bs_dot=self.reference.zeta_b_dot,
                 ),
-                [self.zeta0_b],
+                [self.reference.zeta_b],
                 [d_zeta_b],
             )
 
@@ -841,12 +835,12 @@ class LinearUVLM:
             """
             primals, tangents = jax.jvp(
                 lambda dzw_: _make_v_bc(
-                    zeta_bs=self.zeta0_b,
+                    zeta_bs=self.reference.zeta_b,
                     zeta_ws=dzw_,
-                    gamma_ws=self.gamma0_w,
-                    zeta_bs_dot=self.zeta0_b_dot,
+                    gamma_ws=self.reference.gamma_w,
+                    zeta_bs_dot=self.reference.zeta_b_dot,
                 ),
-                [self.zeta0_w],
+                [self.reference.zeta_w],
                 [d_zeta_w],
             )
 
@@ -860,18 +854,18 @@ class LinearUVLM:
             """
             primals, tangents = jax.jvp(
                 lambda dgw_: _make_v_bc(
-                    zeta_bs=self.zeta0_b,
-                    zeta_ws=self.zeta0_w,
+                    zeta_bs=self.reference.zeta_b,
+                    zeta_ws=self.reference.zeta_w,
                     gamma_ws=dgw_,
-                    zeta_bs_dot=self.zeta0_b_dot,
+                    zeta_bs_dot=self.reference.zeta_b_dot,
                 ),
-                [self.gamma0_w],
+                [self.reference.gamma_w],
                 [d_gamma_w],
             )
             return ArrayList(tangents).flatten()
 
         # solve matrix and its derivative, [n_c, n_c]
-        solve_mat0 = _make_solve_mat(self.zeta0_b)
+        solve_mat0 = _make_solve_mat(self.reference.zeta_b)
 
         def d_solve_mat_d_zeta_b(d_zeta_b: ArrayList) -> Array:
             r"""
@@ -879,7 +873,9 @@ class LinearUVLM:
             :param d_zeta_b: Perturbation in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Perturbation in solve matrix, [n_c, n_c]
             """
-            primals, tangents = jax.jvp(_make_solve_mat, [self.zeta0_b], [d_zeta_b])
+            primals, tangents = jax.jvp(
+                _make_solve_mat, [self.reference.zeta_b], [d_zeta_b]
+            )
             return sum(tangents)
 
         @jit
@@ -947,20 +943,22 @@ class LinearUVLM:
             # influence of grid perturbations on wake influence
             d_v_bc = d_v_bc_d_zeta_b(u_np1.zeta_b)
 
-            # perturbations in flow and bound grid at zeta_b
+            # perturbations in flow and bound grid at zeta_bs
             d_n = _get_dn(u_np1.zeta_b)
-            d_zeta_dot_c = _get_c(u_np1.zeta_b_dot)
-            zeta0_c_dot = _get_c(self.zeta0_b_dot)
+            d_zeta_dot_c = compute_c(u_np1.zeta_b_dot)
+            zeta0_c_dot = compute_c(self.reference.zeta_b_dot)
 
             if self.bound_upwash:
-                d_nu_c = _get_c(u_np1.nu_b)
+                d_nu_c = compute_c(u_np1.nu_b)
                 d_v_bc += (
-                    ArrayList.einsum("ijk,ijk->ij", d_nu_c - d_zeta_dot_c, self.n0)
+                    ArrayList.einsum(
+                        "ijk,ijk->ij", d_nu_c - d_zeta_dot_c, self.reference.nc
+                    )
                     + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
                 ).flatten()
             else:
                 d_v_bc += (
-                    ArrayList.einsum("ijk,ijk->ij", -d_zeta_dot_c, self.n0)
+                    ArrayList.einsum("ijk,ijk->ij", -d_zeta_dot_c, self.reference.nc)
                     + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
                 ).flatten()
 
@@ -1013,11 +1011,11 @@ class LinearUVLM:
                     if self.gamma_dot_state
                     else (x_n.gamma_b - x_n.gamma_bm1) / self.dt
                 )
-                d_f_unsteady_n = self.flowfield0.rho * ArrayList(
+                d_f_unsteady_n = self.reference.flowfield.rho * ArrayList(
                     [
                         split_to_vertex(arr, (0, 1))
                         for arr in ArrayList.einsum(
-                            "ij,ijk->ijk", d_gamma_dot_n, self.n0
+                            "ij,ijk->ijk", d_gamma_dot_n, self.reference.nc
                         )
                     ]
                 )
@@ -1035,34 +1033,34 @@ class LinearUVLM:
 
                 def _v_forcing(x: Array) -> Array:
                     r"""
-                    Flow velocity at points x due to the flowfield and the bound and wake surfaces.
+                    Flow velocity at points x_target due to the flowfield and the bound and wake surfaces.
                     :param x: Points to evaluate flow velocity at, [..., 3]
-                    :return: Flow velocity at points x, [..., 3]
+                    :return: Flow velocity at points x_target, [..., 3]
                     """
                     return _v_flow(
                         x,
                         gamma_b,
                         gamma_w,
-                        self.zeta0_b,
-                        zeta_w if zeta_w is not None else self.zeta0_w,
+                        self.reference.zeta_b,
+                        zeta_w if zeta_w is not None else self.reference.zeta_w,
                     )
 
                 return _steady_forcing(
-                    self.zeta0_b,
-                    self.zeta0_b_dot,
+                    self.reference.zeta_b,
+                    self.reference.zeta_b_dot,
                     gamma_b,
                     gamma_w,
                     _v_forcing,
                     None,
-                    self.flowfield0.rho,
+                    self.reference.flowfield.rho,
                 )
 
             # obtain perturbation in steady forces due to states
             d_f_steady_n = jax.jvp(
                 steady_forcing_c,
-                [self.gamma0_b, self.gamma0_w, self.zeta0_w]
+                [self.reference.gamma_b, self.reference.gamma_w, self.reference.zeta_w]
                 if self.prescribed_wake
-                else [self.gamma0_b, self.gamma0_w],
+                else [self.reference.gamma_b, self.reference.gamma_w],
                 [x_n.gamma_b, x_n.gamma_w, x_n.zeta_w]
                 if self.prescribed_wake
                 else [x_n.gamma_b, x_n.gamma_w],
@@ -1086,38 +1084,42 @@ class LinearUVLM:
             ) -> ArrayList:
                 def _v_forcing(x: Array) -> Array:
                     r"""
-                    Flow velocity at points x due to the flowfield and the bound and wake surfaces.
+                    Flow velocity at points x_target due to the flowfield and the bound and wake surfaces.
                     :param x: Points to evaluate flow velocity at, [..., 3]
-                    :return: Flow velocity at points x, [..., 3]
+                    :return: Flow velocity at points x_target, [..., 3]
                     """
                     return _v_flow(
-                        x, self.gamma0_b, self.gamma0_w, zeta_b, self.zeta0_w
+                        x,
+                        self.reference.gamma_b,
+                        self.reference.gamma_w,
+                        zeta_b,
+                        self.reference.zeta_w,
                     )
 
                 return _steady_forcing(
                     zeta_b,
                     zeta_b_dot,
-                    self.gamma0_b,
-                    self.gamma0_w,
+                    self.reference.gamma_b,
+                    self.reference.gamma_w,
                     _v_forcing,
                     nu_b,
-                    self.flowfield0.rho,
+                    self.reference.flowfield.rho,
                 )
 
             if self.bound_upwash:
                 d_f_steady_n = jax.jvp(
                     steady_forcing_d,
                     [
-                        self.zeta0_b,
-                        self.zeta0_b_dot,
-                        ArrayList.zeros_like(self.zeta0_b),
+                        self.reference.zeta_b,
+                        self.reference.zeta_b_dot,
+                        ArrayList.zeros_like(self.reference.zeta_b),
                     ],
                     [u_n.zeta_b, u_n.zeta_b_dot, u_n.nu_b],
                 )[1]
             else:
                 d_f_steady_n = jax.jvp(
                     lambda zb, zbd: steady_forcing_d(zb, zbd, None),
-                    [self.zeta0_b, self.zeta0_b_dot],
+                    [self.reference.zeta_b, self.reference.zeta_b_dot],
                     [u_n.zeta_b, u_n.zeta_b_dot],
                 )[1]
 
@@ -1166,7 +1168,7 @@ class LinearUVLM:
         n_tstep: int = u.zeta_b[0].shape[
             0
         ]  # number of time steps from first surface, first entry
-        t = self.t0 + jnp.arange(0, n_tstep) * self.dt  # time vector
+        t = self.reference.t + jnp.arange(0, n_tstep) * self.dt  # time vector
 
         u_tot = u
 
@@ -1175,7 +1177,7 @@ class LinearUVLM:
                 "No flowfield or bound upwash perturbations provided. Assuming zero bound upwash perturbations."
             )
             u_tot.nu_b = ArrayList(
-                [jnp.zeros((n_tstep, *zb.shape)) for zb in self.zeta0_b]
+                [jnp.zeros((n_tstep, *zb.shape)) for zb in self.reference.zeta_b]
             )
 
         if self.wake_upwash and flowfield is None and u_tot.nu_w is None:
@@ -1183,19 +1185,21 @@ class LinearUVLM:
                 "No flowfield or wake upwash perturbations provided. Assuming zero wake upwash perturbations."
             )
             u_tot.nu_w = ArrayList(
-                [jnp.zeros((n_tstep, *zw.shape)) for zw in self.zeta0_w]
+                [jnp.zeros((n_tstep, *zw.shape)) for zw in self.reference.zeta_w]
             )
 
         # add flowfield contributions to input upwash if provided
         if flowfield is not None:
             if self.bound_upwash:
                 nu_b_flow = ArrayList([])
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     nu_b_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.zeta0_b[i_surf], t
+                            self.reference.zeta_b[i_surf], t
                         )
-                        - flowfield.vmap_call(self.zeta0_b[i_surf], t[0])[None, ...]
+                        - flowfield.vmap_call(self.reference.zeta_b[i_surf], t[0])[
+                            None, ...
+                        ]
                     )
                 if u_tot.nu_b is None:
                     u_tot.nu_b = nu_b_flow
@@ -1203,12 +1207,14 @@ class LinearUVLM:
                     u_tot.nu_b += nu_b_flow
             if self.wake_upwash:
                 nu_w_flow = ArrayList([])
-                for i_surf in range(self.n_surf):
+                for i_surf in range(self.reference.n_surf):
                     nu_w_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.zeta0_w[i_surf], t
+                            self.reference.zeta_w[i_surf], t
                         )
-                        - flowfield.vmap_call(self.zeta0_w[i_surf], t[0])[None, ...]
+                        - flowfield.vmap_call(self.reference.zeta_w[i_surf], t[0])[
+                            None, ...
+                        ]
                     )
                 if u_tot.nu_w is None:
                     u_tot.nu_w = nu_w_flow
@@ -1227,6 +1233,7 @@ class LinearUVLM:
 
         # save results to object
         return AeroLinearResult(
+            reference=self.reference,
             u_t=u,
             x_t=x_t_obj,
             y_t=y_t_obj,
@@ -1235,7 +1242,7 @@ class LinearUVLM:
             y_t_tot=y_t_tot_obj,
             n_tstep=n_tstep,
             t=t,
-            n_surf=self.n_surf,
+            n_surf=self.reference.n_surf,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
         )
@@ -1253,25 +1260,25 @@ class LinearUVLM:
         else:
             return evals
 
-    def reference_snapshot(self) -> StaticAero:
+    def reference_snapshot(self) -> DynamicAeroCase:
         r"""
         Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
         :return: StaticAero at reference state
         """
-        return StaticAero(
-            zeta_b=self.zeta0_b,
-            zeta_b_dot=self.zeta0_b_dot,
-            zeta_w=self.zeta0_w,
-            gamma_b=self.gamma0_b,
-            gamma_b_dot=self.gamma0_b_dot,
-            gamma_w=self.gamma0_w,
-            f_steady=self.f_steady0,
-            f_unsteady=self.f_unsteady0,
+        return DynamicAeroCase(
+            zeta_b=self.reference.zeta_b,
+            zeta_b_dot=self.reference.zeta_b_dot,
+            zeta_w=self.reference.zeta_w,
+            gamma_b=self.reference.gamma_b,
+            gamma_b_dot=self.reference.gamma_b_dot,
+            gamma_w=self.reference.gamma_w,
+            f_steady=self.reference.f_steady,
+            f_unsteady=self.reference.f_unsteady,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,
             t=jnp.zeros(()),
-            n_surf=self.n_surf,
+            n_surf=self.reference.n_surf,
         )
 
     def plot_reference(

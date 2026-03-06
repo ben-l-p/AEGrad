@@ -858,7 +858,7 @@ class BaseBeamStructure:
         r"""
         Compute the total mass and the coordinate of center of gravity.
         :param hg: Node locations in SE(3), [n_nodes_, 4, 4]
-        :return: Total mass, x coordinate of center of gravity, [3]
+        :return: Total mass, x_target coordinate of center of gravity, [3]
         """
 
         # TODO: implement

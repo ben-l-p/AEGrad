@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 import jax
 from jax import Array, numpy as jnp
 
-from aero import StaticAero
+from aero.data_structures import DynamicAeroCase
 from algebra.array_utils import ArrayList, ArrayListShape
 from plotting.aerogrid import plot_grid_to_vtk
 from utils import _make_pytree
@@ -22,8 +22,13 @@ from data_structures import DesignVariables
 class AeroStates:
     f_steady: ArrayList
     f_unsteady: Optional[ArrayList]
-    gamma_b: ArrayList
-    gamma_w: ArrayList
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class AeroStateGradients:
+    d_f_steady_d_u: ArrayList
+    d_f_unsteady_d_u: Optional[ArrayList]
 
 
 @_make_pytree
@@ -78,7 +83,7 @@ class AeroDesignGradients:
 
     def plot(
         self,
-        case: StaticAero,
+        case: DynamicAeroCase,
         rmat_nodal: Optional[ArrayList],
         directory: PathLike | str,
     ) -> Sequence[Path]:

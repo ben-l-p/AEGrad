@@ -13,15 +13,15 @@ jax.config.update("jax_enable_x64", True)
 
 def geradin_beam(
     n_nodes: int = 20,
-    beam_direction: Literal["x", "y", "z"] = "x",
+    beam_direction: Literal["x_target", "y", "z"] = "x_target",
     m_cs: Optional[Array] = None,
 ) -> BeamStructure:
     length = jnp.array(5.0)
     n_elem = n_nodes - 1
 
-    direction_index = {"x": 0, "y": 1, "z": 2}[beam_direction]
+    direction_index = {"x_target": 0, "y": 1, "z": 2}[beam_direction]
     y_vect = {
-        "x": jnp.array([0.0, 1.0, 0.0]),
+        "x_target": jnp.array([0.0, 1.0, 0.0]),
         "y": jnp.array([0.0, 0.0, 1.0]),
         "z": jnp.array([1.0, 0.0, 0.0]),
     }[beam_direction]
@@ -47,7 +47,7 @@ def geradin_beam(
 if __name__ == "__main__":
     n_nodes_ = 20
     load = 600000.0
-    struct_ = geradin_beam(n_nodes=n_nodes_, beam_direction="x")
+    struct_ = geradin_beam(n_nodes=n_nodes_, beam_direction="x_target")
     f_ext = jnp.zeros((n_nodes_, 6))
     f_ext = f_ext.at[-1, 2].set(-load)
 

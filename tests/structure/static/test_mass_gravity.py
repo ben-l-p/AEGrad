@@ -12,7 +12,7 @@ class TestTwoNodeXGravityZ:
     Test the strains and forces for a two-node beam element with prescribed displacements
     """
 
-    beam_direction = "x"
+    beam_direction = "x_target"
     direction_index = 0
     y_vector = jnp.array([[0.0, 1.0, 0.0]])
 

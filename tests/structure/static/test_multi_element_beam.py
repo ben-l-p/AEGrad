@@ -20,7 +20,7 @@ class TestMultiXElementStrainsForces:
     conn = conn.at[:, 0].set(jnp.arange(n_elem))
     conn = conn.at[:, 1].set(jnp.arange(1, n_elem + 1))
 
-    beam_direction = "x"
+    beam_direction = "x_target"
     direction_index = 0
     coords = (
         jnp.zeros((n_nodes, 3))

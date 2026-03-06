@@ -242,7 +242,7 @@ def const_curvature_beam(
 ) -> Array:
     r"""
     For a beam with constant curvature, with base node at the origin and curvature in the positive z direction
-    (i.e., existing in the x-y plane with z=0), obtain the coordinates along the beam length for
+    (i.e., existing in the x_target-y plane with z=0), obtain the coordinates along the beam length for
     :param kappa: Curvature of the element, []
     :param s: Position along the beam length, []
     :param direction: Direction of moment applied, either 'y' or 'z'

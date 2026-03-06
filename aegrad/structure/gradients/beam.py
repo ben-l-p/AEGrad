@@ -58,26 +58,13 @@ class BeamStructure(BaseBeamStructure):
         ).reshape(-1, 6)
         if inner_case.use_gravity:
             m_t = inner_case._make_m_t(d)
-            f_grav = inner_case._assemble_vector_from_entries(
-                inner_case._make_f_grav(m_t, hg[:, :3, :3])
-            ).reshape(-1, 6)
         else:
             m_t = None
-            f_grav = None
-
-        if dv.f_ext_dead is not None:
-            f_ext_dead = inner_case._make_f_dead_ext(dv.f_ext_dead, hg[:, :3, :3])
-        else:
-            f_ext_dead = None
 
         ss = StructuralStates(
             hg=hg,
-            d=d,
             eps=eps,
             f_int=f_int,
-            f_ext_dead=f_ext_dead,
-            f_ext_aero=None,
-            f_grav=f_grav,
         )
 
         f_res = inner_case._make_f_res(
@@ -142,12 +129,8 @@ class BeamStructure(BaseBeamStructure):
 
         struct_states = StructuralStates(
             hg=structure.hg,
-            d=d,
             eps=eps,
             f_int=structure.f_int,
-            f_ext_dead=structure.f_ext_dead,
-            f_ext_aero=None,
-            f_grav=structure.f_grav,
         )
 
         # find shape of objective function output without evaluating function

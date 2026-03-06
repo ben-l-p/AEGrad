@@ -12,7 +12,7 @@ from aegrad.utils import _make_pytree
 @_make_pytree
 class LinearOperator:
     r"""
-    Linear operator represented by a function, either as A(x) or Ax.
+    Linear operator represented by a function, either as A(x_target) or Ax.
     """
 
     def __init__(
@@ -50,7 +50,7 @@ class LinearOperator:
         r"""
         Generate the matrix representation of the linear operator.
         """
-        # dL/dx at x at any point is the same, and should be independent of x
+        # dL/dx at x_target at any point is the same, and should be independent of x_target
         self._matrix = jacobian(lambda x_: self.func(x_), argnums=0)(
             jnp.full(self.shape[1], 1.0)
         )
@@ -273,7 +273,7 @@ class LinearSystem:
         self.n_outputs: int = c.shape[0]
         self.removed_u_np1: bool = removed_u_np1
 
-    def compute_matrices(self) -> None:
+    def generate_matrices(self) -> None:
         r"""
         Compute the matrix representations of the linear operators in the system.
         """

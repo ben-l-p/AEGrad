@@ -14,9 +14,11 @@ from aero.gradients.data_structures import (
     AeroStates,
     AeroDesignVariables,
     AeroDesignGradients,
+    AeroStateGradients,
 )
+from aegrad.structure.gradients.data_structures import StructuralStateGradients
 from algebra.array_utils import ArrayList
-from coupled import StaticAeroelastic
+from aegrad.coupled.data_structures import StaticAeroelastic
 from structure import StructuralStates, StructuralDesignVariables
 from structure.gradients.data_structures import StructureDesignGradients
 from utils import _make_pytree
@@ -28,6 +30,13 @@ from data_structures import DesignVariables
 class AeroelasticStates:
     aero: AeroStates
     structure: StructuralStates
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class AeroelasticStateGradients:
+    aero: AeroStateGradients
+    structure: StructuralStateGradients
 
 
 @_make_pytree

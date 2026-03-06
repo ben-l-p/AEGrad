@@ -4,7 +4,7 @@ from typing import Sequence, Optional, Callable
 import jax
 from jax import numpy as jnp, Array
 from jax import vmap
-from jax._src.lax import cond
+from jax.lax import cond
 
 from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
 from constants import EPSILON, R_CUTOFF
@@ -49,7 +49,7 @@ def _get_surf_nc(zeta: Array) -> Array:
     return jnp.cross(diag1, diag2)
 
 
-def _get_c(zetas: ArrayList) -> ArrayList:
+def compute_c(zetas: ArrayList) -> ArrayList:
     r"""
     Compute the colocation points for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
@@ -58,7 +58,7 @@ def _get_c(zetas: ArrayList) -> ArrayList:
     return ArrayList([_get_surf_c(zeta) for zeta in zetas])
 
 
-def _get_nc(zetas: ArrayList) -> ArrayList:
+def compute_nc(zetas: ArrayList) -> ArrayList:
     r"""
     Compute the normal vectors for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
@@ -396,3 +396,18 @@ def _biot_savart_cutoff(x: Array, y: Array) -> Array:
         return r1_x_r2_unit2 / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
     return cond((r > R_CUTOFF), _kernel_value, lambda: jnp.zeros(3))
+
+
+def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array:
+    """
+    Mirror a grid of points across a plane defined by a point and a normal vector.
+    :param zeta: Grid of points, [zeta_m, zeta_n, 3].
+    :param mirror_point: Point in mirror plane, [3].
+    :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalized.
+    :return: Mirrored grid of points, [zeta_m, zeta_n, 3].
+    """
+    diff = zeta - mirror_point[None, None, :]  # [zeta_m, zeta_n, 3]
+    diff_n = jnp.einsum("ijk,k->ij", diff, mirror_normal)  # [zeta_m, zeta_n]
+    return (
+        zeta - 2.0 * diff_n[:, :, None] * mirror_normal[None, None, :]
+    )  # [zeta_m, zeta_n, 3]
