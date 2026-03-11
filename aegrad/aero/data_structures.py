@@ -105,6 +105,11 @@ class DynamicAeroCase:
         self.dof_mapping: ArrayList = dof_mapping
         self.horseshoe: bool = horseshoe
 
+        self.n_bound_panels: int = sum(g.size for g in gamma_b.index_all(0))
+        self.n_wake_panels: int = sum(g.size for g in gamma_w.index_all(0))
+        self.n_bound_zeta_dofs: int = sum(g.size for g in zeta_b.index_all(0))
+        self.n_wake_zeta_dofs: int = sum(g.size for g in zeta_w.index_all(0))
+
     @property
     def zeta_b(self) -> ArrayList:
         return self._zeta_b
