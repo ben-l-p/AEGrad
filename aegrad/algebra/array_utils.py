@@ -301,6 +301,9 @@ class ArrayListShape:
     def __getitem__(self, i):
         return self.shapes[i]
 
+    def __repr__(self):
+        return f"ArrayListShape(n_arrays={self.n_arrays}), shapes={self.shapes}"
+
 
 @singledispatch
 def split_to_vertex(arr: Array, axes: int | Sequence[int]) -> Array:

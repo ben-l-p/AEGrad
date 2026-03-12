@@ -923,10 +923,14 @@ class DynamicAeroCase:
             case "target":
                 temp = aic_ring.sum(axis=(2, 3))  # [m_t, n_t, 2, 2, 3]
                 aic_grid = jnp.zeros((m_t, n_t, m_t + 1, n_t + 1, 3))
-                aic_grid = aic_grid.at[:, :, :-1, :-1, :].add(temp[:, :, 0, 0, :])
-                aic_grid = aic_grid.at[:, :, 1:, :-1, :].add(temp[:, :, 1, 0, :])
-                aic_grid = aic_grid.at[:, :, :-1, 1:, :].add(temp[:, :, 0, 1, :])
-                aic_grid = aic_grid.at[:, :, 1:, 1:, :].add(temp[:, :, 1, 1, :])
+                # Diagonal scatter: panel (i,j) only depends on its own ring vertices
+                # ring vertex (a,b) of panel (i,j) maps to grid vertex (i+a, j+b)
+                i_idx = jnp.arange(m_t)[:, None]  # [m_t, 1]
+                j_idx = jnp.arange(n_t)[None, :]  # [1, n_t]
+                aic_grid = aic_grid.at[i_idx, j_idx, i_idx, j_idx, :].add(temp[:, :, 0, 0, :])
+                aic_grid = aic_grid.at[i_idx, j_idx, i_idx + 1, j_idx, :].add(temp[:, :, 1, 0, :])
+                aic_grid = aic_grid.at[i_idx, j_idx, i_idx, j_idx + 1, :].add(temp[:, :, 0, 1, :])
+                aic_grid = aic_grid.at[i_idx, j_idx, i_idx + 1, j_idx + 1, :].add(temp[:, :, 1, 1, :])
 
             case "source":
                 aic_grid = jnp.zeros((m_t, n_t, m_s + 1, n_s + 1, 3))
@@ -1125,16 +1129,19 @@ class DynamicAeroCase:
             m_t, n_t = self.gamma_b[i_target].shape
             assemble_d_v_bc = jnp.zeros((m_t, n_t, m_t + 1, n_t + 1, 3))
 
-            assemble_d_v_bc = assemble_d_v_bc.at[:, :, :-1, :-1, :].add(
+            # Diagonal scatter: panel (i,j) only depends on its own ring vertices
+            i_idx = jnp.arange(m_t)[:, None]  # [m_t, 1]
+            j_idx = jnp.arange(n_t)[None, :]  # [1, n_t]
+            assemble_d_v_bc = assemble_d_v_bc.at[i_idx, j_idx, i_idx, j_idx, :].add(
                 d_v_bc_d_zeta[:, :, 0, 0, :]
             )
-            assemble_d_v_bc = assemble_d_v_bc.at[:, :, 1:, :-1, :].add(
+            assemble_d_v_bc = assemble_d_v_bc.at[i_idx, j_idx, i_idx + 1, j_idx, :].add(
                 d_v_bc_d_zeta[:, :, 1, 0, :]
             )
-            assemble_d_v_bc = assemble_d_v_bc.at[:, :, :-1, 1:, :].add(
+            assemble_d_v_bc = assemble_d_v_bc.at[i_idx, j_idx, i_idx, j_idx + 1, :].add(
                 d_v_bc_d_zeta[:, :, 0, 1, :]
             )
-            assemble_d_v_bc = assemble_d_v_bc.at[:, :, 1:, 1:, :].add(
+            assemble_d_v_bc = assemble_d_v_bc.at[i_idx, j_idx, i_idx + 1, j_idx + 1, :].add(
                 d_v_bc_d_zeta[:, :, 1, 1, :]
             )
 
@@ -1475,7 +1482,7 @@ class AeroSnapshot(DynamicAeroCase):
         )
 
     def plot(
-        self, directory: PathLike, plot_bound: bool = True, plot_wake: bool = True
+        self, directory: str | PathLike, plot_bound: bool = True, plot_wake: bool = True
     ) -> Sequence[Path]:
         """
         Plot all aerodynamic surfaces in this single-time snapshot to VTU files.
