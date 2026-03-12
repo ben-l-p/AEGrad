@@ -671,7 +671,9 @@ class UVLM:
             aic_lu=jnp.zeros(
                 (n_tstep, sum(self.n_bound_panels), sum(self.n_bound_panels))
             ),
-            aic_piv=jnp.zeros((n_tstep, sum(self.n_bound_panels))),
+            aic_piv=jnp.zeros(
+                (n_tstep, sum(self.n_bound_panels)), dtype=jnp.int32
+            ),  # doesn't support 64-bit
             kernels=[*self.kernels_b, *self.kernels_w],
             mirror_point=self.mirror_point,
             mirror_normal=self.mirror_normal,
@@ -812,8 +814,8 @@ class UVLM:
         return (
             "n_surf",
             "grid_disc",
-            "n_bound_panels",
-            "n_wake_panels",
+            "n_bound_panels_tot",
+            "n_wake_panels_tot",
             "n_panels_tot",
             "gamma_b_slice",
             "gamma_w_slice",

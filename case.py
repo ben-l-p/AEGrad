@@ -1,11 +1,12 @@
 from jax import numpy as jnp
+import numpy as np
 
 from models.cantilever_wing import make_cantilever_wing
 
 wing = make_cantilever_wing(
-    n_nodes=50,
-    m=20,
-    m_star=10,
+    n_nodes=20,
+    m=6,
+    m_star=15,
     u_inf=jnp.array((6.0, 0.0, 1.0)),
 )
 
@@ -16,21 +17,6 @@ result = wing.static_solve(
     prescribed_dofs=jnp.arange(6),
 )
 
-result.plot("./")
-
-# d_zeta_b = np.array(
-#     _d_gamma_b_d_zeta_b(
-#         gamma_bs=result.aero.gamma_b,
-#         gamma_ws=result.aero.gamma_w,
-#         zeta_bs=result.aero.zeta_b,
-#         zeta_ws=result.aero.zeta_w,
-#         kernels=[*wing.aero.kernels_b, *wing.aero.kernels_w],
-#         flowfield=wing.aero.flowfield,
-#         mirror_normal=wing.aero.mirror_normal,
-#         mirror_point=wing.aero.mirror_point,
-#         t=result.aero.t,
-#         static=True,
-#     )
-# )
+d_gamma_d_zeta = np.array(result.aero.d_gamma_b_d_zeta_b(static=True, i_ts=0))
 
 pass

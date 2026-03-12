@@ -28,7 +28,7 @@ def make_rectangular_grid(
     return grid.at[..., 0].set((jnp.linspace(0.0, chord, m + 1) - ea * chord)[:, None])
 
 
-def _get_surf_c(zeta: Array) -> Array:
+def compute_surf_c(zeta: Array) -> Array:
     r"""
     Compute the colocation points for a given grid of points on a single surface.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
@@ -37,7 +37,7 @@ def _get_surf_c(zeta: Array) -> Array:
     return neighbour_average(zeta, axes=(0, 1))
 
 
-def _get_surf_nc(zeta: Array) -> Array:
+def compute_surf_nc(zeta: Array) -> Array:
     r"""
     Compute the normal vectors for a given grid of points on a single surface. These have length equal to the area of
     each panel.
@@ -55,7 +55,7 @@ def compute_c(zetas: ArrayList) -> ArrayList:
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Colocation points [n_surf][zeta_m-1, zeta_n-1, 3]
     """
-    return ArrayList([_get_surf_c(zeta) for zeta in zetas])
+    return ArrayList([compute_surf_c(zeta) for zeta in zetas])
 
 
 def compute_nc(zetas: ArrayList) -> ArrayList:
@@ -64,7 +64,7 @@ def compute_nc(zetas: ArrayList) -> ArrayList:
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
     """
-    return ArrayList([_get_surf_nc(zeta) for zeta in zetas])
+    return ArrayList([compute_surf_nc(zeta) for zeta in zetas])
 
 
 def _propagate_surf_wake(
