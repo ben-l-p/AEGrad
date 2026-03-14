@@ -39,7 +39,10 @@ def test_vlm_gradients():
         aero_sol_ = case_.solve_static()
         return aero_sol_.gamma_b[0]
 
-    d_gamma_d_zeta, d_f_d_zeta = aero_sol.static_d_sol_d_zeta_b(i_ts=0)
+    d_gamma_d_zeta, d_f_d_zeta = aero_sol.static_d_sol_d_zeta_b(
+        i_ts=0, include_midpoint_velocity=True
+    )
+
     d_gamma_d_zeta_ad = jax.jacrev(gamma_from_zeta)(zeta).reshape(d_gamma_d_zeta.shape)
 
     assert jnp.allclose(d_gamma_d_zeta_ad, d_gamma_d_zeta), (

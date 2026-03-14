@@ -6,9 +6,9 @@ from os import PathLike
 from pathlib import Path
 from functools import partial
 
-from jax import numpy as jnp
+from jax import numpy as jnp, jit
 from jax import scipy as jsp
-from jax import Array, vmap, jacrev
+from jax import Array, vmap, jacrev, jvp, lax
 
 from aegrad.algebra.array_utils import block_axis
 from aero.utils import (
@@ -19,6 +19,7 @@ from aero.utils import (
     compute_surf_nc,
     compute_surf_c,
     _steady_forcing,
+    neighbour_average,
 )
 from aegrad.print_utils import warn
 from aegrad.algebra.base import finite_difference
@@ -293,20 +294,31 @@ class DynamicAeroCase:
         )
 
     def gamma_full(self, i_ts: int) -> ArrayList:
+        r"""
+        Obtain the full bound and wake gamma at a given timestep.
+        :param i_ts: Time step index
+        :return: Circulation strength, [2 * n_surf][m, n]
+        """
         return ArrayList(
             [*self.gamma_b.index_all(i_ts, ...), *self.gamma_w.index_all(i_ts, ...)]
         )
 
-    def set_arraylist_at_ts(self, attr: str, values, i_ts: int) -> None:
-        """Set each element of a stored ArrayList at timestep i_ts to values[i]."""
+    def set_arraylist_at_ts(self, attr: str, values: ArrayList, i_ts: int) -> None:
+        """
+        Sets self.attr with a given ArrayList of values at a given timestep.
+        :param attr: Name of attribute in class
+        :param values: Values to set
+        :param i_ts: Time step index
+        """
         arr = getattr(self, attr)
         for i_surf, val in enumerate(values):
             arr[i_surf] = arr[i_surf].at[i_ts, ...].set(val)
 
     def get_surf_snapshot(self, i_ts: int, i_surf: int) -> AeroSurfaceSnapshot:
         r"""
-        Get snapshot for all aerodynamic surfaces.
+        Get snapshot at a given timestep and surface.
         :param i_ts: Timestep index
+        :param i_surf: Surface index
         :return: StaticAero for the specified timestep
         """
 
@@ -407,19 +419,16 @@ class DynamicAeroCase:
 
     def compute_c(self, i_ts: int) -> None:
         r"""
-        Get normal vectors for all surfaces at specified time step
+        Compute collocation points for all surfaces at specified time step and store in-place.
         :param i_ts: Timestep index
-        :return: List of normal vectors, [n_surf][m, n, 3]
         """
-        # compute and set using helper
         c_list = compute_c(self._zeta_b.index_all(i_ts, ...))
         self.set_arraylist_at_ts("_c", c_list, i_ts)
 
     def compute_nc(self, i_ts: int) -> None:
         r"""
-        Get normal vectors for all surfaces at specified time step
+        Compute normal vectors for all surfaces at specified time step and store in-place.
         :param i_ts: Timestep index
-        :return: List of normal vectors, [n_surf][m, n, 3]
         """
         nc_list = compute_nc(self._zeta_b.index_all(i_ts, ...))
         self.set_arraylist_at_ts("_nc", nc_list, i_ts)
@@ -434,7 +443,7 @@ class DynamicAeroCase:
             val = self._gamma_b[i_surf][i_ts, [-1], :]
             self._gamma_w[i_surf] = self._gamma_w[i_surf].at[i_ts, ...].set(val)
 
-    def calculate_gamma_dot(self, i_ts: int, dt: Array) -> None:
+    def compute_gamma_dot(self, i_ts: int, dt: Array) -> None:
         r"""
         Calculate time derivative of bound circulation strengths at specified time step using finite difference.
         :param i_ts: Timestep index
@@ -475,7 +484,6 @@ class DynamicAeroCase:
         :param i_ts: Timestep index.
         :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
         :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
-        :param dof_mapping: Tuple of arrays mapping aerodynamic grid points to beam nodes for each surface, [n_surf][zeta_n]
         :param include_unsteady: If true, include unsteady forcing in projection, otherwise only project steady forcing.
         :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
         """
@@ -643,6 +651,12 @@ class DynamicAeroCase:
         return self.assemble_aic_sys(aic_mats)
 
     def get_v_ind(self, i_ts: int, x_target: ArrayList) -> ArrayList:
+        r"""
+        Obtain the velocity at targets points induced by the vortex within the system.
+        :param i_ts: Timestep index to compute AIC for
+        :param x_target: ArrayList of target points to compute induced velocity at, [][..., 3]
+        :return: Velocity at targets points induced by the vortex within the system, [][..., 3]
+        """
         aic_mat = self.compute_aic_sys_assembled(
             i_ts=i_ts, x_target=x_target, project_to_normals=False
         )
@@ -650,6 +664,7 @@ class DynamicAeroCase:
             "ijk,j->ik", aic_mat, self.gamma_full(i_ts=i_ts).flatten()
         )  # [n_x_tot, 3]
 
+        # split resulting velocity vector back out to surfaces
         split_v = []
         cnt = 0
         for x_ in x_target:
@@ -660,21 +675,20 @@ class DynamicAeroCase:
 
     def get_v_background(self, i_ts: int, x_target: ArrayList) -> ArrayList:
         r"""
-        Get background velocity at specified points and time step
-        :param t: Current time
+        Get background velocity at specified points and time step.
+        :param i_ts: Timestep index
         :param x_target: Points to evaluate background velocity at, [][..., 3]
         :return: Background velocity at points, [][..., 3]
         """
-        return ArrayList(
-            [
-                self.flowfield.vmap_call(x_.reshape(-1, 3), self._t[i_ts]).reshape(
-                    x_.shape
-                )
-                for x_ in x_target
-            ]
-        )
+        return self.flowfield.surf_vmap_call(x_target, self._t[i_ts])
 
     def get_v_tot(self, i_ts: int, x: ArrayList) -> ArrayList:
+        r"""
+        Obtain the total velocity at specified points and time step.
+        :param i_ts: Timestep index
+        :param x: ArrayList of points to evaluate total velocity at, [][..., 3]
+        :return: Velocity at points, [][..., 3]
+        """
         return self.get_v_ind(i_ts=i_ts, x_target=x) + self.get_v_background(
             i_ts=i_ts, x_target=x
         )
@@ -745,6 +759,11 @@ class DynamicAeroCase:
         )(c, zeta)
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
+        r"""
+        Obtain a snapshot of the aerodynamic state at a given time step index.
+        :param i_ts: Timestep index
+        :return: AeroSnapshot object.
+        """
         return AeroSnapshot(
             zeta_b=self._zeta_b.index_all(i_ts, ...),
             zeta_b_dot=self._zeta_b_dot.index_all(i_ts, ...),
@@ -772,6 +791,12 @@ class DynamicAeroCase:
 
     @classmethod
     def from_static_case(cls, snapshot: AeroSnapshot, n_tstep: int) -> DynamicAeroCase:
+        r"""
+        Use a snapshot from a single timestep to create a solution object with many timesteps.
+        :param snapshot: Initial snapshot of the aerodynamic state.
+        :param n_tstep: Number of timesteps.
+        :return: New DynamicAeroCase object with n_tstep timesteps, with the initial case set to i_ts=0.
+        """
         return snapshot.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
     @property
@@ -1076,6 +1101,12 @@ class DynamicAeroCase:
         static: bool,
         i_ts: int,
     ) -> Array:
+        r"""
+        Compute the Jacobian of bound circulation strengths with respect to the bound grid coordinates.
+        :param static: If true, consider effect of perturbing gamma in the full wake.
+        :param i_ts: Timestep index.
+        :return: Jacobian for :math:`\frac{d \Gamma_b}{d \zeta_b}`, [n_bound_panels_tot, n_bound_zeta_dofs_tot]
+        """
 
         gamma = [*self.gamma_b, *self.gamma_w]
 
@@ -1158,6 +1189,7 @@ class DynamicAeroCase:
                 self.gamma_b_slices[i_target], self.zeta_dof_target_slices[i_target]
             ].add(assemble_d_v_bc.reshape(self.gamma_b[i_target].size, -1))
 
+        # reuse the LU decomposition from the primal solve.
         return -jsp.linalg.lu_solve(
             (self._aic_lu[i_ts, ...], self._aic_piv[i_ts, ...]), d_gamma_b_zeta_b
         )
@@ -1170,7 +1202,6 @@ class DynamicAeroCase:
         :param x: Evaluation points, [n_x, 3]
         :return: Jacobian, [n_x * 3, n_bound_panels_tot]
         """
-        n_x = x.shape[0]
         zeta_full_list = ArrayList(
             [*self._zeta_b.index_all(i_ts, ...), *self._zeta_w.index_all(i_ts, ...)]
         )
@@ -1181,8 +1212,7 @@ class DynamicAeroCase:
             project_to_normals=False,
         )  # [n_x, n_gamma_full_tot, 3]
         aic_b = aic_mat[:, : self.n_bound_panels_tot, :]  # [n_x, n_bound_panels_tot, 3]
-        # J[i*3+k, j] = aic_b[i, j, k]  =>  transpose axes (0,2,1) then reshape
-        return aic_b.transpose(0, 2, 1).reshape(n_x * 3, self.n_bound_panels_tot)
+        return aic_b.transpose(0, 2, 1).reshape(x.size, self.n_bound_panels_tot)
 
     def d_v_tot_d_zeta(self, i_ts: int, x: ArrayList) -> Array:
         r"""
@@ -1209,30 +1239,70 @@ class DynamicAeroCase:
 
         return jacrev(v_ind_from_zeta)(zeta_flat0)  # [n_x_tot * 3, n_zeta_dofs_tot]
 
-    def d_f_steady_d_gamma_b(self, i_ts: int, static: bool) -> Array:
-        r"""
-        Jacobian of steady forces wrt bound circulations.
-        Forces are quadratic in gamma (gamma * v_tot(gamma)), so jacrev is used.
-        For static VLM, wake perturbations are tied to trailing-edge perturbations,
-        i.e. delta(gamma_w) = delta(gamma_te).
-        :param i_ts: Timestep index
-        :return: Jacobian, [n_f_tot, n_bound_panels_tot]
+    def _steady_force_base(
+        self, i_ts: int
+    ) -> tuple[ArrayList, ArrayList, ArrayList, ArrayList, ArrayList, Array]:
         """
-        zeta_b = self._zeta_b.index_all(i_ts, ...)
-        zeta_dot_b = self._zeta_b_dot.index_all(i_ts, ...)
-        gamma_b = self._gamma_b.index_all(i_ts, ...)
-        gamma_w = self._gamma_w.index_all(i_ts, ...)
-        rho = self.flowfield.rho
+        Collect common arrays used by steady-force Jacobian compututations.
+        :param i_ts: Timestep index
+        :return: zeta_b, zeta_b_dot, gamma_b, gamma_w, zeta_w, rho
+        """
+        return (
+            self._zeta_b.index_all(i_ts, ...),
+            self._zeta_b_dot.index_all(i_ts, ...),
+            self._gamma_b.index_all(i_ts, ...),
+            self._gamma_w.index_all(i_ts, ...),
+            self._zeta_w.index_all(i_ts, ...),
+            self.flowfield.rho,
+        )
+
+    @staticmethod
+    def _wake_offsets_from_bound(zeta_b: ArrayList, zeta_w: ArrayList) -> ArrayList:
+        """
+        Store wake rows as offsets from trailing-edge bound points for static coupling.
+        """
+        return ArrayList(
+            [
+                zeta_w[i_surf] - zeta_b[i_surf][[-1], :, :]
+                for i_surf in range(len(zeta_b))
+            ]
+        )
+
+    @staticmethod
+    def _wake_from_offsets(
+        zeta_b: ArrayList, wake_offsets: Optional[ArrayList], zeta_w: ArrayList
+    ) -> ArrayList:
+        """
+        Reconstruct static-coupled wake geometry, or return the original wake for dynamic use.
+        """
+        if wake_offsets is None:
+            return zeta_w
+        return ArrayList(
+            [
+                zeta_b[i_surf][[-1], :, :] + wake_offsets[i_surf]
+                for i_surf in range(len(zeta_b))
+            ]
+        )
+
+    def _make_f_from_gamma_b(self, i_ts: int, static: bool) -> tuple[Callable, Array]:
+        r"""
+        Build the force-from-gamma closure and its linearisation point.
+        Extracted so callers can use JVP directly without materialising the full Jacobian.
+
+        AIC matrices at the (fixed) midpoints are precomputed outside the closure so that
+        JVP only differentiates through the einsum, not through the 4-nested vmap AIC kernel.
+        :return: (f_from_gamma_b, gamma_b_flat0)
+        """
+        zeta_b, zeta_dot_b, gamma_b, gamma_w, zeta_w, rho = self._steady_force_base(
+            i_ts
+        )
         gamma_b_flat0 = gamma_b.flatten()
         gamma_b_shapes = gamma_b.shape
-        # Pre-compute correctly-shaped source grids from _zeta_b/_zeta_w directly to
-        # avoid double-indexing through the zeta_b property on AeroSnapshot.
-        zeta_full_list = ArrayList([*zeta_b, *self._zeta_w.index_all(i_ts, ...)])
+        zeta_full_list = ArrayList([*zeta_b, *zeta_w])
 
         def get_gamma_w_for_gamma_b(gamma_b_list: ArrayList) -> ArrayList:
             if not static:
                 return gamma_w
-            # Static VLM coupling: wake gamma perturbations follow TE bound perturbations.
             return ArrayList(
                 [
                     jnp.broadcast_to(g_b[[-1], :], g_w.shape)
@@ -1240,120 +1310,250 @@ class DynamicAeroCase:
                 ]
             )
 
+        # Precompute AIC and background velocity at all midpoints (independent of gamma_b).
+        # Keys are (i_surf, axes) so surfaces with identical (m, n) don't collide.
+        # Inside v_func the dispatch is a Python list lookup resolved at trace time,
+        # invisible to the JVP tracer — the AIC call is fully outside the closure.
+        _aic_chord: list[Array] = []
+        _aic_span: list[Array] = []
+        _v_bg_chord: list[Array] = []
+        _v_bg_span: list[Array] = []
+        for zeta_b_surf in zeta_b:
+            for aic_list, v_bg_list, axes in (
+                (_aic_chord, _v_bg_chord, 0),
+                (_aic_span, _v_bg_span, 1),
+            ):
+                mp = neighbour_average(zeta_b_surf, axes=axes)
+                aic_list.append(
+                    self.compute_aic_sys_assembled(
+                        i_ts=i_ts,
+                        x_target=ArrayList([mp]),
+                        custom_x_source=zeta_full_list,
+                        project_to_normals=False,
+                    )
+                )
+                v_bg_list.append(
+                    self.flowfield.vmap_call(mp.reshape(-1, 3), self._t[i_ts]).reshape(
+                        mp.shape
+                    )
+                )
+
         def f_from_gamma_b(gamma_b_flat: Array) -> Array:
             gamma_b_list = ArrayList.unravel(gamma_b_flat, gamma_b_shapes)
             gamma_w_eff = get_gamma_w_for_gamma_b(gamma_b_list)
             gamma_full_flat = jnp.concatenate([gamma_b_flat, gamma_w_eff.flatten()])
 
+            # _surf_call_count is a Python-level counter that advances as _surf_steady_forcing
+            # calls v_func once for chordwise midpoints then once for spanwise midpoints,
+            # per surface — matching the order in _mp_chord / _mp_span.
+            _call_idx = [0]
+
             def v_func(x_: Array) -> Array:
-                aic_mat = self.compute_aic_sys_assembled(
-                    i_ts=i_ts,
-                    x_target=ArrayList([x_]),
-                    custom_x_source=zeta_full_list,
-                    project_to_normals=False,
-                )
+                # Each call maps to the next (i_surf, axes) entry in order.
+                idx = _call_idx[0]
+                i_surf = idx // 2
+                is_span = idx % 2
+                _call_idx[0] += 1
+                aic_mat = _aic_span[i_surf] if is_span else _aic_chord[i_surf]
+                v_bg = _v_bg_span[i_surf] if is_span else _v_bg_chord[i_surf]
                 v_ind = jnp.einsum("ijk,j->ik", aic_mat, gamma_full_flat).reshape(
                     x_.shape
                 )
-                v_bg = self.flowfield.vmap_call(
-                    x_.reshape(-1, 3), self._t[i_ts]
-                ).reshape(x_.shape)
                 return v_ind + v_bg
 
             f_list = _steady_forcing(
                 zeta_b, zeta_dot_b, gamma_b_list, gamma_w_eff, v_func, None, rho
             )
-            return jnp.concatenate([f.ravel() for f in f_list])
+            return f_list.flatten()
 
-        return jacrev(f_from_gamma_b)(gamma_b_flat0)  # [n_f_tot, n_bound_panels_tot]
+        return f_from_gamma_b, gamma_b_flat0
 
-    def d_f_steady_d_zeta(self, i_ts: int, static: bool = False) -> Array:
+    def d_f_steady_d_gamma_b(self, i_ts: int, static: bool) -> Array:
         r"""
-        Jacobian of steady forces wrt bound grid coordinates. This does not include effect of perturbing gamma.
-        If static=True, wake grid perturbations are tied to trailing-edge perturbations.
+        Compute the Jacobian of the steady forces with respect to the bound circulation strengths, using a JVP sweep
+        over the
+        :param i_ts:
+        :param static:
+        :return:
+        """
+        f_from_gamma_b, gamma_b_flat0 = self._make_f_from_gamma_b(
+            i_ts=i_ts, static=static
+        )
+        return self._jvp_sweep(f_from_gamma_b, gamma_b_flat0, None)
+
+    def _make_v_func(self, i_ts, zeta_full_source, gamma_full_flat):
+        """Build the velocity function closure for a given source geometry."""
+
+        def v_func(x_: Array) -> Array:
+            aic_mat = self.compute_aic_sys_assembled(
+                i_ts=i_ts,
+                x_target=ArrayList([x_]),
+                custom_x_source=zeta_full_source,
+                project_to_normals=False,
+            )
+            v_ind = jnp.einsum("ijk,j->ik", aic_mat, gamma_full_flat).reshape(x_.shape)
+            v_bg = self.flowfield.vmap_call(x_.reshape(-1, 3), self._t[i_ts]).reshape(
+                x_.shape
+            )
+            return v_ind + v_bg
+
+        return v_func
+
+    @staticmethod
+    def _jvp_sweep(f, flat0, batch_size):
+        """Run a column-wise JVP sweep over a flat input and return the transposed Jacobian."""
+        n = flat0.shape[0]
+        return lax.map(
+            lambda j: jvp(
+                f,
+                (flat0,),
+                (jnp.zeros(n, flat0.dtype).at[j].set(1.0),),
+            )[1],
+            jnp.arange(n),
+            batch_size=batch_size,
+        ).T
+
+    def p_f_p_zeta_midpoint_velocity(
+        self,
+        i_ts: int,
+        static: bool = False,
+        batch_size: Optional[int] = None,
+    ) -> Array:
+        r"""
+        Partial Jacobian of steady forces wrt bound grid coordinates through the midpoint
+        velocity path only. This captures the effect of perturbing panel positions on where
+        the velocity is evaluated (both source AIC geometry and midpoint positions), while
+        holding the filament vectors frozen at their nominal values.
+
         :param i_ts: Timestep index
         :param static: If True, include static wake-geometry coupling zeta_w(zeta_b)
+        :param batch_size: Optional batch size for lax.map over columns
         :return: Jacobian, [n_f_tot, n_bound_zeta_dofs_tot]
         """
-        zeta_b = self._zeta_b.index_all(i_ts, ...)
-        zeta_dot_b = self._zeta_b_dot.index_all(i_ts, ...)
-        gamma_b = self._gamma_b.index_all(i_ts, ...)
-        gamma_w = self._gamma_w.index_all(i_ts, ...)
+        zeta_b, zeta_dot_b, gamma_b, gamma_w, zeta_w, rho = self._steady_force_base(
+            i_ts
+        )
         gamma_full_flat = jnp.concatenate([gamma_b.flatten(), gamma_w.flatten()])
-        rho = self.flowfield.rho
-        zeta_w = self._zeta_w.index_all(i_ts, ...)
-        if static:
-            # Keep each wake row offset relative to the trailing edge so zeta_w tracks zeta_te perturbations.
-            wake_offsets = ArrayList(
-                [
-                    zeta_w[i_surf] - zeta_b[i_surf][[-1], :, :]
-                    for i_surf in range(self.n_surf)
-                ]
-            )
+        wake_offsets = self._wake_offsets_from_bound(zeta_b, zeta_w) if static else None
         zeta_b_flat0 = zeta_b.flatten()
         zeta_b_shapes = zeta_b.shape
+        # Filament vectors are frozen at nominal geometry.
+        zeta_b_filaments_frozen = zeta_b
 
         def f_from_zeta_b(zeta_b_flat: Array) -> Array:
             zeta_b_list = ArrayList.unravel(zeta_b_flat, zeta_b_shapes)
-            if static:
-                zeta_w_eff = ArrayList(
-                    [
-                        zeta_b_list[i_surf][[-1], :, :] + wake_offsets[i_surf]
-                        for i_surf in range(self.n_surf)
-                    ]
-                )
-            else:
-                zeta_w_eff = zeta_w
+            zeta_w_eff = self._wake_from_offsets(zeta_b_list, wake_offsets, zeta_w)
+            zeta_full_source = ArrayList([*zeta_b_list, *zeta_w_eff])
+            v_func = self._make_v_func(i_ts, zeta_full_source, gamma_full_flat)
 
-            zeta_full_list = ArrayList([*zeta_b_list, *zeta_w_eff])
-
-            def v_func(x_: Array) -> Array:
-                aic_mat = self.compute_aic_sys_assembled(
-                    i_ts=i_ts,
-                    x_target=ArrayList([x_]),
-                    custom_x_source=zeta_full_list,
-                    project_to_normals=False,
-                )
-                v_ind = jnp.einsum("ijk,j->ik", aic_mat, gamma_full_flat).reshape(
-                    x_.shape
-                )
-                v_bg = self.flowfield.vmap_call(
-                    x_.reshape(-1, 3), self._t[i_ts]
-                ).reshape(x_.shape)
-                return v_ind + v_bg
-
+            # Perturb midpoints via zeta_b_list; freeze filament vectors.
             f_list = _steady_forcing(
-                zeta_b_list, zeta_dot_b, gamma_b, gamma_w, v_func, None, rho
+                zeta_b_list,
+                zeta_dot_b,
+                gamma_b,
+                gamma_w,
+                v_func,
+                None,
+                rho,
+                zeta_b_filaments=zeta_b_filaments_frozen,
             )
-            return jnp.concatenate([f.ravel() for f in f_list])
+            return f_list.flatten()
 
-        return jacrev(f_from_zeta_b)(zeta_b_flat0)  # [n_f_tot, n_bound_zeta_dofs_tot]
+        return self._jvp_sweep(f_from_zeta_b, zeta_b_flat0, batch_size)
 
+    def p_f_p_zeta_filament_vector(
+        self,
+        i_ts: int,
+        static: bool = False,
+    ) -> Array:
+        zeta_b, zeta_dot_b, gamma_b, gamma_w, zeta_w, rho = self._steady_force_base(
+            i_ts
+        )
+        gamma_full_flat = jnp.concatenate([gamma_b.flatten(), gamma_w.flatten()])
+        wake_offsets = self._wake_offsets_from_bound(zeta_b, zeta_w) if static else None
+        zeta_b_flat0 = zeta_b.flatten()
+        zeta_b_shapes = zeta_b.shape
+        # Source AIC geometry and midpoints are frozen at nominal values.
+        zeta_w_eff_frozen = self._wake_from_offsets(zeta_b, wake_offsets, zeta_w)
+        zeta_full_source_frozen = ArrayList([*zeta_b, *zeta_w_eff_frozen])
+        zeta_b_midpoints_frozen = zeta_b
+
+        def f_from_zeta_b(zeta_b_flat: Array) -> Array:
+            zeta_b_list = ArrayList.unravel(zeta_b_flat, zeta_b_shapes)
+            v_func = self._make_v_func(i_ts, zeta_full_source_frozen, gamma_full_flat)
+            # Freeze midpoints; perturb filament vectors via zeta_b_list.
+            f_list = _steady_forcing(
+                zeta_b_midpoints_frozen,
+                zeta_dot_b,
+                gamma_b,
+                gamma_w,
+                v_func,
+                None,
+                rho,
+                zeta_b_filaments=zeta_b_list,
+            )
+            return f_list.flatten()
+
+        return self._jvp_sweep(f_from_zeta_b, zeta_b_flat0, None)
+
+    def p_f_steady_p_zeta(
+        self,
+        i_ts: int,
+        static: bool = False,
+        include_midpoint_velocity: bool = True,
+        include_filament: bool = True,
+        batch_size: Optional[int] = None,
+    ) -> Array:
+        r"""
+        Partial Jacobian of steady forces wrt bound grid coordinates. Does not include the
+        indirect effect of perturbing gamma. If static=True, wake grid perturbations are tied
+        to trailing-edge perturbations.
+
+        The total Jacobian is the sum of two additive contributions:
+        - Midpoint velocity: change in velocity at panel midpoints due to source vortex-ring
+          geometry and midpoint position perturbations.
+        - Filament vector: change in bound vortex filament directions due to panel geometry
+          perturbations, with midpoints and source geometry held frozen.
+
+        Setting ``include_midpoint_velocity=False`` or ``include_filament=False`` omits that
+        contribution, which reduces peak memory when only one term is needed.
+
+        :param i_ts: Timestep index
+        :param static: If True, include static wake-geometry coupling zeta_w(zeta_b)
+        :param include_midpoint_velocity: Include midpoint velocity contribution
+        :param include_filament: Include filament vector contribution
+        :param batch_size: Optional batch size for lax.map over columns in the midpoint velocity sweep
+        :return: Jacobian, [n_f_tot, n_bound_zeta_dofs_tot]
+        """
+        result = None
+        if include_midpoint_velocity:
+            result = self.p_f_p_zeta_midpoint_velocity(
+                i_ts=i_ts, static=static, batch_size=batch_size
+            )
+        if include_filament:
+            filament_contrib = self.p_f_p_zeta_filament_vector(i_ts=i_ts, static=static)
+            result = filament_contrib if result is None else result + filament_contrib
+        return result
+
+    @partial(jit, static_argnums=(1, 2, 3))
     def static_d_sol_d_zeta_b(
         self,
         i_ts: int,
+        include_midpoint_velocity: bool,
+        batch_size: Optional[int] = 4,
     ) -> tuple[Array, Array]:
-        r"""
-        Total Jacobians of bound circulation and steady forces wrt bound grid coordinates.
-
-        For gamma_b this is the direct sensitivity from thRe AIC system:
-            d gamma_b / d zeta_b
-
-        For f_steady the chain rule is applied to include the indirect path through gamma_b:
-            d f_steady / d zeta_b |_total
-                = d f_steady / d zeta_b |_partial
-                + d f_steady / d gamma_b  @  d gamma_b / d zeta_b
-
-        :param static: If True, treat the wake as collapsed to the trailing edge (static case).
-        :param i_ts: Timestep index.
-        :return: Tuple of
-            d_gamma_b_d_zeta_b,  [n_bound_panels_tot, n_bound_zeta_dofs_tot]
-            d_f_steady_d_zeta_b, [n_f_tot, n_bound_zeta_dofs_tot]
-        """
         d_gamma_d_zeta = self.d_gamma_b_d_zeta_b(static=True, i_ts=i_ts)
-        d_f_d_gamma = self.d_f_steady_d_gamma_b(static=True, i_ts=i_ts)
-        d_f_d_zeta_partial = self.d_f_steady_d_zeta(i_ts=i_ts, static=True)
-        d_f_d_zeta_total = d_f_d_zeta_partial + d_f_d_gamma @ d_gamma_d_zeta
+
+        p_f_p_zeta = self.p_f_steady_p_zeta(
+            i_ts=i_ts,
+            static=True,
+            include_midpoint_velocity=include_midpoint_velocity,
+            batch_size=batch_size,
+        )
+
+        d_f_d_gamma = self.d_f_steady_d_gamma_b(i_ts=i_ts, static=True)
+
+        d_f_d_zeta_total = d_f_d_gamma @ d_gamma_d_zeta + p_f_p_zeta
         return d_gamma_d_zeta, d_f_d_zeta_total
 
     @staticmethod
@@ -1627,14 +1827,10 @@ class AeroSnapshot(DynamicAeroCase):
             return ArrayList(out)
 
         aic_lu_dyn = (
-            jnp.zeros((n_tstep, *self.aic_lu.shape))
-            .at[i_ts, ...]
-            .set(self.aic_lu[0, ...])
+            jnp.zeros((n_tstep, *self.aic_lu.shape)).at[i_ts, ...].set(self.aic_lu)
         )
         aic_piv_dyn = (
-            jnp.zeros((n_tstep, *self.aic_piv.shape))
-            .at[i_ts, ...]
-            .set(self.aic_piv[0, ...])
+            jnp.zeros((n_tstep, *self.aic_piv.shape)).at[i_ts, ...].set(self.aic_piv)
         )
 
         return DynamicAeroCase(

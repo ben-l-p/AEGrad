@@ -214,16 +214,18 @@ def _steady_forcing(
     v_func: Callable[[Array], Array],
     v_input: Optional[ArrayList],
     rho: Array,
+    zeta_b_filaments: Optional[ArrayList] = None,
 ) -> ArrayList:
     r"""
     Compute the steady forces on all surfaces
-    :param zeta_b: Bound grid, [n_surf][zeta_m, zeta_n, 3]
+    :param zeta_b: Bound grid used for midpoint positions, [n_surf][zeta_m, zeta_n, 3]
     :param zeta_dot_b: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3]
     :param gamma_b: Bound circulation, [n_surf][m, n]
     :param gamma_w: Wake circulation, [n_surf][m_star, n]
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param v_input: Optional input to add velocities at the bound grid nodes, [n_surf][zeta_m, zeta_n, 3]
     :param rho: Flow density
+    :param zeta_b_filaments: Bound grid used for filament vectors. If None, uses zeta_b.
     :return: Steady forces on each surface, [n_surf][zeta_m, zeta_n, 3]
     """
     f_steady = ArrayList([])
@@ -237,6 +239,7 @@ def _steady_forcing(
                 v_func,
                 v_input[i_surf] if v_input is not None else None,
                 rho,
+                zeta_b_filaments[i_surf] if zeta_b_filaments is not None else None,
             )
         )
     return f_steady
@@ -250,18 +253,21 @@ def _surf_steady_forcing(
     v_func: Callable[[Array], Array],
     v_input: Optional[Array],
     rho: Array,
+    zeta_b_filaments: Optional[Array] = None,
 ) -> Array:
     r"""
     Compute the steady forces on a single surface
-    :param zeta_b: Bound grid, [zeta_m, zeta_n, 3]
+    :param zeta_b: Bound grid used for midpoint positions, [zeta_m, zeta_n, 3]
     :param zeta_dot_b: Bound grid velocities, [zeta_m, zeta_n, 3]
     :param gamma_b: Bound circulation, [m, n]
     :param gamma_w: Wake circulation, [m_star, n]
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param v_input: Optional input to add velocities at the bound grid nodes, [zeta_m, zeta_n, 3]
     :param rho: Flow density
+    :param zeta_b_filaments: Bound grid used for filament vectors. If None, uses zeta_b.
     :return: Steady forces on the surface, [zeta_m, zeta_n, 3]
     """
+    zeta_b_fil = zeta_b_filaments if zeta_b_filaments is not None else zeta_b
 
     # compute midpoints
     mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
@@ -291,9 +297,9 @@ def _surf_steady_forcing(
     if gamma_w.shape[0] > 0:
         gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w[0, :])
 
-    # filement vectors
-    r_chordwise = zeta_b[1:, :, :] - zeta_b[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
-    r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
+    # filament vectors (from zeta_b_fil, which may differ from the midpoint geometry)
+    r_chordwise = zeta_b_fil[1:, :, :] - zeta_b_fil[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
+    r_spanwise = zeta_b_fil[:, 1:, :] - zeta_b_fil[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
 
     # forces from each set of filaments
     f_chordwise = rho * jnp.einsum(

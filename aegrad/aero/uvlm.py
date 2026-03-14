@@ -622,7 +622,7 @@ class UVLM:
         if static:
             case.set_gamma_w_static(i_ts)
         else:
-            case.calculate_gamma_dot(i_ts, self.dt)
+            case.compute_gamma_dot(i_ts, self.dt)
             case.calculate_unsteady_forcing(i_ts=i_ts)
         self.calculate_steady_forcing(case, i_ts)
 

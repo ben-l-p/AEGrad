@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from typing import Optional, Sequence
 from collections import UserList
 from functools import singledispatch
@@ -214,7 +215,7 @@ class ArrayList(UserList[Array]):
         arrs = []
         idx = 0
         for shape in arr_list_shapes.shapes:
-            size = jnp.prod(jnp.array(shape))
+            size = math.prod(shape)
             arrs.append(vect[idx : idx + size].reshape(shape))
             idx += size
         return cls(arrs)
