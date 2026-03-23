@@ -3,7 +3,7 @@ from __future__ import annotations
 from _operator import mul
 from dataclasses import dataclass
 from functools import reduce
-from os import PathLike
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -93,7 +93,7 @@ class AeroelasticDesignGradients:
         self.f_size: int = reduce(mul, f_shape, 1)
 
     def plot(
-        self, case: StaticAeroelastic, directory: PathLike | str
+        self, case: StaticAeroelastic, directory: os.PathLike | str
     ) -> Sequence[Path]:
         paths = []
         if self.structure is not None:

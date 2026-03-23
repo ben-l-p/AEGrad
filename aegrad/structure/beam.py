@@ -238,7 +238,7 @@ class BaseBeamStructure:
             .add(entries.ravel())
         )
 
-    def _assemble_vector_from_entries(self, entries: Array) -> Array:
+    def assemble_vector_from_entries(self, entries: Array) -> Array:
         r"""
         Assemble global vector from element entries
         :param entries: Array of element vector entries, [n_elem, 12]
@@ -258,7 +258,7 @@ class BaseBeamStructure:
         return f_steps
 
     @staticmethod
-    def _make_f_ext_dead_tot(
+    def make_f_ext_dead_tot(
         f_ext_dead: Optional[Array],
         f_ext_aero: Optional[Array],
         i_load_step: Optional[int],
@@ -428,7 +428,7 @@ class BaseBeamStructure:
                 k_t += block_diag(*self._make_k_t_grav_lumped(rmat))
         return k_t
 
-    def _make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
+    def make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
         r"""
         Assemble tangent mass matrix as a function of the element relative configuration vectors. This does not include
         the lumped mass contribution.
@@ -526,7 +526,7 @@ class BaseBeamStructure:
 
         return mat
 
-    def _make_f_int(self, p_d: Array, eps: Array) -> Array:
+    def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
         Assemble global internal force vector as a function of the element relative configuration vectors
         :param p_d: P(d) operator, [n_elem, 6, 12]
@@ -572,7 +572,7 @@ class BaseBeamStructure:
         return jnp.einsum("ijk,ik->ij", self.m_lumped, f_rot_tot)  # [n_node, 6]
 
     @staticmethod
-    def _make_f_dead_ext(f_ext: Array, rmat: Array) -> Array:
+    def make_f_dead_ext(f_ext: Array, rmat: Array) -> Array:
         r"""
         Compute the global external dead force vector.
         :param f_ext: External forces array of dead forces in global reference, [n_node, 6]
@@ -618,7 +618,7 @@ class BaseBeamStructure:
             "ijk,ik->ij", c_l_lumped, v
         )  # [n_node, 6]
 
-    def _make_eps(self, d: Array) -> Array:
+    def make_eps(self, d: Array) -> Array:
         r"""
         Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from
         Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,
@@ -629,7 +629,7 @@ class BaseBeamStructure:
 
         return (d - self.d0) / self.l0[:, None]
 
-    def _make_p_d(self, d: Array) -> Array:
+    def make_p_d(self, d: Array) -> Array:
         r"""
         Compute the P(d) operator as a function of the element relative configuration vectors.
         :param d: Relative configuration vectors, [n_elem, 6]
@@ -637,7 +637,7 @@ class BaseBeamStructure:
         """
         return vmap(p, (0, 0), 0)(d, self.ad_inv_o0)  # [n_elem, 6, 12]
 
-    def _make_d(self, hg: Array) -> Array:
+    def make_d(self, hg: Array) -> Array:
         r"""
         Compute the element relative configuration vectors from the nodal homogeneous transformation matrices
         :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
@@ -702,11 +702,11 @@ class BaseBeamStructure:
         :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces,
         inertial forces and residual forces
         """
-        d = self._make_d(hg)
-        eps = self._make_eps(d)
-        p_d = self._make_p_d(d)
+        d = self.make_d(hg)
+        eps = self.make_eps(d)
+        p_d = self.make_p_d(d)
         d_dot = self._make_d_dot(p_d, v) if dynamic else None
-        m_t = self._make_m_t(d) if (self.use_gravity or dynamic) else None
+        m_t = self.make_m_t(d) if (self.use_gravity or dynamic) else None
         c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
 
         this_f_res = jnp.zeros((self.n_nodes, 6))
@@ -716,19 +716,19 @@ class BaseBeamStructure:
             c_l_lumped = None
 
         if f_ext_dead is not None:
-            this_f_ext_dead = self._make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
+            this_f_ext_dead = self.make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
             this_f_res += this_f_ext_dead
         else:
             this_f_ext_dead = None
 
         if f_ext_aero is not None:
-            this_f_ext_aero = self._make_f_dead_ext(f_ext_aero, hg[:, :3, :3])
+            this_f_ext_aero = self.make_f_dead_ext(f_ext_aero, hg[:, :3, :3])
             this_f_res += this_f_ext_aero
         else:
             this_f_ext_aero = None
 
         if self.use_gravity:
-            this_f_grav = self._assemble_vector_from_entries(
+            this_f_grav = self.assemble_vector_from_entries(
                 self._make_f_grav(m_t, hg[:, :3, :3])
             ).reshape(-1, 6)
             if self.use_lumped_mass:
@@ -737,13 +737,13 @@ class BaseBeamStructure:
         else:
             this_f_grav = None
 
-        this_f_int = self._assemble_vector_from_entries(
-            self._make_f_int(p_d, eps)
+        this_f_int = self.assemble_vector_from_entries(
+            self.make_f_int(p_d, eps)
         ).reshape(-1, 6)
         this_f_res += this_f_int
 
         if dynamic:
-            this_f_iner = self._assemble_vector_from_entries(
+            this_f_iner = self.assemble_vector_from_entries(
                 self._make_f_iner(m_t, c_l, v, v_dot)
             ).reshape(-1, 6)
             if self.use_lumped_mass:
@@ -766,7 +766,7 @@ class BaseBeamStructure:
             this_f_res,
         )
 
-    def _make_f_res(
+    def make_f_res(
         self,
         solve_dofs: Optional[Array],
         p_d: Array,
@@ -799,7 +799,7 @@ class BaseBeamStructure:
         :param v_dot: Nodal accelerations, [n_node, 6]
         :return: Residual force vector, [n_dof], absolute sum of forces, [n_dof]
         """
-        f_res = self._make_f_int(p_d, eps)  # [n_elem, 12]
+        f_res = self.make_f_int(p_d, eps)  # [n_elem, 12]
         f_abs_sum = jnp.abs(f_res)
 
         if self.use_gravity:
@@ -812,14 +812,14 @@ class BaseBeamStructure:
             f_res += f_iner
             f_abs_sum += jnp.abs(f_iner)
 
-        f_res_vect = self._assemble_vector_from_entries(f_res)
-        f_abs_sum_vect = self._assemble_vector_from_entries(f_abs_sum)
+        f_res_vect = self.assemble_vector_from_entries(f_res)
+        f_abs_sum_vect = self.assemble_vector_from_entries(f_abs_sum)
 
         if f_ext_follower_n is not None:
             f_res_vect += f_ext_follower_n.reshape(self.n_dof).ravel()
             f_abs_sum_vect += jnp.abs(f_ext_follower_n.reshape(self.n_dof).ravel())
         if f_ext_dead_n is not None:
-            f_dead = self._make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
+            f_dead = self.make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
             f_res_vect += f_dead
             f_abs_sum_vect += jnp.abs(f_dead)
 
@@ -940,13 +940,13 @@ class BaseBeamStructure:
             hg_n: Array,
         ) -> tuple[int, ConvergenceStatus, Array]:
             # base parameters
-            d_n = self._make_d(hg_n)  # [n_elem, 6]
-            p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
-            eps_n = self._make_eps(d_n)  # [n_elem, 6]
-            m_t = self._make_m_t(d_n) if self.use_gravity else None  # [n_elem, 12, 12]
+            d_n = self.make_d(hg_n)  # [n_elem, 6]
+            p_d_n = self.make_p_d(d_n)  # [n_elem, 6, 12]
+            eps_n = self.make_eps(d_n)  # [n_elem, 6]
+            m_t = self.make_m_t(d_n) if self.use_gravity else None  # [n_elem, 12, 12]
 
             # get total dead forces for this load step, [n_node, 6]
-            total_f_ext_dead_step = self._make_f_ext_dead_tot(
+            total_f_ext_dead_step = self.make_f_ext_dead_tot(
                 f_ext_dead_steps, f_ext_aero_steps, i_load_step, i_ts=None
             )
 
@@ -961,7 +961,7 @@ class BaseBeamStructure:
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # compute residual forces, [n_solve_dofs]
-            f_res_solve_n, f_abs_sum_n = self._make_f_res(
+            f_res_solve_n, f_abs_sum_n = self.make_f_res(
                 solve_dofs,
                 p_d_n,
                 eps_n,
@@ -1192,19 +1192,19 @@ class BaseBeamStructure:
             hg_update = self._update_hg(hg_n, n_n)  # [n_node, 4, 4]
 
             # base parameters
-            d_n = self._make_d(hg_update)  # [n_elem, 6]
-            p_d_n = self._make_p_d(d_n)  # [n_elem, 6, 12]
-            eps_n = self._make_eps(d_n)  # [n_elem, 6]
+            d_n = self.make_d(hg_update)  # [n_elem, 6]
+            p_d_n = self.make_p_d(d_n)  # [n_elem, 6, 12]
+            eps_n = self.make_eps(d_n)  # [n_elem, 6]
             d_dot_n = self._make_d_dot(p_d_n, v_n)  # [n_elem, 6]
             t_n = vmap(t_se3, 0, 0)(n_n)  # [n_node, 6, 6]
 
             # tangent matrices
-            m_t = self._make_m_t(d_n)  # [n_elem, 12, 12]
+            m_t = self.make_m_t(d_n)  # [n_elem, 12, 12]
             c_l, c_t = self._make_c_t(
                 d_n, d_dot_n, v_n
             )  # [n_elem, 12, 12], [n_elem, 12, 12]
 
-            total_f_ext_dead = self._make_f_ext_dead_tot(
+            total_f_ext_dead = self.make_f_ext_dead_tot(
                 f_ext_dead_steps, f_ext_aero_steps, i_load_step, i_ts
             )  # [n_node, 6]
 
@@ -1226,7 +1226,7 @@ class BaseBeamStructure:
                 c_l_lumped, c_t_lumped = None, None
 
             # residual forces, [n_solve_dofs]
-            f_res_n_solve, f_abs_sum_n = self._make_f_res(
+            f_res_n_solve, f_abs_sum_n = self.make_f_res(
                 solve_dofs,
                 p_d_n,
                 eps_n,

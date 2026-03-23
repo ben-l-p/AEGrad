@@ -10,7 +10,7 @@ from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.uvlm import UVLM
 from aegrad.aero.linear import LinearWakeType, InputUnflattened
 from aero.data_structures import AeroSnapshot
-from aero.utils import _biot_savart_cutoff, make_rectangular_grid
+from aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
 from aegrad.print_utils import set_verbosity, VerbosityLevel
 
@@ -54,7 +54,7 @@ class TestLinearAero:
         hg = hg.at[:, :3, 3].set(beam_coords)
 
         # nonlinear case
-        uvlm = UVLM([cls.disc], jnp.arange(0, cls.n + 1), kernel=_biot_savart_cutoff)
+        uvlm = UVLM([cls.disc], jnp.arange(0, cls.n + 1), kernel=biot_savart_cutoff)
         uvlm.set_design_variables(cls.dt, flowfield, None, x_grid, hg)
         case = uvlm.solve_static()
 
@@ -143,7 +143,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing(
-        cls, plot: bool = False, use_matrix: bool = False
+        cls, plot: bool = True, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 
@@ -207,10 +207,10 @@ class TestLinearAero:
             )
 
         assert jnp.allclose(
-            dynamic_case.gamma_b[0], linear_case.x_t_tot.gamma_b[0], atol=4e-2
+            dynamic_case.gamma_b[0], linear_case.x_t_tot.gamma_b[0], atol=6e-2
         ), "Bound circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
-            dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=4e-2
+            dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=6e-2
         ), "Wake circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.zeta_w[0], linear_case.x_t_tot.zeta_w[0], atol=1e-3

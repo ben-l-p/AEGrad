@@ -2,11 +2,11 @@ from __future__ import annotations
 from typing import Sequence
 from pathlib import Path
 import xml.etree.ElementTree as Et
-from os import PathLike
+import os
 
 
 def write_pvd(
-    directory: PathLike,
+    directory: os.PathLike,
     name: str,
     filedirs: Sequence[Path],
     times: Sequence[float],

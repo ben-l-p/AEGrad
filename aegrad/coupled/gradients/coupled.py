@@ -76,22 +76,22 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # evaluate aero forcing and project to beam nodes
         aero_obj = inner_case.aero.solve_static(hg=hg, t=t, horseshoe=use_horseshoe)
         f_ext_aero_global = aero_obj.project_forcing_to_beam(
-            rmat=hg[:, :3, :3], x0_aero=self.aero.x0_b, include_unsteady=False
+            i_ts=0, rmat=hg[:, :3, :3], x0_aero=self.aero.x0_b, include_unsteady=False
         )
 
-        d = inner_case.structure._make_d(hg)
-        p_d = inner_case.structure._make_p_d(d)
-        eps = inner_case.structure._make_eps(d)
-        f_int = inner_case.structure._assemble_vector_from_entries(
-            inner_case.structure._make_f_int(p_d, eps)
+        d = inner_case.structure.make_d(hg)
+        p_d = inner_case.structure.make_p_d(d)
+        eps = inner_case.structure.make_eps(d)
+        f_int = inner_case.structure.assemble_vector_from_entries(
+            inner_case.structure.make_f_int(p_d, eps)
         ).reshape(-1, 6)
         if inner_case.structure.use_gravity:
-            m_t = inner_case.structure._make_m_t(d)
+            m_t = inner_case.structure.make_m_t(d)
         else:
             m_t = None
 
         if dv.structure.f_ext_dead is not None:
-            f_ext_dead = inner_case.structure._make_f_dead_ext(
+            f_ext_dead = inner_case.structure.make_f_dead_ext(
                 dv.structure.f_ext_dead, hg[:, :3, :3]
             )
         else:
@@ -108,11 +108,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             f_unsteady=None,
         )
 
-        f_dead_total = inner_case.structure._make_f_ext_dead_tot(
+        f_dead_total = inner_case.structure.make_f_ext_dead_tot(
             f_ext_dead, f_ext_aero_global, i_load_step=None, i_ts=None
         )
 
-        f_res = inner_case.structure._make_f_res(
+        f_res = inner_case.structure.make_f_res(
             solve_dofs=None,
             p_d=p_d,
             eps=eps,
@@ -129,7 +129,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         return AeroelasticStates(structure=struct_states, aero=aero_states), f_res
 
-    # @jax.jit(static_argnums=(0, 1, 2, 3))
+    @jax.jit(static_argnums=(0, 1, 2, 3))
     def static_adjoint(
         self,
         case: StaticAeroelastic,
@@ -204,7 +204,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         n_u_full = self.structure.n_dof
 
         # gradient of objective w.r.t. minimal states. Not overly expensive
-        p_f_p_n = (jax.jacrev if n_f < n_u else jax.jacfwd)(
+        p_f_p_n = jax.jacrev(
             lambda n_: objective(
                 self._aeroelastic_states_res_from_dv_n(
                     dv, n_, t=case.aero.t, use_horseshoe=case.aero.horseshoe
@@ -214,7 +214,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         )  # [n_u] -> [n_f, n_u]
 
         # gradient of objective w.r.t. design variables. Not overly expensive
-        p_f_p_x = (jax.jacrev if n_f < n_x else jax.jacfwd)(
+        p_f_p_x = jax.jacrev(
             lambda dv_: objective(
                 self._aeroelastic_states_res_from_dv_n(
                     dv_, n, t=case.aero.t, use_horseshoe=case.aero.horseshoe
@@ -230,43 +230,23 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )[1]
         )  # [n_x] -> [n_u, n_x]
 
-        # Replace building full Jacobian d_res_d_n (which is O(n^2) memory) with a matrix-free approach.
-        # We'll define a residual function and provide matvecs using jax.jvp/vjp so that we can use an
-        # iterative linear solver (conjugate gradient) without materializing the full Jacobian.
-
         # gradient of residual w.r.t. design variables
         d_res_d_n = jax.jacfwd(
-            jax.jit(
-                lambda n_: self._aeroelastic_states_res_from_dv_n(
-                    dv, n_, t=case.aero.t, use_horseshoe=case.aero.horseshoe
-                )[1]
-            )
+            lambda n_: self._aeroelastic_states_res_from_dv_n(
+                dv, n_, t=case.aero.t, use_horseshoe=case.aero.horseshoe
+            )[1]
         )  # [n_u] -> [n_u, n_u]
 
-        @jax.jit
-        def reverse_solve():
-            return (
-                jnp.linalg.solve(
-                    d_res_d_n(n)[jnp.ix_(solve_dofs, solve_dofs)].T,
-                    p_f_p_n(n).reshape(n_f, -1)[:, solve_dofs].T,
-                ).T
-                @ p_res_p_x(dv).ravel_jacobian(f_size=n_u_full, x_size=n_x)[
-                    solve_dofs, :
-                ]
-            )
+        adj = (
+            jnp.linalg.solve(
+                d_res_d_n(n)[jnp.ix_(solve_dofs, solve_dofs)].T,
+                p_f_p_n(n).reshape(n_f, -1)[:, solve_dofs].T,
+            ).T
+            @ p_res_p_x(dv).ravel_jacobian(f_size=n_u_full, x_size=n_x)[solve_dofs, :]
+        )
 
-        @jax.jit
-        def forward_solve():
-            return p_f_p_n(n).reshape(n_f, n_u_full)[:, solve_dofs] @ jnp.linalg.solve(
-                d_res_d_n(n)[jnp.ix_(solve_dofs, solve_dofs)],
-                p_res_p_x(dv).ravel_jacobian(f_size=n_u_full, x_size=n_x)[
-                    solve_dofs, :
-                ],
-            ).reshape(n_u, n_x)
-
-        adjoint_func = reverse_solve if n_f < n_x else forward_solve
         d_f_d_x_dict = dv.from_adjoint(
-            f_shape, p_f_p_x(dv).ravel_jacobian(f_size=n_f, x_size=n_x) - adjoint_func()
+            f_shape, p_f_p_x(dv).ravel_jacobian(f_size=n_f, x_size=n_x) - adj
         )
 
         return dv.split_adjoint(d_f_d_x=d_f_d_x_dict, f_shape=f_shape)

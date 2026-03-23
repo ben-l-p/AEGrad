@@ -3,7 +3,7 @@ from __future__ import annotations
 from _operator import mul
 from dataclasses import dataclass
 from functools import reduce
-from os import PathLike
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -85,7 +85,7 @@ class AeroDesignGradients:
         self,
         case: DynamicAeroCase,
         rmat_nodal: Optional[ArrayList],
-        directory: PathLike | str,
+        directory: os.PathLike | str,
     ) -> Sequence[Path]:
         if self.f_size != 1:
             raise ValueError("Can only plot gradients for scalar objective functions.")

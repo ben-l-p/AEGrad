@@ -6,7 +6,8 @@ from jax import numpy as jnp, Array
 from jax import vmap
 from jax.lax import cond
 
-from aegrad.algebra.array_utils import neighbour_average, ArrayList, split_to_vertex
+from aegrad.algebra.array_utils import neighbour_average, ArrayList
+from algebra.array_utils import split_to_vertex
 from constants import EPSILON, R_CUTOFF
 
 type KernelFunction = Callable[[Array, Array], Array]
@@ -39,7 +40,7 @@ def compute_surf_c(zeta: Array) -> Array:
 
 def compute_surf_nc(zeta: Array) -> Array:
     r"""
-    Compute the normal vectors for a given grid of points on a single surface. These have length equal to the area of
+    Compute the n vectors for a given grid of points on a single surface. These have length equal to the area of
     each panel.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
     :return: Normal vectors [zeta_m-1, zeta_n-1, 3]
@@ -60,14 +61,103 @@ def compute_c(zetas: ArrayList) -> ArrayList:
 
 def compute_nc(zetas: ArrayList) -> ArrayList:
     r"""
-    Compute the normal vectors for a list of surface grids.
+    Compute the n vectors for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
     """
     return ArrayList([compute_surf_nc(zeta) for zeta in zetas])
 
 
-def _propagate_surf_wake(
+def calculate_steady_forcing(
+    zeta_bs: ArrayList,
+    zeta_dot_bs: Optional[ArrayList],
+    gamma_bs: ArrayList,
+    gamma_ws: ArrayList,
+    rho: Array,
+    v_func: Callable[[Array], Array],
+    v_inputs: Optional[ArrayList],
+) -> ArrayList:
+    r"""
+    Calculate steady aerodynamic forcing for all surfaces at specified time step
+    :param zeta_bs: Bound grids, [n_surf][zeta_m, zeta_n, 3]
+    :param zeta_dot_bs: Bound grids velocities, [n_surf][zeta_m, zeta_n, 3]
+    :param gamma_bs: Bound grid circulation, [n_surf][gamma_m, gamma_n]
+    :param gamma_ws: Bound grid circulation, [n_surf][gamma_m, gamma_n]
+    :param rho: Flowfield density
+    :param v_func: Total velocity as a function of coordinate
+    :param v_inputs: Additive inputs for total velocity on bound grid vertex
+    """
+
+    f_steady = ArrayList([])
+
+    if zeta_dot_bs is None:
+        zeta_dot_bs = [None] * len(zeta_bs)
+
+    if v_inputs is None:
+        v_inputs = [None] * len(zeta_bs)
+
+    for zeta_b, zeta_dot_b, gamma_b, gamma_w, v_input in zip(
+        zeta_bs, zeta_dot_bs, gamma_bs, gamma_ws, v_inputs
+    ):
+        # compute midpoints
+        mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
+        mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
+
+        mp_dot_chordwise = neighbour_average(
+            zeta_dot_b, axes=0
+        )  # [gamma_m, gamma_n+1, 3]
+        mp_dot_spanwise = neighbour_average(
+            zeta_dot_b, axes=1
+        )  # [gamma_m+1, gamma_n, 3]
+
+        # relative flow velocities at midpoints
+        v_rel_chordwise = (
+            v_func(mp_chordwise) - mp_dot_chordwise
+        )  # [gamma_m, gamma_n+1, 3]
+        v_rel_spanwise = (
+            v_func(mp_spanwise) - mp_dot_spanwise
+        )  # [gamma_m+1, gamma_n, 3]
+
+        # add any input_ velocities
+        if v_input is not None:
+            v_rel_chordwise += neighbour_average(v_input, axes=0)
+            v_rel_spanwise += neighbour_average(v_input, axes=1)
+
+        # equivelant strengths of filaments
+        gamma_chordwise = jnp.zeros(
+            v_rel_chordwise.shape[:-1]
+        )  # [gamma_m, gamma_n+1, 3]
+        gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
+        gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
+        gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1])  # [gamma_m+1, gamma_n, 3]
+        gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
+        gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
+
+        # add first wake gamma
+        if gamma_w.shape[0] > 0:
+            gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w[0, :])
+
+        # filament vectors (from zeta_b_fil, which may differ from the midpoint geometry)
+        r_chordwise = zeta_b[1:, :, :] - zeta_b[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
+        r_spanwise = zeta_b[:, 1:, :] - zeta_b[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
+
+        # forces from each set of filaments
+        f_chordwise = rho * jnp.einsum(
+            "ij,ijk->ijk",
+            gamma_chordwise,
+            jnp.cross(v_rel_chordwise, r_chordwise),
+        )  # [gamma_m, gamma_n+1, 3]
+        f_spanwise = rho * jnp.einsum(
+            "ij,ijk->ijk", gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise)
+        )  # [gamma_m+1, gamma_n, 3]
+
+        f_steady.append(
+            split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1)
+        )  # [gamma_m+1, gamma_n+1, 3]
+    return f_steady
+
+
+def propagate_surf_wake(
     gamma_b_n: Array,
     gamma_w_n: Array,
     zeta_b_np1: Array,
@@ -162,7 +252,7 @@ def _propagate_surf_wake(
         return zeta_w_np1, gamma_w_np1
 
 
-def _propagate_wake(
+def propagate_wake(
     gamma_b_n: ArrayList,
     gamma_w_n: ArrayList,
     zeta_b_np1: ArrayList,
@@ -191,7 +281,7 @@ def _propagate_wake(
     gamma_w_np1 = ArrayList([])
 
     for i_surf in range(n_surf):
-        surf_zeta_w, surf_gamma_w = _propagate_surf_wake(
+        surf_zeta_w, surf_gamma_w = propagate_surf_wake(
             gamma_b_n[i_surf],
             gamma_w_n[i_surf],
             zeta_b_np1[i_surf],
@@ -206,115 +296,7 @@ def _propagate_wake(
     return zeta_w_np1, gamma_w_np1
 
 
-def _steady_forcing(
-    zeta_b: ArrayList,
-    zeta_dot_b: ArrayList,
-    gamma_b: ArrayList,
-    gamma_w: ArrayList,
-    v_func: Callable[[Array], Array],
-    v_input: Optional[ArrayList],
-    rho: Array,
-    zeta_b_filaments: Optional[ArrayList] = None,
-) -> ArrayList:
-    r"""
-    Compute the steady forces on all surfaces
-    :param zeta_b: Bound grid used for midpoint positions, [n_surf][zeta_m, zeta_n, 3]
-    :param zeta_dot_b: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3]
-    :param gamma_b: Bound circulation, [n_surf][m, n]
-    :param gamma_w: Wake circulation, [n_surf][m_star, n]
-    :param v_func: Function that computes the velocity, [3] -> [3]
-    :param v_input: Optional input to add velocities at the bound grid nodes, [n_surf][zeta_m, zeta_n, 3]
-    :param rho: Flow density
-    :param zeta_b_filaments: Bound grid used for filament vectors. If None, uses zeta_b.
-    :return: Steady forces on each surface, [n_surf][zeta_m, zeta_n, 3]
-    """
-    f_steady = ArrayList([])
-    for i_surf in range(len(zeta_b)):
-        f_steady.append(
-            _surf_steady_forcing(
-                zeta_b[i_surf],
-                zeta_dot_b[i_surf],
-                gamma_b[i_surf],
-                gamma_w[i_surf],
-                v_func,
-                v_input[i_surf] if v_input is not None else None,
-                rho,
-                zeta_b_filaments[i_surf] if zeta_b_filaments is not None else None,
-            )
-        )
-    return f_steady
-
-
-def _surf_steady_forcing(
-    zeta_b: Array,
-    zeta_dot_b: Array,
-    gamma_b: Array,
-    gamma_w: Array,
-    v_func: Callable[[Array], Array],
-    v_input: Optional[Array],
-    rho: Array,
-    zeta_b_filaments: Optional[Array] = None,
-) -> Array:
-    r"""
-    Compute the steady forces on a single surface
-    :param zeta_b: Bound grid used for midpoint positions, [zeta_m, zeta_n, 3]
-    :param zeta_dot_b: Bound grid velocities, [zeta_m, zeta_n, 3]
-    :param gamma_b: Bound circulation, [m, n]
-    :param gamma_w: Wake circulation, [m_star, n]
-    :param v_func: Function that computes the velocity, [3] -> [3]
-    :param v_input: Optional input to add velocities at the bound grid nodes, [zeta_m, zeta_n, 3]
-    :param rho: Flow density
-    :param zeta_b_filaments: Bound grid used for filament vectors. If None, uses zeta_b.
-    :return: Steady forces on the surface, [zeta_m, zeta_n, 3]
-    """
-    zeta_b_fil = zeta_b_filaments if zeta_b_filaments is not None else zeta_b
-
-    # compute midpoints
-    mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
-    mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
-
-    mp_dot_chordwise = neighbour_average(zeta_dot_b, axes=0)  # [gamma_m, gamma_n+1, 3]
-    mp_dot_spanwise = neighbour_average(zeta_dot_b, axes=1)  # [gamma_m+1, gamma_n, 3]
-
-    # relative flow velocities at midpoints
-    v_rel_chordwise = v_func(mp_chordwise) - mp_dot_chordwise  # [gamma_m, gamma_n+1, 3]
-    v_rel_spanwise = v_func(mp_spanwise) - mp_dot_spanwise  # [gamma_m+1, gamma_n, 3]
-
-    # add any input_ velocities
-    if v_input is not None:
-        v_rel_chordwise += neighbour_average(v_input, axes=0)
-        v_rel_spanwise += neighbour_average(v_input, axes=1)
-
-    # equivelant strengths of filaments
-    gamma_chordwise = jnp.zeros(v_rel_chordwise.shape[:-1])  # [gamma_m, gamma_n+1, 3]
-    gamma_chordwise = gamma_chordwise.at[:, :-1].set(gamma_b)
-    gamma_chordwise = gamma_chordwise.at[:, 1:].add(-gamma_b)
-    gamma_spanwise = jnp.zeros(v_rel_spanwise.shape[:-1])  # [gamma_m+1, gamma_n, 3]
-    gamma_spanwise = gamma_spanwise.at[:-1, :].set(-gamma_b)
-    gamma_spanwise = gamma_spanwise.at[1:, :].add(gamma_b)
-
-    # add first wake gamma
-    if gamma_w.shape[0] > 0:
-        gamma_spanwise = gamma_spanwise.at[-1, :].add(-gamma_w[0, :])
-
-    # filament vectors (from zeta_b_fil, which may differ from the midpoint geometry)
-    r_chordwise = zeta_b_fil[1:, :, :] - zeta_b_fil[:-1, :, :]  # [gamma_m, gamma_n+1, 3]
-    r_spanwise = zeta_b_fil[:, 1:, :] - zeta_b_fil[:, :-1, :]  # [gamma_m+1, gamma_n, 3]
-
-    # forces from each set of filaments
-    f_chordwise = rho * jnp.einsum(
-        "ij,ijk->ijk", gamma_chordwise, jnp.cross(v_rel_chordwise, r_chordwise)
-    )  # [gamma_m, gamma_n+1, 3]
-    f_spanwise = rho * jnp.einsum(
-        "ij,ijk->ijk", gamma_spanwise, jnp.cross(v_rel_spanwise, r_spanwise)
-    )  # [gamma_m+1, gamma_n, 3]
-
-    return split_to_vertex(f_chordwise, 0) + split_to_vertex(
-        f_spanwise, 1
-    )  # [gamma_m+1, gamma_n+1, 3]
-
-
-def _biot_savart(x: Array, y: Array) -> Array:
+def biot_savart(x: Array, y: Array) -> Array:
     r"""
     Basic Biot-Savart kernel without any smoothing or cutoff.
     :param x: Target point, [3]
@@ -330,7 +312,7 @@ def _biot_savart(x: Array, y: Array) -> Array:
 
 
 @jax.custom_jvp
-def _make_unit_epsilon(r: Array) -> Array:
+def make_unit_epsilon(r: Array) -> Array:
     r"""
     Differentiable function to obtain a smoothed unit vector. As r -> 0, the output approaches zero instead of being
     undefined.
@@ -340,8 +322,8 @@ def _make_unit_epsilon(r: Array) -> Array:
     return r / jnp.sqrt(jnp.sum(r**2) + EPSILON**2)
 
 
-@_make_unit_epsilon.defjvp
-def _smooth_unit_vector_jvp(primals, tangents):
+@make_unit_epsilon.defjvp
+def smooth_unit_vector_jvp(primals, tangents):
     r"""
     Custom JVP rule for the smoothed unit vector function.
     """
@@ -363,7 +345,7 @@ def _smooth_unit_vector_jvp(primals, tangents):
     return y, jvp
 
 
-def _biot_savart_epsilon(x: Array, y: Array) -> Array:
+def biot_savart_epsilon(x: Array, y: Array) -> Array:
     r"""
     Biot-Savart kernel with epsilon term added to remove singularity.
     :param x: Target point, [3]
@@ -374,12 +356,12 @@ def _biot_savart_epsilon(x: Array, y: Array) -> Array:
     r1 = x - y[0, :]
     r2 = x - y[1, :]
     r1_x_r2 = jnp.cross(r1, r2)
-    diff_r = _make_unit_epsilon(r1) - _make_unit_epsilon(r2)
+    diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
     r1_x_r2_unit = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2) + EPSILON)
     return r1_x_r2_unit / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
 
-def _biot_savart_cutoff(x: Array, y: Array) -> Array:
+def biot_savart_cutoff(x: Array, y: Array) -> Array:
     r"""
     Biot-Savart kernel with truncation radius to remove singularity.
     :param x: Target point, [3]
@@ -398,7 +380,7 @@ def _biot_savart_cutoff(x: Array, y: Array) -> Array:
         # Compute the standard Biot-Savart kernel, called only if r > R_CUTOFF
         r1_x_r2 = jnp.cross(r1, r2)
         r1_x_r2_unit2 = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2))
-        diff_r = _make_unit_epsilon(r1) - _make_unit_epsilon(r2)
+        diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
         return r1_x_r2_unit2 / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
     return cond((r > R_CUTOFF), _kernel_value, lambda: jnp.zeros(3))
@@ -406,7 +388,7 @@ def _biot_savart_cutoff(x: Array, y: Array) -> Array:
 
 def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array:
     """
-    Mirror a grid of points across a plane defined by a point and a normal vector.
+    Mirror a grid of points across a plane defined by a point and a n vector.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3].
     :param mirror_point: Point in mirror plane, [3].
     :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalized.

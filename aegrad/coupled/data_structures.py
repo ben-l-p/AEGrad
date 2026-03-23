@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from os import PathLike
+import os
 from dataclasses import dataclass
 
 from aegrad.aero.data_structures import DynamicAeroCase
@@ -14,7 +14,7 @@ class StaticAeroelastic:
 
     def plot(
         self,
-        directory: PathLike | str,
+        directory: os.PathLike | str,
         n_interp: int = 0,
         plot_bound: bool = True,
         plot_wake: bool = True,

@@ -1,5 +1,5 @@
 from typing import Optional
-from os import PathLike
+import os
 from pathlib import Path
 
 import vtk
@@ -43,7 +43,7 @@ def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructure
 
 def plot_grid_to_vtk(
     grid_arr: Array,
-    filename: str | PathLike,
+    filename: str | os.PathLike,
     i_ts: Optional[int] = None,
     node_scalar_data: Optional[dict[str, Array]] = None,
     node_vector_data: Optional[dict[str, Array]] = None,

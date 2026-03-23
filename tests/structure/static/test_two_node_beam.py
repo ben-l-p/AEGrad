@@ -31,11 +31,11 @@ class TestTwoNodeXBeamStrainsForces:
         k_coeffs = jnp.ones(6)
         cls.struct.set_design_variables(cls.coords, jnp.diag(k_coeffs)[None, :], None)
         d = jnp.zeros((1, 6)).at[0, 0].set(cls.length)
-        eps = cls.struct._make_eps(d)
+        eps = cls.struct.make_eps(d)
         assert jnp.allclose(eps, 0.0), (
             f"Axial strain calculation incorrect, expected zero strain, got {eps}"
         )
-        f_int = cls.struct._make_f_int(
+        f_int = cls.struct.make_f_int(
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         assert jnp.allclose(f_int, 0.0), (
@@ -52,12 +52,12 @@ class TestTwoNodeXBeamStrainsForces:
         dx = 0.1
         d = jnp.zeros((1, 6))
         d = d.at[0, 0].set(cls.length + dx)
-        eps = cls.struct._make_eps(d)
+        eps = cls.struct.make_eps(d)
         expected_eps = jnp.array((dx / cls.length, 0.0, 0.0, 0.0, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Axial strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct._make_f_int(
+        f_int = cls.struct.make_f_int(
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
@@ -80,12 +80,12 @@ class TestTwoNodeXBeamStrainsForces:
         d = jnp.zeros((1, 6))
         d = d.at[0, 0].set(cls.length)
         d = d.at[0, 3].set(theta_x)
-        eps = cls.struct._make_eps(d)
+        eps = cls.struct.make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, theta_x / cls.length, 0.0, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Torsional strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
-        f_int = cls.struct._make_f_int(
+        f_int = cls.struct.make_f_int(
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
@@ -113,13 +113,13 @@ class TestTwoNodeXBeamStrainsForces:
         d = d.at[0, 0].set(cls.length)
         d = d.at[0, 4].set(kappa_y * cls.length)
 
-        eps = cls.struct._make_eps(d)
+        eps = cls.struct.make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, kappa_y, 0.0))
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
 
-        f_int = cls.struct._make_f_int(
+        f_int = cls.struct.make_f_int(
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)
@@ -148,13 +148,13 @@ class TestTwoNodeXBeamStrainsForces:
         d = d.at[0, 0].set(cls.length)
         d = d.at[0, 5].set(kappa_z * cls.length)
 
-        eps = cls.struct._make_eps(d)
+        eps = cls.struct.make_eps(d)
         expected_eps = jnp.array((0.0, 0.0, 0.0, 0.0, 0.0, kappa_z))
         assert jnp.allclose(eps, expected_eps), (
             f"Bending strain calculation incorrect, expected {expected_eps}, got {eps}"
         )
 
-        f_int = cls.struct._make_f_int(
+        f_int = cls.struct.make_f_int(
             p(d[0, :], cls.struct.ad_inv_o0[0, ...])[None, :], eps
         )[0, :]
         expected_f_int = jnp.zeros(12)

@@ -50,14 +50,14 @@ class BeamStructure(BaseBeamStructure):
 
         exp_n = vmap(exp_se3)(n.reshape(-1, 6))  # [n_nodes_, 4, 4]
         hg = jnp.einsum("ijk,ikl->ijl", inner_case.hg0, exp_n)  # [n_nodes_, 4, 4]
-        d = inner_case._make_d(hg)
-        p_d = inner_case._make_p_d(d)
-        eps = inner_case._make_eps(d)
-        f_int = inner_case._assemble_vector_from_entries(
-            inner_case._make_f_int(p_d, eps)
+        d = inner_case.make_d(hg)
+        p_d = inner_case.make_p_d(d)
+        eps = inner_case.make_eps(d)
+        f_int = inner_case.assemble_vector_from_entries(
+            inner_case.make_f_int(p_d, eps)
         ).reshape(-1, 6)
         if inner_case.use_gravity:
-            m_t = inner_case._make_m_t(d)
+            m_t = inner_case.make_m_t(d)
         else:
             m_t = None
 
@@ -67,7 +67,7 @@ class BeamStructure(BaseBeamStructure):
             f_int=f_int,
         )
 
-        f_res = inner_case._make_f_res(
+        f_res = inner_case.make_f_res(
             solve_dofs=None,
             p_d=p_d,
             eps=eps,
@@ -110,8 +110,8 @@ class BeamStructure(BaseBeamStructure):
         t_n = vmap(t_se3, 0, 0)(n.reshape(-1, 6))  # [n_nodes_, 6, 6]
         d = structure.d
         eps = structure.eps
-        p_d = self._make_p_d(d)
-        m_t = self._make_m_t(d) if self.use_gravity else None
+        p_d = self.make_p_d(d)
+        m_t = self.make_m_t(d) if self.use_gravity else None
 
         # make copy of structure_dv which has been converted to global coordinates.
         gs = copy(structure)

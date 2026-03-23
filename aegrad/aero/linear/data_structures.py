@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from os import PathLike
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -168,7 +168,7 @@ class AeroLinearResult:
 
     def plot(
         self,
-        directory: str | PathLike,
+        directory: str | os.PathLike,
         index: Optional[slice | Sequence[int] | int | Array] = None,
         plot_wake: bool = True,
     ) -> None:
@@ -257,8 +257,6 @@ class AeroLinearResult:
             horseshoe=False,
             c=None,
             nc=None,
-            aic_piv=None,
-            aic_lu=None,
             kernels=self.reference.kernels,
             mirror_point=None,
             mirror_normal=None,

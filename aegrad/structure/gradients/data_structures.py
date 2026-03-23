@@ -3,7 +3,7 @@ from __future__ import annotations
 from _operator import mul
 from dataclasses import dataclass
 from functools import reduce
-from os import PathLike
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -97,7 +97,7 @@ class StructureDesignGradients:
         self.f_size: int = reduce(mul, f_shape, 1)
 
     def plot(
-        self, case: StaticStructure, directory: PathLike | str, n_interp: int = 0
+        self, case: StaticStructure, directory: os.PathLike | str, n_interp: int = 0
     ) -> Path:
         if self.f_size != 1:
             raise ValueError("Can only plot gradients for scalar objective functions.")

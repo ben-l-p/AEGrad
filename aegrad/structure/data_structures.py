@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from os import PathLike
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 from dataclasses import dataclass
@@ -143,7 +143,7 @@ class StaticStructure:
 
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike | str, n_interp: int = 0) -> Path:
+    def plot(self, directory: os.PathLike | str, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory.
         :param directory: Path to write files to.
@@ -294,7 +294,7 @@ class DynamicStructureSnapshot:
         )  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
-    def plot(self, directory: PathLike | str, n_interp: int = 0) -> Path:
+    def plot(self, directory: os.PathLike | str, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory. Other beam object types will first convert to a
         DynmaicStructureSnapshot before plotting.
@@ -568,7 +568,7 @@ class DynamicStructure:
 
     def plot(
         self,
-        directory: PathLike,
+        directory: os.PathLike,
         index: Optional[slice | Sequence[int] | int | Array] = None,
         n_interp: int = 0,
     ) -> Path:

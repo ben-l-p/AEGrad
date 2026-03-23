@@ -1,5 +1,5 @@
 from typing import Optional
-from os import PathLike
+import os
 from pathlib import Path
 from functools import partial
 
@@ -167,7 +167,7 @@ def plot_beam_to_vtk(
     conn: Array,
     o0: Array,
     n_interp: int,
-    filename: str | PathLike,
+    filename: str | os.PathLike,
     i_ts: Optional[int] = None,
     node_scalar_data: Optional[dict[str, Array]] = None,
     node_vector_data: Optional[dict[str, Array]] = None,
