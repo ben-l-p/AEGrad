@@ -86,7 +86,7 @@ def flatten_to_1d(arrs: Sequence[Array]) -> Array:
 def block_axis(arrs: Sequence[Sequence[Array]], axes: Sequence[int]) -> Array:
     r"""
     Form a block matrix along two given axes
-    :param arrs: Double nested sequence of arrays [][][n, m]
+    :param arrs: Double nested sequence of arrays [][][varphi, m]
     :param axes: Axes along which to concatenate the arrays
     :return: Block matrix, [n_total, m_total]
     """
@@ -225,7 +225,7 @@ class ArrayList(UserList[Array]):
         *idx: Optional[int | slice | Ellipsis],
     ) -> ArrayList:
         r"""
-        Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(n).
+        Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(varphi).
         """
 
         return ArrayList([self[i][idx] for i in range(len(self))])

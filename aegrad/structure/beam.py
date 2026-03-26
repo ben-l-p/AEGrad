@@ -26,7 +26,7 @@ from aegrad.structure.utils import (
 from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
 from aegrad.algebra.so3 import vec_to_skew
 from aegrad.structure.time_integration import TimeIntregrator
-from algebra.se3 import t_se3
+from algebra.se3 import t_se3, log_se3
 
 
 class BaseBeamStructure:
@@ -122,6 +122,20 @@ class BaseBeamStructure:
             if convergence_settings is not None
             else ConvergenceSettings()
         )
+
+        self._time_integrator: Optional[TimeIntregrator] = None
+
+    @property
+    def time_integrator(self) -> TimeIntregrator:
+        if self._time_integrator is None:
+            raise ValueError(
+                "Time integrator has not been set. Please set time_integrator before accessing."
+            )
+        return self._time_integrator
+
+    @time_integrator.setter
+    def time_integrator(self, ti: TimeIntregrator) -> None:
+        self._time_integrator = ti
 
     def set_design_variables(
         self,
@@ -223,7 +237,46 @@ class BaseBeamStructure:
             prescribed_dofs=prescribed_dofs,
         )
 
-    def _assemble_matrix_from_entries(self, entries: Array) -> Array:
+    def calculate_varphi_from_hg(self, hg: Array) -> Array:
+        r"""
+        Calculate the twist vector from the reference configuration to hg
+        :param hg: Deformed coordinates, [n_nodes, 4, 4]
+        :return: Vector of twists, [n_nodes, 6]
+        """
+        return vmap(hg_to_d, (0, 0), 0)(self.hg0, hg)
+
+    @staticmethod
+    def calculate_phi_from_hg(hg_n: Array, hg_np1: Array) -> Array:
+        r"""
+        Calculate the twist increment from timestep n to timestep n+1
+        :param hg_n: Coordinates from timestep n, [n_nodes, 4, 4]
+        :param hg_np1: Coordinates from timestep n+1, [n_nodes, 4, 4]
+        :return: Increment phi, [n_nodes, 6]
+        """
+        return vmap(hg_to_d, (0, 0), 0)(
+            hg_n,
+            hg_np1,
+        )
+
+    @staticmethod
+    def calculate_varphi_from_phi(varphi_n: Array, phi_np1: Array) -> Array:
+        r"""
+        Update the varphi vector with the timestep change phi.
+        :param varphi_n: Twists from reference to timestep n, [n_nodes, 6]
+        :param phi_np1: Twists from timestep n to timestep n+1, [n_nodes, 6]
+        :return: Twists from reference to timestep n+1, [n_nodes, 6]
+        """
+        return vmap(
+            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)),
+            (0, 0),
+            0,
+        )(varphi_n, phi_np1)
+
+    def calculate_hg_from_varphi(self, varphi: Array) -> Array:
+        exp_varphi = vmap(exp_se3)(varphi)  # [n_nodes_, 4, 4]
+        return jnp.einsum("ijk,ikl->ijl", self.hg0, exp_varphi)
+
+    def assemble_matrix_from_entries(self, entries: Array) -> Array:
         r"""
         Assemble global matrix from element entries
         :param entries: Array of element matrix entries, [n_elem, 12, 12]
@@ -416,12 +469,12 @@ class BaseBeamStructure:
         :return: Tangent stiffness matrix with all contributions, [n_dof, n_dof]
         """
 
-        k_t = self._assemble_matrix_from_entries(self._make_k_t(d, p_d, eps))
+        k_t = self.assemble_matrix_from_entries(self._make_k_t(d, p_d, eps))
         if f_ext_dead is not None and self.optional_jacobians.d_f_ext_dead_d_n:
             k_t += block_diag(*self._make_k_t_dead(rmat, f_ext_dead))
 
         if self.use_gravity and self.optional_jacobians.d_f_grav_d_n:
-            k_t += self._assemble_matrix_from_entries(
+            k_t += self.assemble_matrix_from_entries(
                 self._make_k_t_grav(d, p_d, rmat, m_t)
             )
             if self.use_lumped_mass:
@@ -502,7 +555,7 @@ class BaseBeamStructure:
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
         :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
         :param k_t: System stiffness matrix, [n_dof, n_dof]
-        :param t_n: Tangent operator T(n), [n_nodes_, 6, 6]
+        :param t_n: Tangent operator T(varphi), [n_nodes_, 6, 6]
         :param ti: Time integration parameters
         :return: System matrix, [n_dof, n_dof]
         """
@@ -513,7 +566,7 @@ class BaseBeamStructure:
         ).reshape(self.n_dof, self.n_dof)  # [n_dof, n_dof]
 
         mat = (
-            self._assemble_matrix_from_entries(
+            self.assemble_matrix_from_entries(
                 m_t * ti.beta_prime + c_t * ti.gamma_prime
             )
         ) + k_t_tan_n
@@ -699,7 +752,7 @@ class BaseBeamStructure:
         :param f_ext_aero: External aero forces in global reference, [n_node, 6]
         :param v: Nodal velocities in global frame, [n_node, 6]
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
-        :return: Configuration vectors, strain vectors, Dead external forces, gravitational forces, internal forces,
+        :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
         inertial forces and residual forces
         """
         d = self.make_d(hg)
@@ -1155,7 +1208,7 @@ class BaseBeamStructure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
+        self.time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
 
         def _update(
             i_load_step: int,
@@ -1180,12 +1233,12 @@ class BaseBeamStructure:
             :param i_ts: Time step index
             :param converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
             print messages.
-            :param hg_n: Transformation matrices at iteration n, [n_nodes_, 4, 4]
-            :param n_n: Incremental configuration at iteration n, [n_nodes_, 6]
-            :param v_n: Velocities at iteration n, [n_nodes_, 6]
-            :param v_dot_n: Accelerations at iteration n, [n_nodes_, 6]
+            :param hg_n: Transformation matrices at iteration varphi, [n_nodes_, 4, 4]
+            :param n_n: Incremental configuration at iteration varphi, [n_nodes_, 6]
+            :param v_n: Velocities at iteration varphi, [n_nodes_, 6]
+            :param v_dot_n: Accelerations at iteration varphi, [n_nodes_, 6]
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
-            configuration, velocities and accelerations for iteration n+1.
+            configuration, velocities and accelerations for iteration varphi+1.
             """
             # TODO: rewrite to make more efficient by avoiding recomputation of HG
 
@@ -1250,7 +1303,7 @@ class BaseBeamStructure:
                 c_t_lumped=c_t_lumped,
                 k_t=k_t,
                 t_n=t_n,
-                ti=time_integrator,
+                ti=self.time_integrator,
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
@@ -1261,13 +1314,13 @@ class BaseBeamStructure:
             v_np1 = (
                 v_n.ravel()
                 .at[solve_dofs]
-                .add(time_integrator.gamma_prime * d_n_np1)
+                .add(self.time_integrator.gamma_prime * d_n_np1)
                 .reshape(-1, 6)
             )
             v_dot_np1 = (
                 v_dot_n.ravel()
                 .at[solve_dofs]
-                .add(time_integrator.beta_prime * d_n_np1)
+                .add(self.time_integrator.beta_prime * d_n_np1)
                 .reshape(-1, 6)
             )
 
@@ -1304,17 +1357,17 @@ class BaseBeamStructure:
             """
 
             # predictor step
-            a_init = time_integrator.predict_a(
+            a_init = self.time_integrator.predict_a(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
             )
 
-            n_init = time_integrator.predict_n(
+            n_init = self.time_integrator.predict_n(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_init = time_integrator.predict_v(
+            v_init = self.time_integrator.predict_v(
                 sol.v[i_ts - 1, ...], sol.a[i_ts - 1, ...], a_init
             )
-            v_dot_init = time_integrator.predict_v_dot(
+            v_dot_init = self.time_integrator.predict_v_dot(
                 sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1], a_init
             )
 
@@ -1368,7 +1421,7 @@ class BaseBeamStructure:
 
             # update pseudoacceleration
             sol.a = sol.a.at[i_ts, ...].set(
-                time_integrator.calculate_a_np1(
+                self.time_integrator.calculate_a_np1(
                     sol.v_dot[i_ts, ...], sol.v_dot[i_ts - 1, ...], sol.a[i_ts - 1, ...]
                 )
             )

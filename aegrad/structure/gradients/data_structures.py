@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Self
 
 import jax
 from jax import Array, numpy as jnp
@@ -19,10 +19,39 @@ from data_structures import DesignVariables
 
 @jax.tree_util.register_dataclass
 @dataclass
-class StructuralStates:
+class StructureFullStates:
+    v: Optional[Array]
+    v_dot: Optional[Array]
     hg: Array
     eps: Array
     f_int: Array
+
+
+@_make_pytree
+class UnsteadyStructureMinimalStates:
+    def __init__(self, phi: Array, varphi: Array, v: Array, v_dot: Array, a: Array):
+        self.phi: Array = phi
+        self.varphi: Array = varphi
+        self.v: Array = v
+        self.v_dot: Array = v_dot
+        self.a: Array = a
+
+    @classmethod
+    def from_mat(cls, stacked_mat: Array) -> UnsteadyStructureMinimalStates:
+        return UnsteadyStructureMinimalStates(*stacked_mat)
+
+    def to_mat(self) -> Array:
+        return jnp.stack(
+            (self.phi, self.varphi, self.v, self.v_dot, self.a), 0
+        )  # [5, n_nodes, 6]
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "phi", "varphi", "v", "v_dot", "a"
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()
 
 
 @jax.tree_util.register_dataclass
@@ -52,6 +81,18 @@ class StructuralDesignVariables(DesignVariables):
 
         self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
+
+    def __iadd__(self, other: StructuralDesignVariables) -> Self:
+        self.x0 += other.x0
+        self.k_cs += other.k_cs
+        self.m_cs += other.m_cs
+        if self.m_lumped is not None:
+            self.m_lumped += other.m_lumped
+        if self.f_ext_follower is not None:
+            self.f_ext_follower += other.f_ext_follower
+        if self.f_ext_dead is not None:
+            self.f_ext_dead += other.f_ext_dead
+        return self
 
     def get_vars(self) -> dict[str, Optional[Array]]:
         return {

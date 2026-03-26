@@ -652,8 +652,8 @@ class LinearUVLM:
 
         def _make_inv_solve_mat(zeta_bs: ArrayList) -> Array:
             r"""
-            Gives the matrix :math:`[A(\zeta_c, \zeta_b) \cdot n]^{-1}`
-            :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
+            Gives the matrix :math:`[A(\zeta_c, \zeta_b) \cdot varphi]^{-1}`
+            :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Solve matrix, [m_tot*n_tot, m_tot*n_tot]
             """
             cs = compute_c(zeta_bs)
@@ -679,13 +679,13 @@ class LinearUVLM:
         ) -> Array:
             r"""
             Boundary condition velocity at collocation points.
-            :param zeta_bs: Bound vertex positions at time=n+1, [n_surf][zeta_m, zeta_n, 3]
-            :param zeta_ws: Wake vertex positions at time=n+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :param gamma_ws: Wake strengths at time=n+1, [n_surf][m_star, n, 3
-            :param zeta_bs_dot: Wake vertex velocities at time=n+1, [n_surf][zetas_m, zeta_n, 3]
+            :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
+            :param zeta_ws: Wake vertex positions at time=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
+            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3
+            :param zeta_bs_dot: Wake vertex velocities at time=varphi+1, [n_surf][zetas_m, zeta_n, 3]
             :return: Boundary condition velocity at collocation points, [m_tot*n_tot]
             """
-            # all values given at time=n+1
+            # all values given at time=varphi+1
             cs = compute_c(zeta_bs)
             cs_dot = compute_c(zeta_bs_dot)
 
@@ -714,10 +714,10 @@ class LinearUVLM:
             Flow velocity at points x_target due to the flowfield and the bound and wake surfaces. Entries of None are replaced
             with the reference value.
             :param x: Points to evaluate flow velocity at, [..., 3]
-            :param gamma_b: Bound circulation strengths at t=n+1, [n_surf][m, n, 3]
-            :param gamma_w: Wake circulation strengths at t=n+1, [n_surf][m_star, n, 3]
-            :param zeta_b: Bound vertex positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
-            :param zeta_w: Wake vertex positions at t=n+1, [n_surf][zeta_m_star, zeta_n, 3]
+            :param gamma_b: Bound circulation strengths at t=varphi+1, [n_surf][m, varphi, 3]
+            :param gamma_w: Wake circulation strengths at t=varphi+1, [n_surf][m_star, varphi, 3]
+            :param zeta_b: Bound vertex positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
+            :param zeta_w: Wake vertex positions at t=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
             :return: Flow velocity at points x_target, [..., 3]
             """
             # sample flowfield
@@ -737,10 +737,10 @@ class LinearUVLM:
             u_np1: InputUnflattened, x_n: StateUnflattened
         ) -> tuple[Optional[ArrayList], ArrayList]:
             r"""
-            Propagate the linear wake from t=n to t=n+1.
-            :param u_np1: Inputs at time=n+1
-            :param x_n: States at time=n
-            :return: Wake grid perturbations and wake circulation perturbations at time=n+1
+            Propagate the linear wake from t=varphi to t=varphi+1.
+            :param u_np1: Inputs at time=varphi+1
+            :param x_n: States at time=varphi
+            :return: Wake grid perturbations and wake circulation perturbations at time=varphi+1
             """
             u_np1_tot = self.get_total_input(u_np1)
             x_n_tot = self.get_total_state(x_n)
@@ -776,8 +776,8 @@ class LinearUVLM:
             )
 
             # add pertubations from input velocities
-            # note that we here use the inputs at t=n+1 to convect the wake to t=n+1, as this best suits the linear
-            # system structure_dv. For the full nonlinear UVLM, we use the inputs at t=n, which can lead to a discrepancy.
+            # note that we here use the inputs at t=varphi+1 to convect the wake to t=varphi+1, as this best suits the linear
+            # system structure_dv. For the full nonlinear UVLM, we use the inputs at t=varphi, which can lead to a discrepancy.
             if self.prescribed_wake and self.wake_upwash:
                 d_zeta_w_np1 += u_np1_tot.nu_w * self.dt
 
@@ -785,9 +785,9 @@ class LinearUVLM:
 
         def _get_dn(d_zeta_b: Sequence[Array]) -> Sequence[Array]:
             r"""
-            Get the perturbation in n vectors due to perturbations in bound grid positions.
-            :param d_zeta_b: Perturbations in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
-            :return: Perturbations in n vectors at t=n+1, [n_surf][m, n, 3]
+            Get the perturbation in varphi vectors due to perturbations in bound grid positions.
+            :param d_zeta_b: Perturbations in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
+            :return: Perturbations in varphi vectors at t=varphi+1, [n_surf][m, varphi, 3]
             """
             zeta_b_full = d_zeta_b + self.reference.zeta_b
             n_full = compute_nc(zeta_b_full)
@@ -804,7 +804,7 @@ class LinearUVLM:
         def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> Array:
             r"""
             Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_b} \cdot \delta\zeta_b`
-            :param d_zeta_b: Perturbation in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            :param d_zeta_b: Perturbation in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Perturbation in boundary condition velocity, [n_c]
             """
 
@@ -824,7 +824,7 @@ class LinearUVLM:
         def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> Array:
             r"""
             Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_w} \cdot \delta\zeta_w`
-            :param d_zeta_w: Perturbation in wake grid positions at t=n+1, [n_surf][zeta_m_star, zeta_n, 3]
+            :param d_zeta_w: Perturbation in wake grid positions at t=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
             :return: Perturbation in boundary condition velocity, [n_c]
             """
             primals, tangents = jax.jvp(
@@ -843,7 +843,7 @@ class LinearUVLM:
         def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> Array:
             r"""
             Obtain the jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \Gamma_w} \cdot \delta\Gamma_w`
-            :param d_gamma_w: Perturbation in wake circulation at t=n+1, [n_surf][m_star, n, 3]
+            :param d_gamma_w: Perturbation in wake circulation at t=varphi+1, [n_surf][m_star, varphi, 3]
             :return: Perturbation in boundary condition velocity, [n_c]
             """
             primals, tangents = jax.jvp(
@@ -863,8 +863,8 @@ class LinearUVLM:
 
         def d_solve_mat_d_zeta_b(d_zeta_b: ArrayList) -> Array:
             r"""
-            Obtain the jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot n]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
-            :param d_zeta_b: Perturbation in bound grid positions at t=n+1, [n_surf][zeta_m, zeta_n, 3]
+            Obtain the jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot varphi]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
+            :param d_zeta_b: Perturbation in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Perturbation in solve matrix, [n_c, n_c]
             """
             primals, tangents = jax.jvp(
@@ -876,8 +876,8 @@ class LinearUVLM:
         def _a_func(x_n_vec: Array) -> Array:
             r"""
             State update function for the A matrix in the linear system.
-            :param x_n_vec: State vector at time=n, [n_states]
-            :return: State vector at time=n+1, [n_states]
+            :param x_n_vec: State vector at time=varphi, [n_states]
+            :return: State vector at time=varphi+1, [n_states]
             """
             x_n = self._unpack_state_vector(x_n_vec)
 
@@ -929,8 +929,8 @@ class LinearUVLM:
         def _b_func(u_np1_vec: Array) -> Array:
             r"""
             Input to state function for the B matrix in the linear system.
-            :param u_np1_vec: Input vector at time=n+1, [n_input]
-            :return: State vector at time=n+1, [n_states]
+            :param u_np1_vec: Input vector at time=varphi+1, [n_input]
+            :return: State vector at time=varphi+1, [n_states]
             """
             u_np1 = self._unpack_input_vector(u_np1_vec)
 
@@ -999,8 +999,8 @@ class LinearUVLM:
         def _c_func(x_n_vec: Array) -> Array:
             r"""
             State to output function for the C matrix in the linear system.
-            :param x_n_vec: State vector time=n, [n_state]
-            :return: Output vector at time=n, [n_outputs]
+            :param x_n_vec: State vector time=varphi, [n_state]
+            :return: Output vector at time=varphi, [n_outputs]
             """
             x_n = self._unpack_state_vector(x_n_vec)
 
@@ -1027,7 +1027,7 @@ class LinearUVLM:
                 zeta_w: Optional[ArrayList] = None,
             ):
                 r"""
-                Steady forcing at time=n due to perturbations in the states.
+                Steady forcing at time=varphi due to perturbations in the states.
                 """
 
                 def _v_forcing(x: Array) -> Array:
@@ -1073,8 +1073,8 @@ class LinearUVLM:
         def _d_func(u_n_vec: Array) -> Array:
             r"""
             Input to output function for the D matrix in the linear system.
-            :param u_n_vec: Input vector time=n, [n_input]
-            :return: Output vector at time=n, [n_outputs]
+            :param u_n_vec: Input vector time=varphi, [n_input]
+            :return: Output vector at time=varphi, [n_outputs]
             """
             u_n = self._unpack_input_vector(u_n_vec)
 

@@ -13,12 +13,13 @@ from coupled.gradients.data_structures import (
     AeroelasticDesignVariables,
     AeroelasticDesignGradients,
 )
-from structure import StructuralStates, StructuralDesignVariables
+from structure import StructuralDesignVariables
 from aero.gradients.data_structures import AeroStates, AeroDesignVariables
 from aegrad.coupled.coupled import BaseCoupledAeroelastic
 from aegrad.algebra.se3 import hg_to_d
 from aero.flowfields import Constant
 from algebra.se3 import exp_se3
+from structure.gradients.data_structures import StructureFullStates
 
 if TYPE_CHECKING:
     from aegrad.coupled.coupled import StaticAeroelastic
@@ -97,10 +98,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         else:
             f_ext_dead = None
 
-        struct_states = StructuralStates(
+        struct_states = StructureFullStates(
             hg=hg,
             eps=eps,
             f_int=f_int,
+            v=None,
+            v_dot=None,
         )
 
         aero_states = AeroStates(
@@ -175,10 +178,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             f_ext_dead=gs.f_ext_dead,
         )
 
-        struct_states = StructuralStates(
+        struct_states = StructureFullStates(
             hg=case.structure.hg,
             eps=eps,
             f_int=case.structure.f_int,
+            v=None,
+            v_dot=None,
         )
 
         aero_dv = AeroDesignVariables(

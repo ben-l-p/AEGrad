@@ -40,7 +40,7 @@ def compute_surf_c(zeta: Array) -> Array:
 
 def compute_surf_nc(zeta: Array) -> Array:
     r"""
-    Compute the n vectors for a given grid of points on a single surface. These have length equal to the area of
+    Compute the varphi vectors for a given grid of points on a single surface. These have length equal to the area of
     each panel.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
     :return: Normal vectors [zeta_m-1, zeta_n-1, 3]
@@ -61,7 +61,7 @@ def compute_c(zetas: ArrayList) -> ArrayList:
 
 def compute_nc(zetas: ArrayList) -> ArrayList:
     r"""
-    Compute the n vectors for a list of surface grids.
+    Compute the varphi vectors for a list of surface grids.
     :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
     :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
     """
@@ -170,10 +170,10 @@ def propagate_surf_wake(
     r"""
     Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
     downstream data.
-    :param gamma_b_n: Bound circulation at time n, [m, n]
-    :param gamma_w_n: Wake circulation at time n, [m_star, n]
-    :param zeta_b_np1: Bound grid at time n+1, [zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time n, [zeta_star_m, zeta_n, 3]
+    :param gamma_b_n: Bound circulation at time varphi, [m, varphi]
+    :param gamma_w_n: Wake circulation at time varphi, [m_star, varphi]
+    :param zeta_b_np1: Bound grid at time varphi+1, [zeta_m, zeta_n, 3]
+    :param zeta_w_n: Wake grid at time varphi, [zeta_star_m, zeta_n, 3]
     :param delta_w: Desired wake discretisation, [zeta_star_m, 3] or None for uniform
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param dt: Time step
@@ -193,7 +193,7 @@ def propagate_surf_wake(
         zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
         gamma_base = gamma_w_n[:-1, ...]  # [gamma_w_m - 1, gamma_n]
 
-    # values at t=n+1 before rediscretisation
+    # values at t=varphi+1 before rediscretisation
     gamma_w_np1 = jnp.concatenate(
         (gamma_te[None, ...], gamma_base), axis=0
     )  # [gamma_w_m+1 | gamma_w_m, gamma_n]
@@ -201,7 +201,7 @@ def propagate_surf_wake(
     # if the wake is free, this should be embedded here
     v = v_func(zeta_base)  # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
 
-    # wake coordinates at t=n+1 before rediscretisation
+    # wake coordinates at t=varphi+1 before rediscretisation
     zeta_w_np1 = jnp.concatenate(
         (zeta_te[None, :, :], zeta_base + dt * v), axis=0
     )  # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
@@ -265,15 +265,15 @@ def propagate_wake(
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
     culling the downstream data.
-    :param gamma_b_n: Bound circulation at time n, [n_surf][m, n]
-    :param gamma_w_n: Wake circulation at time n, [n_surf][m_star, n]
-    :param zeta_b_np1: Bound grid at time n+1, [n_surf][zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time n, [n_surf][zeta_star_m, zeta_n, 3]
+    :param gamma_b_n: Bound circulation at time varphi, [n_surf][m, varphi]
+    :param gamma_w_n: Wake circulation at time varphi, [n_surf][m_star, varphi]
+    :param zeta_b_np1: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3]
+    :param zeta_w_n: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3]
     :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param dt: Time step
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n]
+    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, varphi]
     """
 
     n_surf = len(gamma_b_n)
@@ -388,7 +388,7 @@ def biot_savart_cutoff(x: Array, y: Array) -> Array:
 
 def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array:
     """
-    Mirror a grid of points across a plane defined by a point and a n vector.
+    Mirror a grid of points across a plane defined by a point and a varphi vector.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3].
     :param mirror_point: Point in mirror plane, [3].
     :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalized.

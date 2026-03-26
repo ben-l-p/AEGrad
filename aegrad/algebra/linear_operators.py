@@ -22,8 +22,8 @@ class LinearOperator:
         mat: Optional[Array] = None,
     ):
         r"""
-        :param func: Function which represents the linear operator, [n] -> [m]
-        :param shape: Shape of the equivalent matrix, (m, n)
+        :param func: Function which represents the linear operator, [varphi] -> [m]
+        :param shape: Shape of the equivalent matrix, (m, varphi)
         :param mat: If available, the explicit matrix representation of the operator
         """
         if mat is not None:
@@ -262,7 +262,7 @@ class LinearSystem:
         :param b: Input matrix B
         :param c: Output matrix C
         :param d: Feedthrough matrix D
-        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time n only.
+        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time varphi only.
         """
         self.a: LinearOperator = a
         self.b: LinearOperator = b
@@ -284,7 +284,7 @@ class LinearSystem:
 
     def remove_u_np1(self) -> None:
         r"""
-        Remove the dependence on u at time n+1 from the linear system, modifying b and d accordingly.
+        Remove the dependence on u at time varphi+1 from the linear system, modifying b and d accordingly.
         :math:`D_{new} = C B + D` and :math:`B_{new} = A B`
         """
         if self.removed_u_np1:
@@ -316,7 +316,7 @@ class LinearSystem:
 
         def state_func(i_ts: int, x_: Array) -> Array:
             r"""
-            State update function for time step i_ts, given as :math:`x_{n} = A x_{n-1} + B u_{n-1}` or :math:`x_n = A x_{n-1} + B u_n`.
+            State update function for time step i_ts, given as :math:`x_{varphi} = A x_{varphi-1} + B u_{varphi-1}` or :math:`x_n = A x_{varphi-1} + B u_n`.
             :param i_ts: Time step index to obtain new states for.
             :param x_: State history array being updated, [n_tstep, n_states]
             :return: Updated state history array, [n_tstep, n_states]

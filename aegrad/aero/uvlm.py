@@ -54,13 +54,13 @@ class UVLM:
         r"""
         Initialise UVLM class with all non-design parameters
         :param grid_shapes: Discretisation(s) for the number of chordwise, spanwise and wake-wise panels for each surface.
-        May be passed using either the GridDiscretization class or a tuple of integers (m, n, m_star). Multiple surfaces
+        May be passed using either the GridDiscretization class or a tuple of integers (m, varphi, m_star). Multiple surfaces
         may be defined by passing a sequence of GridDiscretization instances or tuples.
         :param dof_mapping: Mapping from aerodynamic grid points to structure_dv grid points for each surface.
         :param variable_wake_disc: If true, allow for variable wake discretisation per surface.
         :param mirror_point: Optional point in mirror plane. If provided, this will apply mirroring of the aerodynamic
-        geometry and flow about the plane defined by this point and the mirror n, [3].
-        :param mirror_normal: Optional n vector for mirror plane, [3].
+        geometry and flow about the plane defined by this point and the mirror varphi, [3].
+        :param mirror_normal: Optional varphi vector for mirror plane, [3].
         :param kernel: Input for custom kernel function to use for induced velocity calculations.
         """
 
@@ -78,7 +78,7 @@ class UVLM:
             if isinstance(grid, Sequence):
                 if len(grid) != 3:
                     raise ValueError(
-                        "Grid arr_list_shapes tuple must have exactly three elements (m, n, m_star)"
+                        "Grid arr_list_shapes tuple must have exactly three elements (m, varphi, m_star)"
                     )
                 grid_disc.append(GridDiscretization(*grid))
             elif isinstance(grid, GridDiscretization):
@@ -327,7 +327,7 @@ class UVLM:
         """
         zetas = ArrayList([])
         for i_surf in range(self.n_surf):
-            this_hg = jnp.take(hg, self.dof_mapping[i_surf], axis=0)  # [n, 4, 4]
+            this_hg = jnp.take(hg, self.dof_mapping[i_surf], axis=0)  # [varphi, 4, 4]
 
             zetas.append(
                 vmap(vmap(se3_vect_product, (None, 0), 0), (0, 1), 1)(
@@ -346,7 +346,7 @@ class UVLM:
         for i_surf in range(self.n_surf):
             this_hg_dot = jnp.take(
                 hg_dot, self.dof_mapping[i_surf], axis=0
-            )  # [n, 4, 4]
+            )  # [varphi, 4, 4]
             zeta_dots.append(
                 vmap(vmap(se3_vect_product, (None, 0), 0), (0, 1), 1)(
                     this_hg_dot, self.x0_b[i_surf]
@@ -406,7 +406,7 @@ class UVLM:
         zeta0_w = ArrayList([])
         for i_surf, this_delta_w in enumerate(self.delta_w):
             # get bound grid coordinates
-            zeta_te = zeta_b[i_surf][-1, :, :]  # [n+1, 3]
+            zeta_te = zeta_b[i_surf][-1, :, :]  # [varphi+1, 3]
 
             # set wake grid coordinates as trailing edge + displacement
             if this_delta_w is None:
@@ -579,7 +579,7 @@ class UVLM:
 
         v_bc = self.flowfield.surf_vmap_call(
             xs=case.get_c(i_ts=i_ts), t=case.t[i_ts]
-        )  # [n_surf][m, n, 3]
+        )  # [n_surf][m, varphi, 3]
 
         if not static:
             # strucural component

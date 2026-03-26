@@ -268,7 +268,7 @@ class DynamicStructureSnapshot:
         self.v_dot = self.v_dot.at[...].set(
             jnp.einsum("ijk,ik->ij", nodal_chi, self.v_dot)
         )
-        # TODO: should pseudoacceleration also be transformed?
+        self.a = self.a.at[...].set(jnp.einsum("ijk,ik->ij", nodal_chi, self.a))
 
     def to_global(self) -> None:
         """Convert local structure_dv results to global frame."""
@@ -447,6 +447,7 @@ class DynamicStructure:
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
         self.prescribed_dofs: Optional[Array] = prescribed_dofs
+        self.local: bool = True
 
     def to_static(self, i_ts: int) -> StaticStructure:
         """Extract static structure_dv results at a specific time index."""
@@ -566,6 +567,71 @@ class DynamicStructure:
             prescribed_dofs=prescribed_dofs,
         )
 
+    def _transform(self, nodal_chi: Array) -> None:
+        r"""
+        Transform orientation-dependent results between frames using the nodal chi transformation matrices.
+        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_tstep, n_nodes_, 6, 6]
+        """
+        if self.f_ext_follower is not None:
+            self.f_ext_follower = self.f_ext_follower.at[...].set(
+                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_follower[...])
+            )
+        if self.f_ext_dead is not None:
+            self.f_ext_dead = self.f_ext_dead.at[...].set(
+                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_dead)
+            )
+        if self.f_ext_aero is not None:
+            self.f_ext_aero = self.f_ext_aero.at[...].set(
+                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_aero)
+            )
+        if self.f_grav is not None:
+            self.f_grav = self.f_grav.at[...].set(
+                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_grav)
+            )
+        self.f_int = self.f_int.at[...].set(
+            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_int)
+        )
+        self.f_iner = self.f_iner.at[...].set(
+            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_iner)
+        )
+        self.f_res = self.f_iner.at[...].set(
+            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_res)
+        )
+        self.v = self.v.at[...].set(jnp.einsum("hijk,hik->hij", nodal_chi, self.v))
+        self.v_dot = self.v_dot.at[...].set(
+            jnp.einsum("hijk,hik->hij", nodal_chi, self.v_dot)
+        )
+        self.a = self.a.at[...].set(jnp.einsum("hijk,hik->hij", nodal_chi, self.a))
+
+    def to_global(self) -> None:
+        """Convert local structure_dv results to global frame."""
+        if not self.local:
+            warn("Results already in global frame, skipping conversion.")
+            return
+        else:
+            self.local = False
+
+        nodal_chi = vmap(vmap(chi, 0, 0), 1, 1)(
+            self.hg[:, :, :3, :3]
+        )  # [n_tstep, n_nodes_, 6, 6]
+        self._transform(nodal_chi)
+
+    def to_local(self) -> None:
+        """Convert global structure_dv results to local frame."""
+        if self.local:
+            warn("Results already in local frame, skipping conversion.")
+            return
+        else:
+            self.local = True
+
+        nodal_chi = vmap(
+            vmap(chi, 0, 0),
+            1,
+        )(
+            jnp.transpose(self.hg[:, :, :3, :3], (0, 1, 3, 2))
+        )  # [n_tstep, n_nodes_, 6, 6]
+        self._transform(nodal_chi)
+
     def plot(
         self,
         directory: os.PathLike,
@@ -634,4 +700,5 @@ class DynamicStructure:
             "f_iner",
             "f_res",
             "t",
+            "local",
         )

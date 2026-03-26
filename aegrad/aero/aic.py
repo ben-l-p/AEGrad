@@ -26,10 +26,10 @@ def compute_aic_grid(
     trailing 3-component axis is never accumulated, saving 3x memory.
     :param c: Collocation points, [c_m, c_n, 3].
     :param n: Normal vectors at collocation points, [c_m, c_n, 3], or None.
-    :param zeta: Grid vertices, [m+1, n+1, 3].
+    :param zeta: Grid vertices, [m+1, varphi+1, 3].
     :param kernel: Kernel function to compute the influence.
     :param batch_size: Passed to lax.map.
-    :return: [c_m, c_n, m, n, 3] if normal is None, else [c_m, c_n, m, n].
+    :return: [c_m, c_n, m, varphi, 3] if normal is None, else [c_m, c_n, m, varphi].
     """
     c_m, c_n = c.shape[:2]
     m_panels, n_panels = zeta.shape[0] - 1, zeta.shape[1] - 1
@@ -44,11 +44,11 @@ def compute_aic_grid(
     @jax.checkpoint
     def row(args: tuple) -> Array:
         ci, ni = args
-        m_infl = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)  # [m*(n+1), 3]
-        m_infl_ni = jnp.dot(m_infl, ni).reshape(m_panels, n_panels + 1)  # [m, n+1]
-        n_infl = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)  # [(m+1)*n, 3]
-        n_infl_ni = jnp.dot(n_infl, ni).reshape(m_panels + 1, n_panels)  # [m+1, n]
-        return -jnp.diff(m_infl_ni, axis=1) + jnp.diff(n_infl_ni, axis=0)  # [m, n]
+        m_infl = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)  # [m*(varphi+1), 3]
+        m_infl_ni = jnp.dot(m_infl, ni).reshape(m_panels, n_panels + 1)  # [m, varphi+1]
+        n_infl = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)  # [(m+1)*varphi, 3]
+        n_infl_ni = jnp.dot(n_infl, ni).reshape(m_panels + 1, n_panels)  # [m+1, varphi]
+        return -jnp.diff(m_infl_ni, axis=1) + jnp.diff(n_infl_ni, axis=0)  # [m, varphi]
 
     return jax.lax.map(
         row, (c.reshape(-1, 3), n.reshape(-1, 3)), batch_size=batch_size
@@ -67,7 +67,7 @@ def compute_aic_sys(
     Compute the AIC matrix for a system of elements. Returns a list of AIC matrices, one for each element.
     :param zetas: List of source points to compute the AIC from, [n_surf][zeta_m, zeta_n, 3].
     :param cs: List of target points to compute the AIC at, [n_surf][c_m, c_n, 3].
-    :param ns: Bound n vectors, [m, n, 3]. If None, no projection will be done.
+    :param ns: Bound varphi vectors, [m, varphi, 3]. If None, no projection will be done.
     :param kernels: List of kernel functions to use for each source surface, [n_surf].
     :param mirror_normal: Normal vector to mirror across for image method, [3]. If None, no mirroring will be done.
     :param mirror_point: Mirror point for image method, [n_surf].
@@ -213,14 +213,14 @@ def compute_v_ind[T](
 ) -> T:
     """
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)
-    without materializing the full [c_m, c_n, m, n, 3] AIC.
+    without materializing the full [c_m, c_n, m, varphi, 3] AIC.
 
     The diff structure of compute_aic_grid is absorbed into gamma via the adjoint-diff
     identity: diff(AIC, axis) @ gamma == AIC @ adj_diff(gamma), so each filament
     matvec is fused at O(zeta_m * zeta_n) peak memory per step.
     :param cs: Collocation points, [c_m, c_n, 3].
-    :param zetas: Grid vertices, [m+1, n+1, 3].
-    :param gammas: Circulation strengths, [m, n].
+    :param zetas: Grid vertices, [m+1, varphi+1, 3].
+    :param gammas: Circulation strengths, [m, varphi].
     :param kernels: Kernel function.
     :param batch_size: Passed to lax.map.
     :return: [c_m, c_n, 3].
@@ -234,15 +234,17 @@ def compute_v_ind[T](
         for zeta, gamma, kernel in zip(zetas, gammas, kernels):
             m_vect = jnp.stack(
                 (zeta[:-1, :, :], zeta[1:, :, :]), axis=-2
-            )  # [m, n+1, 2, 3]
+            )  # [m, varphi+1, 2, 3]
             n_vect = jnp.stack(
                 (zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2
-            )  # [m+1, n, 2, 3]
+            )  # [m+1, varphi, 2, 3]
 
-            gamma_eff_m = jnp.diff(jnp.pad(gamma, ((0, 0), (1, 1))), axis=1)  # [m, n+1]
+            gamma_eff_m = jnp.diff(
+                jnp.pad(gamma, ((0, 0), (1, 1))), axis=1
+            )  # [m, varphi+1]
             gamma_eff_n = -jnp.diff(
                 jnp.pad(gamma, ((1, 1), (0, 0))), axis=0
-            )  # [m+1, n]
+            )  # [m+1, varphi]
 
             v[-1] += v_ind_vmap(
                 c, m_vect, gamma_eff_m, kernel, batch_size

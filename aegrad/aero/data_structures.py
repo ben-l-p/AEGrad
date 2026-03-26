@@ -72,8 +72,8 @@ class DynamicAeroCase:
         :param zeta_b: Bound grid coordinates, [n_surf][n_ts, zeta_m, zeta_n, 3]
         :param zeta_b_dot: Bound grid velocities, [n_surf][n_ts, zeta_m, zeta_n, 3]
         :param zeta_w: Wake grid coordinates, [n_surf][n_ts, zeta_m_star, zeta_n, 3]
-        :param gamma_b: Bound circulation strengths, [n_surf][n_ts, m, n]
-        :param gamma_w: Wake circulation strengths, [n_surf][n_ts, m_star, n]
+        :param gamma_b: Bound circulation strengths, [n_surf][n_ts, m, varphi]
+        :param gamma_w: Wake circulation strengths, [n_surf][n_ts, m_star, varphi]
         :param f_steady: Steady force contributions, [n_surf][n_ts, zeta_m, zeta_n, 3]
         :param f_unsteady: Unsteady force contributions, [n_surf][n_ts, zeta_m, zeta_n, 3]
         :param surf_b_names: Names of bound surfaces, [n_surf]
@@ -205,7 +205,7 @@ class DynamicAeroCase:
         r"""
         Obtain the full bound and wake gamma at a given timestep.
         :param i_ts: Time step index
-        :return: Circulation strength, [2 * n_surf][m, n]
+        :return: Circulation strength, [2 * n_surf][m, varphi]
         """
         return ArrayList(
             [*self.gamma_b.index_all(i_ts, ...), *self.gamma_w.index_all(i_ts, ...)]
@@ -326,7 +326,7 @@ class DynamicAeroCase:
         r"""
         Get collocation points for all surfaces at specified time step
         :param i_ts: Timestep index
-        :return: List of collocation points, [n_surf][m, n, 3]
+        :return: List of collocation points, [n_surf][m, varphi, 3]
         """
         return self._c.index_all(i_ts, ...)
 
@@ -340,15 +340,15 @@ class DynamicAeroCase:
 
     def get_n(self, i_ts: int) -> ArrayList:
         r"""
-        Get n vectors for all surfaces at specified time step
+        Get varphi vectors for all surfaces at specified time step
         :param i_ts: Timestep index
-        :return: List of n vectors, [n_surf][m, n, 3]
+        :return: List of varphi vectors, [n_surf][m, varphi, 3]
         """
         return self._nc.index_all(i_ts, ...)
 
     def compute_nc(self, i_ts: int) -> None:
         r"""
-        Compute n vectors for all surfaces at specified time step and store in-place.
+        Compute varphi vectors for all surfaces at specified time step and store in-place.
         :param i_ts: Timestep index
         """
         nc_list = compute_nc(self._zeta_b.index_all(i_ts, ...))
@@ -460,7 +460,7 @@ class DynamicAeroCase:
         Calculate unsteady aerodynamic forcing for a single surfaces at specified time step.
         :param i_ts: Timestep index
         :param i_surf: Surface index
-        :param nc: Bound n vectors, [m, n, 3]
+        :param nc: Bound varphi vectors, [m, varphi, 3]
         :return: Unsteady aerodynamic forcing for surface at grid vertex, [zeta_m, zeta_n, 3]
         """
         return split_to_vertex(
@@ -850,8 +850,8 @@ class AeroSurfaceSnapshot:
         :param zeta_b: Bound grid coordinates, [zeta_m, zeta_n, 3]
         :param zeta_b_dot: Bound grid velocities, [zeta_m, zeta_n, 3]
         :param zeta_w: Wake grid coordinates, [zeta_m_star, zeta_n, 3]
-        :param gamma_b: Bound circulation strengths, [m, n]
-        :param gamma_w: Wake circulation strengths, [m_star, n]
+        :param gamma_b: Bound circulation strengths, [m, varphi]
+        :param gamma_w: Wake circulation strengths, [m_star, varphi]
         :param f_steady: Steady force contributions, [zeta_m, zeta_n, 3]
         :param f_unsteady: Unsteady force contributions, [zeta_m, zeta_n, 3]
         :param surf_b_name: Names of bound surface

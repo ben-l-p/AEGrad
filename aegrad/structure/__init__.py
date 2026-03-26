@@ -9,6 +9,6 @@ from structure.gradients.beam import (
     StructuralObjectiveFunction,
 )
 from structure.gradients.data_structures import (
-    StructuralStates,
+    StructureFullStates,
     StructuralDesignVariables,
 )

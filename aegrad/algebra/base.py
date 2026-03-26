@@ -13,8 +13,8 @@ from aegrad.constants import BASE_SUMMATION_ORDER
 def matrix2(mat: Array) -> Array:
     r"""
     Computes the square of a matrix.
-    :param mat: Matrix, [n, n].
-    :return: Matrix squared, [n, n].
+    :param mat: Matrix, [varphi, varphi].
+    :return: Matrix squared, [varphi, varphi].
     """
     return mat @ mat
 
@@ -90,10 +90,10 @@ def taylor_series(
     r"""
     Computes the Taylor series expansion of a function around a point x0 up to a specified order.
     :param func: Function to compute the Taylor series expansion of, which takes an Array and returns an Array.
-    :param x0: Point around which to compute the Taylor series expansion, [n,].
+    :param x0: Point around which to compute the Taylor series expansion, [varphi,].
     :param order: Order of the Taylor series expansion (number of terms to include). Must be a non-negative integer.
     :return: Function that takes an Array and returns the Taylor series expansion of func around x0 up to the
-    specified order, [n,].
+    specified order, [varphi,].
     TODO: This implementation is not efficient for high order Taylor series expansions, as it computes large Jacobian
     matrices. Using the jax.experimental.jet API may be more efficient.
     """
@@ -122,9 +122,9 @@ def taylor_series(
 def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the matrix exponential using truncated summation.
-    :param a: Algebra matrix to exponentiate, [n, n]
+    :param a: Algebra matrix to exponentiate, [varphi, varphi]
     :param order: Order of summation.
-    :return: Exponential of matrix, [n, n]
+    :return: Exponential of matrix, [varphi, varphi]
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:
@@ -139,9 +139,9 @@ def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the matrix logarithm using truncated summation.
-    :param g: Group matrix to exponentiate, [n, n]
+    :param g: Group matrix to exponentiate, [varphi, varphi]
     :param order: Order of summation.
-    :return: Logarithm of matrix, [n, n]
+    :return: Logarithm of matrix, [varphi, varphi]
     """
 
     if g.ndim != 2 or g.shape[0] != g.shape[1]:
@@ -158,9 +158,9 @@ def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the tangent operator truncated summation. This is used to validate other implementations.
-    :param a: Adjoint action matrix, [n, n]
+    :param a: Adjoint action matrix, [varphi, varphi]
     :param order: Order of summation.
-    :return: Tangent operator, [n, n]
+    :return: Tangent operator, [varphi, varphi]
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:
@@ -175,9 +175,9 @@ def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def t_inv_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the inverse tangent operator truncated summation.
-    :param a: Adjoint action matrix, [n, n]
+    :param a: Adjoint action matrix, [varphi, varphi]
     :param order: Order of summation.
-    :return: Inverse angent operator, [n, n]
+    :return: Inverse angent operator, [varphi, varphi]
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:

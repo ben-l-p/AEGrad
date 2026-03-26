@@ -6,8 +6,6 @@ import jax
 
 from aegrad.structure import BeamStructure
 
-jax.config.update("jax_enable_x64", True)
-
 
 def flying_spaghetti(
     n_nodes: int, t: Array, use_gravity: bool = False
@@ -73,6 +71,8 @@ def flying_spaghetti(
 
 
 if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)
+
     n_nodes_ = 21
     dt_ = 0.01
     t_end_ = 10.0

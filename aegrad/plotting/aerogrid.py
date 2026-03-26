@@ -17,7 +17,7 @@ from jax import numpy as jnp
 def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructuredGrid:
     r"""
     Create a VTK structured grid from a JAX array.
-    :param grid_arr: Array of grid points, [m, n, 3] or [m, n, p, 3].
+    :param grid_arr: Array of grid points, [m, varphi, 3] or [m, varphi, p, 3].
     :param is_planar: If true, the grid is planar (2D), otherwise volumetric (3D).
     :return: VTK structured grid.
     """
@@ -52,7 +52,7 @@ def plot_grid_to_vtk(
 ) -> Path:
     r"""
     Plot a single timestep of grid data
-    :param grid_arr: Structured grid array,[m, n, 3] for planar grid or [m, n, p, 3] for volume grid
+    :param grid_arr: Structured grid array,[m, varphi, 3] for planar grid or [m, varphi, p, 3] for volume grid
     :param filename: Base filename, including directory. Information on the time step number will be
     appended to this.
     :param i_ts: Timestep to write

@@ -18,7 +18,7 @@ class _LinearComponent:
     Data class to hold information about components of a linear system.
     :param enabled: Whether this component is enabled
     :param slices: Optional sequence of slices to extract this component from a flattened array
-    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, n, ...]
+    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, varphi, ...]
     """
 
     enabled: bool
@@ -32,7 +32,7 @@ class _SliceEntry:
     Data class to hold information about a single slice entry
     :param name: Name of the component
     :param enabled: Whether this component is enabled
-    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, n, ...]
+    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, varphi, ...]
     """
 
     name: str
@@ -94,8 +94,8 @@ class InputUnflattened:
     Data class to hold unflattened input components, for either a single snapshot or a time series.
     :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
-    :param nu_b: Bound upwash, [n_surf][m, n, 3] or [n_surf][n_ts, m, n, 3]
-    :param nu_w: Wake upwash, [n_surf][m_star, n, 3] or [n_surf][n_ts, m_star, n, 3]
+    :param nu_b: Bound upwash, [n_surf][m, varphi, 3] or [n_surf][n_ts, m, varphi, 3]
+    :param nu_w: Wake upwash, [n_surf][m_star, varphi, 3] or [n_surf][n_ts, m_star, varphi, 3]
     """
 
     zeta_b: ArrayList
@@ -108,10 +108,10 @@ class InputUnflattened:
 class StateUnflattened:
     r"""
     Data class to hold unflattened state components, for either a single snapshot or a time series.
-    :param gamma_b: Bound circulation strengths, [n_surf][m, n] or [n_surf][n_ts, m, n]
-    :param gamma_w: Wake circulation strengths, [n_surf][m_star, n] or [n_surf][n_ts, m_star, n]
-    :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, n] or [n_surf][n_ts, m, n]
-    :param gamma_b_dot: Bound circulation time derivatives, [n_surf][m, n] or [n_surf][n_ts, m, n]
+    :param gamma_b: Bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
+    :param gamma_w: Wake circulation strengths, [n_surf][m_star, varphi] or [n_surf][n_ts, m_star, varphi]
+    :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
+    :param gamma_b_dot: Bound circulation time derivatives, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
     :param zeta_w: Wake grid coordinates, [n_surf][zeta_m_star, zeta_n, 3] or [n_surf][n_ts, zeta_m_star, zeta_n, 3]
     :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     """

@@ -1,7 +1,9 @@
-from jax import Array
+from jax import Array, vmap
 from jax import numpy as jnp
 
 from aegrad.print_utils import warn
+from algebra.se3 import log_se3, exp_se3
+from structure.gradients.data_structures import UnsteadyStructureMinimalStates
 
 
 class TimeIntregrator:
@@ -93,3 +95,74 @@ class TimeIntregrator:
                 - self.alpha_m * a_n
             )
         )
+
+    def calculate_f_alpha(self, f_n: Array, f_np1: Array) -> Array:
+        return (1.0 - self.alpha_f) * f_np1 + self.alpha_f * f_n
+
+    def calculate_phi_alpha(self, phi_np1: Array) -> Array:
+        return (1.0 - self.alpha_f) * phi_np1
+
+    def calculate_v_alpha(self, v_n: Array, v_np1: Array) -> Array:
+        return (1.0 - self.alpha_f) * v_np1 + self.alpha_f * v_n
+
+    def calculate_v_dot_alpha(self, v_dot_n: Array, v_dot_np1: Array) -> Array:
+        return (1.0 - self.alpha_f) * v_dot_np1 + self.alpha_f * v_dot_n
+
+    def calculate_a_alpha(self, a_n: Array, a_np1: Array) -> Array:
+        return (1.0 - self.alpha_m) * a_np1 + self.alpha_m * a_n
+
+    def calculate_varphi_alpha(self, varphi_n: Array, phi_np1: Array) -> Array:
+        phi_alpha = self.calculate_phi_alpha(phi_np1)
+        return vmap(
+            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), (0, 0), 0
+        )(varphi_n, phi_alpha)
+
+    def calculate_q_alpha(
+        self, q_n: UnsteadyStructureMinimalStates, q_np1: UnsteadyStructureMinimalStates
+    ) -> UnsteadyStructureMinimalStates:
+        phi_alpha = self.calculate_phi_alpha(phi_np1=q_np1.phi)
+        varphi_alpha = self.calculate_varphi_alpha(
+            varphi_n=q_n.varphi, phi_np1=q_np1.phi
+        )
+        v_alpha = self.calculate_v_alpha(v_n=q_n.v, v_np1=q_np1.v)
+        v_dot_alpha = self.calculate_v_dot_alpha(
+            v_dot_n=q_n.v_dot, v_dot_np1=q_np1.v_dot
+        )
+        a_alpha = self.calculate_a_alpha(a_n=q_n.a, a_np1=q_np1.a)
+        return UnsteadyStructureMinimalStates(
+            phi=phi_alpha,
+            varphi=varphi_alpha,
+            v=v_alpha,
+            v_dot=v_dot_alpha,
+            a=a_alpha,
+        )
+
+    def calculate_phi_from_phi_alpha(self, phi_alpha: Array) -> Array:
+        r"""
+        Obtain the full timestep increment from the alpha increment.
+        :param phi_alpha: Increment from timestep n-1 to alpha, [n_nodes, 6].
+        :return: Increment for timestep n, [n_nodes, 6].
+        """
+        return phi_alpha / (1.0 - self.alpha_f)
+
+    def calculate_v_from_v_alpha(self, v_alpha: Array, v_nm1: Array) -> Array:
+        r"""
+        Obtain the full timestep velocity from the alpha increment and the previous velocity.
+        :param v_alpha: Velocity at alpha step, [n_nodes, 6].
+        :param v_nm1: Velocity at timestep n-1, [n_nodes, 6].
+        :return: Velocity at timestep n, [n_nodes, 6].
+        """
+
+        return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
+
+    def calculate_v_dot_from_v_dot_alpha(
+        self, v_dot_alpha: Array, v_dot_nm1: Array
+    ) -> Array:
+        r"""
+        Obtain the full timestep acceleration from the alpha increment and the previous acceleration.
+        :param v_dot_alpha: Acceleration at alpha step, [n_nodes, 6].
+        :param v_dot_nm1: Acceleration at timestep n-1, [n_nodes, 6].
+        :return: Acceleration at timestep n, [n_nodes, 6].
+        """
+
+        return (v_dot_alpha - self.alpha_f * v_dot_nm1) / (1.0 - self.alpha_f)
