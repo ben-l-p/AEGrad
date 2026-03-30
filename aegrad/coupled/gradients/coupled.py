@@ -142,7 +142,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         ),
     ) -> AeroelasticDesignGradients:
         r"""
-        Computes the static adjoint of the structure_dv, which is used to compute gradients of the loss with respect to
+        Computes the static grads of the structure_dv, which is used to compute gradients of the loss with respect to
         the structure_dv's parameters.
         :param case: StaticAeroelastic containing the current state of the aeroelastic system.
         :param objective: Objective function that takes the structure_dv and design variables and returns an array

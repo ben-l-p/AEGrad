@@ -7,9 +7,7 @@ import jax
 from aero.utils import KernelFunction, mirror_grid
 from algebra.array_utils import ArrayList, block_axis
 
-# aim - rewrite solve routine in a way where performance may be degraded, but AD is efficient
-
-BATCH_SIZE = 128
+BATCH_SIZE = 1
 
 
 def compute_aic_grid(
@@ -215,7 +213,7 @@ def compute_v_ind[T](
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)
     without materializing the full [c_m, c_n, m, varphi, 3] AIC.
 
-    The diff structure of compute_aic_grid is absorbed into gamma via the adjoint-diff
+    The diff structure of compute_aic_grid is absorbed into gamma via the grads-diff
     identity: diff(AIC, axis) @ gamma == AIC @ adj_diff(gamma), so each filament
     matvec is fused at O(zeta_m * zeta_n) peak memory per step.
     :param cs: Collocation points, [c_m, c_n, 3].

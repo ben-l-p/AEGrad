@@ -31,7 +31,7 @@ class TestGeradinBeamAdjointGradients:
         def obj(states: StructureFullStates, _: StructuralDesignVariables) -> Array:
             return states.hg[-1, 2, 3]  # vertical displacement of the last node
 
-        # adjoint solve
+        # grads solve
         grads_adj = struct.static_adjoint(structure=result, objective=obj)
 
         # AD solve

@@ -3,7 +3,7 @@ from jax import numpy as jnp
 
 from aegrad.print_utils import warn
 from algebra.se3 import log_se3, exp_se3
-from structure.gradients.data_structures import UnsteadyStructureMinimalStates
+from structure.data_structures import StructureMinimalStates
 
 
 class TimeIntregrator:
@@ -31,9 +31,9 @@ class TimeIntregrator:
             self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
-    def predict_n(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def predict_phi(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
         r"""
-        Predict the next velocity based on current velocity and acceleration.
+        Predict the next increment based on current velocity and acceleration.
         :param v_n: Previous velocity, [n_nodes_, 6].
         :param a_n: Previous pseudoacceleration, [n_nodes_, 6].
         :param a_np1_pred: Next pseudoacceleration prediction [n_nodes_, 6].
@@ -42,6 +42,18 @@ class TimeIntregrator:
         return self.dt * v_n + self.dt * self.dt * (
             (0.5 - self.beta) * a_n + self.beta * a_np1_pred
         )
+
+    @staticmethod
+    def predict_varphi(varphi_n: Array, phi_np1_pred: Array) -> Array:
+        r"""
+        Predict the next total twist based on current velocity and acceleration.
+        :param varphi_n: Previous total twist, [n_nodes_, 6].
+        :param phi_np1_pred: Predicted step increment, [n_nodes_, 6].
+        :return: Initial guess for next twist, [n_nodes_, 6].
+        """
+        return vmap(
+            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
+        )(varphi_n, phi_np1_pred)
 
     def predict_v(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
         r"""
@@ -96,40 +108,65 @@ class TimeIntregrator:
             )
         )
 
-    def calculate_f_alpha(self, f_n: Array, f_np1: Array) -> Array:
-        return (1.0 - self.alpha_f) * f_np1 + self.alpha_f * f_n
+    def calculate_q_n_from_q_alpha(
+        self, q_nm1: StructureMinimalStates, q_alpha: StructureMinimalStates
+    ) -> StructureMinimalStates:
+        phi = q_alpha.phi / (1.0 - self.alpha_f)
+        varphi = vmap(
+            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
+        )(q_nm1.varphi, phi)
+        v = (q_alpha.v - self.alpha_f * q_nm1.v) / (1.0 - self.alpha_f)
+        v_dot = (q_alpha.v_dot - self.alpha_f * q_nm1.v_dot) / (1.0 - self.alpha_f)
+        a = (q_alpha.a - self.alpha_m * q_nm1.a) / (1.0 - self.alpha_m)
+        return StructureMinimalStates(phi=phi, varphi=varphi, v=v, v_dot=v_dot, a=a)
 
-    def calculate_phi_alpha(self, phi_np1: Array) -> Array:
-        return (1.0 - self.alpha_f) * phi_np1
+    def predict_q(self, q_n: StructureMinimalStates) -> StructureMinimalStates:
+        r"""
+        Predict the current state based upon the previous state.
+        :param q_n: State at timestep n
+        :return: Predicted state at timestep n+1
+        """
+        a = self.predict_a(v_dot_n=q_n.v_dot, a_n=q_n.a)
+        phi = self.predict_phi(v_n=q_n.v, a_n=q_n.a, a_np1_pred=a)
+        varphi = self.predict_varphi(varphi_n=q_n.varphi, phi_np1_pred=phi)
+        v = self.predict_v(v_n=q_n.v, a_n=q_n.a, a_np1_pred=a)
+        v_dot = self.predict_v_dot(v_dot_n=q_n.v_dot, a_n=q_n.a, a_np1_pred=a)
+        return StructureMinimalStates(phi=phi, varphi=varphi, v=v, v_dot=v_dot, a=a)
 
-    def calculate_v_alpha(self, v_n: Array, v_np1: Array) -> Array:
-        return (1.0 - self.alpha_f) * v_np1 + self.alpha_f * v_n
+    def calculate_f_alpha(self, f_nm1: Array, f_n: Array) -> Array:
+        return (1.0 - self.alpha_f) * f_n + self.alpha_f * f_nm1
 
-    def calculate_v_dot_alpha(self, v_dot_n: Array, v_dot_np1: Array) -> Array:
-        return (1.0 - self.alpha_f) * v_dot_np1 + self.alpha_f * v_dot_n
+    def calculate_phi_alpha(self, phi_n: Array) -> Array:
+        return (1.0 - self.alpha_f) * phi_n
 
-    def calculate_a_alpha(self, a_n: Array, a_np1: Array) -> Array:
-        return (1.0 - self.alpha_m) * a_np1 + self.alpha_m * a_n
+    def calculate_v_alpha(self, v_nm1: Array, v_n: Array) -> Array:
+        return (1.0 - self.alpha_f) * v_n + self.alpha_f * v_nm1
 
-    def calculate_varphi_alpha(self, varphi_n: Array, phi_np1: Array) -> Array:
-        phi_alpha = self.calculate_phi_alpha(phi_np1)
+    def calculate_v_dot_alpha(self, v_dot_nm1: Array, v_dot_n: Array) -> Array:
+        return (1.0 - self.alpha_f) * v_dot_n + self.alpha_f * v_dot_nm1
+
+    def calculate_a_alpha(self, a_nm1: Array, a_n: Array) -> Array:
+        return (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1
+
+    def calculate_varphi_alpha(self, varphi_nm1: Array, phi_n: Array) -> Array:
+        phi_alpha = self.calculate_phi_alpha(phi_n)
         return vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), (0, 0), 0
-        )(varphi_n, phi_alpha)
+        )(varphi_nm1, phi_alpha)
 
     def calculate_q_alpha(
-        self, q_n: UnsteadyStructureMinimalStates, q_np1: UnsteadyStructureMinimalStates
-    ) -> UnsteadyStructureMinimalStates:
-        phi_alpha = self.calculate_phi_alpha(phi_np1=q_np1.phi)
+        self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates
+    ) -> StructureMinimalStates:
+        phi_alpha = self.calculate_phi_alpha(phi_n=q_n.phi)
         varphi_alpha = self.calculate_varphi_alpha(
-            varphi_n=q_n.varphi, phi_np1=q_np1.phi
+            varphi_nm1=q_nm1.varphi, phi_n=q_n.phi
         )
-        v_alpha = self.calculate_v_alpha(v_n=q_n.v, v_np1=q_np1.v)
+        v_alpha = self.calculate_v_alpha(v_nm1=q_nm1.v, v_n=q_n.v)
         v_dot_alpha = self.calculate_v_dot_alpha(
-            v_dot_n=q_n.v_dot, v_dot_np1=q_np1.v_dot
+            v_dot_nm1=q_nm1.v_dot, v_dot_n=q_n.v_dot
         )
-        a_alpha = self.calculate_a_alpha(a_n=q_n.a, a_np1=q_np1.a)
-        return UnsteadyStructureMinimalStates(
+        a_alpha = self.calculate_a_alpha(a_nm1=q_nm1.a, a_n=q_n.a)
+        return StructureMinimalStates(
             phi=phi_alpha,
             varphi=varphi_alpha,
             v=v_alpha,

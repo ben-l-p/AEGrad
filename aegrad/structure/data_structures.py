@@ -37,6 +37,7 @@ class StaticStructure:
         o0: Array,
         d: Array,
         eps: Array,
+        varphi: Array,
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_ext_aero: Optional[Array],
@@ -51,6 +52,7 @@ class StaticStructure:
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
+        self.varphi: Array = varphi  # [n_nodes, 6]
         self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
         self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
         self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
@@ -76,6 +78,7 @@ class StaticStructure:
             o0=self.o0,
             d=self.d,
             eps=self.eps,
+            varphi=self.varphi,
             v=zero_v,
             v_dot=zero_v_dot,
             a=zero_a,
@@ -161,6 +164,7 @@ class StaticStructure:
             "hg",
             "d",
             "eps",
+            "varphi",
             "f_ext_follower",
             "f_ext_dead",
             "f_ext_aero",
@@ -181,6 +185,7 @@ class DynamicStructureSnapshot:
         o0: Array,
         d: Array,
         eps: Array,
+        varphi: Array,
         v: Array,
         v_dot: Array,
         a: Array,
@@ -201,6 +206,7 @@ class DynamicStructureSnapshot:
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
+        self.varphi: Array = varphi  # [n_nodes, 6]
         self.v: Array = v  # [n_nodes_, 6]
         self.v_dot: Array = v_dot  # [n_nodes_, 6]
         self.a: Array = a  # [n_nodes_, 6]
@@ -225,6 +231,7 @@ class DynamicStructureSnapshot:
             o0=self.o0,
             d=self.d,
             eps=self.eps,
+            varphi=self.varphi,
             f_ext_follower=self.f_ext_follower,
             f_ext_dead=self.f_ext_dead,
             f_ext_aero=self.f_ext_aero,
@@ -415,6 +422,7 @@ class DynamicStructure:
         o0: Array,
         d: Array,
         eps: Array,
+        varphi: Array,
         v: Array,
         v_dot: Array,
         a: Array,
@@ -434,6 +442,7 @@ class DynamicStructure:
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
+        self.varphi: Array = varphi  # [n_tstep, n_nodes, 6]
         self.v: Array = v  # [n_tstep, n_nodes_, 6]
         self.v_dot: Array = v_dot  # [n_tstep, n_nodes_, 6]
         self.a: Array = a  # [n_tstep, n_nodes_, 6]
@@ -457,6 +466,7 @@ class DynamicStructure:
             o0=self.o0,
             d=self.d[i_ts, ...],
             eps=self.eps[i_ts, ...],
+            varphi=self.varphi[i_ts, ...],
             f_ext_follower=self.f_ext_follower[i_ts, ...]
             if self.f_ext_follower is not None
             else None,
@@ -480,6 +490,7 @@ class DynamicStructure:
             o0=self.o0,
             d=self.d[i_ts, ...],
             eps=self.eps[i_ts, ...],
+            varphi=self.varphi[i_ts, ...],
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
             a=self.a[i_ts, ...],
@@ -499,6 +510,22 @@ class DynamicStructure:
             t=self.t[i_ts],
             i_ts=i_ts,
             prescribed_dofs=self.prescribed_dofs,
+        )
+
+    def get_states(
+        self, i_ts: int, compute_phi: bool = False
+    ) -> StructureMinimalStates:
+        if compute_phi:
+            raise NotImplementedError()
+        else:
+            phi = jnp.zeros(self.v.shape[1:])
+
+        return StructureMinimalStates(
+            phi=phi,
+            varphi=self.varphi[i_ts, ...],
+            v=self.v[i_ts, ...],
+            v_dot=self.v_dot[i_ts, ...],
+            a=self.a[i_ts, ...],
         )
 
     @classmethod
@@ -524,19 +551,36 @@ class DynamicStructure:
         o0 = initial_snapshot.o0
         d = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.d)
         eps = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.eps)
+        varphi = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.varphi)
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
         v_dot = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v_dot)
         a = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.a)
         f_ext_follower = (
-            jnp.zeros((n_tstep, n_node, 6))
-            .at[0, ...]
-            .set(initial_snapshot.f_ext_follower)
+            (
+                jnp.zeros((n_tstep, n_node, 6))
+                .at[0, ...]
+                .set(initial_snapshot.f_ext_follower)
+            )
+            if initial_snapshot.f_ext_follower is not None
+            else None
         )
         f_ext_dead = (
-            jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_dead)
+            (
+                jnp.zeros((n_tstep, n_node, 6))
+                .at[0, ...]
+                .set(initial_snapshot.f_ext_dead)
+            )
+            if initial_snapshot.f_ext_dead is not None
+            else None
         )
         f_ext_aero = (
-            jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_ext_aero)
+            (
+                jnp.zeros((n_tstep, n_node, 6))
+                .at[0, ...]
+                .set(initial_snapshot.f_ext_aero)
+            )
+            if initial_snapshot.f_ext_aero is not None
+            else None
         )
         f_grav = (
             jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
@@ -552,6 +596,7 @@ class DynamicStructure:
             o0=o0,
             d=d,
             eps=eps,
+            varphi=varphi,
             v=v,
             v_dot=v_dot,
             a=a,
@@ -634,7 +679,7 @@ class DynamicStructure:
 
     def plot(
         self,
-        directory: os.PathLike,
+        directory: os.PathLike | str,
         index: Optional[slice | Sequence[int] | int | Array] = None,
         n_interp: int = 0,
     ) -> Path:
@@ -689,6 +734,7 @@ class DynamicStructure:
             "hg",
             "d",
             "eps",
+            "varphi",
             "v",
             "v_dot",
             "a",
@@ -702,3 +748,57 @@ class DynamicStructure:
             "t",
             "local",
         )
+
+
+@_make_pytree
+class StructureMinimalStates:
+    def __init__(
+        self,
+        phi: Optional[Array],
+        varphi: Optional[Array],
+        v: Array,
+        v_dot: Array,
+        a: Array,
+    ):
+        self._phi: Optional[Array] = phi
+        self._varphi: Optional[Array] = varphi
+        self.v: Array = v
+        self.v_dot: Array = v_dot
+        self.a: Array = a
+
+    @property
+    def phi(self) -> Array:
+        if self._phi is None:
+            raise ValueError("Phi is None")
+        return self._phi
+
+    @phi.setter
+    def phi(self, phi: Array) -> None:
+        self._phi = phi
+
+    @property
+    def varphi(self) -> Array:
+        if self._varphi is None:
+            raise ValueError("Varphi is None")
+        return self._varphi
+
+    @varphi.setter
+    def varphi(self, varphi: Array) -> None:
+        self._varphi = varphi
+
+    @classmethod
+    def from_mat(cls, stacked_mat: Array) -> StructureMinimalStates:
+        return StructureMinimalStates(*stacked_mat)
+
+    def to_mat(self) -> Array:
+        return jnp.stack(
+            (self.phi, self.varphi, self.v, self.v_dot, self.a), 0
+        )  # [5, n_nodes, 6]
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "_phi", "_varphi", "v", "v_dot", "a"
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()

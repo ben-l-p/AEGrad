@@ -27,33 +27,6 @@ class StructureFullStates:
     f_int: Array
 
 
-@_make_pytree
-class UnsteadyStructureMinimalStates:
-    def __init__(self, phi: Array, varphi: Array, v: Array, v_dot: Array, a: Array):
-        self.phi: Array = phi
-        self.varphi: Array = varphi
-        self.v: Array = v
-        self.v_dot: Array = v_dot
-        self.a: Array = a
-
-    @classmethod
-    def from_mat(cls, stacked_mat: Array) -> UnsteadyStructureMinimalStates:
-        return UnsteadyStructureMinimalStates(*stacked_mat)
-
-    def to_mat(self) -> Array:
-        return jnp.stack(
-            (self.phi, self.varphi, self.v, self.v_dot, self.a), 0
-        )  # [5, n_nodes, 6]
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "phi", "varphi", "v", "v_dot", "a"
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ()
-
-
 @jax.tree_util.register_dataclass
 @dataclass
 class StructuralStateGradients:

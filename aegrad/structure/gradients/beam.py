@@ -17,10 +17,10 @@ from aegrad.structure.gradients.data_structures import (
 )
 from algebra.se3 import exp_se3, t_se3, t_inv_se3, hg_to_ha_hat
 from structure import DynamicStructure
-from structure.gradients.data_structures import UnsteadyStructureMinimalStates
+from structure.data_structures import StructureMinimalStates
 
 type StructuralObjectiveFunction = Callable[
-    [StructureFullStates, StructuralDesignVariables], Array
+    [StructureFullStates, StructuralDesignVariables, Optional[int | Array]], Array
 ]
 
 
@@ -103,7 +103,7 @@ class BeamStructure(BaseBeamStructure):
         ),
     ) -> StructuralDesignVariables:
         r"""
-        Computes the static adjoint of the structure_dv, which is used to compute gradients of the loss with respect to
+        Computes the static grads of the structure_dv, which is used to compute gradients of the loss with respect to
         the structure_dv's parameters.
         :param structure: StaticStructure containing the current state of the structure_dv.
         :param objective: Objective function that takes the structure_dv and design variables and returns an array
@@ -120,8 +120,7 @@ class BeamStructure(BaseBeamStructure):
             self.optional_jacobians = optional_jacobians
 
         # base parameters
-        varphi = self.calculate_varphi_from_hg(structure.hg)  # [n_nodes, 6]
-        t_n = vmap(t_se3, 0, 0)(varphi.reshape(-1, 6))  # [n_nodes_, 6, 6]
+        t_n = vmap(t_se3, 0, 0)(structure.varphi)  # [n_nodes_, 6, 6]
         d = structure.d
         eps = structure.eps
         p_d = self.make_p_d(d)
@@ -150,7 +149,7 @@ class BeamStructure(BaseBeamStructure):
         )
 
         # find shape of objective function output without evaluating function
-        f_properties = jax.eval_shape(lambda: objective(struct_states, dv))
+        f_properties = jax.eval_shape(lambda: objective(struct_states, dv, None))
         f_shape = f_properties.shape
         n_f = f_properties.size
         n_x = dv.n_x
@@ -160,14 +159,16 @@ class BeamStructure(BaseBeamStructure):
         # gradient of objective w.r.t. minimal states
         p_f_p_n = jax.jacrev(
             lambda varphi_: objective(
-                self._structural_states_res_from_dv_varphi(dv, varphi_)[0], dv
+                self._structural_states_res_from_dv_varphi(dv, varphi_)[0], dv, None
             )
-        )(varphi).reshape(n_f, n_u_full)[:, solve_dofs]  # [n_f, n_u]
+        )(structure.varphi).reshape(n_f, n_u_full)[:, solve_dofs]  # [n_f, n_u]
 
         # gradient of objective w.r.t. design variables
         p_f_p_x = (jax.jacrev if n_f < n_x else jax.jacfwd)(
             lambda dv_: objective(
-                self._structural_states_res_from_dv_varphi(dv_, varphi)[0], dv_
+                self._structural_states_res_from_dv_varphi(dv_, structure.varphi)[0],
+                dv_,
+                None,
             )
         )(dv).ravel_jacobian(n_f, n_x)  # [n_f, n_x]
 
@@ -182,7 +183,9 @@ class BeamStructure(BaseBeamStructure):
 
         # gradient of residual w.r.t. design variables
         p_res_p_x = (jax.jacrev if n_u < n_x else jax.jacfwd)(
-            lambda dv_: self._structural_states_res_from_dv_varphi(dv_, varphi)[1]
+            lambda dv_: self._structural_states_res_from_dv_varphi(
+                dv_, structure.varphi
+            )[1]
         )(dv).ravel_jacobian(n_u_full, n_x)[solve_dofs, :]  # [n_u, n_x]
 
         if n_f > n_x:
@@ -198,6 +201,7 @@ class BeamStructure(BaseBeamStructure):
 
         return StructuralDesignVariables(**dv.from_adjoint(f_shape, p_f_p_x - rhs))
 
+    # @jax.jit(static_argnums=(0, 1, 2, 3))
     def dynamic_adjoint(
         self,
         structure: DynamicStructure,
@@ -205,18 +209,18 @@ class BeamStructure(BaseBeamStructure):
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
-    ) -> StructuralDesignVariables:
+    ) -> tuple[StructuralDesignVariables, Array]:
         r"""
-        Dynamic structure adjoint problem. This computes the gradient of the objective of the dynamic response with
+        Dynamic structure grads problem. This computes the gradient of the objective of the dynamic response with
         respect to design variables. The objective has structure
         :math:`J = \sum_{i=1}^N \left(j(\mathbf{x}, \mathbf{y}_i)\right)` where :math:`\mathbf{x}` are the design variables
         and :math:`\mathbf{y}` are the structural states at each timestep, which depend on the design variables through
-        the dynamic structure equations. The adjoint is computed by first solving a backward pass to obtain the adjoint
+        the dynamic structure equations. The grads is computed by first solving a backward pass to obtain the grads
         states, and then using these to compute the gradient w.r.t. design variables in a forward pass.
         :param structure: Dynamic structure solution object.
         :param objective: Objective function :math:`j(\mathbf{x}, \mathbf{y}_i)`
         :param optional_jacobians: Optional Jacobians to use for solution
-        :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}`
+        :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
         """
 
         if optional_jacobians is not None:
@@ -225,8 +229,6 @@ class BeamStructure(BaseBeamStructure):
         # make copy of structure_dv which has been converted to global coordinates, used to extract dead forces.
         gs = copy(structure)
         gs.to_global()
-
-        # TODO: this comes with assumption of constant force over time
 
         dv = StructuralDesignVariables(
             x0=self.x0,
@@ -251,7 +253,7 @@ class BeamStructure(BaseBeamStructure):
             f_int=structure.f_int[0, ...],
         )
 
-        j_properties = jax.eval_shape(lambda: objective(struct_states_init, dv))
+        j_properties = jax.eval_shape(lambda: objective(struct_states_init, dv, None))
         j_shape = j_properties.shape
         n_j = j_properties.size
 
@@ -266,8 +268,8 @@ class BeamStructure(BaseBeamStructure):
 
         def p_s_n(
             i_ts: int,
-            q_nm1: UnsteadyStructureMinimalStates,
-            q_n: UnsteadyStructureMinimalStates,
+            q_nm1: StructureMinimalStates,
+            q_n: StructureMinimalStates,
         ) -> tuple[Array, Array]:
             r"""
             Obtain the Jacobians :math:`\frac{\partial \mathbf{s}_{n}}{\partial \mathbf{q}_{n-1}}` and
@@ -280,7 +282,7 @@ class BeamStructure(BaseBeamStructure):
             :return: Jacobians :math:`\frac{\partial \mathbf{s}_{n}}{\partial \mathbf{q}_{n-1}}` and :math:`\frac{
             \partial \mathbf{s}_{n}}{\partial \mathbf{q}_{n}}`
             """
-            q_alpha = self.time_integrator.calculate_q_alpha(q_n=q_nm1, q_np1=q_n)
+            q_alpha = self.time_integrator.calculate_q_alpha(q_nm1=q_nm1, q_n=q_n)
             hg_alpha = self.calculate_hg_from_varphi(q_alpha.varphi)
             d_alpha = self.make_d(hg_alpha)
             p_d_alpha = self.make_p_d(d=d_alpha)
@@ -288,7 +290,7 @@ class BeamStructure(BaseBeamStructure):
 
             f_ext_dead_alpha = (
                 self.time_integrator.calculate_f_alpha(
-                    f_n=gs.f_ext_dead[i_ts, ...], f_np1=gs.f_ext_dead[i_ts + 1, ...]
+                    f_nm1=gs.f_ext_dead[i_ts - 1, ...], f_n=gs.f_ext_dead[i_ts, ...]
                 )
                 if gs.f_ext_dead is not None
                 else None
@@ -394,7 +396,7 @@ class BeamStructure(BaseBeamStructure):
             return p_s_n_p_q_nm1[jnp.ix_(ix, ix)], p_s_n_p_q_n[jnp.ix_(ix, ix)]
 
         def minimal_states_to_full_states(
-            q_n: UnsteadyStructureMinimalStates,
+            q_n: StructureMinimalStates,
         ) -> StructureFullStates:
             r"""
             Obtain the full structural states :math:`\mathbf{y}` from minimal states :math:`\mathbf{y}`.
@@ -412,7 +414,7 @@ class BeamStructure(BaseBeamStructure):
 
         def solve_adjoint_states() -> Array:
             r"""
-            Solve the system in reverse to obtain the time series of adjoint variables.
+            Solve the system in reverse to obtain the time series of grads variables.
             :return: Adjoint variables, [n_tstep, *j_shape, 5*n_dof]
             """
 
@@ -420,46 +422,44 @@ class BeamStructure(BaseBeamStructure):
                 rev_i_ts: int,
                 adj_: Array,
                 p_s_np1_p_q_n: Array,
-                q_n: UnsteadyStructureMinimalStates,
-            ) -> tuple[Array, Array, UnsteadyStructureMinimalStates]:
+                q_n: StructureMinimalStates,
+            ) -> tuple[Array, Array, StructureMinimalStates]:
                 r"""
-                Function to obtain the adjoint states at timestep n, which is dependent on the adjoint at timestep n+1.
+                Function to obtain the grads states at timestep n, which is dependent on the grads at timestep n+1.
                 :param rev_i_ts: Reversed timestep index. JAX fori_loop does not allow for reverse indexing, and so this is explicitly reversed witin the function body to obtain i_ts.
-                :param adj_: Full adjoint matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof]
+                :param adj_: Full grads matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof]
                 :param p_s_np1_p_q_n: Gradient of future step with respect to current state, [5*n_dof, 5*n_dof]
                 :param q_n: Current minimal states
-                :return: Updated adjoint matrix, gradient of current step with respect to previous state and current state.
+                :return: Updated grads matrix, gradient of current step with respect to previous state and current state.
                 """
 
                 i_ts = (
                     structure.n_tstep - rev_i_ts - 1
                 )  # time step index, which decrements
 
-                # minimal states at timestep n-1
+                i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
 
-                varphi_nm1 = self.calculate_varphi_from_hg(structure.hg[i_ts - 1, ...])
                 phi_nm1 = self.calculate_phi_from_hg(
-                    structure.hg[
-                        jnp.maximum(i_ts - 2, 0), ...
-                    ],  # included to catch the case for i_ts=0 having no previous timestep
-                    structure.hg[i_ts - 1, ...],
+                    hg_n=structure.hg[i_ts_nm1, ...],
+                    hg_nm1=structure.hg[jnp.maximum(i_ts - 2, 0), ...],
                 )
 
-                q_nm1 = UnsteadyStructureMinimalStates(
-                    v=structure.v[i_ts - 1, ...],
-                    v_dot=structure.v_dot[i_ts - 1, ...],
-                    a=structure.a[i_ts - 1, ...],
-                    phi=phi_nm1,
-                    varphi=varphi_nm1,
+                q_nm1 = StructureMinimalStates(
+                    v=structure.v[i_ts_nm1, ...],
+                    v_dot=structure.v_dot[i_ts_nm1, ...],
+                    a=structure.a[i_ts_nm1, ...],
+                    phi=phi_nm1,  # isn't used
+                    varphi=structure.varphi[i_ts_nm1, ...],
                 )
 
                 # gradient of objective at current timestep with respect to current minimal states
                 p_j_n_p_q_n = jax.jacrev(
                     lambda q_mat: objective(
                         minimal_states_to_full_states(
-                            UnsteadyStructureMinimalStates.from_mat(q_mat)
+                            StructureMinimalStates.from_mat(q_mat)
                         ),
                         dv,
+                        i_ts,
                     )
                 )(q_nm1.to_mat()).reshape(n_j, -1)  # [n_j, 5*n_dof]
 
@@ -467,35 +467,33 @@ class BeamStructure(BaseBeamStructure):
                 # the first array is required for solving the next timestep
                 p_s_n_p_q_nm1, p_s_n_p_q_n = p_s_n(i_ts=i_ts, q_n=q_n, q_nm1=q_nm1)
 
-                # solve for adjoint at current timestep
+                # solve for grads at current timestep
                 a = jnp.eye(p_s_np1_p_q_n.shape[0]) - p_s_n_p_q_n
                 b = p_j_n_p_q_n + adj_[i_ts + 1, ...] @ p_s_np1_p_q_n
                 adj_ = adj_.at[i_ts, ...].set(jnp.linalg.solve(a.T, b.T).T)
 
                 jax.debug.print(
-                    "Solved adjoint for timestep {i_ts}/{n_tstep}",
+                    "Solved grads for timestep {i_ts}",
                     i_ts=i_ts,
-                    n_tstep=structure.n_tstep,
                 )
 
                 return adj_, p_s_n_p_q_nm1, q_nm1
 
             # obtain minimal states for the final timestep, used as initialisation for backpass
-            varphi_end = self.calculate_varphi_from_hg(structure.hg[-1, ...])
             phi_end = self.calculate_phi_from_hg(
                 structure.hg[-2, ...], structure.hg[-1, ...]
             )
 
-            q_end = UnsteadyStructureMinimalStates(
+            q_end = StructureMinimalStates(
                 v=structure.v[-1, ...],
                 v_dot=structure.v_dot[-1, ...],
                 a=structure.a[-1, ...],
                 phi=phi_end,
-                varphi=varphi_end,
+                varphi=structure.varphi[-1, ...],
             )
             n_adj_dof = 5 * (
                 self.n_dof - len(structure.prescribed_dofs)
-            )  # number of adjoint degrees of freedom
+            )  # number of grads degrees of freedom
 
             # pass through time steps backwards to obtain adjoints
             adj, _, _ = jax.lax.fori_loop(
@@ -513,7 +511,7 @@ class BeamStructure(BaseBeamStructure):
                 :-1
             ]  # restore original shape of j, and cut off zeros for past-end timestep
 
-        def obtain_d_j_n_d_dv() -> StructuralDesignVariables:
+        def obtain_p_j_n_p_dv() -> StructuralDesignVariables:
             r"""
             Obtain the gradient of the objective with respect to the design variables, evaluated as the sum across all
             timestep states (as the gradient w.r.t. design variables may be dependent on the time-dependent states).
@@ -551,7 +549,7 @@ class BeamStructure(BaseBeamStructure):
                     f_int=structure.f_int[i_ts, ...],
                 )
 
-                jac = jax.jacrev(lambda dv_: objective(ss, dv_))(dv)
+                jac = jax.jacrev(lambda dv_: objective(ss, dv_, i_ts))(dv)
 
                 dv_grad.x0 += jac.x0
                 dv_grad.k_cs += jac.k_cs
@@ -571,10 +569,10 @@ class BeamStructure(BaseBeamStructure):
 
         def s(
             i_ts: int,
-            q_nm1: UnsteadyStructureMinimalStates,
-            q_n: UnsteadyStructureMinimalStates,
+            q_nm1: StructureMinimalStates,
+            q_n: StructureMinimalStates,
             dv_: StructuralDesignVariables,
-        ) -> UnsteadyStructureMinimalStates:
+        ) -> StructureMinimalStates:
             r"""
             Function which steps the structural problem forward from timestep varphi to varphi+1 implicitly.
             :param i_ts: Timestep index
@@ -589,7 +587,7 @@ class BeamStructure(BaseBeamStructure):
                 dt * q_nm1.v + (0.5 - beta) * dt * dt * q_nm1.a + beta * dt * dt * q_n.a
             )
             varphi_n = self.calculate_varphi_from_phi(
-                varphi_n=q_nm1.varphi, phi_np1=q_n.phi
+                varphi_nm1=q_nm1.varphi, phi_n=q_n.phi
             )
 
             v_n = q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a
@@ -611,27 +609,29 @@ class BeamStructure(BaseBeamStructure):
             )  # allows for gradients w.r.t. design variables
 
             # solve problem between timesteps, as should be done for the used time integrator method
-            q_alpha = inner_case.time_integrator.calculate_q_alpha(q_n=q_nm1, q_np1=q_n)
+            q_alpha = inner_case.time_integrator.calculate_q_alpha(q_nm1=q_nm1, q_n=q_n)
             hg_alpha = inner_case.calculate_hg_from_varphi(q_alpha.varphi)
+
+            i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
 
             f_ext_dead_alpha = (
                 inner_case.time_integrator.calculate_f_alpha(
-                    f_n=dv_.f_ext_dead[i_ts, ...], f_np1=dv_.f_ext_dead[i_ts + 1, ...]
+                    f_nm1=dv_.f_ext_dead[i_ts_nm1, ...], f_n=dv_.f_ext_dead[i_ts, ...]
                 )
                 if dv_.f_ext_dead is not None
                 else None
             )
             f_ext_follower_alpha = (
                 inner_case.time_integrator.calculate_f_alpha(
-                    f_n=structure.f_ext_follower[i_ts, ...],
-                    f_np1=structure.f_ext_follower[i_ts + 1, ...],
+                    f_nm1=dv_.f_ext_follower[i_ts_nm1, ...],
+                    f_n=dv_.f_ext_follower[i_ts, ...],
                 )
-                if structure.f_ext_follower is not None
+                if dv_.f_ext_follower is not None
                 else None
             )
 
-            d_, eps_, f_dead_res, _, f_grav_res, f_int, f_iner, f_res = (
-                inner_case._resolve_forces(
+            d_alpha, _, f_dead_res, _, f_grav_alpha, f_int_alpha, f_iner_alpha, _ = (
+                inner_case.resolve_forces(
                     hg=hg_alpha,
                     dynamic=True,
                     f_ext_follower=f_ext_follower_alpha,
@@ -642,76 +642,87 @@ class BeamStructure(BaseBeamStructure):
                 )
             )
 
-            m_alpha = inner_case.assemble_matrix_from_entries(inner_case.make_m_t(d=d_))
+            m_alpha = inner_case.assemble_matrix_from_entries(
+                inner_case.make_m_t(d=d_alpha)
+            )
             if self.use_lumped_mass:
                 m_alpha += jax.scipy.linalg.block_diag(*inner_case.m_lumped)
 
-            f_res_non_iner = f_int + f_iner
+            # calculate non-inertial forcing residual
+            f_res_non_iner = f_int_alpha + f_iner_alpha
             if self.use_gravity:
-                f_res_non_iner += f_grav_res
-            if f_dead_res is not None:
+                f_res_non_iner += f_grav_alpha
+            if (
+                f_dead_res is not None
+            ):  # use the output from the resolve forces function, as it's in the local frame
                 f_res_non_iner += f_dead_res
             if f_ext_follower_alpha is not None:
                 f_res_non_iner += f_ext_follower_alpha
+
+            # from forcing residual, solve for v_dot which satisfies f_res=0
             v_dot_alpha = -jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(
                 -1, 6
             )
 
-            # find v_dot_np1 from its alpha value
+            # find v_dot_n from its alpha value
             v_dot_n = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (1.0 - alpha_f)
 
-            return UnsteadyStructureMinimalStates(
+            return StructureMinimalStates(
                 phi=phi_n, varphi=varphi_n, v=v_n, a=a_n, v_dot=v_dot_n
             )
 
+        # solve for the adjoint states of the system, [n_tstep, n_j, 5*n_dof]
         adj_states = solve_adjoint_states()
-        d_j_n_d_dv = obtain_d_j_n_d_dv()
 
-        varphi_0 = self.calculate_varphi_from_hg(structure.hg[0, ...])
-        q_0 = UnsteadyStructureMinimalStates(
+        # calculate the sum of derivatives for p_j_p_x
+        p_j_n_p_dv = obtain_p_j_n_p_dv()
+
+        # initial states
+        q_0 = StructureMinimalStates(
             v=structure.v[0, ...],
             v_dot=structure.v_dot[0, ...],
             a=structure.a[0, ...],
-            phi=jnp.zeros_like(varphi_0),
-            varphi=varphi_0,
+            phi=jnp.zeros(
+                (self.n_nodes, 6)
+            ),  # no increment as timestep -1 doesn't exist, but nothing depends on this value
+            varphi=structure.varphi[0, ...],
         )
 
         def inner_loop(
             i_ts: int,
             d_dv: StructuralDesignVariables,
-            q_n: UnsteadyStructureMinimalStates,
-        ) -> tuple[StructuralDesignVariables, UnsteadyStructureMinimalStates]:
+            q_nm1: StructureMinimalStates,
+        ) -> tuple[StructuralDesignVariables, StructureMinimalStates]:
             r"""
-            Inner loop for the forward final pass of the adjoint to accumulate the result.
+            Inner loop for the forward final pass of the grads to accumulate the result.
             :param i_ts: Timestep index
             :param d_dv: Gradient :math`\frac{dJ}{d\mathbf{x}}` accumulated from previous timesteps
-            :param q_n: Current minimal state
+            :param q_nm1: Current minimal state
             :return: Update gradient, and next state
             """
 
-            # adj[i_ts] is the adjoint of state q_{i_ts}, the output of the
-            # transition from q_{i_ts-1}. Shape: [n_j, n_adj_dof].
-            adj_ts = adj_states[i_ts, ...]
-
-            varphi_np1 = self.calculate_varphi_from_hg(structure.hg[i_ts, ...])
-            phi_np1 = self.calculate_phi_from_hg(
-                structure.hg[i_ts - 1, ...], structure.hg[i_ts, ...]
-            )
-            q_np1 = UnsteadyStructureMinimalStates(
+            # current dofs
+            phi_n = self.calculate_phi_from_hg(
+                hg_nm1=structure.hg[jnp.maximum(i_ts - 1, 0), ...],
+                hg_n=structure.hg[i_ts, ...],
+            )  # at timestep 0, phi is 0
+            q_n = StructureMinimalStates(
                 v=structure.v[i_ts, ...],
                 v_dot=structure.v_dot[i_ts, ...],
                 a=structure.a[i_ts, ...],
-                phi=phi_np1,
-                varphi=varphi_np1,
+                phi=phi_n,
+                varphi=structure.varphi[i_ts, ...],
             )
 
             # Partial derivative of the state transition s_{i_ts-1} w.r.t. dv_,
             # evaluated at the stored (q_nm1, q_nm1). Captured via VJP.
-            _, vjp_fn = jax.vjp(lambda dv_: s(i_ts - 1, q_n, q_np1, dv_), dv)
+            _, vjp_fn = jax.vjp(
+                lambda dv_: s(i_ts=i_ts, q_n=q_n, q_nm1=q_nm1, dv_=dv_), dv
+            )
 
             # Accumulate adj_ts^T @ (∂s_{i_ts-1}/∂dv_) for each objective.
             # adj_ts: [n_j, 5*n_free_dof] — scatter free DOFs back into full
-            # state space, reshape to UnsteadyStructureMinimalStates, then vmap
+            # state space, reshape to StructureMinimalStates, then vmap
             # over n_j. vjp_fn returns a 1-tuple so we unpack with (grad_dv,).
             all_free_idx = jnp.concatenate(
                 [solve_dofs + k * self.n_dof for k in range(5)]
@@ -719,16 +730,20 @@ class BeamStructure(BaseBeamStructure):
 
             def apply_vjp_single(g_vec):
                 g_full = jnp.zeros(5 * self.n_dof).at[all_free_idx].set(g_vec)
-                cotangent = UnsteadyStructureMinimalStates.from_mat(
+                cotangent = StructureMinimalStates.from_mat(
                     g_full.reshape(5, self.n_nodes, 6)
                 )
                 (grad_dv,) = vjp_fn(cotangent)
                 return grad_dv
 
-            p_s_n_p_dv = jax.vmap(apply_vjp_single)(adj_ts.reshape(n_j, 5 * n_free_dof))
+            # partial derivative of state update with respect to design variables
+            p_s_n_p_dv = jax.vmap(apply_vjp_single)(
+                adj_states[i_ts, ...].reshape(n_j, 5 * n_free_dof)
+            )
 
+            # update derivative
             d_dv += p_s_n_p_dv
-            return d_dv, q_np1
+            return d_dv, q_n
 
         dv_adj_init = StructuralDesignVariables(
             x0=jnp.zeros((n_j, *self.x0.shape)),
@@ -752,20 +767,26 @@ class BeamStructure(BaseBeamStructure):
             init_val=(dv_adj_init, q_0),
         )
 
-        # Combine direct gradient (d_j_n_d_dv) with adjoint contribution (dv_adj).
-        return StructuralDesignVariables(
-            x0=d_j_n_d_dv.x0 + dv_adj.x0.reshape(*j_shape, *self.x0.shape),
-            k_cs=d_j_n_d_dv.k_cs + dv_adj.k_cs.reshape(*j_shape, *self.k_cs.shape),
-            m_cs=d_j_n_d_dv.m_cs + dv_adj.m_cs.reshape(*j_shape, *self.m_cs.shape)
+        # Combine direct gradient (d_j_n_d_dv) with grads contribution (dv_adj).
+        d_j_d_x = StructuralDesignVariables(
+            x0=p_j_n_p_dv.x0 + dv_adj.x0.reshape(*j_shape, *self.x0.shape),
+            k_cs=p_j_n_p_dv.k_cs + dv_adj.k_cs.reshape(*j_shape, *self.k_cs.shape),
+            m_cs=p_j_n_p_dv.m_cs + dv_adj.m_cs.reshape(*j_shape, *self.m_cs.shape)
             if dv.m_cs is not None
-            else d_j_n_d_dv.m_cs,
-            m_lumped=d_j_n_d_dv.m_lumped
+            else p_j_n_p_dv.m_cs,
+            m_lumped=p_j_n_p_dv.m_lumped
             + dv_adj.m_lumped.reshape(*j_shape, *self.m_lumped.shape)
             if dv.m_lumped is not None
-            else d_j_n_d_dv.m_lumped,
-            f_ext_dead=d_j_n_d_dv.f_ext_dead
+            else p_j_n_p_dv.m_lumped,
+            f_ext_dead=p_j_n_p_dv.f_ext_dead
             + dv_adj.f_ext_dead.reshape(*j_shape, *gs.f_ext_dead.shape)
             if dv.f_ext_dead is not None
-            else d_j_n_d_dv.f_ext_dead,
-            f_ext_follower=d_j_n_d_dv.f_ext_follower,
+            else p_j_n_p_dv.f_ext_dead,
+            f_ext_follower=p_j_n_p_dv.f_ext_follower
+            + dv_adj.f_ext_follower.reshape(*j_shape, *dv.f_ext_follower.shape)
+            if dv.f_ext_follower is not None
+            else p_j_n_p_dv.f_ext_follower,
         )
+
+        # TODO: implement case where initial states depend on design variables
+        return d_j_d_x, adj_states

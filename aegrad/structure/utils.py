@@ -63,7 +63,7 @@ def _k_t_entry(
     :param length: Element length, [].
     :param eps: Beam strain vector, [6].
     :param k: Beam cross-sectional stiffness matrix, [6, 6].
-    :param ad_inv: Inverse adjoint matrix for element, [6, 6].
+    :param ad_inv: Inverse grads matrix for element, [6, 6].
     :param include_geometric: Whether to include geometric stiffness contribution, bool.
     :return: Stiffness matrix entry, [12, 12].
     """
@@ -93,7 +93,7 @@ def _integrate_m_l(
     Approximates the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
     :param m_cs: Cross sectional mass matrix, [6, 6].
     :param d: Configuration vector, [6]
-    :param ad_inv: Inverse adjoint matrix for element, [6, 6]
+    :param ad_inv: Inverse grads matrix for element, [6, 6]
     :param length: Element length, []
     :param int_order: Order of integration, 3, 4, or 5.
     :return: Integrated mass matrix, [12, 12]
@@ -132,7 +132,7 @@ def _integrate_c_t(
     :param v_ab: Nodal local velocities, [12]
     :param d: Configuration vector, [6]
     :param d_dot: Configuration velocity vector, [6]
-    :param ad_inv: Inverse adjoint matrix for element, [6, 6]
+    :param ad_inv: Inverse grads matrix for element, [6, 6]
     :param length: Element length, []
     :param int_order: Order of integration, 1, 2, or 3
     :param include_q_dot: Whether to compute the contribution of the derivative of q_dot with respect to velocity.
