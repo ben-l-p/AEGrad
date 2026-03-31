@@ -2,7 +2,7 @@ from jax import Array, vmap
 from jax import numpy as jnp
 
 from aegrad.print_utils import warn
-from algebra.se3 import log_se3, exp_se3
+from algebra.se3 import log_se3, exp_se3, hg_to_d
 from structure.data_structures import StructureMinimalStates
 
 
@@ -31,107 +31,112 @@ class TimeIntregrator:
             self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
-    def predict_phi(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def predict_phi(self, v_nm1: Array, a_nm1: Array, a_n_pred: Array) -> Array:
         r"""
         Predict the next increment based on current velocity and acceleration.
-        :param v_n: Previous velocity, [n_nodes_, 6].
-        :param a_n: Previous pseudoacceleration, [n_nodes_, 6].
-        :param a_np1_pred: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param v_nm1: Previous velocity, [n_nodes_, 6].
+        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
+        :param a_n_pred: Next pseudoacceleration prediction [n_nodes_, 6].
         :return: Initial guess for next increment, [n_nodes_, 6].
         """
-        return self.dt * v_n + self.dt * self.dt * (
-            (0.5 - self.beta) * a_n + self.beta * a_np1_pred
+        return self.dt * v_nm1 + self.dt * self.dt * (
+            (0.5 - self.beta) * a_nm1 + self.beta * a_n_pred
         )
 
     @staticmethod
-    def predict_varphi(varphi_n: Array, phi_np1_pred: Array) -> Array:
+    def predict_varphi(varphi_nm1: Array, phi_n_pred: Array) -> Array:
         r"""
         Predict the next total twist based on current velocity and acceleration.
-        :param varphi_n: Previous total twist, [n_nodes_, 6].
-        :param phi_np1_pred: Predicted step increment, [n_nodes_, 6].
+        :param varphi_nm1: Previous total twist, [n_nodes_, 6].
+        :param phi_n_pred: Predicted step increment, [n_nodes_, 6].
         :return: Initial guess for next twist, [n_nodes_, 6].
         """
         return vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
-        )(varphi_n, phi_np1_pred)
+        )(varphi_nm1, phi_n_pred)
 
-    def predict_v(self, v_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def predict_v(self, v_nm1: Array, a_nm1: Array, a_n_pred: Array) -> Array:
         r"""
         Predict the next velocity based on current velocity and acceleration.
-        :param v_n: Previous velocity, [n_nodes_, 6].
-        :param a_n: Previous pesudoacceleration, [n_nodes_, 6].
-        :param a_np1_pred: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param v_nm1: Previous velocity, [n_nodes_, 6].
+        :param a_nm1: Previous pesudoacceleration, [n_nodes_, 6].
+        :param a_n_pred: Next pseudoacceleration prediction [n_nodes_, 6].
         :return: Initial guess for next velocity, [n_nodes_, 6].
         """
         return (
-            v_n + (1.0 - self.gamma) * self.dt * a_n + self.gamma * self.dt * a_np1_pred
+            v_nm1
+            + (1.0 - self.gamma) * self.dt * a_nm1
+            + self.gamma * self.dt * a_n_pred
         )
 
-    def predict_v_dot(self, v_dot_n: Array, a_n: Array, a_np1_pred: Array) -> Array:
+    def predict_v_dot(self, v_dot_nm1: Array, a_nm1: Array, a_n: Array) -> Array:
         r"""
         Predict the acceleration based on previous pseudoacceleration and acceleration.
-        :param v_dot_n: Previous acceleration, [n_nodes_, 6].
-        :param a_n: Previous pseudoacceleration, [n_nodes_, 6].
-        :param a_np1_pred: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
+        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
+        :param a_n: Next pseudoacceleration prediction [n_nodes_, 6].
         :return: Predicted acceleration, [n_nodes_, 6].
         """
         return (
-            (1.0 - self.alpha_m) * a_np1_pred
-            + self.alpha_m * a_n
-            - self.alpha_f * v_dot_n
+            (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1 - self.alpha_f * v_dot_nm1
         ) / (1.0 - self.alpha_f)
 
-    def predict_a(self, v_dot_n: Array, a_n: Array) -> Array:
+    def predict_a(self, v_dot_nm1: Array, a_nm1: Array) -> Array:
         r"""
         Predict the pseudoacceleration based on previous pseudoacceleration and acceleration.
-        :param v_dot_n: Previous acceleration, [n_nodes_, 6].
-        :param a_n: Previous pseudoacceleration, [n_nodes_, 6].
+        :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
+        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
         :return: Predicted pseudoacceleration, [n_nodes_, 6].
         """
-        return (self.alpha_f * v_dot_n - self.alpha_m * a_n) / (1.0 - self.alpha_m)
+        return (self.alpha_f * v_dot_nm1 - self.alpha_m * a_nm1) / (1.0 - self.alpha_m)
 
-    def calculate_a_np1(self, v_dot_n: Array, v_dot_np1: Array, a_n: Array) -> Array:
+    def calculate_a_n(self, v_dot_nm1: Array, v_dot_n: Array, a_nm1: Array) -> Array:
         r"""
         Calculate the pseudoacceleration at the next time step.
-        :param v_dot_n: Previous acceleration, [n_nodes_, 6].
-        :param v_dot_np1: Next acceleration, [n_nodes_, 6].
-        :param a_n: Previous pseudoacceleration, [n_nodes_, 6].
+        :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
+        :param v_dot_n: Next acceleration, [n_nodes_, 6].
+        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
         :return: Pseudoacceleration at next time step, [n_nodes_, 6].
         """
         return (
             1.0
             / (1.0 - self.alpha_m)
             * (
-                (1.0 - self.alpha_f) * v_dot_np1
-                + self.alpha_f * v_dot_n
-                - self.alpha_m * a_n
+                (1.0 - self.alpha_f) * v_dot_n
+                + self.alpha_f * v_dot_nm1
+                - self.alpha_m * a_nm1
             )
         )
 
     def calculate_q_n_from_q_alpha(
-        self, q_nm1: StructureMinimalStates, q_alpha: StructureMinimalStates
-    ) -> StructureMinimalStates:
-        phi = q_alpha.phi / (1.0 - self.alpha_f)
+        self,
+        q_nm1: StructureMinimalStates,
+        q_alpha: StructureMinimalStates,
+        phi_alpha: Array,
+    ) -> tuple[StructureMinimalStates, Array]:
+        phi = phi_alpha / (1.0 - self.alpha_f)
         varphi = vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
         )(q_nm1.varphi, phi)
         v = (q_alpha.v - self.alpha_f * q_nm1.v) / (1.0 - self.alpha_f)
         v_dot = (q_alpha.v_dot - self.alpha_f * q_nm1.v_dot) / (1.0 - self.alpha_f)
         a = (q_alpha.a - self.alpha_m * q_nm1.a) / (1.0 - self.alpha_m)
-        return StructureMinimalStates(phi=phi, varphi=varphi, v=v, v_dot=v_dot, a=a)
+        return StructureMinimalStates(varphi=varphi, v=v, v_dot=v_dot, a=a), phi
 
-    def predict_q(self, q_n: StructureMinimalStates) -> StructureMinimalStates:
+    def predict_q(
+        self, q_nm1: StructureMinimalStates
+    ) -> tuple[Array, StructureMinimalStates]:
         r"""
         Predict the current state based upon the previous state.
-        :param q_n: State at timestep n
+        :param q_nm1: State at timestep n
         :return: Predicted state at timestep n+1
         """
-        a = self.predict_a(v_dot_n=q_n.v_dot, a_n=q_n.a)
-        phi = self.predict_phi(v_n=q_n.v, a_n=q_n.a, a_np1_pred=a)
-        varphi = self.predict_varphi(varphi_n=q_n.varphi, phi_np1_pred=phi)
-        v = self.predict_v(v_n=q_n.v, a_n=q_n.a, a_np1_pred=a)
-        v_dot = self.predict_v_dot(v_dot_n=q_n.v_dot, a_n=q_n.a, a_np1_pred=a)
-        return StructureMinimalStates(phi=phi, varphi=varphi, v=v, v_dot=v_dot, a=a)
+        a = self.predict_a(v_dot_nm1=q_nm1.v_dot, a_nm1=q_nm1.a)
+        phi = self.predict_phi(v_nm1=q_nm1.v, a_nm1=q_nm1.a, a_n_pred=a)
+        varphi = self.predict_varphi(varphi_nm1=q_nm1.varphi, phi_n_pred=phi)
+        v = self.predict_v(v_nm1=q_nm1.v, a_nm1=q_nm1.a, a_n_pred=a)
+        v_dot = self.predict_v_dot(v_dot_nm1=q_nm1.v_dot, a_nm1=q_nm1.a, a_n=a)
+        return phi, StructureMinimalStates(varphi=varphi, v=v, v_dot=v_dot, a=a)
 
     def calculate_f_alpha(self, f_nm1: Array, f_n: Array) -> Array:
         return (1.0 - self.alpha_f) * f_n + self.alpha_f * f_nm1
@@ -148,26 +153,27 @@ class TimeIntregrator:
     def calculate_a_alpha(self, a_nm1: Array, a_n: Array) -> Array:
         return (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1
 
-    def calculate_varphi_alpha(self, varphi_nm1: Array, phi_n: Array) -> Array:
+    def calculate_varphi_alpha(self, varphi_nm1: Array, varphi_n: Array) -> Array:
+        phi_n = vmap(lambda a, b: hg_to_d(exp_se3(a), exp_se3(b)))(varphi_nm1, varphi_n)
+
         phi_alpha = self.calculate_phi_alpha(phi_n)
         return vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), (0, 0), 0
         )(varphi_nm1, phi_alpha)
 
     def calculate_q_alpha(
-        self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates
-    ) -> StructureMinimalStates:
-        phi_alpha = self.calculate_phi_alpha(phi_n=q_n.phi)
+        self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates, phi_n: Array
+    ) -> tuple[Array, StructureMinimalStates]:
+        phi_alpha = self.calculate_phi_alpha(phi_n)
         varphi_alpha = self.calculate_varphi_alpha(
-            varphi_nm1=q_nm1.varphi, phi_n=q_n.phi
+            varphi_nm1=q_nm1.varphi, varphi_n=q_n.varphi
         )
         v_alpha = self.calculate_v_alpha(v_nm1=q_nm1.v, v_n=q_n.v)
         v_dot_alpha = self.calculate_v_dot_alpha(
             v_dot_nm1=q_nm1.v_dot, v_dot_n=q_n.v_dot
         )
         a_alpha = self.calculate_a_alpha(a_nm1=q_nm1.a, a_n=q_n.a)
-        return StructureMinimalStates(
-            phi=phi_alpha,
+        return phi_alpha, StructureMinimalStates(
             varphi=varphi_alpha,
             v=v_alpha,
             v_dot=v_dot_alpha,

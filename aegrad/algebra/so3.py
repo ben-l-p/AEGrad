@@ -197,14 +197,15 @@ def log_so3(rmat: Array) -> Array:
     :return: Rotation vector, [3]
     """
 
-    # applying a condition on theta is not differentiable, that is, d_theta_d_rmat has infinite values for rmat=I
-    # d_theta_d_rmat is infinite for rmat=I
-    theta = jnp.acos(0.5 * (jnp.trace(rmat) - 1.0))
+    cos_theta = 0.5 * (jnp.trace(rmat) - 1.0)
 
     def log_so3_full() -> Array:
+        # acos is only computed here, where theta is large enough that its gradient is finite
+        theta = jnp.acos(cos_theta)
         return skew_to_vec(theta / (2.0 * jnp.sin(theta)) * (rmat - rmat.T))
 
     def log_so3_small_angle() -> Array:
         return skew_to_vec(log_sum(rmat, 2))
 
-    return cond(theta > SMALL_ANG_THRESH, log_so3_full, log_so3_small_angle)
+    # theta > SMALL_ANG_THRESH  ⟺  cos_theta < cos(SMALL_ANG_THRESH)
+    return cond(cos_theta < jnp.cos(SMALL_ANG_THRESH), log_so3_full, log_so3_small_angle)

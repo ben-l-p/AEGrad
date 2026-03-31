@@ -4,5 +4,6 @@
 *.vtu
 *.pvd
 
-# other files
-!/development_plan.py
+# Claude files
+*.claude
+CLAUDE.md

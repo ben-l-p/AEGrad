@@ -477,7 +477,7 @@ class DynamicAeroCase:
         if isinstance(x_target, Array):
             return self.flowfield.vmap_call(x=x_target, t=self._t[i_ts])
         elif isinstance(x_target, ArrayList):
-            return self.flowfield.surf_vmap_call(xs=x_target, t=self._t[i_ts])
+            return self.flowfield.surf_vmap_call(xs=x_target, t=self._t[i_ts])  # type: ignore
         else:
             raise NotImplementedError
 

@@ -87,7 +87,7 @@ class StaticStructure:
             f_ext_aero=self.f_ext_aero,
             f_grav=self.f_grav,
             f_int=self.f_int,
-            f_iner=zero_f_iner,
+            f_iner_gyr=zero_f_iner,
             f_res=self.f_res,
             t=zero_time,
             i_ts=-1,
@@ -194,7 +194,7 @@ class DynamicStructureSnapshot:
         f_ext_aero: Optional[Array],
         f_grav: Optional[Array],
         f_int: Array,
-        f_iner: Array,
+        f_iner_gyr: Array,
         f_res: Array,
         t: Array,
         i_ts: int,
@@ -215,7 +215,7 @@ class DynamicStructureSnapshot:
         self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
         self.f_int: Array = f_int  # [n_nodes_, 6]
-        self.f_iner: Array = f_iner  # [n_nodes_, 6]
+        self.f_iner: Array = f_iner_gyr  # [n_nodes_, 6]
         self.f_res: Array = f_res  # [n_nodes_, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
@@ -379,7 +379,7 @@ class DynamicStructureSnapshot:
             "m_ext_aero": m_ext_aero,
             "f_ext_grav": f_ext_grav,
             "m_ext_grav": m_ext_grav,
-            "f_iner": f_iner,
+            "f_iner_gyr": f_iner,
             "m_iner": m_iner,
             "f_int": f_int,
             "m_int": m_int,
@@ -451,7 +451,7 @@ class DynamicStructure:
         self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_tstep, n_nodes_, 6]
         self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes_, 6]
         self.f_int: Array = f_int  # [n_tstep, n_nodes_, 6]
-        self.f_iner: Array = f_iner  # [n_tstep, n_nodes_, 6]
+        self.f_iner_gyr: Array = f_iner  # [n_tstep, n_nodes_, 6]
         self.f_res: Array = f_res  # [n_tstep, n_nodes_, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
@@ -504,7 +504,7 @@ class DynamicStructure:
             if self.f_ext_aero is not None
             else None,
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
-            f_iner=self.f_iner[i_ts, ...],
+            f_iner_gyr=self.f_iner_gyr[i_ts, ...],
             f_int=self.f_int[i_ts, ...],
             f_res=self.f_res[i_ts, ...],
             t=self.t[i_ts],
@@ -512,16 +512,8 @@ class DynamicStructure:
             prescribed_dofs=self.prescribed_dofs,
         )
 
-    def get_states(
-        self, i_ts: int, compute_phi: bool = False
-    ) -> StructureMinimalStates:
-        if compute_phi:
-            raise NotImplementedError()
-        else:
-            phi = jnp.zeros(self.v.shape[1:])
-
+    def get_states(self, i_ts: int | Array) -> StructureMinimalStates:
         return StructureMinimalStates(
-            phi=phi,
             varphi=self.varphi[i_ts, ...],
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
@@ -636,10 +628,10 @@ class DynamicStructure:
         self.f_int = self.f_int.at[...].set(
             jnp.einsum("hijk,hik->hij", nodal_chi, self.f_int)
         )
-        self.f_iner = self.f_iner.at[...].set(
-            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_iner)
+        self.f_iner_gyr = self.f_iner_gyr.at[...].set(
+            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_iner_gyr)
         )
-        self.f_res = self.f_iner.at[...].set(
+        self.f_res = self.f_iner_gyr.at[...].set(
             jnp.einsum("hijk,hik->hij", nodal_chi, self.f_res)
         )
         self.v = self.v.at[...].set(jnp.einsum("hijk,hik->hij", nodal_chi, self.v))
@@ -743,7 +735,7 @@ class DynamicStructure:
             "f_ext_aero",
             "f_grav",
             "f_int",
-            "f_iner",
+            "f_iner_gyr",
             "f_res",
             "t",
             "local",
@@ -754,27 +746,15 @@ class DynamicStructure:
 class StructureMinimalStates:
     def __init__(
         self,
-        phi: Optional[Array],
         varphi: Optional[Array],
         v: Array,
         v_dot: Array,
         a: Array,
     ):
-        self._phi: Optional[Array] = phi
         self._varphi: Optional[Array] = varphi
         self.v: Array = v
         self.v_dot: Array = v_dot
         self.a: Array = a
-
-    @property
-    def phi(self) -> Array:
-        if self._phi is None:
-            raise ValueError("Phi is None")
-        return self._phi
-
-    @phi.setter
-    def phi(self, phi: Array) -> None:
-        self._phi = phi
 
     @property
     def varphi(self) -> Array:
@@ -792,12 +772,12 @@ class StructureMinimalStates:
 
     def to_mat(self) -> Array:
         return jnp.stack(
-            (self.phi, self.varphi, self.v, self.v_dot, self.a), 0
-        )  # [5, n_nodes, 6]
+            (self.varphi, self.v, self.v_dot, self.a), 0
+        )  # [4, n_nodes, 6]
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "_phi", "_varphi", "v", "v_dot", "a"
+        return "_varphi", "v", "v_dot", "a"
 
     @staticmethod
     def _static_names() -> Sequence[str]:

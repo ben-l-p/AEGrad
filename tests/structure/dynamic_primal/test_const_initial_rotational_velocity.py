@@ -122,10 +122,10 @@ class TestXBeamConstXRotVelocity:
             output.f_int[:, 2, cls.beam_direction_index], -expected_f
         ), "Internal force does not match expected force at node 1"
         assert jnp.allclose(
-            output.f_iner[:, 0, cls.beam_direction_index], -expected_f
+            output.f_iner_gyr[:, 0, cls.beam_direction_index], -expected_f
         ), "Inertial force does not match expected force at node 0"
         assert jnp.allclose(
-            output.f_iner[:, 2, cls.beam_direction_index], expected_f
+            output.f_iner_gyr[:, 2, cls.beam_direction_index], expected_f
         ), "Inertial force does not match expected force at node 1"
         assert jnp.allclose(output.hg[:, 0, :3, 3], x0_expected), (
             "Node 0 position does not match expected position"

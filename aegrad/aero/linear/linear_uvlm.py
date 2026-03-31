@@ -1194,7 +1194,8 @@ class LinearUVLM:
                 for i_surf in range(self.reference.n_surf):
                     nu_b_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.reference.zeta_b[i_surf], t
+                            self.reference.zeta_b[i_surf],
+                            t,  # type: ignore
                         )
                         - flowfield.vmap_call(self.reference.zeta_b[i_surf], t[0])[
                             None, ...
@@ -1209,7 +1210,8 @@ class LinearUVLM:
                 for i_surf in range(self.reference.n_surf):
                     nu_w_flow.append(
                         vmap(flowfield.vmap_call, in_axes=(None, 0), out_axes=0)(
-                            self.reference.zeta_w[i_surf], t
+                            self.reference.zeta_w[i_surf],
+                            t,  # type: ignore
                         )
                         - flowfield.vmap_call(self.reference.zeta_w[i_surf], t[0])[
                             None, ...

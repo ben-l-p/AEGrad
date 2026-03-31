@@ -28,7 +28,10 @@ class TestGeradinBeamAdjointGradients:
             load_steps=3,
         )
 
-        def obj(states: StructureFullStates, _: StructuralDesignVariables) -> Array:
+        def obj(
+            states: StructureFullStates,
+            *_,
+        ) -> Array:
             return states.hg[-1, 2, 3]  # vertical displacement of the last node
 
         # grads solve
@@ -64,7 +67,7 @@ class TestGeradinBeamAdjointGradients:
                 v_dot=None,
             )
 
-            return obj(ss, dv_)
+            return obj(ss, dv_, None)
 
         dv = StructuralDesignVariables(
             x0=struct.x0,

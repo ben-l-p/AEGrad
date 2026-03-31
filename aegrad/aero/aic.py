@@ -7,7 +7,7 @@ import jax
 from aero.utils import KernelFunction, mirror_grid
 from algebra.array_utils import ArrayList, block_axis
 
-BATCH_SIZE = 1
+BATCH_SIZE = 128
 
 
 def compute_aic_grid(

@@ -657,7 +657,14 @@ class BaseBeamStructure:
         m_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
         return jnp.concatenate((f_rot, m_rot), axis=-1)
 
-    def _make_f_iner(self, m_l: Array, c_l: Array, v: Array, v_dot: Array) -> Array:
+    def split_vector_to_elements(self, vec: Array) -> Array:
+        return jnp.concatenate(
+            (vec[self.connectivity[:, 0], :], vec[self.connectivity[:, 1], :]), axis=-1
+        )
+
+    def _make_f_iner_gyr(
+        self, m_l: Array, c_l: Array, v: Array, v_dot: Array
+    ) -> tuple[Array, Array]:
         r"""
         Compute the global inertial force vector.
         :param m_l: Disassembled system mass matrix, [n_elem, 12, 12]
@@ -667,15 +674,13 @@ class BaseBeamStructure:
         :return: Inertial forces, [n_elem, 12]
         """
 
-        v_elem = jnp.concatenate(
-            (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]), axis=-1
-        )  # [n_elem, 12]
+        v_elem = self.split_vector_to_elements(v)
         v_dot_elem = jnp.concatenate(
             (v_dot[self.connectivity[:, 0], :], v_dot[self.connectivity[:, 1], :]),
             axis=-1,
         )  # [n_elem, 12]
 
-        return -jnp.einsum("ijk,ik->ij", m_l, v_dot_elem) - jnp.einsum(
+        return -jnp.einsum("ijk,ik->ij", m_l, v_dot_elem), -jnp.einsum(
             "ijk,ik->ij", c_l, v_elem
         )  # [n_elem, 12]
 
@@ -761,6 +766,7 @@ class BaseBeamStructure:
         Optional[Array],
         Array,
         Optional[Array],
+        Optional[Array],
         Array,
     ]:
         r"""
@@ -773,7 +779,7 @@ class BaseBeamStructure:
         :param v: Nodal velocities in global frame, [n_node, 6]
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
         :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
-        inertial forces and residual forces
+        gyroscopic forces, inertial forces and residual forces
         """
         d = self.make_d(hg)
         eps = self.make_eps(d)
@@ -816,14 +822,16 @@ class BaseBeamStructure:
         this_f_res += this_f_int
 
         if dynamic:
-            this_f_iner = self.assemble_vector_from_entries(
-                self._make_f_iner(m_t, c_l, v, v_dot)
-            ).reshape(-1, 6)
+            this_f_iner, this_f_gyr = self._make_f_iner_gyr(m_t, c_l, v, v_dot)
+            this_f_iner = self.assemble_vector_from_entries(this_f_iner).reshape(-1, 6)
+            this_f_gyr = self.assemble_vector_from_entries(this_f_gyr).reshape(-1, 6)
+
             if self.use_lumped_mass:
                 this_f_iner += self._make_f_iner_lumped(c_l_lumped, v, v_dot)
             this_f_res += this_f_iner
         else:
             this_f_iner = None
+            this_f_gyr = None
 
         if f_ext_follower is not None:
             this_f_res += f_ext_follower
@@ -835,6 +843,7 @@ class BaseBeamStructure:
             this_f_ext_aero,
             this_f_grav,
             this_f_int,
+            this_f_gyr,
             this_f_iner,
             this_f_res,
         )
@@ -881,9 +890,9 @@ class BaseBeamStructure:
             f_abs_sum += jnp.abs(f_grav)
 
         if dynamic:
-            f_iner = self._make_f_iner(m_t, c_l, v, v_dot)
-            f_res += f_iner
-            f_abs_sum += jnp.abs(f_iner)
+            f_iner, f_gyr = self._make_f_iner_gyr(m_t, c_l, v, v_dot)
+            f_res += f_iner + f_gyr
+            f_abs_sum += jnp.abs(f_iner + f_gyr)
 
         f_res_vect = self.assemble_vector_from_entries(f_res)
         f_abs_sum_vect = self.assemble_vector_from_entries(f_abs_sum)
@@ -1125,7 +1134,7 @@ class BaseBeamStructure:
         )
 
         # postprocess final results
-        d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, _, f_res = (
+        d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, _, _, f_res = (
             self.resolve_forces(
                 hg=hg,
                 dynamic=False,
@@ -1253,11 +1262,13 @@ class BaseBeamStructure:
             i_ts: int,
             converge_status_: ConvergenceStatus,
             hg_n: Array,
+            phi_alpha: Array,
             q_alpha: StructureMinimalStates,
         ) -> tuple[
             int,
             int,
             ConvergenceStatus,
+            Array,
             Array,
             StructureMinimalStates,
         ]:
@@ -1268,21 +1279,18 @@ class BaseBeamStructure:
             :param converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
             print messages.
             :param hg_n: Transformation matrices at iteration n, [n_nodes_, 4, 4]
-            :param phi_n: Incremental configuration at iteration varphi, [n_nodes_, 6]
-            :param v_nm1: Velocities at iteration varphi, [n_nodes_, 6]
-            :param v_dot_nm1: Accelerations at iteration varphi, [n_nodes_, 6]
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration varphi+1.
             """
 
-            hg_update = self.update_hg(hg_n, q_alpha.phi)  # [n_node, 4, 4]
+            hg_update = self.update_hg(hg_n, phi_alpha)  # [n_node, 4, 4]
 
             # base parameters
             d_n = self.make_d(hg_update)  # [n_elem, 6]
             p_d_n = self.make_p_d(d_n)  # [n_elem, 6, 12]
             eps_n = self.make_eps(d_n)  # [n_elem, 6]
             d_dot_n = self._make_d_dot(p_d_n, q_alpha.v)  # [n_elem, 6]
-            t_n = vmap(t_se3, 0, 0)(q_alpha.phi)  # [n_node, 6, 6]
+            t_n = vmap(t_se3, 0, 0)(phi_alpha)  # [n_node, 6, 6]
 
             # tangent matrices
             m_t = self.make_m_t(d_n)  # [n_elem, 12, 12]
@@ -1341,7 +1349,7 @@ class BaseBeamStructure:
 
             # solve for configuration increment, [n_solve_dofs]
             d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
-            phi_np1 = q_alpha.phi.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
+            phi_np1 = phi_alpha.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
             v_np1 = (
@@ -1369,10 +1377,10 @@ class BaseBeamStructure:
                 converge_status_.print_struct_message(t[i_ts], i_load_step)
 
             q_alpha_update = StructureMinimalStates(
-                phi=phi_np1, varphi=None, v=v_np1, v_dot=v_dot_np1, a=q_alpha.a
+                varphi=None, v=v_np1, v_dot=v_dot_np1, a=q_alpha.a
             )
 
-            return i_load_step, i_ts, converge_status_, hg_n, q_alpha_update
+            return i_load_step, i_ts, converge_status_, hg_n, phi_np1, q_alpha_update
 
         def time_step_loop(
             i_ts: int, sol: DynamicStructure, converge_status_: ConvergenceStatus
@@ -1386,53 +1394,63 @@ class BaseBeamStructure:
             """
 
             # predictor step
-            q_init = self.time_integrator.predict_q(sol.get_states(i_ts - 1))
-            q_alpha_init = self.time_integrator.calculate_q_alpha(
-                q_nm1=sol.get_states(i_ts - 1), q_n=q_init
+            phi_init, q_init = self.time_integrator.predict_q(sol.get_states(i_ts - 1))
+            phi_alpha_init, q_alpha_init = self.time_integrator.calculate_q_alpha(
+                q_nm1=sol.get_states(i_ts - 1), q_n=q_init, phi_n=phi_init
             )
             q_alpha_init.varphi = None  # TODO: remove redundant computation
 
             # solve
-            _, converge_status_, hg, q_alpha = load_step_loop(
-                i_ts, converge_status_, sol.hg[i_ts - 1, ...], q_alpha_init
+            _, converge_status_, hg, phi_alpha, q_alpha = load_step_loop(
+                i_ts,
+                converge_status_,
+                sol.hg[i_ts - 1, ...],
+                phi_alpha_init,
+                q_alpha_init,
             )
 
             # postprocess results for time step and store in solution object
-            q_np1 = self.time_integrator.calculate_q_n_from_q_alpha(
-                q_alpha=q_alpha, q_nm1=sol.get_states(i_ts - 1)
+            q_n, phi_n = self.time_integrator.calculate_q_n_from_q_alpha(
+                q_alpha=q_alpha,
+                q_nm1=sol.get_states(i_ts - 1),
+                phi_alpha=phi_alpha,
             )
 
             # update pseudoacceleration
-            q_np1.a = self.time_integrator.calculate_a_np1(
-                a_n=sol.a[i_ts - 1, ...],
-                v_dot_n=sol.v_dot[i_ts - 1, ...],
-                v_dot_np1=q_np1.v_dot,
+            q_n.a = self.time_integrator.calculate_a_n(
+                a_nm1=sol.a[i_ts - 1, ...],
+                v_dot_nm1=sol.v_dot[i_ts - 1, ...],
+                v_dot_n=q_n.v_dot,
             )
 
-            hg_np1 = self.update_hg(sol.hg[i_ts - 1, ...], q_np1.phi)
-            d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, f_iner, f_res = (
-                self.resolve_forces(
-                    hg=hg_np1,
-                    dynamic=True,
-                    f_ext_dead=f_ext_dead[i_ts, ...]
-                    if f_ext_dead is not None
-                    else None,
-                    f_ext_follower=f_ext_follower[i_ts, ...]
-                    if f_ext_follower is not None
-                    else None,
-                    f_ext_aero=f_ext_aero[i_ts, ...]
-                    if f_ext_aero is not None
-                    else None,
-                    v=q_np1.v,
-                    v_dot=q_np1.v_dot,
-                )
+            hg_n = self.update_hg(sol.hg[i_ts - 1, ...], phi_n)
+            (
+                d,
+                eps,
+                f_ext_dead_local,
+                f_ext_aero_local,
+                f_grav,
+                f_int,
+                f_gyr,
+                f_iner,
+                f_res,
+            ) = self.resolve_forces(
+                hg=hg_n,
+                dynamic=True,
+                f_ext_dead=f_ext_dead[i_ts, ...] if f_ext_dead is not None else None,
+                f_ext_follower=f_ext_follower[i_ts, ...]
+                if f_ext_follower is not None
+                else None,
+                f_ext_aero=f_ext_aero[i_ts, ...] if f_ext_aero is not None else None,
+                v=q_n.v,
+                v_dot=q_n.v_dot,
             )
             sol.d = sol.d.at[i_ts, ...].set(d)
             sol.eps = sol.eps.at[i_ts, ...].set(eps)
-            sol.v = sol.v.at[i_ts, ...].set(q_np1.v)
-            sol.v_dot = sol.v_dot.at[i_ts, ...].set(q_np1.v_dot)
-            sol.a = sol.a.at[i_ts, ...].set(q_np1.a)
-            sol.hg = sol.hg.at[i_ts, ...].set(hg_np1)
+            sol.v = sol.v.at[i_ts, ...].set(q_n.v)
+            sol.v_dot = sol.v_dot.at[i_ts, ...].set(q_n.v_dot)
+            sol.a = sol.a.at[i_ts, ...].set(q_n.a)
+            sol.hg = sol.hg.at[i_ts, ...].set(hg_n)
             if f_ext_follower is not None:
                 sol.f_ext_follower = sol.f_ext_follower.at[i_ts, ...].set(
                     f_ext_follower[i_ts, ...]
@@ -1444,7 +1462,7 @@ class BaseBeamStructure:
             if self.use_gravity:
                 sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
             sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
-            sol.f_iner = sol.f_iner.at[i_ts, ...].set(f_iner)
+            sol.f_iner_gyr = sol.f_iner_gyr.at[i_ts, ...].set(f_iner + f_gyr)
             sol.f_res = sol.f_res.at[i_ts, ...].set(f_res)
 
             return sol, converge_status_
@@ -1454,8 +1472,9 @@ class BaseBeamStructure:
             i_ts: int,
             converge_status_: ConvergenceStatus,
             hg_n: Array,
+            phi_n: Array,
             q_n: StructureMinimalStates,
-        ) -> tuple[int, ConvergenceStatus, Array, StructureMinimalStates]:
+        ) -> tuple[int, ConvergenceStatus, Array, Array, StructureMinimalStates]:
             r"""
             Convergence loop within each load step of a time step.
             :param i_load_step: Load step index
@@ -1464,45 +1483,44 @@ class BaseBeamStructure:
             stepping.
             :param hg_n: Node transformations at the beginning of the load step, [n_nodes_, 4, 4]
             :param phi_n: Node configuration increments in algebra space, [n_nodes_, 6]
-            :param v_nm1: Node velocities, [n_nodes_, 6]
-            :param v_dot_nm1: Node accelerations, [n_nodes_, 6]
+            :param q_n: Minimal states
             :return: Time step index, convergence status, and updated configuration, velocities and accelerations.
             """
 
             converge_status_.reset_status()
 
-            _, _, converge_status_, hg_solve, q_n = jax.lax.while_loop(
+            _, _, converge_status_, hg_solve, phi_n, q_n = jax.lax.while_loop(
                 lambda args_: ~args_[2].get_status(),
                 lambda args_: _update(*args_),
-                (i_load_step, i_ts, converge_status_, hg_n, q_n),
+                (i_load_step, i_ts, converge_status_, hg_n, phi_n, q_n),
             )
 
             if self.verbosity.value == VerbosityLevel.NORMAL.value:
                 converge_status_.print_struct_message(t[i_ts], i_load_step)
 
-            return i_ts, converge_status_, hg_solve, q_n
+            return i_ts, converge_status_, hg_solve, phi_n, q_n
 
         def load_step_loop(
             i_ts: int,
             converge_status_: ConvergenceStatus,
             hg_n: Array,
+            phi_n: Array,
             q_n: StructureMinimalStates,
-        ) -> tuple[int, ConvergenceStatus, Array, StructureMinimalStates]:
+        ) -> tuple[int, ConvergenceStatus, Array, Array, StructureMinimalStates]:
             r"""
             Performs load stepping iterations for a given time step
             :param i_ts: Timestep index for which to perform load stepping
             :param converge_status_: ConvergenceStatus object to update with load stepping convergence information
             :param hg_n: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes_, 4, 4]
             :param phi_n: Nodal updates to the configuration in the algebra space, [n_nodes_, 6]
-            :param v_nm1: Nodal velocities, [n_nodes_, 6]
-            :param v_dot_nm1: Nodal accelerations, [n_nodes_, 6]
+            :param q_n: Minimal states
             :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
             """
             return jax.lax.fori_loop(
                 0,
                 load_steps,
                 lambda i_load_step, args: convergence_loop(i_load_step, *args),
-                (i_ts, converge_status_, hg_n, q_n),
+                (i_ts, converge_status_, hg_n, phi_n, q_n),
             )
 
         def evaluate_initial_equilibrium(
@@ -1515,7 +1533,7 @@ class BaseBeamStructure:
             :param init_state__: DynamicStructureSnapshot containing the initial state to evaluate.
             :return: DynamicStructureSnapshot with the forces evaluated for the initial state.
             """
-            d, eps, f_ext_dead_, f_ext_aero_, f_grav, f_int, f_iner, f_res = (
+            d, eps, f_ext_dead_, f_ext_aero_, f_grav, f_int, f_gyr, f_iner, f_res = (
                 self.resolve_forces(
                     hg=init_state__.hg,
                     dynamic=True,
@@ -1530,8 +1548,8 @@ class BaseBeamStructure:
             max_res = jnp.max(jnp.abs(f_res))
             if max_res > 1e-6:
                 warn(
-                    f"Initial state is not in equilibrium, maximum residual force is {max_res:.3e}",
-                    current_level=self.verbosity,
+                    "Initial state is not in equilibrium, maximum residual force is {max_res:.3e}",
+                    max_res=max_res,
                 )
 
             return DynamicStructureSnapshot(
@@ -1549,7 +1567,7 @@ class BaseBeamStructure:
                 f_ext_aero=f_ext_aero_,
                 f_grav=f_grav,
                 f_int=f_int,
-                f_iner=f_iner,
+                f_iner_gyr=f_iner + f_gyr,
                 f_res=f_res,
                 t=init_state__.t,
                 i_ts=init_state__.i_ts,

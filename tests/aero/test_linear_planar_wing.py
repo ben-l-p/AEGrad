@@ -143,7 +143,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing(
-        cls, plot: bool = True, use_matrix: bool = False
+        cls, plot: bool = False, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 

@@ -67,6 +67,38 @@ class StructuralDesignVariables(DesignVariables):
             self.f_ext_dead += other.f_ext_dead
         return self
 
+    def premult_adj(self, adj: Array) -> StructuralDesignVariables:
+        return StructuralDesignVariables(
+            x0=jnp.einsum("ij,j...->i...", adj, self.x0),
+            k_cs=jnp.einsum("ij,j...->i...", adj, self.k_cs),
+            m_cs=jnp.einsum("ij,j...->i...", adj, self.m_cs),
+            m_lumped=jnp.einsum("ij,j...->i...", adj, self.m_lumped)
+            if self.m_lumped is not None
+            else None,
+            f_ext_follower=jnp.einsum("ij,j...->i...", adj, self.f_ext_follower)
+            if self.f_ext_follower is not None
+            else None,
+            f_ext_dead=jnp.einsum("ij,j...->i...", adj, self.f_ext_dead)
+            if self.f_ext_dead is not None
+            else None,
+        )
+
+    def zeros_like(self) -> StructuralDesignVariables:
+        return StructuralDesignVariables(
+            x0=jnp.zeros_like(self.x0),
+            k_cs=jnp.zeros_like(self.k_cs),
+            m_cs=jnp.zeros_like(self.m_cs),
+            m_lumped=jnp.zeros_like(self.m_lumped)
+            if self.m_lumped is not None
+            else None,
+            f_ext_follower=jnp.zeros_like(self.f_ext_follower)
+            if self.f_ext_follower is not None
+            else None,
+            f_ext_dead=jnp.zeros_like(self.f_ext_dead)
+            if self.f_ext_dead is not None
+            else None,
+        )
+
     def get_vars(self) -> dict[str, Optional[Array]]:
         return {
             "x0": self.x0,

@@ -46,30 +46,35 @@ class TestLinXForcePoint:
             v_dot_expected
         )
         init_cond.a = init_cond.a.at[0, cls.f_direction_index].set(v_dot_expected)
+        init_cond.f_ext_follower = init_cond.f_ext_follower.at[
+            0, cls.f_direction_index
+        ].set(cls.f)
 
         output = struct.dynamic_solve(
             init_state=init_cond,
             n_tstep=n_tstep,
             dt=dt,
             prescribed_dofs=None,
-            f_ext_follower=jnp.zeros((1, 6)).at[0, cls.f_direction_index].set(cls.f),
+            f_ext_follower=jnp.zeros((n_tstep, 1, 6))
+            .at[:, 0, cls.f_direction_index]
+            .set(cls.f),
             f_ext_dead=None,
             f_ext_aero=None,
             spectral_radius=1.0,
             relaxation_factor=1.0,
         )
 
-        v_expected = jnp.arange(1, n_tstep) * dt * v_dot_expected
-        x_expected = 0.5 * v_dot_expected * (jnp.arange(1, n_tstep) * dt) ** 2
+        v_expected = jnp.arange(n_tstep) * dt * v_dot_expected
+        x_expected = 0.5 * v_dot_expected * (jnp.arange(n_tstep) * dt) ** 2
 
         disp_measured = output.hg[:, 0, :3, 3]
         theta_measured = vmap(log_se3)(output.hg[:, 0, :, :])[:, 3:]
         x_measured = jnp.concatenate((disp_measured, theta_measured), axis=-1)[
-            1:, cls.f_direction_index
+            :, cls.f_direction_index
         ]
 
-        v_measured = output.v[1:, 0, cls.f_direction_index]
-        v_dot_measured = output.v_dot[1:, 0, cls.f_direction_index]
+        v_measured = output.v[:, 0, cls.f_direction_index]
+        v_dot_measured = output.v_dot[:, 0, cls.f_direction_index]
 
         assert jnp.allclose(x_expected, x_measured), (
             "Displacements do not match expected values"

@@ -16,5 +16,6 @@ dependencies = [
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["./tests"]
+pythonpath = ["aegrad"]
 python_files = ["test*.py"] # run all files ending with .py
 addopts = "-q --tb=short"

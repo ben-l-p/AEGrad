@@ -123,7 +123,7 @@ class BaseCoupledAeroelastic:
 
         convergence_status, struct_case, aero_case = jax.lax.while_loop(
             lambda args_: ~args_[0].get_status(),
-            lambda args_: _convergence_loop(*args_),
+            lambda args_: _convergence_loop(*args_),  # type: ignore
             (
                 ConvergenceStatus(self.fsi_convergence_settings),
                 self.structure.reference_configuration(
