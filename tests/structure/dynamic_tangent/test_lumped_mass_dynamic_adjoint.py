@@ -75,7 +75,7 @@ class TestLumpedMassTranslationAdjoint:
         expected_f_follower_grad = 0.5 / m_l[0, 0, 0]
         expected_m_cs_grad = -0.5 * f_mag / m_l[0, 0, 0] ** 2
 
-        assert jnp.allclose(expected_x_t, x_t_out, atol=6e-4), (
+        assert jnp.allclose(expected_x_t, x_t_out), (
             "Primal solution time series does not match analytical solution"
         )
 
