@@ -23,7 +23,7 @@ class _LinearComponent:
 
     enabled: bool
     slices: Optional[Sequence[slice]]
-    shapes: Optional[Sequence[tuple[int, ...]]]
+    shapes: Optional[Sequence[tuple[int, ...]] | ArrayListShape]
 
 
 @dataclass
@@ -138,39 +138,39 @@ class OutputUnflattened:
 
 class AeroLinearResult:
     def __init__(
-        self,
-        reference: AeroSnapshot,
-        u_t: Optional[InputUnflattened],
-        x_t: Optional[StateUnflattened],
-        y_t: Optional[OutputUnflattened],
-        u_t_tot: Optional[InputUnflattened],
-        x_t_tot: Optional[StateUnflattened],
-        y_t_tot: Optional[OutputUnflattened],
-        n_tstep: Optional[int],
-        n_surf: int,
-        t: Optional[Array],
-        surf_b_names: list[str],
-        surf_w_names: list[str],
+            self,
+            reference: AeroSnapshot,
+            u_t: InputUnflattened,
+            x_t: StateUnflattened,
+            y_t: OutputUnflattened,
+            u_t_tot: InputUnflattened,
+            x_t_tot: StateUnflattened,
+            y_t_tot: OutputUnflattened,
+            n_tstep: int,
+            n_surf: int,
+            t: Array,
+            surf_b_names: list[str],
+            surf_w_names: list[str],
     ) -> None:
         # system results, if simulated
-        self.u_t: Optional[InputUnflattened] = u_t
-        self.x_t: Optional[StateUnflattened] = x_t
-        self.y_t: Optional[OutputUnflattened] = y_t
-        self.u_t_tot: Optional[InputUnflattened] = u_t_tot
-        self.x_t_tot: Optional[StateUnflattened] = x_t_tot
-        self.y_t_tot: Optional[OutputUnflattened] = y_t_tot
-        self.n_tstep: Optional[int] = n_tstep
+        self.u_t: InputUnflattened = u_t
+        self.x_t: StateUnflattened = x_t
+        self.y_t: OutputUnflattened = y_t
+        self.u_t_tot: InputUnflattened = u_t_tot
+        self.x_t_tot: StateUnflattened = x_t_tot
+        self.y_t_tot: OutputUnflattened = y_t_tot
+        self.n_tstep: int = n_tstep
         self.n_surf: int = n_surf
-        self.t: Optional[Array] = t
+        self.t: Array = t
         self.surf_b_names: list[str] = surf_b_names
         self.surf_w_names: list[str] = surf_w_names
         self.reference: AeroSnapshot = reference
 
     def plot(
-        self,
-        directory: str | os.PathLike,
-        index: Optional[slice | Sequence[int] | int | Array] = None,
-        plot_wake: bool = True,
+            self,
+            directory: str | os.PathLike,
+            index: Optional[slice | Sequence[int] | int | Array] = None,
+            plot_wake: bool = True,
     ) -> None:
         r"""
         Plot the aerodynamic grid at specified time steps.
@@ -191,8 +191,8 @@ class AeroLinearResult:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
-        directory = Path(directory).resolve()
-        directory.mkdir(parents=True, exist_ok=True)
+        directory_path = Path(directory).resolve()
+        directory_path.mkdir(parents=True, exist_ok=True)
 
         paths: list[Sequence[Path]] = []
         for i_ts in index_:

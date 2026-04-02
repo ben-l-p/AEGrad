@@ -1,3 +1,5 @@
+from typing import Optional, cast
+
 from jax import numpy as jnp
 from jax import Array
 import jax
@@ -38,6 +40,7 @@ class TestLumpedMassTranslationAdjoint:
         init_state = beam.reference_configuration(use_f_ext_follower=True).to_dynamic()
         init_state.a = init_state.a.at[0, 0].set(f_mag / m_l[0, 0, 0])
         init_state.v_dot = init_state.v_dot.at[0, 0].set(f_mag / m_l[0, 0, 0])
+        assert init_state.f_ext_follower is not None, "Initial state has no f_ext_follower"
         init_state.f_ext_follower = init_state.f_ext_follower.at[0, 0].set(f_mag)
 
         solution = beam.dynamic_solve(
@@ -55,7 +58,7 @@ class TestLumpedMassTranslationAdjoint:
         x_t_out = solution.hg[:, 0, 0, 3]
 
         def objective(
-            ss: StructureFullStates, _: StructuralDesignVariables, i_ts: int
+                ss: StructureFullStates, _: StructuralDesignVariables, i_ts: Optional[int | Array]
         ) -> Array:
             return jax.lax.select(
                 i_ts == n_tstep - 1,
@@ -69,8 +72,8 @@ class TestLumpedMassTranslationAdjoint:
 
         grads, adj = beam.dynamic_adjoint(structure=solution, objective=objective)
 
-        f_follower_grad = grads.f_ext_follower[0, :, 0, 0].sum()
-        m_cs_grad = grads.m_lumped[0, 0, 0, 0]
+        f_follower_grad = cast(Array, grads.f_ext_follower)[0, :, 0, 0].sum()
+        m_cs_grad = cast(Array, grads.m_lumped)[0, 0, 0, 0]
 
         expected_f_follower_grad = 0.5 / m_l[0, 0, 0]
         expected_m_cs_grad = -0.5 * f_mag / m_l[0, 0, 0] ** 2

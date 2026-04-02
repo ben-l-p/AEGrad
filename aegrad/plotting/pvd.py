@@ -6,10 +6,10 @@ import os
 
 
 def write_pvd(
-    directory: os.PathLike,
-    name: str,
-    filedirs: Sequence[Path],
-    times: Sequence[float],
+        directory: os.PathLike | str,
+        name: str,
+        filedirs: Sequence[Path],
+        times: Sequence[float],
 ) -> Path:
     r"""
     Write a PVD file for a collection of VTK files.

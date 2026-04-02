@@ -29,8 +29,8 @@ class TestGeradinBeamAdjointGradients:
         )
 
         def obj(
-            states: StructureFullStates,
-            *_,
+                states: StructureFullStates,
+                *_,
         ) -> Array:
             return states.hg[-1, 2, 3]  # vertical displacement of the last node
 
@@ -80,7 +80,7 @@ class TestGeradinBeamAdjointGradients:
 
         # ideally this would be jacrev, but reverse-mode AD is currently unsupported
         grads_ad = jax.jacfwd(resolve_obj)(dv)
-
+        assert grads_adj.f_ext_dead is not None, "Gradient w.r.t. external forces is None"
         assert jnp.allclose(grads_adj.f_ext_dead, grads_ad.f_ext_dead, atol=2e-6), (
             "Gradient w.r.t. external forces does not match"
         )

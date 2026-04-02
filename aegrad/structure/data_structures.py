@@ -31,21 +31,21 @@ class StaticStructure:
     """Object to hold the full state and forces of a static structure_dv analysis."""
 
     def __init__(
-        self,
-        hg: Array,
-        conn: Array,
-        o0: Array,
-        d: Array,
-        eps: Array,
-        varphi: Array,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        f_grav: Optional[Array],
-        f_int: Array,
-        f_res: Array,
-        prescribed_dofs: Optional[Array],
-        local: bool = True,
+            self,
+            hg: Array,
+            conn: Array,
+            o0: Array,
+            d: Array,
+            eps: Array,
+            varphi: Array,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            f_grav: Optional[Array],
+            f_int: Array,
+            f_res: Array,
+            prescribed_dofs: Optional[Array],
+            local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -59,7 +59,7 @@ class StaticStructure:
         self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
         self.f_int: Array = f_int  # [n_nodes_, 6]
         self.f_res: Array = f_res  # [n_nodes_, 6]
-        self.prescribed_dofs: Optional[Array] = prescribed_dofs
+        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
         self.local: bool = local
 
     def to_dynamic(self) -> DynamicStructureSnapshot:
@@ -91,6 +91,7 @@ class StaticStructure:
             f_res=self.f_res,
             t=zero_time,
             i_ts=-1,
+            prescribed_dofs=self.prescribed_dofs,
         )
 
     def _transform(self, nodal_chi: Array) -> None:
@@ -179,27 +180,27 @@ class DynamicStructureSnapshot:
     """Object to hold the full state and forces of a dynamic structure_dv analysis timestep."""
 
     def __init__(
-        self,
-        hg: Array,
-        conn: Array,
-        o0: Array,
-        d: Array,
-        eps: Array,
-        varphi: Array,
-        v: Array,
-        v_dot: Array,
-        a: Array,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        f_grav: Optional[Array],
-        f_int: Array,
-        f_iner_gyr: Array,
-        f_res: Array,
-        t: Array,
-        i_ts: int,
-        prescribed_dofs: Optional[Array] = None,
-        local: bool = True,
+            self,
+            hg: Array,
+            conn: Array,
+            o0: Array,
+            d: Array,
+            eps: Array,
+            varphi: Array,
+            v: Array,
+            v_dot: Array,
+            a: Array,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            f_grav: Optional[Array],
+            f_int: Array,
+            f_iner_gyr: Array,
+            f_res: Array,
+            t: Array,
+            i_ts: int,
+            prescribed_dofs: Optional[Array],
+            local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -219,7 +220,7 @@ class DynamicStructureSnapshot:
         self.f_res: Array = f_res  # [n_nodes_, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
-        self.prescribed_dofs: Optional[Array] = prescribed_dofs
+        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
         self.local: bool = local
 
     def to_static(self) -> StaticStructure:
@@ -416,26 +417,26 @@ class DynamicStructure:
     """Object to hold the full state and forces of a dynamic structure_dv analysis across multiple timesteps."""
 
     def __init__(
-        self,
-        hg: Array,
-        conn: Array,
-        o0: Array,
-        d: Array,
-        eps: Array,
-        varphi: Array,
-        v: Array,
-        v_dot: Array,
-        a: Array,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        f_grav: Optional[Array],
-        f_int: Array,
-        f_iner: Array,
-        f_res: Array,
-        t: Array,
-        n_tstep: int,
-        prescribed_dofs: Optional[Array],
+            self,
+            hg: Array,
+            conn: Array,
+            o0: Array,
+            d: Array,
+            eps: Array,
+            varphi: Array,
+            v: Array,
+            v_dot: Array,
+            a: Array,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            f_grav: Optional[Array],
+            f_int: Array,
+            f_iner: Array,
+            f_res: Array,
+            t: Array,
+            n_tstep: int,
+            prescribed_dofs: Optional[Array],
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes_, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -455,7 +456,7 @@ class DynamicStructure:
         self.f_res: Array = f_res  # [n_tstep, n_nodes_, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
-        self.prescribed_dofs: Optional[Array] = prescribed_dofs
+        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
         self.local: bool = True
 
     def to_static(self, i_ts: int) -> StaticStructure:
@@ -522,10 +523,10 @@ class DynamicStructure:
 
     @classmethod
     def initialise(
-        cls,
-        initial_snapshot: DynamicStructureSnapshot,
-        t: Array,
-        prescribed_dofs: Optional[Array],
+            cls,
+            initial_snapshot: DynamicStructureSnapshot,
+            t: Array,
+            prescribed_dofs: Optional[Array],
     ) -> DynamicStructure:
         r"""
         Initialise a DynamicStructure object given an initial snapshot and number of time steps.
@@ -670,10 +671,10 @@ class DynamicStructure:
         self._transform(nodal_chi)
 
     def plot(
-        self,
-        directory: os.PathLike | str,
-        index: Optional[slice | Sequence[int] | int | Array] = None,
-        n_interp: int = 0,
+            self,
+            directory: os.PathLike | str,
+            index: Optional[slice | Sequence[int] | int | Array] = None,
+            n_interp: int = 0,
     ) -> Path:
         r"""
         Plot the beam for specified time steps to VTU files in the specified directory. Additionally, a PVD
@@ -695,8 +696,8 @@ class DynamicStructure:
         else:
             raise TypeError("index must be a slices, sequence of ints, or Array")
 
-        directory = Path(directory).resolve()
-        directory.mkdir(parents=True, exist_ok=True)
+        directory_path = Path(directory).resolve()
+        directory_path.mkdir(parents=True, exist_ok=True)
 
         paths: list[Path] = []
         for i_ts in index_:
@@ -745,11 +746,11 @@ class DynamicStructure:
 @_make_pytree
 class StructureMinimalStates:
     def __init__(
-        self,
-        varphi: Optional[Array],
-        v: Array,
-        v_dot: Array,
-        a: Array,
+            self,
+            varphi: Optional[Array],
+            v: Array,
+            v_dot: Array,
+            a: Array,
     ):
         self._varphi: Optional[Array] = varphi
         self.v: Array = v

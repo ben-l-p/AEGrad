@@ -1,6 +1,9 @@
+from typing import cast
+
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 import jax
+from jax import Array
 
 from aegrad.structure import BeamStructure
 
@@ -70,7 +73,7 @@ class TestXGravityXBeamDrop:
             "Accelerations do not match gravity"
         )
         assert jnp.allclose(
-            output.f_grav[1:, :, cls.g_direction_index], expected_nodal_fg
+            cast(Array, output.f_grav)[1:, :, cls.g_direction_index], expected_nodal_fg
         ), "Gravitational forces do not match expected values"
 
 

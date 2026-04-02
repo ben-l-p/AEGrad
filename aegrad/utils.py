@@ -8,6 +8,7 @@ from jax import tree_util
 
 class SupportsPytree(Protocol):
     def _dynamic_names(self) -> Sequence[str]: ...
+
     def _static_names(self) -> Sequence[str]: ...
 
 
@@ -37,17 +38,10 @@ def _make_pytree(cls: type[T]) -> type[T]:
     return cls
 
 
-def _check_type(obj: Any, type_: type | Sequence[type]) -> None:
-    try:
-        len(type_)
-    except TypeError:
-        type_ = (type_,)
-
-    for t in type_:
-        if isinstance(obj, t):
-            return
-
-    raise TypeError(f"Expected {type_}, but got {obj}.")
+def _check_type(obj: Any, type_: type) -> None:
+    if not isinstance(obj, type_):
+        raise TypeError(f"Expected {type_}, but got {obj}.")
+    return
 
 
 def _shallow_asdict(obj):

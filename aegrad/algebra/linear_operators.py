@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable, Sequence, overload
 
 import jax
 from jax import Array, numpy as jnp, jacobian
@@ -16,10 +16,10 @@ class LinearOperator:
     """
 
     def __init__(
-        self,
-        func: Optional[Callable[[Array], Array]],
-        shape: tuple[int, int],
-        mat: Optional[Array] = None,
+            self,
+            func: Optional[Callable[[Array], Array]],
+            shape: tuple[int, int],
+            mat: Optional[Array] = None,
     ):
         r"""
         :param func: Function which represents the linear operator, [varphi] -> [m]
@@ -44,7 +44,7 @@ class LinearOperator:
         """
         if self._matrix is None:
             self.generate_matrix()
-        return self._matrix
+        return self._matrix  # type: ignore
 
     def generate_matrix(self) -> None:
         r"""
@@ -55,16 +55,23 @@ class LinearOperator:
             jnp.full(self.shape[1], 1.0)
         )
 
-    def __call__(self, rhs: "Array | LinearOperator") -> "Array | LinearOperator":
+    @overload
+    def __call__(self, rhs: Array) -> Array:
+        ...
+
+    @overload
+    def __call__(self, rhs: LinearOperator) -> LinearOperator:
+        ...
+
+    def __call__(self, rhs: Array | LinearOperator) -> Array | LinearOperator:
         r"""
         Evaluate the linear operator on an array or compose with another linear operator.
         :param rhs: Either an array to apply the operator to, or another linear operator to compose with.
         :return: The result of applying the operator to the array, or the composed linear operator.
         """
         if isinstance(rhs, LinearOperator):
-
             def new_func(x: Array) -> Array:
-                return self.func(rhs.func(x))
+                return self.func(rhs.func(x))  # type: ignore
 
             shape = (self.shape[0], rhs.shape[1])
             if self._matrix is not None and rhs._matrix is not None:
@@ -85,9 +92,17 @@ class LinearOperator:
         """
         return self(rhs)
 
+    @overload
+    def __add__(self, rhs: LinearOperator) -> LinearOperator:
+        ...
+
+    @overload
+    def __add__(self, rhs: Array) -> Callable[[Array], Array]:
+        ...
+
     def __add__(
-        self, rhs: "Array | LinearOperator"
-    ) -> "Callable[[Array], Array] | LinearOperator":
+            self, rhs: Array | LinearOperator
+    ) -> Callable[[Array], Array] | LinearOperator:
         # runtime dispatch for addition as well
         if isinstance(rhs, LinearOperator):
             if self.shape != rhs.shape:
@@ -96,7 +111,10 @@ class LinearOperator:
                 )
 
             def new_func(x: Array) -> Array:
-                return self.func(x) + rhs.func(x)
+                if isinstance(rhs, LinearOperator):
+                    return self.func(x) + rhs.func(x)
+                else:
+                    raise ValueError("Incompatible type for addition with LinearOperator.")
 
             if self._matrix is not None and rhs._matrix is not None:
                 new_mat = self._matrix + rhs._matrix
@@ -135,9 +153,9 @@ class BlockLinear:
     """
 
     def __init__(
-        self,
-        entries: Sequence[Sequence[LinearOperator | Array]],
-        mat: Optional[Array] = None,
+            self,
+            entries: Sequence[Sequence[LinearOperator | Array]],
+            mat: Optional[Array] = None,
     ):
         r"""
         Construct a BlockLinear operator from smaller linear operators or arrays.
@@ -249,12 +267,12 @@ class LinearSystem:
     """
 
     def __init__(
-        self,
-        a: LinearOperator,
-        b: LinearOperator,
-        c: LinearOperator,
-        d: LinearOperator,
-        removed_u_np1: bool = False,
+            self,
+            a: LinearOperator,
+            b: LinearOperator,
+            c: LinearOperator,
+            d: LinearOperator,
+            removed_u_np1: bool = False,
     ) -> None:
         r"""
         Initialise the LinearSystem with state-space linear operators.
@@ -295,7 +313,7 @@ class LinearSystem:
             self.removed_u_np1 = True
 
     def run(
-        self, u: Array, x0: Optional[Array] = None, use_matrix=False
+            self, u: Array, x0: Optional[Array] = None, use_matrix=False
     ) -> tuple[Array, Array]:
         r"""
         Run the linear system for a time history of input vector u.

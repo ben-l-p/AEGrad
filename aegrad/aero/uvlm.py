@@ -43,13 +43,13 @@ class UVLM:
     """
 
     def __init__(
-        self,
-        grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]],
-        dof_mapping: ArrayList | Sequence[Array] | Array,
-        variable_wake_disc: bool = False,
-        mirror_point: Optional[Array] = None,
-        mirror_normal: Optional[Array] = None,
-        kernel: Optional[KernelFunction] = None,
+            self,
+            grid_shapes: Sequence[GridDiscretization | tuple[int, int, int]],
+            dof_mapping: ArrayList | Sequence[Array] | Array,
+            variable_wake_disc: bool = False,
+            mirror_point: Optional[Array] = None,
+            mirror_normal: Optional[Array] = None,
+            kernel: Optional[KernelFunction] = None,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters
@@ -66,7 +66,14 @@ class UVLM:
 
         # case for single inputs
         if isinstance(dof_mapping, Array):
-            dof_mapping = [dof_mapping]
+            dof_mapping_arrlist: ArrayList = ArrayList([dof_mapping])
+        elif isinstance(dof_mapping, Sequence):
+            dof_mapping_arrlist: ArrayList = ArrayList(dof_mapping)
+        elif isinstance(dof_mapping, ArrayList):
+            dof_mapping_arrlist: ArrayList = dof_mapping
+        else:
+            raise TypeError("Invalid dof mapping type")
+        self.dof_mapping: ArrayList = ArrayList(dof_mapping_arrlist)
 
         # number of aerodynamic surfaces
         self.n_surf: int = len(grid_shapes)
@@ -106,15 +113,13 @@ class UVLM:
         self.gamma_b_slice, self.gamma_w_slice = self._make_gamma_slices()
 
         # store DOF mapping
-        if len(dof_mapping) != self.n_surf:
+        if len(self.dof_mapping) != self.n_surf:
             raise ValueError(
-                f"Expected {self.n_surf} DOF mapping arrays, got {len(dof_mapping)}"
+                f"Expected {self.n_surf} DOF mapping arrays, got {len(self.dof_mapping)}"
             )
-        for i_surf, map_ in enumerate(dof_mapping):
+        for i_surf, map_ in enumerate(self.dof_mapping):
             check_arr_dtype(map_, int, "dof_mapping")
             check_arr_shape(map_, (self.grid_disc[i_surf].n + 1,), "grid_disc")
-
-        self.dof_mapping: ArrayList = ArrayList(dof_mapping)
 
         # this must be optional as it is set as a design variable later
         self._flowfield: Optional[FlowField] = None
@@ -127,21 +132,18 @@ class UVLM:
         self._delta_w: Optional[list[Optional[Array]]] = None
 
         # kernel definitions per surface (seperate for wing and wake)
-        if kernel is None:
-            kernel = biot_savart_epsilon
-            # kernel = biot_savart
-        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [kernel]
-        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [kernel]
+        self.kernels_b: Sequence[KernelFunction] = self.n_surf * [kernel if kernel is not None else biot_savart_epsilon]
+        self.kernels_w: Sequence[KernelFunction] = self.n_surf * [kernel if kernel is not None else biot_savart_epsilon]
 
         # mirror definitions
         if (mirror_point is None and mirror_normal is not None) or (
-            mirror_point is not None and mirror_normal is None
+                mirror_point is not None and mirror_normal is None
         ):
             raise ValueError(
                 "Both mirror_point and mirror_normal must be provided to apply mirroring, or both must be None to apply no mirroring."
             )
 
-        if mirror_point is None:
+        if mirror_point is None or mirror_normal is None:
             self.mirror_point: Optional[Array] = None
             self.mirror_normal: Optional[Array] = None
         else:
@@ -205,7 +207,7 @@ class UVLM:
         return self._dt
 
     @property
-    def delta_w(self) -> Sequence[Array]:
+    def delta_w(self) -> list[Optional[Array]]:
         r"""
         Get the wake displacement vector defining segment lengths of a variable wake discretisation per surface.
         :return: Wake displacement vector(s) for each surface, [n_surf][m_star]
@@ -215,13 +217,13 @@ class UVLM:
         return self._delta_w
 
     def linearise(
-        self,
-        reference: AeroSnapshot,
-        wake_type: Optional[LinearWakeType] = None,
-        bound_upwash: bool = True,
-        wake_upwash: bool = True,
-        unsteady_force: bool = True,
-        gamma_dot_state: bool = True,
+            self,
+            reference: AeroSnapshot,
+            wake_type: Optional[LinearWakeType] = None,
+            bound_upwash: bool = True,
+            wake_upwash: bool = True,
+            unsteady_force: bool = True,
+            gamma_dot_state: bool = True,
     ) -> LinearUVLM:
         r"""
         Create linearised aerodynamic model.
@@ -238,13 +240,10 @@ class UVLM:
         # local import used to prevent circular import issues
         from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
 
-        if wake_type is None:
-            wake_type = LinearWakeType.PRESCRIBED
-
         return LinearUVLM(
             self,
             reference=reference,
-            wake_type=wake_type,
+            wake_type=wake_type if wake_type is not None else LinearWakeType.PRESCRIBED,
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
             unsteady_force=unsteady_force,
@@ -252,12 +251,12 @@ class UVLM:
         )
 
     def set_design_variables(
-        self,
-        dt: float | Array,
-        flowfield: FlowField,
-        delta_w: Optional[Sequence[Array] | Array],
-        x0_aero: ArrayList | Sequence[Array] | Array,
-        hg0: Array,
+            self,
+            dt: float | Array,
+            flowfield: FlowField,
+            delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
+            x0_aero: ArrayList | Sequence[Array] | Array,
+            hg0: Array,
     ) -> None:
         r"""
         Set aerodynamic design variables for solution.
@@ -269,25 +268,36 @@ class UVLM:
         :param hg0: Beam reference global grid coordinates, [zeta_n, 4, 4]
         """
         if isinstance(delta_w, Array):
-            delta_w = [delta_w]
+            delta_w_seq: Sequence[Optional[Array]] = [delta_w]
+        elif delta_w is None:
+            delta_w_seq = self.n_surf * [None]
+        elif isinstance(delta_w, Sequence):
+            delta_w_seq = delta_w
+        else:
+            raise TypeError("Invalid delta_w type")
+
         if isinstance(x0_aero, Array):
-            x0_aero = [x0_aero]
-        if isinstance(x0_aero, Sequence):
-            x0_aero = ArrayList(x0_aero)
+            x0_aero_arrlst = ArrayList([x0_aero])
+        elif isinstance(x0_aero, Sequence):
+            x0_aero_arrlst = ArrayList(x0_aero)
+        elif isinstance(x0_aero, ArrayList):
+            x0_aero_arrlst = x0_aero
+        else:
+            raise TypeError("Invalid x0_aero type")
 
         # set aerodynamic local coordinates
-        if len(x0_aero) != self.n_surf:
+        if len(x0_aero_arrlst) != self.n_surf:
             raise ValueError(
                 f"Expected {self.n_surf} aerodynamic grid coordinate arrays, got {len(x0_aero)}"
             )
 
         for i_surf in range(self.n_surf):
             check_arr_shape(
-                x0_aero[i_surf],
+                x0_aero_arrlst[i_surf],
                 (self.grid_disc[i_surf].m + 1, self.grid_disc[i_surf].n + 1, 3),
                 "x0_aero",
             )
-        self._x0_b = x0_aero
+        self._x0_b = x0_aero_arrlst
 
         # set global grid coordinates for bound and wake
         check_arr_shape(hg0, (None, 4, 4), "hg0")
@@ -307,16 +317,12 @@ class UVLM:
 
         # set wake displacement
         self._delta_w = []
-        if delta_w is not None:
-            for i_surf, dw_ in enumerate(delta_w):
-                if dw_ is None:
-                    self._delta_w.append(None)
-                else:
-                    check_arr_shape(dw_, (self.grid_disc[i_surf].m_star,), "delta_w")
-                    self._delta_w.append(dw_)
-        else:
-            # auto compute delta_w based on freestream and dt
-            self._delta_w = self.n_surf * [None]
+        for i_surf, dw_ in enumerate(delta_w_seq):
+            if dw_ is None:
+                self.delta_w.append(None)
+            else:
+                check_arr_shape(dw_, (self.grid_disc[i_surf].m_star,), "delta_w")
+                self.delta_w.append(dw_)
         self._zeta0_w = self.initialise_wake()
 
     def _hg_to_zeta(self, hg: Array) -> ArrayList:
@@ -374,7 +380,7 @@ class UVLM:
         return tuple(gamma_b_slices), tuple(gamma_w_slices)
 
     def _make_surf_horseshoe_wake(
-        self, case: DynamicAeroCase, i_ts: int, i_surf: int, horseshoe_length: float
+            self, case: DynamicAeroCase, i_ts: int, i_surf: int, horseshoe_length: float
     ) -> Array:
         r"""
         Create a horseshoe wake grid for a given surface at a given time step.
@@ -389,7 +395,7 @@ class UVLM:
             return zeta_te[None, :]
         else:
             wake_end = (
-                zeta_te + (self.flowfield.u_inf_dir * horseshoe_length)[None, :]
+                    zeta_te + (self.flowfield.u_inf_dir * horseshoe_length)[None, :]
             )  # [zeta_n, 3]
             return jnp.stack((zeta_te, wake_end), axis=0)
 
@@ -400,8 +406,7 @@ class UVLM:
         initialised bound grid coordinates based on hg0.
         :return: Initial wake grid coordinates, [zeta_m_star, zeta_n, 3]
         """
-        if zeta_b is None:
-            zeta_b = self.zeta0_b
+        zeta_b: ArrayList = zeta_b if zeta_b is not None else self.zeta0_b
 
         zeta0_w = ArrayList([])
         for i_surf, this_delta_w in enumerate(self.delta_w):
@@ -411,9 +416,9 @@ class UVLM:
             # set wake grid coordinates as trailing edge + displacement
             if this_delta_w is None:
                 this_delta_w = (
-                    jnp.ones(self.grid_disc[i_surf].m_star)
-                    * self.dt
-                    * self.flowfield.u_inf_mag
+                        jnp.ones(self.grid_disc[i_surf].m_star)
+                        * self.dt
+                        * self.flowfield.u_inf_mag
                 )
             grid_s = jnp.concatenate((jnp.zeros(1), jnp.cumsum(this_delta_w)))
 
@@ -463,7 +468,7 @@ class UVLM:
 
     @set_gamma_w.register(Sequence)
     def _(
-        self, gamma_list: Sequence[Array] | ArrayList, case: DynamicAeroCase, i_ts: int
+            self, gamma_list: Sequence[Array] | ArrayList, case: DynamicAeroCase, i_ts: int
     ) -> None:
         for i_surf in range(self.n_surf):
             case.gamma_w[i_surf] = (
@@ -471,14 +476,14 @@ class UVLM:
             )
 
     def _solve(
-        self,
-        case: DynamicAeroCase,
-        i_ts: int,
-        hg: Optional[Array],
-        hg_dot: Optional[Array],
-        static: bool,
-        free_wake: bool,
-        horseshoe: bool,
+            self,
+            case: DynamicAeroCase,
+            i_ts: int,
+            hg: Optional[Array],
+            hg_dot: Optional[Array],
+            static: bool,
+            free_wake: bool,
+            horseshoe: bool,
     ) -> DynamicAeroCase:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
@@ -522,10 +527,10 @@ class UVLM:
             # initialise wake
             # update zeta0_w
             if horseshoe:
-                zeta_ws = [
+                zeta_ws = ArrayList([
                     self._make_surf_horseshoe_wake(case, i_ts, i_surf, HORSESHOE_LENGTH)
                     for i_surf in range(self.n_surf)
-                ]
+                ])
             else:
                 # re-initialise wake. This is wasteful when there is no coupled structure_dv as zeta_ws will equal zeta0_w
                 # but is necessary to update the wake grid coordinates when there is a coupled structure_dv as the bound
@@ -556,15 +561,19 @@ class UVLM:
                 frozen_wake=False,
             )
 
+            if zeta_ws is None: raise ValueError("zeta_ws is None")
+
             self.set_gamma_w(gamma_ws, case, i_ts)
             case.set_arraylist_at_ts("_zeta_w", values=zeta_ws, i_ts=i_ts)
 
         # set wake grid coordinates. If using horseshoe, it will still create a regular wake for plotting
-        case.set_arraylist_at_ts(
-            "_zeta_w", values=zeta_ws, i_ts=i_ts
-        ) if not horseshoe else case.set_arraylist_at_ts(
-            "_zeta_w", values=self.initialise_wake(zetas_b), i_ts=i_ts
-        )
+        if horseshoe:
+            case.set_arraylist_at_ts(
+                "_zeta_w", values=self.initialise_wake(zetas_b), i_ts=i_ts
+            )
+        else:
+            case.set_arraylist_at_ts(
+                "_zeta_w", values=zeta_ws, i_ts=i_ts)
 
         aic_solve = compute_aic_solve(
             cs=case.get_c(i_ts),
@@ -597,7 +606,7 @@ class UVLM:
             "ijk,ijk->ij", v_bc, case.nc.index_all(i_ts, ...)
         )  # [c_tot]
 
-        gamma_b_vect = jnp.linalg.solve(aic_solve, -v_bc_n.flatten())
+        gamma_b_vect = jnp.linalg.solve(aic_solve, -v_bc_n.ravel())
         self.set_gamma_b(case, gamma_b_vect, i_ts)
 
         if static:
@@ -663,10 +672,10 @@ class UVLM:
         )
 
     def solve_static(
-        self,
-        hg: Optional[Array] = None,
-        t: Array | float = 0.0,
-        horseshoe: bool = False,
+            self,
+            hg: Optional[Array] = None,
+            t: Array | float = 0.0,
+            horseshoe: bool = False,
     ) -> AeroSnapshot:
         r"""
         Solve the VLM.
@@ -686,11 +695,11 @@ class UVLM:
         return out_case
 
     def solve_prescribed_dynamic(
-        self,
-        init_case: AeroSnapshot,
-        hg_t: Array,
-        hg_dot_t: Array,
-        free_wake: bool = False,
+            self,
+            init_case: AeroSnapshot,
+            hg_t: Array,
+            hg_dot_t: Array,
+            free_wake: bool = False,
     ) -> DynamicAeroCase:
         r"""
         Solve the UVLM for prescribed grid motions.
@@ -701,11 +710,12 @@ class UVLM:
         """
         check_arr_shape(hg_t, (None, None, 4, 4), "hg")
         check_if_all_se3_g(hg_t, True)
-        if hg_dot_t is not None:
-            if hg_t.shape != hg_dot_t.shape:
-                raise ValueError(
-                    f"hg_dot must have the same arr_list_shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
-                )
+
+        if hg_t.shape != hg_dot_t.shape:
+            raise ValueError(
+                f"hg_dot must have the same arr_list_shapes as hg, got {hg_dot_t.shape} vs {hg_t.shape}"
+            )
+
         check_if_all_se3_a(hg_dot_t, True)
 
         n_tstep = hg_t.shape[0]
@@ -765,12 +775,10 @@ class UVLM:
             mirror_point=self.mirror_point,
             mirror_normal=self.mirror_normal,
             kernels=[*self.kernels_b, *self.kernels_w],
-            aic_lu=jnp.zeros((sum(self.n_bound_panels), sum(self.n_bound_panels))),
-            aic_piv=jnp.zeros((sum(self.n_bound_panels),)),
         )
 
     def plot_reference(
-        self, directory: os.PathLike, plot_wake: bool = True
+            self, directory: os.PathLike, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
         Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.

@@ -12,23 +12,24 @@ class TimeIntregrator:
     """
 
     def __init__(
-        self,
-        spectral_radius: float | Array,
-        dt: float | Array,
+            self,
+            spectral_radius: float | Array,
+            dt: float | Array,
     ):
         if 1.0 <= spectral_radius < 0.0:
             warn(
                 "Spectral radius should be between 0.0 and 1.0 to guarantee stability."
             )
+        spectral_radius: Array = jnp.array(spectral_radius)
         self.dt: Array = jnp.array(dt)
-        self.spectral_radius: Array = jnp.array(spectral_radius)
+        self.spectral_radius: Array = spectral_radius
         self.alpha_m: Array = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
         self.alpha_f: Array = spectral_radius / (spectral_radius + 1.0)
         self.gamma: Array = (3.0 - spectral_radius) / (2.0 + 2.0 * spectral_radius)
         self.beta: Array = 1.0 / ((spectral_radius + 1.0) ** 2)
         self.gamma_prime: Array = self.gamma / (self.beta * dt)
         self.beta_prime: Array = (1.0 - self.alpha_m) / (
-            self.beta * dt * dt * (1.0 - self.alpha_f)
+                self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
     def predict_phi(self, v_nm1: Array, a_nm1: Array, a_n_pred: Array) -> Array:
@@ -40,7 +41,7 @@ class TimeIntregrator:
         :return: Initial guess for next increment, [n_nodes_, 6].
         """
         return self.dt * v_nm1 + self.dt * self.dt * (
-            (0.5 - self.beta) * a_nm1 + self.beta * a_n_pred
+                (0.5 - self.beta) * a_nm1 + self.beta * a_n_pred
         )
 
     @staticmethod
@@ -64,9 +65,9 @@ class TimeIntregrator:
         :return: Initial guess for next velocity, [n_nodes_, 6].
         """
         return (
-            v_nm1
-            + (1.0 - self.gamma) * self.dt * a_nm1
-            + self.gamma * self.dt * a_n_pred
+                v_nm1
+                + (1.0 - self.gamma) * self.dt * a_nm1
+                + self.gamma * self.dt * a_n_pred
         )
 
     def predict_v_dot(self, v_dot_nm1: Array, a_nm1: Array, a_n: Array) -> Array:
@@ -78,7 +79,7 @@ class TimeIntregrator:
         :return: Predicted acceleration, [n_nodes_, 6].
         """
         return (
-            (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1 - self.alpha_f * v_dot_nm1
+                (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1 - self.alpha_f * v_dot_nm1
         ) / (1.0 - self.alpha_f)
 
     def predict_a(self, v_dot_nm1: Array, a_nm1: Array) -> Array:
@@ -99,20 +100,20 @@ class TimeIntregrator:
         :return: Pseudoacceleration at next time step, [n_nodes_, 6].
         """
         return (
-            1.0
-            / (1.0 - self.alpha_m)
-            * (
-                (1.0 - self.alpha_f) * v_dot_n
-                + self.alpha_f * v_dot_nm1
-                - self.alpha_m * a_nm1
-            )
+                1.0
+                / (1.0 - self.alpha_m)
+                * (
+                        (1.0 - self.alpha_f) * v_dot_n
+                        + self.alpha_f * v_dot_nm1
+                        - self.alpha_m * a_nm1
+                )
         )
 
     def calculate_q_n_from_q_alpha(
-        self,
-        q_nm1: StructureMinimalStates,
-        q_alpha: StructureMinimalStates,
-        phi_alpha: Array,
+            self,
+            q_nm1: StructureMinimalStates,
+            q_alpha: StructureMinimalStates,
+            phi_alpha: Array,
     ) -> tuple[StructureMinimalStates, Array]:
         phi = phi_alpha / (1.0 - self.alpha_f)
         varphi = vmap(
@@ -124,7 +125,7 @@ class TimeIntregrator:
         return StructureMinimalStates(varphi=varphi, v=v, v_dot=v_dot, a=a), phi
 
     def predict_q(
-        self, q_nm1: StructureMinimalStates
+            self, q_nm1: StructureMinimalStates
     ) -> tuple[Array, StructureMinimalStates]:
         r"""
         Predict the current state based upon the previous state.
@@ -162,7 +163,7 @@ class TimeIntregrator:
         )(varphi_nm1, phi_alpha)
 
     def calculate_q_alpha(
-        self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates, phi_n: Array
+            self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates, phi_n: Array
     ) -> tuple[Array, StructureMinimalStates]:
         phi_alpha = self.calculate_phi_alpha(phi_n)
         varphi_alpha = self.calculate_varphi_alpha(
@@ -199,7 +200,7 @@ class TimeIntregrator:
         return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
 
     def calculate_v_dot_from_v_dot_alpha(
-        self, v_dot_alpha: Array, v_dot_nm1: Array
+            self, v_dot_alpha: Array, v_dot_nm1: Array
     ) -> Array:
         r"""
         Obtain the full timestep acceleration from the alpha increment and the previous acceleration.

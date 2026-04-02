@@ -38,7 +38,7 @@ def chi(rmat: Array) -> Array:
 
 
 def finite_difference(
-    i_: int, data: Array, delta: Array, axis: int, order: int = 1
+        i_: int, data: Array, delta: Array, axis: int, order: int = 1
 ) -> Array:
     r"""
     Compute the finite difference of the data at a given time step. This assumes that data[:i_+1] is available.
@@ -66,9 +66,9 @@ def finite_difference(
 
     def _order2() -> Array:
         return (
-            3.0 * data[_slice_order(0)]
-            - 4.0 * data[_slice_order(1)]
-            + data[_slice_order(2)]
+                3.0 * data[_slice_order(0)]
+                - 4.0 * data[_slice_order(1)]
+                + data[_slice_order(2)]
         ) / (2.0 * delta)
 
     def _err() -> Array:
@@ -76,7 +76,7 @@ def finite_difference(
 
     # use lower int_order when not enough data is available
     # for the instance where only a single data point is available, gradient is set to zero
-    order = jnp.minimum(order, i_)
+    order: Array = jnp.array((order, i_)).min()
     return cond(
         order == 0,
         _order0,
@@ -85,7 +85,7 @@ def finite_difference(
 
 
 def taylor_series(
-    func: Callable[[Array], Array], x0: Array, order: int
+        func: Callable[[Array], Array], x0: Array, order: int
 ) -> Callable[[Array], Array]:
     r"""
     Computes the Taylor series expansion of a function around a point x0 up to a specified order.

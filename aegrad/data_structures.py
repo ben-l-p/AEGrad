@@ -3,7 +3,7 @@ from __future__ import annotations
 from _operator import mul
 from dataclasses import dataclass
 from functools import reduce
-from typing import Optional, Sequence
+from typing import Optional, Sequence, overload
 
 from jax import Array, numpy as jnp
 
@@ -34,10 +34,10 @@ class ConvergenceStatus:
 
         # make sure settings allow for loop to be broken
         if (
-            convergence_settings.rel_disp_tol is None
-            and convergence_settings.abs_disp_tol is None
-            and convergence_settings.rel_force_tol is None
-            and convergence_settings.abs_force_tol is None
+                convergence_settings.rel_disp_tol is None
+                and convergence_settings.abs_disp_tol is None
+                and convergence_settings.rel_force_tol is None
+                and convergence_settings.abs_force_tol is None
         ):
             if convergence_settings.max_n_iter is None:
                 raise ValueError(
@@ -70,11 +70,11 @@ class ConvergenceStatus:
         self.has_nan: Array = jnp.zeros((), dtype=bool)
 
     def update(
-        self,
-        delta_disp: Optional[Array],
-        total_disp: Optional[Array],
-        delta_force: Optional[Array],
-        total_force: Optional[Array],
+            self,
+            delta_disp: Optional[Array],
+            total_disp: Optional[Array],
+            delta_force: Optional[Array],
+            total_force: Optional[Array],
     ) -> None:
         r"""
         :param delta_disp: Difference in displacement vector between current and previous iteration.
@@ -87,14 +87,20 @@ class ConvergenceStatus:
         self.i_iter += 1
 
         # check absolute displacement convergence
-        self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
+        if delta_disp is not None:
+            self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
+
+            # NaNs are checked for with displacement magnitude
+            self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
+
         if self.convergence_settings.abs_disp_tol is not None:
             self.converged_abs_disp = (
-                self.abs_disp_val < self.convergence_settings.abs_disp_tol
+                    self.abs_disp_val < self.convergence_settings.abs_disp_tol
             )
 
         # check relative displacement convergence:
         if self.convergence_settings.rel_disp_tol is not None:
+            if total_disp is None: raise ValueError("total_disp cannot be None")
             max_total_elem = jnp.linalg.norm(total_disp)
             self.rel_disp_val = self.rel_disp_val.at[...].set(
                 self.abs_disp_val / max_total_elem
@@ -106,15 +112,17 @@ class ConvergenceStatus:
 
         # check absolute force convergence
         if self.convergence_settings.abs_force_tol is not None:
+            if delta_force is None: raise ValueError("delta_force cannot be None")
             self.abs_force_val = self.abs_force_val.at[...].set(
                 jnp.linalg.norm(delta_force)
             )
             self.converged_abs_force = (
-                self.abs_force_val < self.convergence_settings.abs_force_tol
+                    self.abs_force_val < self.convergence_settings.abs_force_tol
             )
 
         # check relative force convergence:
         if self.convergence_settings.rel_force_tol is not None:
+            if total_force is None: raise ValueError("total_force cannot be None")
             max_total_elem = jnp.abs(total_force).max()
             self.rel_force_val = self.rel_force_val.at[...].set(
                 self.abs_force_val / max_total_elem
@@ -127,10 +135,10 @@ class ConvergenceStatus:
         # find convergence status of numerics (excluding failure modes such as max iterations or nans)
         self.converged = self.converged.at[...].set(
             (
-                self.converged_rel_disp
-                | self.converged_abs_disp
-                | self.converged_rel_force
-                | self.converged_abs_force
+                    self.converged_rel_disp
+                    | self.converged_abs_disp
+                    | self.converged_rel_force
+                    | self.converged_abs_force
             )
             & (self.i_iter > 0)
         )
@@ -140,7 +148,6 @@ class ConvergenceStatus:
             self.final_iter = self.final_iter.at[...].set(
                 (self.i_iter >= self.convergence_settings.max_n_iter)
             )
-        self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
 
     def get_status(self) -> Array:
         """Get overall convergence status."""
@@ -256,7 +263,7 @@ class DesignVariables:
 
     def get_shapes(self) -> dict[str, Optional[tuple[int, ...] | ArrayListShape]]:
         def _elem_shape(
-            elem: Optional[Array | ArrayList],
+                elem: Optional[Array | ArrayList],
         ) -> Optional[tuple[int, ...] | ArrayListShape]:
             if elem is None:
                 return None
@@ -290,6 +297,14 @@ class DesignVariables:
         return mapping, cnt
 
     def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
+        @overload
+        def _inner_ravel(var: None) -> None:
+            ...
+
+        @overload
+        def _inner_ravel(var: Array | ArrayList) -> Array:
+            ...
+
         def _inner_ravel(var: Optional[Array | ArrayList]) -> Optional[Array]:
             if var is None:
                 return None
@@ -301,7 +316,7 @@ class DesignVariables:
                 raise ValueError("Invalid variable type in DesignVariables.")
 
         arr = jnp.concatenate(
-            [_inner_ravel(var) for var in self.get_vars().values() if var is not None],
+            [_inner_ravel(var) for var in self.get_vars().values() if var is not None],  # type: ignore
             axis=1,
         )
         check_arr_shape(arr, (f_size, x_size), "Internal jacobian")
@@ -316,21 +331,21 @@ class DesignVariables:
         return self.ravel().reshape(*args)
 
     def from_adjoint(
-        self, f_shape: tuple[int, ...], df_dx: Array
+            self, f_shape: tuple[int, ...], df_dx: Array
     ) -> dict[str, Array | ArrayList]:
         out_dict = {}
         for name in self.shapes.keys():
-            if self.mapping[name] is not None:
-                if isinstance(self.shapes[name], tuple):
-                    out_dict[name] = df_dx[:, self.mapping[name]].reshape(
-                        *f_shape, *self.shapes[name]
+            if (this_mapping := self.mapping[name]) is not None:
+                if isinstance((this_shapes := self.shapes[name]), tuple):
+                    out_dict[name] = df_dx[:, this_mapping].reshape(
+                        *f_shape, *this_shapes
                     )
-                elif isinstance(self.shapes[name], ArrayListShape):
+                elif isinstance((this_shapes := self.shapes[name]), ArrayListShape):
                     subarrays = []
-                    for i_arr in range(self.shapes[name].n_arrays):
+                    for i_arr in range(this_shapes.n_arrays):
                         subarrays.append(
-                            df_dx[:, self.mapping[name][i_arr]].reshape(
-                                *f_shape, *self.shapes[name].shapes[i_arr]
+                            df_dx[:, this_mapping[i_arr]].reshape(
+                                *f_shape, *this_shapes.shapes[i_arr]
                             )
                         )
                     out_dict[name] = ArrayList(subarrays)

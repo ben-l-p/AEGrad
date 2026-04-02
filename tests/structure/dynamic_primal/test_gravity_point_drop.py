@@ -1,5 +1,8 @@
+from typing import cast
+
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
+from jax import Array
 import jax
 
 from aegrad.structure.beam import BaseBeamStructure
@@ -57,7 +60,7 @@ class TestXGravityPointDrop:
 
         output_x = output.hg[1:, 0, cls.g_direction_index, 3]
         output_v = output.v[1:, 0, cls.g_direction_index]
-        output_f = output.f_grav[1:, 0, :]
+        output_f = cast(Array, output.f_grav)[1:, 0, :]
 
         assert jnp.allclose(
             expected_x,

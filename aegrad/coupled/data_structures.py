@@ -13,14 +13,14 @@ class StaticAeroelastic:
         self.aero: DynamicAeroCase = aero
 
     def plot(
-        self,
-        directory: os.PathLike | str,
-        n_interp: int = 0,
-        plot_bound: bool = True,
-        plot_wake: bool = True,
+            self,
+            directory: os.PathLike | str,
+            n_interp: int = 0,
+            plot_bound: bool = True,
+            plot_wake: bool = True,
     ):
         self.structure.plot(directory, n_interp=n_interp)
-        self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)
+        self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
 
 
 @dataclass

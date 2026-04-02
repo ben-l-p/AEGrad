@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Literal
+from typing import Optional, Sequence, Literal, overload
 from functools import partial
 
 from jax import numpy as jnp
@@ -36,14 +36,14 @@ class BaseBeamStructure:
     """
 
     def __init__(
-        self,
-        num_nodes: int,
-        connectivity: Array,
-        y_vector: Array,
-        gravity: Optional[Array] = None,
-        verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
-        optional_jacobians: Optional[OptionalJacobians] = None,
-        convergence_settings: Optional[ConvergenceSettings] = None,
+            self,
+            num_nodes: int,
+            connectivity: Array,
+            y_vector: Array,
+            gravity: Optional[Array] = None,
+            verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
+            optional_jacobians: Optional[OptionalJacobians] = None,
+            convergence_settings: Optional[ConvergenceSettings] = None,
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
@@ -102,10 +102,10 @@ class BaseBeamStructure:
         self.ad_inv_o0: Array = jnp.zeros((self.n_elem, 6, 6))
 
         # gravity_vec settings
-        self.use_gravity: bool = gravity is not None and jnp.any(gravity)
+        self.use_gravity: bool = gravity is not None and bool(jnp.any(gravity))
         if self.use_gravity:
-            check_arr_shape(gravity, (3,), "gravity")
-            self.gravity_vec: Array = gravity
+            check_arr_shape(gravity, (3,), "gravity")  # type: ignore
+            self.gravity_vec: Array = gravity  # type: ignore
         else:
             self.gravity_vec = jnp.zeros((3,))
 
@@ -139,13 +139,13 @@ class BaseBeamStructure:
         self._time_integrator = ti
 
     def set_design_variables(
-        self,
-        coords: Array,
-        k_cs: Array,
-        m_cs: Optional[Array],
-        m_lumped: Optional[Array] = None,
-        *,
-        remove_checks: bool = False,
+            self,
+            coords: Array,
+            k_cs: Array,
+            m_cs: Optional[Array],
+            m_lumped: Optional[Array] = None,
+            *,
+            remove_checks: bool = False,
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities
@@ -181,7 +181,7 @@ class BaseBeamStructure:
         # ensure out-of-plane vector and beam vector are not collinear
         if not remove_checks:
             if jnp.any(
-                jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6
+                    jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6
             ):
                 raise ValueError(
                     "y_vector is collinear with beam element direction for at least one element. "
@@ -211,12 +211,12 @@ class BaseBeamStructure:
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
     def reference_configuration(
-        self,
-        use_f_ext_follower: bool = True,
-        use_f_ext_dead: bool = True,
-        use_f_aero: bool = True,
-        use_f_grav: bool = True,
-        prescribed_dofs: Optional[Array] = None,
+            self,
+            use_f_ext_follower: bool = True,
+            use_f_ext_dead: bool = True,
+            use_f_aero: bool = True,
+            use_f_grav: bool = True,
+            prescribed_dofs: Optional[Array] = None,
     ) -> StaticStructure:
         r"""
         Get the reference configuration of the structure_dv
@@ -305,7 +305,7 @@ class BaseBeamStructure:
         return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
 
     def _make_load_steps_f(
-        self, f: Optional[Array], weighting: Array, apply_alpha_weighting: bool
+            self, f: Optional[Array], weighting: Array, apply_alpha_weighting: bool
     ) -> Optional[Array]:
         r"""
         This also includes the effect of the time integrator
@@ -332,10 +332,10 @@ class BaseBeamStructure:
 
     @staticmethod
     def make_f_ext_dead_tot(
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        i_load_step: Optional[int],
-        i_ts: Optional[int],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            i_load_step: Optional[int],
+            i_ts: Optional[int],
     ) -> Optional[Array]:
         if i_ts is None and i_load_step is None:
             idx = (...,)
@@ -353,13 +353,13 @@ class BaseBeamStructure:
         elif f_ext_dead is not None and f_ext_aero is None:
             return f_ext_dead[idx]
         else:
-            return f_ext_dead[idx] + f_ext_aero[idx]
+            return f_ext_dead[idx] + f_ext_aero[idx]  # type: ignore
 
     def _make_k_t(
-        self,
-        d: Array,
-        p_d: Array,
-        eps: Array,
+            self,
+            d: Array,
+            p_d: Array,
+            eps: Array,
     ) -> Array:
         r"""
         Assemble tangent stiffness matrix as a function of the element relative configuration vectors
@@ -470,13 +470,13 @@ class BaseBeamStructure:
         )
 
     def _make_k_t_full(
-        self,
-        d: Array,
-        p_d: Array,
-        eps: Array,
-        f_ext_dead: Optional[Array],
-        rmat: Array,
-        m_t: Optional[Array],
+            self,
+            d: Array,
+            p_d: Array,
+            eps: Array,
+            f_ext_dead: Optional[Array],
+            rmat: Array,
+            m_t: Optional[Array],
     ) -> Array:
         r"""
         Compute the full tangent stiffness matrix, with contributions from stiffness, dead forces and gravity.
@@ -494,6 +494,7 @@ class BaseBeamStructure:
             k_t += block_diag(*self._make_k_t_dead(rmat, f_ext_dead))
 
         if self.use_gravity and self.optional_jacobians.d_f_grav_d_n:
+            if m_t is None: raise ValueError("m_t needs to be provided")
             k_t += self.assemble_matrix_from_entries(
                 self._make_k_t_grav(d, p_d, rmat, m_t)
             )
@@ -514,11 +515,11 @@ class BaseBeamStructure:
         )
 
     def _make_c_t(
-        self,
-        d: Array,
-        d_dot: Array,
-        v: Array,
-        int_order: Literal[1, 2, 3] = 3,
+            self,
+            d: Array,
+            d_dot: Array,
+            v: Array,
+            int_order: Literal[1, 2, 3] = 3,
     ) -> tuple[Array, Array]:
         r"""
         Assemble tangent gyroscopic matrix. This does not include the lumped mass contribution.
@@ -561,13 +562,13 @@ class BaseBeamStructure:
         return c_t_l[:, 0, :, :], c_t_l[:, 1, :, :]
 
     def _make_sys_matrix(
-        self,
-        m_t: Array,
-        c_t: Array,
-        c_t_lumped: Optional[Array],
-        k_t: Array,
-        t_n: Array,
-        ti: TimeIntregrator,
+            self,
+            m_t: Array,
+            c_t: Array,
+            c_t_lumped: Optional[Array],
+            k_t: Array,
+            t_n: Array,
+            ti: TimeIntregrator,
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
@@ -586,15 +587,16 @@ class BaseBeamStructure:
         ).reshape(self.n_dof, self.n_dof)  # [n_dof, n_dof]
 
         mat = (
-            self.assemble_matrix_from_entries(
-                m_t * ti.beta_prime + c_t * ti.gamma_prime
-            )
-        ) + k_t_tan_n
+                  self.assemble_matrix_from_entries(
+                      m_t * ti.beta_prime + c_t * ti.gamma_prime
+                  )
+              ) + k_t_tan_n
 
         if self.use_lumped_mass:
+            if c_t_lumped is None: raise ValueError("c_t_lumped needs to be passed")
             mat += (
-                self.m_t_lumped * ti.beta_prime
-                + block_diag(*c_t_lumped) * ti.gamma_prime
+                    self.m_t_lumped * ti.beta_prime
+                    + block_diag(*c_t_lumped) * ti.gamma_prime
             )
 
         return mat
@@ -663,7 +665,7 @@ class BaseBeamStructure:
         )
 
     def _make_f_iner_gyr(
-        self, m_l: Array, c_l: Array, v: Array, v_dot: Array
+            self, m_l: Array, c_l: Array, v: Array, v_dot: Array
     ) -> tuple[Array, Array]:
         r"""
         Compute the global inertial force vector.
@@ -684,7 +686,7 @@ class BaseBeamStructure:
             "ijk,ik->ij", c_l, v_elem
         )  # [n_elem, 12]
 
-    def _make_f_iner_lumped(self, c_l_lumped: Array, v: Array, v_dot: Array) -> Array:
+    def _make_f_iner_gyr_lumped(self, c_l_lumped: Array, v: Array, v_dot: Array) -> tuple[Array, Array]:
         r"""
         Obtain the contribution to the inertial forces from the lumped masses.
         :param c_l_lumped: Gyroscopic matrix from lumped masses, [n_node, 6, 6]
@@ -692,9 +694,9 @@ class BaseBeamStructure:
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
         :return: Inertial forces from lumped masses, [n_node, 6]
         """
-        return -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot) - jnp.einsum(
-            "ijk,ik->ij", c_l_lumped, v
-        )  # [n_node, 6]
+        f_iner = -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot)  # [n_node, 6]
+        f_gyr = - jnp.einsum("ijk,ik->ij", c_l_lumped, v)  # [n_node, 6]
+        return f_iner, f_gyr
 
     def make_eps(self, d: Array) -> Array:
         r"""
@@ -749,15 +751,64 @@ class BaseBeamStructure:
 
         return jnp.einsum("ijk,ik->ij", p_d, v_elem)  # [n_elem, 6]
 
+    @overload
     def resolve_forces(
-        self,
-        hg: Array,
-        dynamic: bool,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        v: Optional[Array],
-        v_dot: Optional[Array],
+            self,
+            hg: Array,
+            dynamic: Literal[True],
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            v: Array,
+            v_dot: Array,
+            stop_gradients: bool = False,
+    ) -> tuple[
+        Array,
+        Array,
+        Optional[Array],
+        Optional[Array],
+        Optional[Array],
+        Array,
+        Array,
+        Array,
+        Array,
+    ]:
+        ...
+
+    @overload
+    def resolve_forces(
+            self,
+            hg: Array,
+            dynamic: Literal[False],
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            v: None,
+            v_dot: None,
+            stop_gradients: bool = False,
+    ) -> tuple[
+        Array,
+        Array,
+        Optional[Array],
+        Optional[Array],
+        Optional[Array],
+        Array,
+        None,
+        None,
+        Array,
+    ]:
+        ...
+
+    def resolve_forces(
+            self,
+            hg: Array,
+            dynamic: bool,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            v,
+            v_dot,
+            stop_gradients: bool = False,
     ) -> tuple[
         Array,
         Array,
@@ -778,21 +829,32 @@ class BaseBeamStructure:
         :param f_ext_aero: External aero forces in global reference, [n_node, 6]
         :param v: Nodal velocities in global frame, [n_node, 6]
         :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        :param stop_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
+        the node coordinates, as these these are small but nonzero values in practice.
         :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
         gyroscopic forces, inertial forces and residual forces
         """
+
+        def prop_grad(x: Array) -> Array:
+            return jax.lax.stop_gradient(x) if stop_gradients else x
+
         d = self.make_d(hg)
         eps = self.make_eps(d)
         p_d = self.make_p_d(d)
-        d_dot = self._make_d_dot(p_d, v) if dynamic else None
-        m_t = self.make_m_t(d) if (self.use_gravity or dynamic) else None
-        c_l = self._make_c_t(d, d_dot, v)[0] if dynamic else None
+
+        if dynamic or self.use_gravity:
+            m_t = self.make_m_t(prop_grad(d))
+        else:
+            m_t = None
+
+        if dynamic:
+            d_dot = self._make_d_dot(p_d, v)
+            c_l = self._make_c_t(prop_grad(d), prop_grad(d_dot), v)[0]
+            c_l_lumped = self._make_c_t_lumped(v)[0] if self.use_lumped_mass else None
+        else:
+            d_dot, c_l, c_l_lumped = None, None, None
 
         this_f_res = jnp.zeros((self.n_nodes, 6))
-        if self.use_lumped_mass and dynamic:
-            c_l_lumped = self._make_c_t_lumped(v)[0]
-        else:
-            c_l_lumped = None
 
         if f_ext_dead is not None:
             this_f_ext_dead = self.make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
@@ -808,7 +870,7 @@ class BaseBeamStructure:
 
         if self.use_gravity:
             this_f_grav = self.assemble_vector_from_entries(
-                self._make_f_grav(m_t, hg[:, :3, :3])
+                self._make_f_grav(m_t, hg[:, :3, :3])  # type: ignore
             ).reshape(-1, 6)
             if self.use_lumped_mass:
                 this_f_grav += self._make_f_grav_lumped(hg[:, :3, :3])
@@ -822,12 +884,12 @@ class BaseBeamStructure:
         this_f_res += this_f_int
 
         if dynamic:
-            this_f_iner, this_f_gyr = self._make_f_iner_gyr(m_t, c_l, v, v_dot)
+            this_f_iner, this_f_gyr = self._make_f_iner_gyr(m_t, c_l, v, v_dot)  # type: ignore
             this_f_iner = self.assemble_vector_from_entries(this_f_iner).reshape(-1, 6)
             this_f_gyr = self.assemble_vector_from_entries(this_f_gyr).reshape(-1, 6)
 
             if self.use_lumped_mass:
-                this_f_iner += self._make_f_iner_lumped(c_l_lumped, v, v_dot)
+                this_f_iner += sum(self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot))  # type: ignore
             this_f_res += this_f_iner
         else:
             this_f_iner = None
@@ -848,20 +910,56 @@ class BaseBeamStructure:
             this_f_res,
         )
 
+    @overload
     def make_f_res(
-        self,
-        solve_dofs: Optional[Array],
-        p_d: Array,
-        eps: Array,
-        hg: Array,
-        f_ext_follower_n: Optional[Array],
-        f_ext_dead_n: Optional[Array],
-        dynamic: bool,
-        m_t: Optional[Array],
-        c_l: Optional[Array],
-        c_l_lumped: Optional[Array],
-        v: Optional[Array],
-        v_dot: Optional[Array],
+            self,
+            solve_dofs: Optional[Array],
+            p_d: Array,
+            eps: Array,
+            hg: Array,
+            f_ext_follower_n: Optional[Array],
+            f_ext_dead_n: Optional[Array],
+            dynamic: Literal[True],
+            m_t: Array,
+            c_l: Array,
+            c_l_lumped: Optional[Array],
+            v: Array,
+            v_dot: Array,
+    ) -> tuple[Array, Array]:
+        ...
+
+    @overload
+    def make_f_res(
+            self,
+            solve_dofs: Optional[Array],
+            p_d: Array,
+            eps: Array,
+            hg: Array,
+            f_ext_follower_n: Optional[Array],
+            f_ext_dead_n: Optional[Array],
+            dynamic: Literal[False],
+            m_t: Optional[Array],
+            c_l: None,
+            c_l_lumped: None,
+            v: None,
+            v_dot: None,
+    ) -> tuple[Array, Array]:
+        ...
+
+    def make_f_res(
+            self,
+            solve_dofs: Optional[Array],
+            p_d: Array,
+            eps: Array,
+            hg: Array,
+            f_ext_follower_n: Optional[Array],
+            f_ext_dead_n: Optional[Array],
+            dynamic: bool,
+            m_t,
+            c_l,
+            c_l_lumped,
+            v,
+            v_dot,
     ) -> tuple[Array, Array]:
         r"""
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
@@ -907,9 +1005,10 @@ class BaseBeamStructure:
 
         if self.use_lumped_mass:
             if dynamic:
-                f_iner_lumped = self._make_f_iner_lumped(c_l_lumped, v, v_dot).ravel()
-                f_res_vect += f_iner_lumped
-                f_abs_sum_vect += jnp.abs(f_iner_lumped)
+                f_iner_gyr_lumped = jnp.add(*self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot)).ravel()
+
+                f_res_vect += f_iner_gyr_lumped
+                f_abs_sum_vect += jnp.abs(f_iner_gyr_lumped)
             if self.use_gravity:
                 f_grav_lumped = self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
                 f_res_vect += f_grav_lumped
@@ -936,19 +1035,9 @@ class BaseBeamStructure:
             vmap(exp_se3, 0, 0)(phi.reshape(-1, 6)),
         )
 
-    def get_cg(self, hg: Array):
-        r"""
-        Compute the total mass and the coordinate of center of gravity.
-        :param hg: Node locations in SE(3), [n_nodes_, 4, 4]
-        :return: Total mass, x_target coordinate of center of gravity, [3]
-        """
-
-        # TODO: implement
-        raise NotImplementedError
-
     def make_prescribed_dofs_array(
-        self,
-        prescribed_dofs: Sequence[int] | Array | slice | int | None,
+            self,
+            prescribed_dofs: Sequence[int] | Array | slice | int | None,
     ) -> Array:
         # degrees of freedom which are prescribed
         if isinstance(prescribed_dofs, slice) or isinstance(prescribed_dofs, Sequence):
@@ -965,13 +1054,13 @@ class BaseBeamStructure:
             )
 
     def static_solve(
-        self,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        prescribed_dofs: Sequence[int] | Array | slice | int,
-        load_steps: int = 1,
-        relaxation_factor: float = 1.0,
+            self,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            prescribed_dofs: Sequence[int] | Array | slice | int,
+            load_steps: int = 1,
+            relaxation_factor: float = 1.0,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure_dv under external loads
@@ -1023,9 +1112,9 @@ class BaseBeamStructure:
         )
 
         def _update(
-            i_load_step: int,
-            converge_status: ConvergenceStatus,
-            hg_n: Array,
+                i_load_step: int,
+                converge_status: ConvergenceStatus,
+                hg_n: Array,
         ) -> tuple[int, ConvergenceStatus, Array]:
             # base parameters
             d_n = self.make_d(hg_n)  # [n_elem, 6]
@@ -1055,7 +1144,7 @@ class BaseBeamStructure:
                 eps_n,
                 hg_n,
                 f_ext_follower_steps[i_load_step, ...]
-                if f_ext_follower is not None
+                if f_ext_follower_steps is not None
                 else None,
                 total_f_ext_dead_step,
                 False,
@@ -1068,7 +1157,7 @@ class BaseBeamStructure:
 
             # solve for configuration increment, [n_solve_dofs]
             d_varphi_np1 = (
-                jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * relaxation_factor
+                    jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * relaxation_factor
             )
 
             # update configuration, [n_nodes_, 4, 4]
@@ -1099,8 +1188,8 @@ class BaseBeamStructure:
             return i_load_step, converge_status, hg_np1_full
 
         def convergence_loop(
-            i_load_step: int,
-            hg_init: Array,
+                i_load_step: int,
+                hg_init: Array,
         ) -> Array:
             r"""
             Convergence loop
@@ -1164,17 +1253,17 @@ class BaseBeamStructure:
         )
 
     def dynamic_solve(
-        self,
-        init_state: Optional[DynamicStructureSnapshot | StaticStructure],
-        n_tstep: int,
-        dt: Array | float,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        prescribed_dofs: Sequence[int] | Array | slice | int | None,
-        load_steps: int = 1,
-        relaxation_factor: float = 1.0,
-        spectral_radius: float = 1.0,
+            self,
+            init_state: Optional[DynamicStructureSnapshot | StaticStructure],
+            n_tstep: int,
+            dt: Array | float,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_ext_aero: Optional[Array],
+            prescribed_dofs: Sequence[int] | Array | slice | int | None,
+            load_steps: int = 1,
+            relaxation_factor: float = 1.0,
+            spectral_radius: float = 1.0,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure_dv under external loads
@@ -1258,12 +1347,12 @@ class BaseBeamStructure:
         )
 
         def _update(
-            i_load_step: int,
-            i_ts: int,
-            converge_status_: ConvergenceStatus,
-            hg_n: Array,
-            phi_alpha: Array,
-            q_alpha: StructureMinimalStates,
+                i_load_step: int,
+                i_ts: int,
+                converge_status_: ConvergenceStatus,
+                hg_n: Array,
+                phi_alpha: Array,
+                q_alpha: StructureMinimalStates,
         ) -> tuple[
             int,
             int,
@@ -1326,7 +1415,7 @@ class BaseBeamStructure:
                 eps_n,
                 hg_n,
                 f_ext_follower_alpha_steps[i_load_step, i_ts, ...]
-                if f_ext_follower is not None
+                if f_ext_follower_alpha_steps is not None
                 else None,
                 total_f_ext_dead,
                 True,
@@ -1383,7 +1472,7 @@ class BaseBeamStructure:
             return i_load_step, i_ts, converge_status_, hg_n, phi_np1, q_alpha_update
 
         def time_step_loop(
-            i_ts: int, sol: DynamicStructure, converge_status_: ConvergenceStatus
+                i_ts: int, sol: DynamicStructure, converge_status_: ConvergenceStatus
         ) -> tuple[DynamicStructure, ConvergenceStatus]:
             r"""
             Performs analysis on a single time step, including load stepping
@@ -1398,7 +1487,8 @@ class BaseBeamStructure:
             phi_alpha_init, q_alpha_init = self.time_integrator.calculate_q_alpha(
                 q_nm1=sol.get_states(i_ts - 1), q_n=q_init, phi_n=phi_init
             )
-            q_alpha_init.varphi = None  # TODO: remove redundant computation
+
+            q_alpha_init.varphi = None  # this value is not used during the loop
 
             # solve
             _, converge_status_, hg, phi_alpha, q_alpha = load_step_loop(
@@ -1460,6 +1550,7 @@ class BaseBeamStructure:
             if f_ext_aero is not None:
                 sol.f_ext_aero = sol.f_ext_aero.at[i_ts, ...].set(f_ext_aero_local)
             if self.use_gravity:
+                if sol.f_grav is None: raise ValueError("sol.f_grav is None")
                 sol.f_grav = sol.f_grav.at[i_ts, ...].set(f_grav)
             sol.f_int = sol.f_int.at[i_ts, ...].set(f_int)
             sol.f_iner_gyr = sol.f_iner_gyr.at[i_ts, ...].set(f_iner + f_gyr)
@@ -1468,12 +1559,12 @@ class BaseBeamStructure:
             return sol, converge_status_
 
         def convergence_loop(
-            i_load_step: int,
-            i_ts: int,
-            converge_status_: ConvergenceStatus,
-            hg_n: Array,
-            phi_n: Array,
-            q_n: StructureMinimalStates,
+                i_load_step: int,
+                i_ts: int,
+                converge_status_: ConvergenceStatus,
+                hg_n: Array,
+                phi_n: Array,
+                q_n: StructureMinimalStates,
         ) -> tuple[int, ConvergenceStatus, Array, Array, StructureMinimalStates]:
             r"""
             Convergence loop within each load step of a time step.
@@ -1501,11 +1592,11 @@ class BaseBeamStructure:
             return i_ts, converge_status_, hg_solve, phi_n, q_n
 
         def load_step_loop(
-            i_ts: int,
-            converge_status_: ConvergenceStatus,
-            hg_n: Array,
-            phi_n: Array,
-            q_n: StructureMinimalStates,
+                i_ts: int,
+                converge_status_: ConvergenceStatus,
+                hg_n: Array,
+                phi_n: Array,
+                q_n: StructureMinimalStates,
         ) -> tuple[int, ConvergenceStatus, Array, Array, StructureMinimalStates]:
             r"""
             Performs load stepping iterations for a given time step
@@ -1524,7 +1615,7 @@ class BaseBeamStructure:
             )
 
         def evaluate_initial_equilibrium(
-            init_state__: DynamicStructureSnapshot,
+                init_state__: DynamicStructureSnapshot,
         ) -> DynamicStructureSnapshot:
             r"""
             Evaluates the forces for a given initial state to check whether it is in equilibrium. If not, a warning is
@@ -1567,7 +1658,7 @@ class BaseBeamStructure:
                 f_ext_aero=f_ext_aero_,
                 f_grav=f_grav,
                 f_int=f_int,
-                f_iner_gyr=f_iner + f_gyr,
+                f_iner_gyr=f_iner + f_gyr,  # type: ignore
                 f_res=f_res,
                 t=init_state__.t,
                 i_ts=init_state__.i_ts,

@@ -1,6 +1,8 @@
+from typing import cast
+
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
-from jax import vmap
+from jax import vmap, Array
 import jax
 
 from aegrad.structure import BeamStructure
@@ -46,7 +48,7 @@ class TestLinXForcePoint:
             v_dot_expected
         )
         init_cond.a = init_cond.a.at[0, cls.f_direction_index].set(v_dot_expected)
-        init_cond.f_ext_follower = init_cond.f_ext_follower.at[
+        init_cond.f_ext_follower = cast(Array, init_cond.f_ext_follower).at[
             0, cls.f_direction_index
         ].set(cls.f)
 

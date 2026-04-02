@@ -17,7 +17,7 @@ from aero.gradients.data_structures import (
     AeroStateGradients,
 )
 from aegrad.structure.gradients.data_structures import StructuralStateGradients
-from algebra.array_utils import ArrayList
+from algebra.array_utils import ArrayList, ArrayListShape
 from aegrad.coupled.data_structures import StaticAeroelastic
 from structure import StructureFullStates, StructuralDesignVariables
 from structure.gradients.data_structures import StructureDesignGradients
@@ -42,15 +42,15 @@ class AeroelasticStateGradients:
 @_make_pytree
 class AeroelasticDesignVariables(DesignVariables):
     def __init__(
-        self,
-        structure_dv: Optional[StructuralDesignVariables],
-        aero_dv: Optional[AeroDesignVariables],
+            self,
+            structure_dv: StructuralDesignVariables,
+            aero_dv: AeroDesignVariables,
     ):
         super().__init__()
-        self.structure: Optional[StructuralDesignVariables] = structure_dv
-        self.aero: Optional[AeroDesignVariables] = aero_dv
+        self.structure: StructuralDesignVariables = structure_dv
+        self.aero: AeroDesignVariables = aero_dv
 
-        self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
+        self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def get_vars(self) -> dict[str, Optional[Array]]:
@@ -60,7 +60,7 @@ class AeroelasticDesignVariables(DesignVariables):
         }
 
     def split_adjoint(
-        self, d_f_d_x: dict[str, Optional[Array | ArrayList]], f_shape: tuple[int, ...]
+            self, d_f_d_x: dict[str, Optional[Array | ArrayList]], f_shape: tuple[int, ...]
     ) -> AeroelasticDesignGradients:
         struct_dv = StructureDesignGradients(
             **{k: v for k, v in d_f_d_x.items() if k in self.structure.get_vars()},
@@ -82,10 +82,10 @@ class AeroelasticDesignVariables(DesignVariables):
 @_make_pytree
 class AeroelasticDesignGradients:
     def __init__(
-        self,
-        structure_dv: Optional[StructureDesignGradients],
-        aero_dv: Optional[AeroDesignGradients],
-        f_shape: tuple[int, ...],
+            self,
+            structure_dv: Optional[StructureDesignGradients],
+            aero_dv: Optional[AeroDesignGradients],
+            f_shape: tuple[int, ...],
     ):
         self.structure: Optional[StructureDesignGradients] = structure_dv
         self.aero: Optional[AeroDesignGradients] = aero_dv
@@ -93,7 +93,7 @@ class AeroelasticDesignGradients:
         self.f_size: int = reduce(mul, f_shape, 1)
 
     def plot(
-        self, case: StaticAeroelastic, directory: os.PathLike | str
+            self, case: StaticAeroelastic, directory: os.PathLike | str
     ) -> Sequence[Path]:
         paths = []
         if self.structure is not None:

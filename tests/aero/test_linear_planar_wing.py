@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from typing import cast
 
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
@@ -33,9 +34,9 @@ class TestLinearAero:
 
     @classmethod
     def make_planar_wing(
-        cls,
-        flowfield: FlowField,
-        ea: float = 0.0,
+            cls,
+            flowfield: FlowField,
+            ea: float = 0.0,
     ) -> tuple[UVLM, AeroSnapshot, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
@@ -62,7 +63,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_heaving_wing(
-        cls, plot: bool = False, use_matrix: bool = False
+            cls, plot: bool = False, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 
@@ -126,14 +127,14 @@ class TestLinearAero:
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=5e-3
         ), "Wake circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
-            dynamic_case.zeta_w[0], linear_case.x_t_tot.zeta_w[0], atol=1e-3
+            dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=1e-3
         ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=1e-1
         ), "Steady forces do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_unsteady[0],
-            linear_case.y_t_tot.f_unsteady[0],
+            cast(ArrayList, linear_case.y_t_tot.f_unsteady)[0],
             atol=2e-2,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
@@ -143,7 +144,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing(
-        cls, plot: bool = False, use_matrix: bool = False
+            cls, plot: bool = False, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 
@@ -213,14 +214,14 @@ class TestLinearAero:
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=6e-2
         ), "Wake circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
-            dynamic_case.zeta_w[0], linear_case.x_t_tot.zeta_w[0], atol=1e-3
+            dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=1e-3
         ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=3e-1
         ), "Steady forces do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_unsteady[0],
-            linear_case.y_t_tot.f_unsteady[0],
+            cast(ArrayList, linear_case.y_t_tot.f_unsteady)[0],
             atol=1e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
@@ -230,7 +231,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing_frozen_wake(
-        cls, plot: bool = False, use_matrix: bool = False
+            cls, plot: bool = False, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 
@@ -306,7 +307,7 @@ class TestLinearAero:
         ), "Steady forces do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_unsteady[0],
-            linear_case.y_t_tot.f_unsteady[0],
+            cast(ArrayList, linear_case.y_t_tot.f_unsteady)[0],
             atol=1e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
@@ -318,7 +319,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_cosine_gust(
-        cls, plot: bool = False, use_matrix: bool = False
+            cls, plot: bool = False, use_matrix: bool = False
     ):
         set_verbosity(VerbosityLevel.SILENT)
 
@@ -378,15 +379,14 @@ class TestLinearAero:
         assert jnp.allclose(
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=3e-1
         ), "Wake circulation does not match between nonlinear and linear cases."
-        assert jnp.allclose(
-            dynamic_case.zeta_w[0], linear_case.x_t_tot.zeta_w[0], atol=8e-2
-        ), "Wake grid coordinates do not match between nonlinear and linear cases."
+        assert jnp.allclose(dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=8e-2
+                            ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=6e-1
         ), "Steady forces do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_unsteady[0],
-            linear_case.y_t_tot.f_unsteady[0],
+            cast(ArrayList, linear_case.y_t_tot.f_unsteady)[0],
             atol=8e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 

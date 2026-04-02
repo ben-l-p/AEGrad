@@ -43,9 +43,9 @@ class BeamStructure(BaseBeamStructure):
         return inner_case
 
     def _structural_states_res_from_dv_varphi(
-        self,
-        dv: StructuralDesignVariables,
-        varphi: Array,
+            self,
+            dv: StructuralDesignVariables,
+            varphi: Array,
     ) -> tuple[StructureFullStates, Array]:
         r"""
         Obtain useful states and forcing residual from design variables and a minimal configuration vector.
@@ -95,12 +95,12 @@ class BeamStructure(BaseBeamStructure):
         return ss, f_res
 
     def static_adjoint(
-        self,
-        structure: StaticStructure,
-        objective: StructuralObjectiveFunction,
-        optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
-            True, True, True, True
-        ),
+            self,
+            structure: StaticStructure,
+            objective: StructuralObjectiveFunction,
+            optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
+                True, True, True, True
+            ),
     ) -> StructuralDesignVariables:
         r"""
         Computes the static grads of the structure_dv, which is used to compute gradients of the loss with respect to
@@ -203,13 +203,13 @@ class BeamStructure(BaseBeamStructure):
 
     # @jax.jit(static_argnums=(0, 1, 2, 3))
     def dynamic_adjoint(
-        self,
-        structure: DynamicStructure,
-        objective: StructuralObjectiveFunction,
-        p_q0_p_x: Optional[StructuralDesignVariables] = None,
-        optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
-            True, True, True, True
-        ),
+            self,
+            structure: DynamicStructure,
+            objective: StructuralObjectiveFunction,
+            p_q0_p_x: Optional[StructuralDesignVariables] = None,
+            optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
+                True, True, True, True
+            ),
     ) -> tuple[StructuralDesignVariables, Array]:
         r"""
         Dynamic structure grads problem. This computes the gradient of the objective of the dynamic response with
@@ -272,10 +272,10 @@ class BeamStructure(BaseBeamStructure):
         free_state_ix = jnp.concatenate([solve_dofs + i * self.n_dof for i in range(4)])
 
         def timestep_residual(
-            i_ts: int,
-            q_nm1: StructureMinimalStates,
-            q_n: StructureMinimalStates,
-            dv_: StructuralDesignVariables,
+                i_ts: int,
+                q_nm1: StructureMinimalStates,
+                q_n: StructureMinimalStates,
+                dv_: StructuralDesignVariables,
         ) -> Array:
             r"""
             Function which finds the residual of the structural problem forward from timestep n-1 to timestep n.
@@ -288,7 +288,7 @@ class BeamStructure(BaseBeamStructure):
 
             # state updates obtained from time integrator without knowledge of structural problem
             phi_n = (
-                dt * q_nm1.v + (0.5 - beta) * dt * dt * q_nm1.a + beta * dt * dt * q_n.a
+                    dt * q_nm1.v + (0.5 - beta) * dt * dt * q_nm1.a + beta * dt * dt * q_n.a
             )
 
             varphi_res = vmap(
@@ -303,8 +303,8 @@ class BeamStructure(BaseBeamStructure):
             v_res = q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a - q_n.v
 
             a_res = (
-                (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
-            ) / (1.0 - alpha_m) - q_n.a
+                            (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
+                    ) / (1.0 - alpha_m) - q_n.a
 
             # updates to v_dot, which are obtained from relation to other states through structural problem
 
@@ -354,8 +354,10 @@ class BeamStructure(BaseBeamStructure):
                 f_ext_aero=None,
                 v=q_alpha.v,
                 v_dot=q_alpha.v_dot,
+                stop_gradients=True
             )
 
+            # use stop gradient to prevent effective stiffness contribution
             m_alpha = inner_case.assemble_matrix_from_entries(
                 inner_case.make_m_t(d=d_alpha)
             )
@@ -367,7 +369,7 @@ class BeamStructure(BaseBeamStructure):
             if inner_case.use_gravity:
                 f_res_non_iner += f_grav_alpha
             if (
-                f_dead_res is not None
+                    f_dead_res is not None
             ):  # use the output from the resolve forces function, as it's in the local frame
                 f_res_non_iner += f_dead_res
             if f_ext_follower_alpha is not None:
@@ -380,7 +382,7 @@ class BeamStructure(BaseBeamStructure):
 
             # find v_dot_nm1 from its alpha value
             v_dot_res = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (
-                1.0 - alpha_f
+                    1.0 - alpha_f
             ) - q_n.v_dot
 
             return jnp.stack(
@@ -388,13 +390,13 @@ class BeamStructure(BaseBeamStructure):
             )  # [4, n_nodes, 6]
 
         def p_r_n(
-            i_ts: int,
-            q_nm1: StructureMinimalStates,
-            q_n: StructureMinimalStates,
-            dv_: StructuralDesignVariables,
+                i_ts: int,
+                q_nm1: StructureMinimalStates,
+                q_n: StructureMinimalStates,
+                dv_: StructuralDesignVariables,
         ) -> tuple[Array, Array, StructuralDesignVariables]:
             def inner(
-                q_nm1_free: Array, q_n_free: Array, dv__: StructuralDesignVariables
+                    q_nm1_free: Array, q_n_free: Array, dv__: StructuralDesignVariables
             ) -> Array:
                 q_nm1_struct = StructureMinimalStates.from_mat(
                     q_nm1.to_mat()
@@ -422,7 +424,7 @@ class BeamStructure(BaseBeamStructure):
             )
 
         def minimal_states_to_full_states(
-            q_n: StructureMinimalStates,
+                q_n: StructureMinimalStates,
         ) -> StructureFullStates:
             r"""
             Obtain the full structural states :math:`\mathbf{y}` from minimal states :math:`\mathbf{y}`.
@@ -439,11 +441,11 @@ class BeamStructure(BaseBeamStructure):
             )
 
         def time_loop(
-            rev_i_ts: int,
-            d_j_d_x_: StructuralDesignVariables,
-            adj_: Array,
-            p_r_np1_p_q_n: Array,
-            q_n: StructureMinimalStates,
+                rev_i_ts: int,
+                d_j_d_x_: StructuralDesignVariables,
+                adj_: Array,
+                p_r_np1_p_q_n: Array,
+                q_n: StructureMinimalStates,
         ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
             r"""
             Function to obtain the grads states at timestep n, which is dependent on the grads at timestep n+1.
@@ -456,7 +458,7 @@ class BeamStructure(BaseBeamStructure):
             """
 
             i_ts = (
-                structure.n_tstep - rev_i_ts - 1
+                    structure.n_tstep - rev_i_ts - 1
             )  # index for timestep n, which decrements
 
             i_ts_nm1 = jnp.maximum(i_ts - 1, 0)  # index for timestep n-1
@@ -488,8 +490,8 @@ class BeamStructure(BaseBeamStructure):
 
             # solve for adjoint at current timestep
             b: Array = -(
-                p_j_n_p_q_n.reshape(n_j, -1)[:, free_state_ix]
-                + adj_[i_ts + 1, ...] @ p_r_np1_p_q_n
+                    p_j_n_p_q_n.reshape(n_j, -1)[:, free_state_ix]
+                    + adj_[i_ts + 1, ...] @ p_r_np1_p_q_n
             ).T
             adj_ = adj_.at[i_ts, ...].set(
                 jnp.linalg.solve(
@@ -529,7 +531,7 @@ class BeamStructure(BaseBeamStructure):
         )
 
         n_adj_dof = 4 * (
-            self.n_dof - len(structure.prescribed_dofs)
+                self.n_dof - len(structure.prescribed_dofs)
         )  # number of grads degrees of freedom
 
         # pass through time steps backwards to obtain adjoints

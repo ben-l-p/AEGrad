@@ -18,11 +18,11 @@ from aegrad.print_utils import VerbosityLevel
 
 class BaseCoupledAeroelastic:
     def __init__(
-        self,
-        structure: BeamStructure,
-        aero: UVLM,
-        fsi_convergence_settings: Optional[ConvergenceSettings] = None,
-        verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
+            self,
+            structure: BeamStructure,
+            aero: UVLM,
+            fsi_convergence_settings: Optional[ConvergenceSettings] = None,
+            verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
     ):
         self.structure: BeamStructure = structure
         self.aero: UVLM = aero
@@ -33,17 +33,17 @@ class BaseCoupledAeroelastic:
         self.verbosity = verbosity
 
     def set_design_variables(
-        self,
-        coords: Array,
-        k_cs: Array,
-        m_cs: Optional[Array],
-        m_lumped: Optional[Array],
-        dt: float | Array,
-        flowfield: FlowField,
-        delta_w: Optional[Sequence[Array] | Array],
-        x0_aero: ArrayList | Sequence[Array] | Array,
-        *,
-        remove_checks: bool = False,
+            self,
+            coords: Array,
+            k_cs: Array,
+            m_cs: Optional[Array],
+            m_lumped: Optional[Array],
+            dt: float | Array,
+            flowfield: FlowField,
+            delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
+            x0_aero: ArrayList | Sequence[Array] | Array,
+            *,
+            remove_checks: bool = False,
     ):
         self.structure.set_design_variables(
             coords=coords,
@@ -61,24 +61,25 @@ class BaseCoupledAeroelastic:
         )
 
     def static_solve(
-        self,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        prescribed_dofs: Sequence[int] | Array | slice | int,
-        t: float | Array = 0.0,
-        load_steps: int = 1,
-        relaxation_factor: float = 1.0,
-        horseshoe: bool = False,
+            self,
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            prescribed_dofs: Sequence[int] | Array | slice | int,
+            t: float | Array = 0.0,
+            load_steps: int = 1,
+            relaxation_factor: float = 1.0,
+            horseshoe: bool = False,
     ) -> StaticAeroelastic:
 
         warn_if_32_bit()
 
-        def _convergence_loop(
-            converge_status_: ConvergenceStatus,
-            struct_case_n: StaticStructure,
-            aero_case_n: DynamicAeroCase,
-        ) -> tuple[ConvergenceStatus, StaticStructure, DynamicAeroCase]:
+        prescribed_dofs: Array = self.structure.make_prescribed_dofs_array(prescribed_dofs)
 
+        def _convergence_loop(
+                converge_status_: ConvergenceStatus,
+                struct_case_n: StaticStructure,
+                aero_case_n: DynamicAeroCase,
+        ) -> tuple[ConvergenceStatus, StaticStructure, DynamicAeroCase]:
             f_aero_n = aero_case_n.project_forcing_to_beam(
                 i_ts=0,
                 rmat=struct_case_n.hg[:, :3, :3],
@@ -101,9 +102,10 @@ class BaseCoupledAeroelastic:
 
             tot_n = vmap(hg_to_d)(struct_case_np1.hg, self.structure.hg0)
 
-            delta_f = (
-                struct_case_n.f_ext_aero - struct_case_np1.f_ext_aero
-            )  # [n_nodes, 6]
+            if struct_case_n.f_ext_aero is None:
+                delta_f = None
+            else:
+                delta_f = struct_case_n.f_ext_aero - struct_case_np1.f_ext_aero  # [n_nodes, 6]
 
             converge_status_.update(
                 delta_disp=delta_n,

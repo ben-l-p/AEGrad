@@ -12,6 +12,7 @@ from jax import Array, numpy as jnp
 
 from plotting.beam import plot_beam_to_vtk
 from structure import StaticStructure
+from algebra.array_utils import ArrayListShape
 
 from utils import _make_pytree
 from data_structures import DesignVariables
@@ -36,23 +37,23 @@ class StructuralStateGradients:
 @_make_pytree
 class StructuralDesignVariables(DesignVariables):
     def __init__(
-        self,
-        x0: Optional[Array],
-        k_cs: Optional[Array],
-        m_cs: Optional[Array],
-        m_lumped: Optional[Array],
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
+            self,
+            x0: Array,
+            k_cs: Array,
+            m_cs: Optional[Array],
+            m_lumped: Optional[Array],
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
     ):
         super().__init__()
-        self.x0: Optional[Array] = x0
-        self.k_cs: Optional[Array] = k_cs
+        self.x0: Array = x0
+        self.k_cs: Array = k_cs
         self.m_cs: Optional[Array] = m_cs
         self.m_lumped: Optional[Array] = m_lumped
         self.f_ext_follower: Optional[Array] = f_ext_follower
         self.f_ext_dead: Optional[Array] = f_ext_dead
 
-        self.shapes: dict[str, Optional[tuple[int, ...]]] = self.get_shapes()
+        self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def __iadd__(self, other: StructuralDesignVariables) -> Self:
@@ -87,7 +88,7 @@ class StructuralDesignVariables(DesignVariables):
         return StructuralDesignVariables(
             x0=jnp.zeros_like(self.x0),
             k_cs=jnp.zeros_like(self.k_cs),
-            m_cs=jnp.zeros_like(self.m_cs),
+            m_cs=jnp.zeros_like(self.m_cs) if self.m_cs is not None else None,
             m_lumped=jnp.zeros_like(self.m_lumped)
             if self.m_lumped is not None
             else None,
@@ -124,14 +125,14 @@ class StructuralDesignVariables(DesignVariables):
 @_make_pytree
 class StructureDesignGradients:
     def __init__(
-        self,
-        x0: Optional[Array],
-        k_cs: Optional[Array],
-        m_cs: Optional[Array],
-        m_lumped: Optional[Array],
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_shape: tuple[int, ...],
+            self,
+            x0: Optional[Array],
+            k_cs: Optional[Array],
+            m_cs: Optional[Array],
+            m_lumped: Optional[Array],
+            f_ext_follower: Optional[Array],
+            f_ext_dead: Optional[Array],
+            f_shape: tuple[int, ...],
     ):
         self.x0: Optional[Array] = x0
         self.k_cs: Optional[Array] = k_cs
@@ -143,7 +144,7 @@ class StructureDesignGradients:
         self.f_size: int = reduce(mul, f_shape, 1)
 
     def plot(
-        self, case: StaticStructure, directory: os.PathLike | str, n_interp: int = 0
+            self, case: StaticStructure, directory: os.PathLike | str, n_interp: int = 0
     ) -> Path:
         if self.f_size != 1:
             raise ValueError("Can only plot gradients for scalar objective functions.")

@@ -42,13 +42,13 @@ def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructure
 
 
 def plot_grid_to_vtk(
-    grid_arr: Array,
-    filename: str | os.PathLike,
-    i_ts: Optional[int] = None,
-    node_scalar_data: Optional[dict[str, Array]] = None,
-    node_vector_data: Optional[dict[str, Array]] = None,
-    cell_scalar_data: Optional[dict[str, Array]] = None,
-    cell_vector_data: Optional[dict[str, Array]] = None,
+        grid_arr: Array,
+        filename: str | os.PathLike,
+        i_ts: Optional[int] = None,
+        node_scalar_data: Optional[dict[str, Array]] = None,
+        node_vector_data: Optional[dict[str, Array]] = None,
+        cell_scalar_data: Optional[dict[str, Array]] = None,
+        cell_vector_data: Optional[dict[str, Array]] = None,
 ) -> Path:
     r"""
     Plot a single timestep of grid data
@@ -61,7 +61,7 @@ def plot_grid_to_vtk(
     :param cell_scalar_data: Dictionary of cell scalar data
     :param cell_vector_data: Dictionary of cell vector data
     """
-    filename = Path(filename)
+    filepath = Path(filename)
 
     # planar grid should have 3 dimensions, while volume grid should have 4 dimensions
     match grid_arr.ndim:
@@ -123,10 +123,10 @@ def plot_grid_to_vtk(
             sg.GetPointData().AddArray(dsa.numpyTovtkDataArray(vectors, name))
 
     # write to file
-    name = filename.name
+    name = filepath.name
     if i_ts is not None:
         name += f"_ts_{i_ts}"
-    filename_full = Path(filename.parent).joinpath(name).with_suffix(".vts")
+    filename_full = Path(filepath.parent).joinpath(name).with_suffix(".vts")
 
     writer = vtk.vtkXMLStructuredGridWriter()
     writer.SetFileName(str(filename_full))

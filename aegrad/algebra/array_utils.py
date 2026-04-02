@@ -3,6 +3,7 @@ import math
 from typing import Optional, Sequence
 from collections import UserList
 from functools import singledispatch
+from types import EllipsisType
 
 from jax import numpy as jnp
 from jax import Array
@@ -10,8 +11,20 @@ from jax import Array
 from aegrad.utils import _make_pytree
 
 
+def optional_add(*arrs: Optional[Array]) -> Optional[Array]:
+    r"""
+    Routine to add arrays where some may be None
+    :param arrs: Sequence of optional arrays
+    :return: Sum of arrays, or None if no passed arrays
+    """
+    if len(arrs) == 0 or all([arr is None for arr in arrs]):
+        return None
+    else:
+        return sum([arr for arr in arrs if arr is not None])  # type: ignore
+
+
 def check_arr_shape(
-    arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
+        arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
 ) -> None:
     """Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.
     :param arr: Input array to check.
@@ -197,7 +210,7 @@ class ArrayList(UserList[Array]):
             new_list.extend(list(o_))
         return ArrayList(new_list)
 
-    def flatten(self) -> Array:
+    def ravel(self) -> Array:
         r"""
         Flatten the sequence of arrays into a single 1D array.
         :return: Flattened 1D array.
@@ -216,18 +229,17 @@ class ArrayList(UserList[Array]):
         idx = 0
         for shape in arr_list_shapes.shapes:
             size = math.prod(shape)
-            arrs.append(vect[idx : idx + size].reshape(shape))
+            arrs.append(vect[idx: idx + size].reshape(shape))
             idx += size
         return cls(arrs)
 
     def index_all(
-        self,
-        *idx: Optional[int | slice | Ellipsis],
+            self,
+            *idx: Optional[EllipsisType | int | slice],
     ) -> ArrayList:
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(varphi).
         """
-
         return ArrayList([self[i][idx] for i in range(len(self))])
 
     @staticmethod

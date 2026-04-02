@@ -16,7 +16,7 @@ from aegrad.algebra.se3 import hg_to_d, exp_se3, hg_inv
 
 
 def interpolate_beam(
-    hg1: Array, hg2: Array, o0: Array, n_interp: int, include_endpoints: bool = False
+        hg1: Array, hg2: Array, o0: Array, n_interp: int, include_endpoints: bool = False
 ) -> Array:
     """
     Interpolate beam geometry and orientation between two nodes.
@@ -52,10 +52,10 @@ def interpolate_beam(
 
 
 def create_beam_unstructured_grid(
-    hg: Array,
-    conn: Array,
-    o0: Array,
-    n_interp: int,
+        hg: Array,
+        conn: Array,
+        o0: Array,
+        n_interp: int,
 ) -> tuple[vtk.vtkUnstructuredGrid, Optional[Array], Optional[Array]]:
     """
     Create a VTK UnstructuredGrid representing line (beam) elements.
@@ -163,16 +163,16 @@ def create_beam_unstructured_grid(
 
 
 def plot_beam_to_vtk(
-    hg: Array,
-    conn: Array,
-    o0: Array,
-    n_interp: int,
-    filename: str | os.PathLike,
-    i_ts: Optional[int] = None,
-    node_scalar_data: Optional[dict[str, Array]] = None,
-    node_vector_data: Optional[dict[str, Array]] = None,
-    cell_scalar_data: Optional[dict[str, Array]] = None,
-    cell_vector_data: Optional[dict[str, Array]] = None,
+        hg: Array,
+        conn: Array,
+        o0: Array,
+        n_interp: int,
+        filename: str | os.PathLike,
+        i_ts: Optional[int] = None,
+        node_scalar_data: Optional[dict[str, Optional[Array]]] = None,
+        node_vector_data: Optional[dict[str, Optional[Array]]] = None,
+        cell_scalar_data: Optional[dict[str, Optional[Array]]] = None,
+        cell_vector_data: Optional[dict[str, Optional[Array]]] = None,
 ) -> Path:
     """
     Write beam (line element) data to a VTU file.
@@ -196,7 +196,7 @@ def plot_beam_to_vtk(
         )
         n_interp = 0
 
-    filename = Path(filename)
+    filepath = Path(filename)
 
     n_nodes = hg.shape[0]
     n_elems = conn.shape[0]
@@ -260,10 +260,10 @@ def plot_beam_to_vtk(
             ug.GetCellData().AddArray(dsa.numpyTovtkDataArray(vectors, name))
 
     # write to file
-    name = filename.name
+    name = filepath.name
     if i_ts is not None:
         name += f"_ts_{i_ts}"
-    filename_full = Path(filename.parent).joinpath(name).with_suffix(".vtu")
+    filename_full = Path(filepath.parent).joinpath(name).with_suffix(".vtu")
 
     writer = vtk.vtkXMLUnstructuredGridWriter()
     writer.SetFileName(str(filename_full))
