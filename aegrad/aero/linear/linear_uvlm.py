@@ -10,13 +10,13 @@ import jax.numpy as jnp
 import os
 from pathlib import Path
 
-from aegrad.aero.data_structures import DynamicAeroCase, AeroSnapshot
-from aegrad.aero.linear.data_structures import (
+from aero.data_structures import DynamicAeroCase, AeroSnapshot
+from aero.linear.data_structures import (
     InputUnflattened,
     StateUnflattened,
     OutputUnflattened,
 )
-from aegrad.aero.linear.data_structures import (
+from aero.linear.data_structures import (
     _LinearComponent,
     _SliceEntry,
     InputSlices,
@@ -24,22 +24,22 @@ from aegrad.aero.linear.data_structures import (
     OutputSlices,
     AeroLinearResult,
 )
-from aegrad.aero.utils import (
+from aero.utils import (
     compute_c,
     compute_nc,
     propagate_wake,
     calculate_steady_forcing,
 )
-from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
-from aegrad.algebra.array_utils import ArrayList, split_to_vertex
-from aegrad.aero.flowfields import FlowField
-from aegrad.aero.utils import biot_savart_cutoff, KernelFunction
-from aegrad.utils import _shallow_asdict
-from aegrad.print_utils import warn
+from algebra.linear_operators import LinearOperator, LinearSystem
+from algebra.array_utils import ArrayList, split_to_vertex
+from aero.flowfields import FlowField
+from aero.utils import biot_savart_cutoff, KernelFunction
+from utils import _shallow_asdict
+from print_utils import warn
 from aero.aic import compute_aic_solve, compute_v_ind
 
 if TYPE_CHECKING:
-    from aegrad.aero.uvlm import UVLM
+    from aero.uvlm import UVLM
 
 
 class LinearWakeType(Enum):

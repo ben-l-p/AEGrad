@@ -4,9 +4,9 @@ from typing import Optional, Callable, Sequence, overload
 import jax
 from jax import Array, numpy as jnp, jacobian
 
-from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.print_utils import warn, jax_print
-from aegrad.utils import _make_pytree
+from algebra.array_utils import check_arr_shape
+from print_utils import warn, jax_print
+from utils import _make_pytree
 
 
 @_make_pytree

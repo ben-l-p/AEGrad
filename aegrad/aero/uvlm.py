@@ -10,30 +10,31 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
-from aegrad.utils import _make_pytree
-from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
-from aegrad.aero.utils import propagate_wake, compute_c, compute_nc
-from aegrad.constants import HORSESHOE_LENGTH
-from aegrad.algebra.array_utils import (
+from utils import _make_pytree
+from algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
+from aero.utils import propagate_wake, compute_c, compute_nc
+from constants import HORSESHOE_LENGTH
+from algebra.array_utils import (
     check_arr_dtype,
     neighbour_average,
     check_arr_shape,
     ArrayList,
 )
-from aegrad.aero.data_structures import (
+from aero.data_structures import (
     GridDiscretization,
     DynamicAeroCase,
     AeroSnapshot,
 )
-from aegrad.aero.flowfields import FlowField
-from aegrad.aero.utils import KernelFunction, biot_savart_epsilon
+from aero.flowfields import FlowField
+from aero.utils import KernelFunction, biot_savart_epsilon
 
-from aegrad.algebra.se3 import vect_product as se3_vect_product
+from algebra.se3 import vect_product as se3_vect_product
 from aero.aic import compute_v_ind, compute_aic_solve
+from aero.gradients.data_structures import AeroDesignVariables
 
 if TYPE_CHECKING:
-    from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
-from aegrad.print_utils import warn, jax_print
+    from aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
+from print_utils import warn, jax_print
 
 
 @_make_pytree
@@ -238,7 +239,7 @@ class UVLM:
         """
 
         # local import used to prevent circular import issues
-        from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
+        from aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
 
         return LinearUVLM(
             self,
@@ -324,6 +325,10 @@ class UVLM:
                 check_arr_shape(dw_, (self.grid_disc[i_surf].m_star,), "delta_w")
                 self.delta_w.append(dw_)
         self._zeta0_w = self.initialise_wake()
+
+    def get_design_variables(self) -> AeroDesignVariables:
+        # TODO: generalise
+        return AeroDesignVariables(x0_aero=self.x0_b, u_inf=self.flowfield.u_inf, rho=self.flowfield.rho)
 
     def _hg_to_zeta(self, hg: Array) -> ArrayList:
         r"""

@@ -7,7 +7,7 @@ from jax import numpy as jnp, Array
 from jax.scipy.special import bernoulli
 from jax.lax import cond
 
-from aegrad.constants import BASE_SUMMATION_ORDER
+from constants import BASE_SUMMATION_ORDER
 
 
 def matrix2(mat: Array) -> Array:

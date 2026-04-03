@@ -1,9 +1,9 @@
 import jax
 from jax import numpy as jnp
 
-from aegrad.algebra.base import clip_to_pi, chi
+from algebra.base import clip_to_pi, chi
 from constants import SMALL_ANG_THRESH
-from aegrad.algebra.so3 import (
+from algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
     exp_so3,
@@ -13,7 +13,7 @@ from aegrad.algebra.so3 import (
     bound_h_omega,
     bracket_so3,
 )
-from aegrad.algebra.se3 import (
+from algebra.se3 import (
     ha_to_ha_hat,
     ha_hat_to_ha,
     ha_to_ha_tilde,
@@ -32,7 +32,7 @@ from aegrad.algebra.se3 import (
     hg_to_ha_hat,
     ha_to_ha_check,
 )
-from aegrad.algebra.test_routines import (
+from algebra.test_routines import (
     check_if_so3_a,
     check_if_so3_g,
     check_if_se3_a,

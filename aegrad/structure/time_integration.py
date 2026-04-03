@@ -1,7 +1,7 @@
 from jax import Array, vmap
 from jax import numpy as jnp
 
-from aegrad.print_utils import warn
+from print_utils import warn
 from algebra.se3 import log_se3, exp_se3, hg_to_d
 from structure.data_structures import StructureMinimalStates
 
@@ -129,8 +129,8 @@ class TimeIntregrator:
     ) -> tuple[Array, StructureMinimalStates]:
         r"""
         Predict the current state based upon the previous state.
-        :param q_nm1: State at timestep n
-        :return: Predicted state at timestep n+1
+        :param q_nm1: State at timestep varphi
+        :return: Predicted state at timestep varphi+1
         """
         a = self.predict_a(v_dot_nm1=q_nm1.v_dot, a_nm1=q_nm1.a)
         phi = self.predict_phi(v_nm1=q_nm1.v, a_nm1=q_nm1.a, a_n_pred=a)
@@ -184,8 +184,8 @@ class TimeIntregrator:
     def calculate_phi_from_phi_alpha(self, phi_alpha: Array) -> Array:
         r"""
         Obtain the full timestep increment from the alpha increment.
-        :param phi_alpha: Increment from timestep n-1 to alpha, [n_nodes, 6].
-        :return: Increment for timestep n, [n_nodes, 6].
+        :param phi_alpha: Increment from timestep varphi-1 to alpha, [n_nodes, 6].
+        :return: Increment for timestep varphi, [n_nodes, 6].
         """
         return phi_alpha / (1.0 - self.alpha_f)
 
@@ -193,8 +193,8 @@ class TimeIntregrator:
         r"""
         Obtain the full timestep velocity from the alpha increment and the previous velocity.
         :param v_alpha: Velocity at alpha step, [n_nodes, 6].
-        :param v_nm1: Velocity at timestep n-1, [n_nodes, 6].
-        :return: Velocity at timestep n, [n_nodes, 6].
+        :param v_nm1: Velocity at timestep varphi-1, [n_nodes, 6].
+        :return: Velocity at timestep varphi, [n_nodes, 6].
         """
 
         return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
@@ -205,8 +205,8 @@ class TimeIntregrator:
         r"""
         Obtain the full timestep acceleration from the alpha increment and the previous acceleration.
         :param v_dot_alpha: Acceleration at alpha step, [n_nodes, 6].
-        :param v_dot_nm1: Acceleration at timestep n-1, [n_nodes, 6].
-        :return: Acceleration at timestep n, [n_nodes, 6].
+        :param v_dot_nm1: Acceleration at timestep varphi-1, [n_nodes, 6].
+        :return: Acceleration at timestep varphi, [n_nodes, 6].
         """
 
         return (v_dot_alpha - self.alpha_f * v_dot_nm1) / (1.0 - self.alpha_f)

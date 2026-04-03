@@ -3,17 +3,18 @@ from typing import Optional, Sequence
 import jax
 from jax import Array, vmap
 
-from aegrad.algebra.se3 import hg_to_d
-from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero.uvlm import UVLM
-from aegrad.aero.flowfields import FlowField
-from aegrad.structure import BeamStructure
+from algebra.se3 import hg_to_d
+from algebra.array_utils import ArrayList
+from aero.uvlm import UVLM
+from aero.flowfields import FlowField
+from structure import BeamStructure
 from aero.data_structures import DynamicAeroCase
+from coupled.gradients.data_structures import AeroelasticDesignVariables
 from data_structures import ConvergenceSettings, ConvergenceStatus
-from aegrad.coupled import StaticAeroelastic, DynamicAeroelastic
-from aegrad.print_utils import warn_if_32_bit
+from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic
+from print_utils import warn_if_32_bit
 from structure import StaticStructure
-from aegrad.print_utils import VerbosityLevel
+from print_utils import VerbosityLevel
 
 
 class BaseCoupledAeroelastic:
@@ -59,6 +60,11 @@ class BaseCoupledAeroelastic:
             x0_aero=x0_aero,
             hg0=self.structure.hg0,
         )
+
+    def get_design_variables(self, case: StaticAeroelastic | DynamicAeroelastic) -> AeroelasticDesignVariables:
+        return AeroelasticDesignVariables(
+            structure_dv=self.structure.get_design_variables(struct_case=case.structure),
+            aero_dv=self.aero.get_design_variables())
 
     def static_solve(
             self,

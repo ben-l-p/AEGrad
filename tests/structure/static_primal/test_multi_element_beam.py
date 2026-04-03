@@ -1,9 +1,9 @@
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
-from aegrad.algebra.test_routines import const_curvature_beam
-from aegrad.algebra.base import chi
+from structure import BeamStructure
+from algebra.test_routines import const_curvature_beam
+from algebra.base import chi
 
 jax.config.update("jax_enable_x64", True)
 

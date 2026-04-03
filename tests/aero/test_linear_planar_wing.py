@@ -6,14 +6,14 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
 from jax import Array, vmap
 
-from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.uvlm import UVLM
-from aegrad.aero.linear import LinearWakeType, InputUnflattened
+from algebra.array_utils import ArrayList
+from aero.data_structures import GridDiscretization
+from aero.uvlm import UVLM
+from aero.linear import LinearWakeType, InputUnflattened
 from aero.data_structures import AeroSnapshot
 from aero.utils import biot_savart_cutoff, make_rectangular_grid
-from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
-from aegrad.print_utils import set_verbosity, VerbosityLevel
+from aero.flowfields import FlowField, Constant, OneMinusCosine
+from print_utils import set_verbosity, VerbosityLevel
 
 
 class TestLinearAero:

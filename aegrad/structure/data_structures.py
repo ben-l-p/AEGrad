@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from jax import numpy as jnp, Array
 from jax import vmap
 
-from aegrad.print_utils import warn
-from aegrad.algebra.base import chi
-from aegrad.plotting.beam import plot_beam_to_vtk
-from aegrad.plotting.pvd import write_pvd
-from aegrad.utils import _make_pytree
+from print_utils import warn
+from algebra.base import chi
+from plotting.beam import plot_beam_to_vtk
+from plotting.pvd import write_pvd
+from utils import _make_pytree
+from structure.gradients.data_structures import StructureFullStates
 
 
 @dataclass
@@ -94,6 +95,10 @@ class StaticStructure:
             prescribed_dofs=self.prescribed_dofs,
         )
 
+    def get_full_states(self) -> StructureFullStates:
+        return StructureFullStates(v=None, v_dot=None, hg=self.hg,
+                                   eps=self.eps, f_int=self.f_int)
+
     def _transform(self, nodal_chi: Array) -> None:
         r"""
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
@@ -123,13 +128,14 @@ class StaticStructure:
         )
 
     def to_global(self) -> None:
-        """Convert local structure_dv results to global frame."""
+        """
+        Convert local structure_dv results to global frame.
+        """
         if not self.local:
             warn("Results already in global frame, skipping conversion.")
             return
-        else:
-            self.local = False
 
+        self.local = False
         nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes_, 6, 6]
         self._transform(nodal_chi)
 
@@ -157,7 +163,7 @@ class StaticStructure:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "conn", "o0", "prescribed_dofs"
+        return "conn", "o0", "prescribed_dofs", "local"
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -172,7 +178,6 @@ class StaticStructure:
             "f_grav",
             "f_int",
             "f_res",
-            "local",
         )
 
 
@@ -513,13 +518,17 @@ class DynamicStructure:
             prescribed_dofs=self.prescribed_dofs,
         )
 
-    def get_states(self, i_ts: int | Array) -> StructureMinimalStates:
+    def get_minimal_states(self, i_ts: int | Array) -> StructureMinimalStates:
         return StructureMinimalStates(
             varphi=self.varphi[i_ts, ...],
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
             a=self.a[i_ts, ...],
         )
+
+    def get_full_states(self, i_ts: int | Array) -> StructureFullStates:
+        return StructureFullStates(v=self.v[i_ts, ...], v_dot=self.v_dot[i_ts, ...], hg=self.hg[i_ts, ...],
+                                   eps=self.eps[i_ts, ...], f_int=self.f_int[i_ts, ...])
 
     @classmethod
     def initialise(

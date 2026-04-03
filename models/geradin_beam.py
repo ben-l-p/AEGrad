@@ -5,16 +5,15 @@ from jax import numpy as jnp
 from jax import Array
 import jax
 
-from aegrad.structure import BeamStructure
-
+from structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 
 
 def geradin_beam(
-    n_nodes: int = 20,
-    beam_direction: Literal["x_target", "y", "z"] = "x_target",
-    m_cs: Optional[Array] = None,
+        n_nodes: int = 20,
+        beam_direction: Literal["x_target", "y", "z"] = "x_target",
+        m_cs: Optional[Array] = None,
 ) -> BeamStructure:
     length = jnp.array(5.0)
     n_elem = n_nodes - 1

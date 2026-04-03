@@ -1,8 +1,8 @@
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
-from aegrad.algebra.se3 import exp_se3
+from structure import BeamStructure
+from algebra.se3 import exp_se3
 
 jax.config.update("jax_enable_x64", True)
 
@@ -66,7 +66,7 @@ class TestTwoNodeXGravityZ:
 
         expected_weight = cls.m_bar * cls.l * cls.g_vec
         matrix_weight = (
-            cls.struct.hg0[0, :3, :3] @ f_g[:3] + cls.struct.hg0[1, :3, :3] @ f_g[6:9]
+                cls.struct.hg0[0, :3, :3] @ f_g[:3] + cls.struct.hg0[1, :3, :3] @ f_g[6:9]
         )
 
         assert jnp.allclose(matrix_weight, expected_weight), (

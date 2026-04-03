@@ -1,9 +1,9 @@
 from jax import numpy as jnp
 
-from aegrad.aero.utils import make_rectangular_grid
-from aegrad.aero.flowfields import Constant
-from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.uvlm import UVLM
+from aero.utils import make_rectangular_grid
+from aero.flowfields import Constant
+from aero.data_structures import GridDiscretization
+from aero.uvlm import UVLM
 
 
 class TestMirroredWing:

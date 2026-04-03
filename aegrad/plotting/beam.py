@@ -6,13 +6,13 @@ from functools import partial
 import vtk
 from vtk.numpy_interface import algorithms as algs  # type: ignore
 from vtk.numpy_interface import dataset_adapter as dsa  # type: ignore
-from aegrad.print_utils import warn
+from print_utils import warn
 
 import jax
 from jax import Array
 from jax import numpy as jnp
 
-from aegrad.algebra.se3 import hg_to_d, exp_se3, hg_inv
+from algebra.se3 import hg_to_d, exp_se3, hg_inv
 
 
 def interpolate_beam(

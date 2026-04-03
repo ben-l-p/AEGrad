@@ -4,7 +4,7 @@ from jax import numpy as jnp
 from jax import Array
 import jax
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 from structure import StructureFullStates, StructuralDesignVariables
 
 jax.config.update("jax_enable_x64", True)

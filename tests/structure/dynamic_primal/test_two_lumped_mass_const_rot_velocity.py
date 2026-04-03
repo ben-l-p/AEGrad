@@ -2,7 +2,7 @@ from jax.scipy.linalg import block_diag
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 
@@ -30,10 +30,10 @@ class TestTwoXLumpedMassConstXRotVelocity:
         # solve to initialise beam with centrifugal deformation, such that there are no oscillations
         if cls.beam_direction_index != cls.v_direction_index:
             dx = (
-                m_lumped
-                * r_ext**2
-                * omega**2
-                / (k_coeffs[0] + m_lumped * r_ext * omega**2)
+                    m_lumped
+                    * r_ext ** 2
+                    * omega ** 2
+                    / (k_coeffs[0] + m_lumped * r_ext * omega ** 2)
             )
         else:
             dx = 0.0
@@ -89,11 +89,11 @@ class TestTwoXLumpedMassConstXRotVelocity:
         expected_theta = omega * jnp.arange(n_tstep) * dt
 
         if cls.beam_direction_index != cls.v_direction_index:
-            expected_f = m_lumped * r_ext * omega**2
+            expected_f = m_lumped * r_ext * omega ** 2
             x0_expected = jnp.zeros((n_tstep, 3))
 
             third_dir = (
-                {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
+                    {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
             ).pop()
             third_dir_sign = jnp.sum(
                 jnp.cross(

@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from aegrad.aero.data_structures import DynamicAeroCase
-from aegrad.structure import StaticStructure, DynamicStructure
+from aero.data_structures import DynamicAeroCase
+from structure.data_structures import StaticStructure, DynamicStructure
+from coupled.gradients.data_structures import AeroelasticStates
 
 
 class StaticAeroelastic:
@@ -21,6 +22,9 @@ class StaticAeroelastic:
     ):
         self.structure.plot(directory, n_interp=n_interp)
         self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
+
+    def get_full_states(self):
+        return AeroelasticStates(structure=self.structure.get_full_states(), aero=self.aero.get_full_states())
 
 
 @dataclass

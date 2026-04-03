@@ -6,7 +6,7 @@ from jax import numpy as jnp, Array
 from jax import vmap
 from jax.lax import cond
 
-from aegrad.algebra.array_utils import neighbour_average, ArrayList
+from algebra.array_utils import neighbour_average, ArrayList
 from algebra.array_utils import split_to_vertex
 from constants import EPSILON, R_CUTOFF
 

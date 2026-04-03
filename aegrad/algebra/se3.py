@@ -3,10 +3,10 @@ from jax import Array
 from jax.lax import cond
 import jax
 
-from aegrad.constants import SMALL_ANG_THRESH
-from aegrad.algebra.base import chi
-from aegrad.algebra.base import matrix2, log_sum, t_sum, t_inv_sum, exp_sum
-from aegrad.algebra.so3 import (
+from constants import SMALL_ANG_THRESH
+from algebra.base import chi
+from algebra.base import matrix2, log_sum, t_sum, t_inv_sum, exp_sum
+from algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
     t_so3,
@@ -63,15 +63,15 @@ def t_u_omega_plus(ha: Array) -> Array:
         beta_ = beta(b)
 
         return (
-            -0.5 * beta_ * vec_to_skew(a)
-            + (1.0 - alpha_) / b_norm2 * bracket_neg_so3(a, b)
-            + jnp.inner(b, a)
-            / b_norm2
-            * (
-                (beta_ - alpha_) * vec_to_skew(b)
-                + (0.5 * beta_ - 3.0 * (1.0 - alpha_) / b_norm2)
-                * matrix2(vec_to_skew(b))
-            )
+                -0.5 * beta_ * vec_to_skew(a)
+                + (1.0 - alpha_) / b_norm2 * bracket_neg_so3(a, b)
+                + jnp.inner(b, a)
+                / b_norm2
+                * (
+                        (beta_ - alpha_) * vec_to_skew(b)
+                        + (0.5 * beta_ - 3.0 * (1.0 - alpha_) / b_norm2)
+                        * matrix2(vec_to_skew(b))
+                )
         )
 
     def t_u_omega_plus_small_angle() -> Array:
@@ -330,8 +330,8 @@ def hg_to_d(hg1: Array, hg2: Array) -> Array:
 
 
 def p(
-    d: Array,
-    ad_inv: Array,
+        d: Array,
+        ad_inv: Array,
 ) -> Array:
     r"""
     Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation

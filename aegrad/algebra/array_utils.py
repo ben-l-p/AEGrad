@@ -8,7 +8,7 @@ from types import EllipsisType
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.utils import _make_pytree
+from utils import _make_pytree
 
 
 def optional_add(*arrs: Optional[Array]) -> Optional[Array]:

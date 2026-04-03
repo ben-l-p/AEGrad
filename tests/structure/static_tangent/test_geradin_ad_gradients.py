@@ -3,8 +3,8 @@ from jax import numpy as jnp
 import jax
 from jax import Array
 
-from aegrad.algebra.so3 import log_so3
-from aegrad.structure.beam import StaticStructure
+from algebra.so3 import log_so3
+from structure.beam import StaticStructure
 from models.geradin_beam import geradin_beam
 
 jax.config.update("jax_enable_x64", True)

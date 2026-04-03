@@ -2,7 +2,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 from structure import StructureFullStates, StructuralDesignVariables
 from models.geradin_beam import geradin_beam
 

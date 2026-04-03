@@ -4,8 +4,8 @@ from typing import Literal
 from jax import Array, numpy as jnp
 import jax
 
-from aegrad.algebra.se3 import q, ha_to_ha_hat, p, q_dot, ha_to_ha_check
-from aegrad.algebra.integration import gauss_lobatto, gauss_legendre
+from algebra.se3 import q, ha_to_ha_hat, p, q_dot, ha_to_ha_check
+from algebra.integration import gauss_lobatto, gauss_legendre
 
 
 def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
@@ -47,13 +47,13 @@ def _n_elem_per_node(connectivity: Array) -> Array:
 
 
 def _k_t_entry(
-    d: Array,
-    p_d: Array,
-    length: Array,
-    eps: Array,
-    k: Array,
-    ad_inv: Array,
-    include_geometric: bool = True,
+        d: Array,
+        p_d: Array,
+        length: Array,
+        eps: Array,
+        k: Array,
+        ad_inv: Array,
+        include_geometric: bool = True,
 ) -> Array:
     r"""
     Computes a stiffness matrix entry between two degrees of freedom. Formulation from Geometrically exact beam finite
@@ -83,11 +83,11 @@ def _k_t_entry(
 
 
 def _integrate_m_l(
-    m_cs: Array,
-    d: Array,
-    ad_inv: Array,
-    length: Array,
-    int_order: Literal[3, 4, 5],
+        m_cs: Array,
+        d: Array,
+        ad_inv: Array,
+        length: Array,
+        int_order: Literal[3, 4, 5],
 ) -> Array:
     r"""
     Approximates the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
@@ -115,14 +115,14 @@ def _integrate_m_l(
 
 
 def _integrate_c_t(
-    m_cs: Array,
-    v_ab: Array,
-    d: Array,
-    d_dot: Array,
-    ad_inv: Array,
-    length: Array,
-    int_order: Literal[1, 2, 3],
-    include_q_dot: bool,
+        m_cs: Array,
+        v_ab: Array,
+        d: Array,
+        d_dot: Array,
+        ad_inv: Array,
+        length: Array,
+        int_order: Literal[1, 2, 3],
+        include_q_dot: bool,
 ) -> Array:
     r"""
     Approximate the integral :math:`C_T = C^L - \int_L \check{(\mathbf{MQv}_{AB})}^{\top} \mathbf{Q} \ ds` where
@@ -149,7 +149,7 @@ def _integrate_c_t(
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot_, ad_inv)
             return q_mat.T @ (
-                m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
+                    m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
             )
 
         def _g_iner_ab(v: Array) -> Array:
@@ -169,7 +169,7 @@ def _integrate_c_t(
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
             return q_mat.T @ (
-                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+                    m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
             )
 
         # obtain the tangent stiffness as the Jacobian of the inertial forcing with respect to velocity, which includes
@@ -190,7 +190,7 @@ def _integrate_c_t(
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
             c_l = q_mat.T @ (
-                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+                    m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
             )
             c_t = c_l - q_mat.T @ ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
             return jnp.stack((c_l, c_t), axis=0)

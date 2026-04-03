@@ -1,10 +1,10 @@
 from jax import numpy as jnp
 
-from aegrad.aero.utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.uvlm import UVLM
-from aegrad.aero.flowfields import Constant
-from aegrad.print_utils import set_verbosity, VerbosityLevel
+from aero.utils import make_rectangular_grid
+from aero.data_structures import GridDiscretization
+from aero.uvlm import UVLM
+from aero.flowfields import Constant
+from print_utils import set_verbosity, VerbosityLevel
 
 
 class TestRotInvariance:
@@ -35,7 +35,7 @@ class TestRotInvariance:
 
         cases = []
         for i_u_inf, u_inf in enumerate(
-            [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
+                [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
         ):
             flowfield = Constant(u_inf, 1.225, True)
             uvlm.set_design_variables(1.0, flowfield, None, x_grid, hg)
@@ -47,18 +47,18 @@ class TestRotInvariance:
             )
 
         if not jnp.allclose(
-            f_tot := jnp.sum(cases[0].f_steady[0]),
-            0.0,
-            atol=1e-5,
-            rtol=1e-4,
+                f_tot := jnp.sum(cases[0].f_steady[0]),
+                0.0,
+                atol=1e-5,
+                rtol=1e-4,
         ):
             raise ValueError(f"Total force in flow is not zero: {f_tot}")
 
         if not jnp.allclose(
-            cases[0].f_steady[0],
-            jnp.transpose(cases[1].f_steady[0], (1, 0, 2))[..., (1, 0, 2)],
-            atol=1e-5,
-            rtol=1e-4,
+                cases[0].f_steady[0],
+                jnp.transpose(cases[1].f_steady[0], (1, 0, 2))[..., (1, 0, 2)],
+                atol=1e-5,
+                rtol=1e-4,
         ):
             raise ValueError(
                 "Steady force distribution is not equal in both flow directions in no-wake case."

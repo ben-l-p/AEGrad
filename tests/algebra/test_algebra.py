@@ -1,8 +1,8 @@
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.algebra.linear_operators import LinearOperator, BlockLinear
-from aegrad.algebra.base import taylor_series
+from algebra.linear_operators import LinearOperator, BlockLinear
+from algebra.base import taylor_series
 
 
 class TestLinearOperator:
@@ -184,7 +184,7 @@ class TestTaylorSeries:
         """
 
         def func(x_: Array) -> Array:
-            return 3.0 * x_**2 + 8.0 * x_ + 7.0
+            return 3.0 * x_ ** 2 + 8.0 * x_ + 7.0
 
         x0 = jnp.array([3.0, 5.0])
 

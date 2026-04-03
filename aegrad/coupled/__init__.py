@@ -1,2 +1,2 @@
-from aegrad.coupled.data_structures import StaticAeroelastic, DynamicAeroelastic
+from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic
 from coupled.gradients.coupled import AeroelasticObjectiveFunction, CoupledAeroelastic

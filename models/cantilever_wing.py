@@ -5,25 +5,25 @@ from jax import numpy as jnp
 from jax import Array
 
 from coupled.gradients.coupled import CoupledAeroelastic
-from aegrad.structure import BeamStructure
-from aegrad.aero.uvlm import UVLM
-from aegrad.aero.utils import make_rectangular_grid
-from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.flowfields import Constant
+from structure import BeamStructure
+from aero.uvlm import UVLM
+from aero.utils import make_rectangular_grid
+from aero.data_structures import GridDiscretization
+from aero.flowfields import Constant
 
 jax.config.update("jax_enable_x64", True)
 
 
 def make_cantilever_wing(
-    n_nodes: int = 40,
-    b_ref: float = 5.0,
-    c_ref: float = 1.0,
-    ea: float = 0.25,
-    m: int = 10,
-    m_star: int = 20,
-    k_cs: Array = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2))),
-    u_inf=jnp.array((10.0, 0.0, 1.0)),
-    rho=1.225,
+        n_nodes: int = 40,
+        b_ref: float = 5.0,
+        c_ref: float = 1.0,
+        ea: float = 0.25,
+        m: int = 10,
+        m_star: int = 20,
+        k_cs: Array = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2))),
+        u_inf=jnp.array((10.0, 0.0, 1.0)),
+        rho=1.225,
 ) -> CoupledAeroelastic:
     n_elem = n_nodes - 1
     n = n_nodes - 1

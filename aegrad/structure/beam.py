@@ -1,3 +1,4 @@
+import copy
 from typing import Optional, Sequence, Literal, overload
 from functools import partial
 
@@ -6,27 +7,28 @@ from jax import Array, vmap
 import jax
 from jax.scipy.linalg import block_diag
 
-from aegrad.utils import _check_type
-from aegrad.structure.data_structures import (
+from utils import _check_type
+from structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
     OptionalJacobians,
 )
 from data_structures import ConvergenceSettings, ConvergenceStatus
-from aegrad.print_utils import warn, warn_if_32_bit, VerbosityLevel
-from aegrad.structure.utils import _check_connectivity, _n_elem_per_node
-from aegrad.algebra.array_utils import check_arr_shape, check_arr_dtype
-from aegrad.structure.utils import (
+from print_utils import warn, warn_if_32_bit, VerbosityLevel
+from structure.utils import _check_connectivity, _n_elem_per_node
+from algebra.array_utils import check_arr_shape, check_arr_dtype
+from structure.utils import (
     _k_t_entry,
     _integrate_m_l,
     _integrate_c_t,
     _make_c_t_lumped,
 )
-from aegrad.algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
-from aegrad.algebra.so3 import vec_to_skew
-from aegrad.structure.time_integration import TimeIntregrator
+from algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3
+from algebra.so3 import vec_to_skew
+from structure.time_integration import TimeIntregrator
 from algebra.se3 import t_se3, log_se3
+from structure.gradients.data_structures import StructuralDesignVariables
 from structure.data_structures import StructureMinimalStates
 
 
@@ -210,6 +212,20 @@ class BaseBeamStructure:
         )  # [n_nodes_, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
+    def get_design_variables(self, struct_case: StaticStructure | DynamicStructure) -> StructuralDesignVariables:
+        r"""
+        Obtain the design variables for the structural problem. As the external forcing is defined for each solve, the
+        chosen forcing is required as input.
+        :param f_ext_follower: External forcing follower, [n_tstep, n_nodes, 6] or [n_nodes, 6]
+        :param f_ext_dead: External forcing dead, [n_tstep, n_nodes, 6] or [n_nodes, 6]
+        :return: StructuralDesignVariables dataclass containing design variables
+        """
+
+        gs = copy.deepcopy(struct_case)
+        gs.to_global()
+        return StructuralDesignVariables(x0=self.x0, m_cs=self.m_cs, k_cs=self.k_cs, m_lumped=self.m_lumped,
+                                         f_ext_dead=gs.f_ext_dead, f_ext_follower=gs.f_ext_follower)
+
     def reference_configuration(
             self,
             use_f_ext_follower: bool = True,
@@ -250,9 +266,9 @@ class BaseBeamStructure:
     @staticmethod
     def calculate_phi_from_hg(hg_nm1: Array, hg_n: Array) -> Array:
         r"""
-        Calculate the twist increment from timestep n to timestep n+1
-        :param hg_nm1: Coordinates from timestep n-1, [n_nodes, 4, 4]
-        :param hg_n: Coordinates from timestep n, [n_nodes, 4, 4]
+        Calculate the twist increment from timestep varphi to timestep varphi+1
+        :param hg_nm1: Coordinates from timestep varphi-1, [n_nodes, 4, 4]
+        :param hg_n: Coordinates from timestep varphi, [n_nodes, 4, 4]
         :return: Increment phi, [n_nodes, 6]
         """
         return vmap(hg_to_d, (0, 0), 0)(
@@ -264,9 +280,9 @@ class BaseBeamStructure:
     def calculate_varphi_from_phi(varphi_nm1: Array, phi_n: Array) -> Array:
         r"""
         Update the varphi vector with the timestep change phi.
-        :param varphi_nm1: Twists from reference to timestep n, [n_nodes, 6]
-        :param phi_n: Twists from timestep n to timestep n+1, [n_nodes, 6]
-        :return: Twists from reference to timestep n+1, [n_nodes, 6]
+        :param varphi_nm1: Twists from reference to timestep varphi, [n_nodes, 6]
+        :param phi_n: Twists from timestep varphi to timestep varphi+1, [n_nodes, 6]
+        :return: Twists from reference to timestep varphi+1, [n_nodes, 6]
         """
         return vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)),
@@ -979,6 +995,7 @@ class BaseBeamStructure:
         :param v_dot: Nodal accelerations, [n_node, 6]
         :return: Residual force vector, [n_dof], absolute sum of forces, [n_dof]
         """
+
         f_res = self.make_f_int(p_d, eps)  # [n_elem, 12]
         f_abs_sum = jnp.abs(f_res)
 
@@ -1367,7 +1384,7 @@ class BaseBeamStructure:
             :param i_ts: Time step index
             :param converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
             print messages.
-            :param hg_n: Transformation matrices at iteration n, [n_nodes_, 4, 4]
+            :param hg_n: Transformation matrices at iteration varphi, [n_nodes_, 4, 4]
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration varphi+1.
             """
@@ -1483,9 +1500,9 @@ class BaseBeamStructure:
             """
 
             # predictor step
-            phi_init, q_init = self.time_integrator.predict_q(sol.get_states(i_ts - 1))
+            phi_init, q_init = self.time_integrator.predict_q(sol.get_minimal_states(i_ts - 1))
             phi_alpha_init, q_alpha_init = self.time_integrator.calculate_q_alpha(
-                q_nm1=sol.get_states(i_ts - 1), q_n=q_init, phi_n=phi_init
+                q_nm1=sol.get_minimal_states(i_ts - 1), q_n=q_init, phi_n=phi_init
             )
 
             q_alpha_init.varphi = None  # this value is not used during the loop
@@ -1502,7 +1519,7 @@ class BaseBeamStructure:
             # postprocess results for time step and store in solution object
             q_n, phi_n = self.time_integrator.calculate_q_n_from_q_alpha(
                 q_alpha=q_alpha,
-                q_nm1=sol.get_states(i_ts - 1),
+                q_nm1=sol.get_minimal_states(i_ts - 1),
                 phi_alpha=phi_alpha,
             )
 

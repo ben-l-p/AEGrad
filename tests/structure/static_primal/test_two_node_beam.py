@@ -1,10 +1,10 @@
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
-from aegrad.algebra.base import chi
-from aegrad.algebra.test_routines import const_curvature_beam
-from aegrad.algebra.se3 import p
+from structure import BeamStructure
+from algebra.base import chi
+from algebra.test_routines import const_curvature_beam
+from algebra.se3 import p
 
 jax.config.update("jax_enable_x64", True)
 
@@ -223,7 +223,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, 1:], 0.0), (
@@ -268,7 +268,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 4, 5))], 0.0), (
@@ -315,7 +315,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 3, 5))], 0.0), (
@@ -376,7 +376,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 3, 4))], 0.0), (
@@ -437,7 +437,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 2, 3, 4))], 0.0), (
@@ -492,7 +492,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 3, 5))], 0.0), (

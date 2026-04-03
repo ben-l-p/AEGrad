@@ -2,8 +2,8 @@ from jax import numpy as jnp
 from jax import Array
 from jax.lax import cond
 
-from aegrad.algebra.base import clip_to_pi, matrix2, t_sum, t_inv_sum, exp_sum, log_sum
-from aegrad.constants import SMALL_ANG_THRESH
+from algebra.base import clip_to_pi, matrix2, t_sum, t_inv_sum, exp_sum, log_sum
+from constants import SMALL_ANG_THRESH
 
 
 def vec_to_skew(vec: Array) -> Array:
@@ -45,7 +45,7 @@ def alpha(b: Array) -> Array:
         return jnp.sin(b_norm) / b_norm
 
     def alpha_small_angle() -> Array:
-        return 1.0 - b_norm**2 / 6.0
+        return 1.0 - b_norm ** 2 / 6.0
 
     return cond(b_norm > SMALL_ANG_THRESH, alpha_full, alpha_small_angle)
 
@@ -126,11 +126,11 @@ def t_so3(ha_omega: Array) -> Array:
 
     def t_so3_full() -> Array:
         return (
-            jnp.eye(3)
-            - 0.5 * beta(ha_omega) * vec_to_skew(ha_omega)
-            + (1.0 - alpha(ha_omega))
-            / jnp.inner(ha_omega, ha_omega)
-            * matrix2(vec_to_skew(ha_omega))
+                jnp.eye(3)
+                - 0.5 * beta(ha_omega) * vec_to_skew(ha_omega)
+                + (1.0 - alpha(ha_omega))
+                / jnp.inner(ha_omega, ha_omega)
+                * matrix2(vec_to_skew(ha_omega))
         )
 
     def t_so3_small_angle() -> Array:
@@ -151,11 +151,11 @@ def t_inv_so3(ha_omega: Array) -> Array:
 
     def t_inv_so3_full() -> Array:
         return (
-            jnp.eye(3)
-            + 0.5 * vec_to_skew(ha_omega)
-            + (1.0 - alpha(ha_omega) / beta(ha_omega))
-            / jnp.inner(ha_omega, ha_omega)
-            * matrix2(vec_to_skew(ha_omega))
+                jnp.eye(3)
+                + 0.5 * vec_to_skew(ha_omega)
+                + (1.0 - alpha(ha_omega) / beta(ha_omega))
+                / jnp.inner(ha_omega, ha_omega)
+                * matrix2(vec_to_skew(ha_omega))
         )
 
     def t_inv_so3_small_angle() -> Array:
@@ -177,9 +177,9 @@ def exp_so3(ha_omega: Array) -> Array:
         # has a singularity as ha_omega -> 0
         ang = jnp.linalg.norm(ha_omega)
         return (
-            jnp.eye(3)
-            + jnp.sin(ang) / ang * vec_to_skew(ha_omega)
-            + (1.0 - jnp.cos(ang)) / ang**2 * matrix2(vec_to_skew(ha_omega))
+                jnp.eye(3)
+                + jnp.sin(ang) / ang * vec_to_skew(ha_omega)
+                + (1.0 - jnp.cos(ang)) / ang ** 2 * matrix2(vec_to_skew(ha_omega))
         )
 
     def exp_so3_small_angle() -> Array:

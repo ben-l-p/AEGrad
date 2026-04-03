@@ -1,4 +1,4 @@
-from aegrad.structure.data_structures import (
+from structure.data_structures import (
     OptionalJacobians,
     StaticStructure,
     DynamicStructure,

@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TYPE_CHECKING
 
 import jax
 from jax import Array, numpy as jnp
 
-from aero.data_structures import DynamicAeroCase
+if TYPE_CHECKING:
+    from aero.data_structures import DynamicAeroCase
 from algebra.array_utils import ArrayList, ArrayListShape
 from plotting.aerogrid import plot_grid_to_vtk
 from utils import _make_pytree
@@ -19,9 +20,19 @@ from data_structures import DesignVariables
 
 @jax.tree_util.register_dataclass
 @dataclass
-class AeroStates:
+class AeroFullStates:
     f_steady: ArrayList
     f_unsteady: Optional[ArrayList]
+    gamma_b: ArrayList
+    gamma_w: ArrayList
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class AeroMinimalStates:
+    gamma_b: ArrayList
+    gamma_w: ArrayList
+    zeta_w: ArrayList
 
 
 @jax.tree_util.register_dataclass

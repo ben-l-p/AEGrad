@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence, Self
+from typing import Optional, Sequence, Self, TYPE_CHECKING
 
 import jax
 from jax import Array, numpy as jnp
 
 from plotting.beam import plot_beam_to_vtk
-from structure import StaticStructure
+
+if TYPE_CHECKING:
+    from structure.data_structures import StaticStructure
 from algebra.array_utils import ArrayListShape
 
 from utils import _make_pytree
@@ -126,16 +128,16 @@ class StructuralDesignVariables(DesignVariables):
 class StructureDesignGradients:
     def __init__(
             self,
-            x0: Optional[Array],
-            k_cs: Optional[Array],
+            x0: Array,
+            k_cs: Array,
             m_cs: Optional[Array],
-            m_lumped: Optional[Array],
+            m_lumped: Array,
             f_ext_follower: Optional[Array],
             f_ext_dead: Optional[Array],
             f_shape: tuple[int, ...],
     ):
-        self.x0: Optional[Array] = x0
-        self.k_cs: Optional[Array] = k_cs
+        self.x0: Array = x0
+        self.k_cs: Array = k_cs
         self.m_cs: Optional[Array] = m_cs
         self.m_lumped: Optional[Array] = m_lumped
         self.f_ext_follower: Optional[Array] = f_ext_follower

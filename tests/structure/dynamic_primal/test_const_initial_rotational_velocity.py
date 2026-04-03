@@ -2,7 +2,7 @@ from jax.scipy.linalg import block_diag
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 
@@ -27,9 +27,9 @@ class TestXBeamConstXRotVelocity:
         m_bar = 1.0
         j_bar = 1.0
 
-        a = m_bar * r_ext * omega**2
-        b = -3.0 * k_coeffs[0] - 2.0 * m_bar * r_ext**2 * omega**2
-        c = m_bar * r_ext**3 * omega**2
+        a = m_bar * r_ext * omega ** 2
+        b = -3.0 * k_coeffs[0] - 2.0 * m_bar * r_ext ** 2 * omega ** 2
+        c = m_bar * r_ext ** 3 * omega ** 2
 
         # solve to initialise beam with centrifugal deformation, such that there are no oscillations
         if cls.beam_direction_index != cls.v_direction_index:
@@ -87,11 +87,11 @@ class TestXBeamConstXRotVelocity:
         expected_theta = omega * jnp.arange(n_tstep) * dt
 
         if cls.beam_direction_index != cls.v_direction_index:
-            expected_f = m_node * r_ext * omega**2 * (2.0 / 3.0)
+            expected_f = m_node * r_ext * omega ** 2 * (2.0 / 3.0)
             x0_expected = jnp.zeros((n_tstep, 3))
 
             third_dir = (
-                {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
+                    {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
             ).pop()
             third_dir_sign = jnp.sum(
                 jnp.cross(

@@ -5,7 +5,7 @@ from jax.scipy.linalg import block_diag
 import jax
 from jax import Array
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 
 jax.config.update("jax_enable_x64", True)
 

@@ -5,20 +5,22 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TYPE_CHECKING
 
 import jax
 from jax import Array
 
 from aero.gradients.data_structures import (
-    AeroStates,
+    AeroFullStates,
     AeroDesignVariables,
     AeroDesignGradients,
     AeroStateGradients,
 )
-from aegrad.structure.gradients.data_structures import StructuralStateGradients
+from structure.gradients.data_structures import StructuralStateGradients
 from algebra.array_utils import ArrayList, ArrayListShape
-from aegrad.coupled.data_structures import StaticAeroelastic
+
+if TYPE_CHECKING:
+    from coupled.data_structures import StaticAeroelastic
 from structure import StructureFullStates, StructuralDesignVariables
 from structure.gradients.data_structures import StructureDesignGradients
 from utils import _make_pytree
@@ -28,7 +30,7 @@ from data_structures import DesignVariables
 @jax.tree_util.register_dataclass
 @dataclass
 class AeroelasticStates:
-    aero: AeroStates
+    aero: AeroFullStates
     structure: StructureFullStates
 
 
@@ -83,12 +85,12 @@ class AeroelasticDesignVariables(DesignVariables):
 class AeroelasticDesignGradients:
     def __init__(
             self,
-            structure_dv: Optional[StructureDesignGradients],
-            aero_dv: Optional[AeroDesignGradients],
+            structure_dv: StructureDesignGradients,
+            aero_dv: AeroDesignGradients,
             f_shape: tuple[int, ...],
     ):
-        self.structure: Optional[StructureDesignGradients] = structure_dv
-        self.aero: Optional[AeroDesignGradients] = aero_dv
+        self.structure: StructureDesignGradients = structure_dv
+        self.aero: AeroDesignGradients = aero_dv
         self.f_shape: tuple[int, ...] = f_shape
         self.f_size: int = reduce(mul, f_shape, 1)
 

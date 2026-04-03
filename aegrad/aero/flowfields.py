@@ -4,8 +4,8 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 
-from aegrad.algebra.array_utils import ArrayList, check_arr_shape
-from aegrad.utils import _make_pytree
+from algebra.array_utils import ArrayList, check_arr_shape
+from utils import _make_pytree
 
 
 class FlowField:
@@ -16,10 +16,10 @@ class FlowField:
     """
 
     def __init__(
-        self,
-        u_inf: Array,
-        rho: float | Array,
-        relative_motion: bool,
+            self,
+            u_inf: Array,
+            rho: float | Array,
+            relative_motion: bool,
     ):
         r"""
         Initialise the flow field.
@@ -33,7 +33,7 @@ class FlowField:
         self.rho: Array = jnp.array(rho)
         self.u_inf_mag: Array = jnp.linalg.norm(u_inf)
         self.u_inf_dir: Array = u_inf / self.u_inf_mag
-        self.q_inf: Array = 0.5 * rho * self.u_inf_mag**2
+        self.q_inf: Array = 0.5 * rho * self.u_inf_mag ** 2
 
         # if False, the background flow is time-independent
         self.relative_motion: bool = relative_motion
@@ -120,15 +120,15 @@ class OneMinusCosine(FlowField):
     """
 
     def __init__(
-        self,
-        u_inf: Array,
-        rho: float | Array,
-        relative_motion: bool,
-        gust_length: float | Array,
-        gust_amplitude: float | Array,
-        gust_travel_direction: Optional[Array] = None,
-        gust_amplitude_direction: Array = jnp.array((0.0, 0.0, 1.0)),
-        gust_x0: Array = jnp.zeros(3),
+            self,
+            u_inf: Array,
+            rho: float | Array,
+            relative_motion: bool,
+            gust_length: float | Array,
+            gust_amplitude: float | Array,
+            gust_travel_direction: Optional[Array] = None,
+            gust_amplitude_direction: Array = jnp.array((0.0, 0.0, 1.0)),
+            gust_x0: Array = jnp.zeros(3),
     ):
         super().__init__(u_inf, rho, relative_motion)
 
@@ -149,7 +149,7 @@ class OneMinusCosine(FlowField):
         # lateral direction of the gust (direction in which the gust acts), default is in Z
         check_arr_shape(gust_amplitude_direction, (3,), "gust_amplitude")
         self.gust_amplitude_direction: Array = (
-            gust_amplitude_direction / jnp.linalg.norm(gust_amplitude_direction)
+                gust_amplitude_direction / jnp.linalg.norm(gust_amplitude_direction)
         )
 
         # base coordinate at the start of the gust at t=0
@@ -172,10 +172,10 @@ class OneMinusCosine(FlowField):
 
         def _one_minus_cos(x_: Array) -> Array:
             return (
-                self.gust_amplitude_direction
-                * self.gust_amplitude
-                * 0.5
-                * (1.0 - jnp.cos(jnp.pi * x_ / self.gust_length))
+                    self.gust_amplitude_direction
+                    * self.gust_amplitude
+                    * 0.5
+                    * (1.0 - jnp.cos(jnp.pi * x_ / self.gust_length))
             )
 
         u = jax.lax.select(

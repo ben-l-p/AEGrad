@@ -9,15 +9,16 @@ from jax import numpy as jnp
 from jax import Array
 
 from aero.aic import compute_v_ind
+from aero.gradients.data_structures import AeroFullStates
 from aero.utils import (
     KernelFunction,
     compute_c,
     compute_nc,
     calculate_steady_forcing,
 )
-from aegrad.print_utils import warn
-from aegrad.algebra.base import finite_difference
-from aegrad.algebra.array_utils import split_to_vertex
+from print_utils import warn
+from algebra.base import finite_difference
+from algebra.array_utils import split_to_vertex
 from aero.flowfields import FlowField
 from algebra.array_utils import ArrayList
 from plotting.aerogrid import plot_grid_to_vtk
@@ -205,6 +206,10 @@ class DynamicAeroCase:
     @i_ts.setter
     def i_ts(self, i_ts_arr: Array | int) -> None:
         self._i_ts = i_ts_arr
+
+    def get_full_states(self) -> AeroFullStates:
+        return AeroFullStates(f_steady=self.f_steady, f_unsteady=self.f_unsteady, gamma_b=self.gamma_b,
+                              gamma_w=self.gamma_w)
 
     def gamma_full(self, i_ts: int) -> ArrayList:
         r"""

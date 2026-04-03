@@ -6,12 +6,12 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from aegrad.structure.beam import BaseBeamStructure
-from aegrad.structure import OptionalJacobians
-from aegrad.structure.data_structures import (
+from structure.beam import BaseBeamStructure
+from structure import OptionalJacobians
+from structure.data_structures import (
     StaticStructure,
 )
-from aegrad.structure.gradients.data_structures import (
+from structure.gradients.data_structures import (
     StructureFullStates,
     StructuralDesignVariables,
 )
@@ -278,10 +278,10 @@ class BeamStructure(BaseBeamStructure):
                 dv_: StructuralDesignVariables,
         ) -> Array:
             r"""
-            Function which finds the residual of the structural problem forward from timestep n-1 to timestep n.
-            :param i_ts: Timestep index n
-            :param q_nm1: Mimimal structural states at timestep n-1
-            :param q_n: Minimal structural states at timestep n
+            Function which finds the residual of the structural problem forward from timestep varphi-1 to timestep varphi.
+            :param i_ts: Timestep index varphi
+            :param q_nm1: Mimimal structural states at timestep varphi-1
+            :param q_n: Minimal structural states at timestep varphi
             :param dv_: Structural design variables
             :return: Residual for step
             """
@@ -448,7 +448,7 @@ class BeamStructure(BaseBeamStructure):
                 q_n: StructureMinimalStates,
         ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
             r"""
-            Function to obtain the grads states at timestep n, which is dependent on the grads at timestep n+1.
+            Function to obtain the grads states at timestep varphi, which is dependent on the grads at timestep varphi+1.
             :param rev_i_ts: Reversed timestep index. JAX fori_loop does not allow for reverse indexing, and so this is explicitly reversed witin the function body to obtain i_ts.
             :param d_j_d_x_: Design gradient to accumulate
             :param adj_: Full grads matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof]
@@ -459,12 +459,12 @@ class BeamStructure(BaseBeamStructure):
 
             i_ts = (
                     structure.n_tstep - rev_i_ts - 1
-            )  # index for timestep n, which decrements
+            )  # index for timestep varphi, which decrements
 
-            i_ts_nm1 = jnp.maximum(i_ts - 1, 0)  # index for timestep n-1
+            i_ts_nm1 = jnp.maximum(i_ts - 1, 0)  # index for timestep varphi-1
 
-            # find minimal states for timestep n-1
-            q_nm1 = structure.get_states(i_ts_nm1)
+            # find minimal states for timestep varphi-1
+            q_nm1 = structure.get_minimal_states(i_ts_nm1)
 
             # gradient of objective at current timestep with respect to current minimal states and design variables
             # for i_ts=0, these will not be useful
@@ -543,7 +543,7 @@ class BeamStructure(BaseBeamStructure):
                 dv_grad_init,
                 jnp.zeros((structure.n_tstep + 1, n_j, n_adj_dof)),
                 jnp.zeros((n_adj_dof, n_adj_dof)),
-                structure.get_states(-1),
+                structure.get_minimal_states(-1),
             ),
         )
 
@@ -561,7 +561,7 @@ class BeamStructure(BaseBeamStructure):
                 )
             ),
             argnums=(0, 1),
-        )(structure.get_states(0).to_mat(), dv)
+        )(structure.get_minimal_states(0).to_mat(), dv)
 
         adj = adj.at[0, ...].set(
             -p_j0_p_q0.reshape(n_j, -1)[:, free_state_ix] - adj[1, ...] @ p_r1_p_q0

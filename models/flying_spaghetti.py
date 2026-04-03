@@ -4,11 +4,11 @@ from jax import Array
 from jax import numpy as jnp
 import jax
 
-from aegrad.structure import BeamStructure
+from structure import BeamStructure
 
 
 def flying_spaghetti(
-    n_nodes: int, t: Array, use_gravity: bool = False
+        n_nodes: int, t: Array, use_gravity: bool = False
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
     Creates a flying spaghetti model structure_dv.
