@@ -222,7 +222,20 @@ class ConvergenceStatus:
                 abs_force_val=self.abs_force_val,
             )
         else:
-            raise NotImplementedError
+            # dynamic message
+            jax_print(
+                "| Time: {t:.03e} | FSI Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
+                "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
+                "{abs_force_val:.02e} |",
+                verbose_level=VerbosityLevel.NORMAL,
+                t=t,
+                i_iter=self.i_iter,
+                conv=self.converged,
+                rel_disp_val=self.rel_disp_val,
+                abs_disp_val=self.abs_disp_val,
+                rel_force_val=self.rel_force_val,
+                abs_force_val=self.abs_force_val,
+            )
 
     @staticmethod
     def _static_names() -> Sequence[str]:

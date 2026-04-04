@@ -21,7 +21,7 @@ from algebra.array_utils import ArrayList, ArrayListShape
 
 if TYPE_CHECKING:
     from coupled.data_structures import StaticAeroelastic
-from structure import StructureFullStates, StructuralDesignVariables
+    from structure import StructureFullStates, StructuralDesignVariables
 from structure.gradients.data_structures import StructureDesignGradients
 from utils import _make_pytree
 from data_structures import DesignVariables

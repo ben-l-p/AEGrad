@@ -55,15 +55,7 @@ class LinearOperator:
             jnp.full(self.shape[1], 1.0)
         )
 
-    @overload
-    def __call__(self, rhs: Array) -> Array:
-        ...
-
-    @overload
-    def __call__(self, rhs: LinearOperator) -> LinearOperator:
-        ...
-
-    def __call__(self, rhs: Array | LinearOperator) -> Array | LinearOperator:
+    def __call__[T: Array | LinearOperator](self, rhs: T) -> T:
         r"""
         Evaluate the linear operator on an array or compose with another linear operator.
         :param rhs: Either an array to apply the operator to, or another linear operator to compose with.
@@ -84,7 +76,7 @@ class LinearOperator:
         else:
             raise TypeError("Incompatible type for multiplication with LinearOperator.")
 
-    def __matmul__[T](self, rhs: T) -> T:
+    def __matmul__[T: Array | LinearOperator](self, rhs: T) -> T:
         r"""
         Matrix multiplication operator overload, calls __call__ internally.
         :param rhs: Either an array to apply the operator to, or another linear operator to compose with.

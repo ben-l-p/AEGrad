@@ -6,7 +6,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from structure import OptionalJacobians
+from structure.data_structures import OptionalJacobians
 
 from coupled.gradients.data_structures import (
     AeroelasticStates,
@@ -98,7 +98,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         aero_states = aero_sol.get_full_states()
 
         f_dead_total = inner_case.structure.make_f_ext_dead_tot(
-            f_ext_dead, f_ext_aero_global, i_load_step=None, i_ts=None
+            f_ext_dead, f_ext_aero_global, i_load_step=None
         )
 
         f_res = inner_case.structure.make_f_res(

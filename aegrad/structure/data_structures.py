@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import os
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, overload
 from dataclasses import dataclass
 
 from jax import numpy as jnp, Array
@@ -13,7 +13,7 @@ from print_utils import warn
 from algebra.base import chi
 from plotting.beam import plot_beam_to_vtk
 from plotting.pvd import write_pvd
-from utils import _make_pytree
+from utils import _make_pytree, index_to_arr
 from structure.gradients.data_structures import StructureFullStates
 
 
@@ -63,8 +63,20 @@ class StaticStructure:
         self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
         self.local: bool = local
 
+    @overload
     def to_dynamic(self) -> DynamicStructureSnapshot:
-        """Convert static structure_dv results to a dynamic structure_dv snapshot, with zeroed velocity/acceleration dependent
+        ...
+
+    @overload
+    def to_dynamic(self, t: Array) -> DynamicStructure:
+        ...
+
+    @overload
+    def to_dynamic(self, t: None) -> DynamicStructureSnapshot:
+        ...
+
+    def to_dynamic(self, t: Optional[Array] = None) -> DynamicStructureSnapshot | DynamicStructure:
+        """Convert static structure_dv results to a dynamic structure_dv initial_snapshot, with zeroed velocity/acceleration dependent
         entries."""
         n_nodes = self.hg.shape[0]
         zero_v = jnp.zeros((n_nodes, 6))
@@ -73,7 +85,7 @@ class StaticStructure:
         zero_time = jnp.array(0.0)
         zero_f_iner = jnp.zeros((n_nodes, 6))
 
-        return DynamicStructureSnapshot(
+        dyn_snapshot = DynamicStructureSnapshot(
             hg=self.hg,
             conn=self.conn,
             o0=self.o0,
@@ -94,6 +106,14 @@ class StaticStructure:
             i_ts=-1,
             prescribed_dofs=self.prescribed_dofs,
         )
+
+        if t is None:
+            return dyn_snapshot
+        else:
+            return DynamicStructure.initialise(initial_snapshot=dyn_snapshot, t=t,
+                                               use_f_ext_aero=self.f_ext_aero is not None,
+                                               use_f_ext_follower=self.f_ext_follower is not None,
+                                               use_f_ext_dead=self.f_ext_dead is not None)
 
     def get_full_states(self) -> StructureFullStates:
         return StructureFullStates(v=None, v_dot=None, hg=self.hg,
@@ -159,7 +179,7 @@ class StaticStructure:
         :param directory: Path to write files to.
         :param n_interp: Number of interpolation points to add between each element for smoother visualization.
         """
-        return self.to_dynamic().plot(directory, n_interp)
+        return self.to_dynamic(t=None).plot(directory, n_interp)
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -229,7 +249,7 @@ class DynamicStructureSnapshot:
         self.local: bool = local
 
     def to_static(self) -> StaticStructure:
-        """Convert dynamic structure_dv snapshot results to a static structure_dv, dropping velocity/acceleration dependent
+        """Convert dynamic structure_dv initial_snapshot results to a static structure_dv, dropping velocity/acceleration dependent
         entries."""
         return StaticStructure(
             hg=self.hg,
@@ -489,7 +509,7 @@ class DynamicStructure:
         )
 
     def __getitem__(self, i_ts: int) -> DynamicStructureSnapshot:
-        """Extract dynamic structure_dv snapshot at a specific time index."""
+        """Extract dynamic structure_dv initial_snapshot at a specific time index."""
         return DynamicStructureSnapshot(
             hg=self.hg[i_ts, ...],
             conn=self.conn,
@@ -535,13 +555,14 @@ class DynamicStructure:
             cls,
             initial_snapshot: DynamicStructureSnapshot,
             t: Array,
-            prescribed_dofs: Optional[Array],
+            use_f_ext_follower: bool,
+            use_f_ext_dead: bool,
+            use_f_ext_aero: bool,
     ) -> DynamicStructure:
         r"""
-        Initialise a DynamicStructure object given an initial snapshot and number of time steps.
+        Initialise a DynamicStructure object given an initial initial_snapshot and number of time steps.
         :param initial_snapshot: Snapshot at initial time step.
         :param t: Time step array, [n_tstep]
-        :param prescribed_dofs: Array of prescribed DOF indices.
         :return: DynamicStructure object with arrays initialised to zero except for the first time step.
         """
         n_node = initial_snapshot.hg.shape[0]
@@ -557,33 +578,28 @@ class DynamicStructure:
         v = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v)
         v_dot = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.v_dot)
         a = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.a)
-        f_ext_follower = (
-            (
-                jnp.zeros((n_tstep, n_node, 6))
-                .at[0, ...]
-                .set(initial_snapshot.f_ext_follower)
-            )
-            if initial_snapshot.f_ext_follower is not None
-            else None
-        )
-        f_ext_dead = (
-            (
-                jnp.zeros((n_tstep, n_node, 6))
-                .at[0, ...]
-                .set(initial_snapshot.f_ext_dead)
-            )
-            if initial_snapshot.f_ext_dead is not None
-            else None
-        )
-        f_ext_aero = (
-            (
-                jnp.zeros((n_tstep, n_node, 6))
-                .at[0, ...]
-                .set(initial_snapshot.f_ext_aero)
-            )
-            if initial_snapshot.f_ext_aero is not None
-            else None
-        )
+
+        if use_f_ext_follower:
+            f_ext_follower = jnp.zeros((n_tstep, n_node, 6))
+            if initial_snapshot.f_ext_follower is not None:
+                f_ext_follower = f_ext_follower.at[0, ...].set(initial_snapshot.f_ext_follower)
+        else:
+            f_ext_follower = None
+
+        if use_f_ext_dead:
+            f_ext_dead = jnp.zeros((n_tstep, n_node, 6))
+            if initial_snapshot.f_ext_follower is not None:
+                f_ext_dead = f_ext_dead.at[0, ...].set(initial_snapshot.f_ext_dead)
+        else:
+            f_ext_dead = None
+
+        if use_f_ext_aero:
+            f_ext_aero = jnp.zeros((n_tstep, n_node, 6))
+            if initial_snapshot.f_ext_follower is not None:
+                f_ext_aero = f_ext_aero.at[0, ...].set(initial_snapshot.f_ext_aero)
+        else:
+            f_ext_aero = None
+
         f_grav = (
             jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_grav)
             if initial_snapshot.f_grav is not None
@@ -611,7 +627,7 @@ class DynamicStructure:
             f_res=f_res,
             t=t,
             n_tstep=n_tstep,
-            prescribed_dofs=prescribed_dofs,
+            prescribed_dofs=initial_snapshot.prescribed_dofs,
         )
 
     def _transform(self, nodal_chi: Array) -> None:
@@ -692,18 +708,7 @@ class DynamicStructure:
         :param index: Single or multiple time step indices to plot. If None, all time steps are plotted.
         :param n_interp: Number of interpolation points to add between each element for smoother visualization.
         """
-        if isinstance(index, slice):
-            index_ = jnp.arange(self.n_tstep)[index]
-        elif isinstance(index, Sequence):
-            index_ = jnp.array(index)
-        elif isinstance(index, Array):
-            index_ = index
-        elif isinstance(index, int):
-            index_ = (index,)
-        elif index is None:
-            index_ = jnp.arange(self.n_tstep)
-        else:
-            raise TypeError("index must be a slices, sequence of ints, or Array")
+        index_ = index_to_arr(index=index, n_entries=self.n_tstep)
 
         directory_path = Path(directory).resolve()
         directory_path.mkdir(parents=True, exist_ok=True)

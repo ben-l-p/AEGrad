@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Sequence, Optional
 from typing import Protocol, TypeVar
 from dataclasses import fields, is_dataclass
-from jax import tree_util
+from jax import tree_util, Array
+from jax import numpy as jnp
 
 
 class SupportsPytree(Protocol):
@@ -48,3 +49,24 @@ def _shallow_asdict(obj):
     if not is_dataclass(obj):
         raise TypeError("object must be a dataclass")
     return {f.name: getattr(obj, f.name) for f in fields(obj)}
+
+
+def index_to_arr(index: Optional[int | Array | Sequence[int] | slice], n_entries: int) -> Array:
+    r"""
+    Convert an input index to an Array index.
+    :param index: Index to apply to a sequence
+    :param n_entries: Number of entries in the full un-indexed sequence
+    :return: Array index corresponding to the input index
+    """
+    if isinstance(index, slice):
+        return jnp.arange(n_entries)[index]
+    elif isinstance(index, Sequence):
+        return jnp.array(index)
+    elif isinstance(index, Array):
+        return index
+    elif isinstance(index, int):
+        return jnp.array([index])
+    elif index is None:
+        return jnp.arange(n_entries)
+    else:
+        raise TypeError("index must be a slices, sequence of ints, or Array")

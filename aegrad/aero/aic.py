@@ -202,7 +202,7 @@ def v_ind_vmap(
     return result.reshape(c_m, c_n, 3)
 
 
-def compute_v_ind[T](
+def compute_v_ind[T: Array | ArrayList](
         cs: T,
         zetas: ArrayList,
         gammas: ArrayList,

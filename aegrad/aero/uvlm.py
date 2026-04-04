@@ -480,7 +480,7 @@ class UVLM:
                 case.gamma_w[i_surf].at[i_ts, ...].set(gamma_list[i_surf])
             )
 
-    def _solve(
+    def solve(
             self,
             case: DynamicAeroCase,
             i_ts: int,
@@ -693,7 +693,7 @@ class UVLM:
         case = self.initialise_case_object(1, horseshoe=horseshoe)
         case.t = case.t.at[0].set(t)
 
-        out_case = self._solve(
+        out_case = self.solve(
             case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe
         )[0]
 
@@ -728,7 +728,7 @@ class UVLM:
         case = init_case.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
         def _step_func(i_ts_: int, case_: DynamicAeroCase) -> DynamicAeroCase:
-            case_ = self._solve(
+            case_ = self.solve(
                 case_,
                 i_ts_,
                 hg_t[i_ts_, ...],
@@ -748,9 +748,9 @@ class UVLM:
         )
         return case
 
-    def reference_snapshot(self) -> AeroSnapshot:
+    def reference_configuration(self) -> AeroSnapshot:
         r"""
-        Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        Get the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
         :return: StaticAero object at initial time step
         """
         return AeroSnapshot(
@@ -786,11 +786,11 @@ class UVLM:
             self, directory: os.PathLike, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
-        Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        Plot the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
         :param directory: Path to write files to
         :param plot_wake: If True, plot the wake grid
         """
-        return self.reference_snapshot().plot(
+        return self.reference_configuration().plot(
             Path(directory).resolve(), plot_wake=plot_wake
         )
 

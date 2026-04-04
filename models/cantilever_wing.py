@@ -11,8 +11,6 @@ from aero.utils import make_rectangular_grid
 from aero.data_structures import GridDiscretization
 from aero.flowfields import Constant
 
-jax.config.update("jax_enable_x64", True)
-
 
 def make_cantilever_wing(
         n_nodes: int = 40,
@@ -22,6 +20,7 @@ def make_cantilever_wing(
         m: int = 10,
         m_star: int = 20,
         k_cs: Array = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2))),
+        m_cs: Array = jnp.diag(jnp.array((1.0, 1.0, 1.0, 1.0, 1.0, 1.0))),
         u_inf=jnp.array((10.0, 0.0, 1.0)),
         rho=1.225,
 ) -> CoupledAeroelastic:
@@ -54,7 +53,7 @@ def make_cantilever_wing(
     wing.set_design_variables(
         coords=beam_coords,
         k_cs=k_cs,
-        m_cs=None,
+        m_cs=m_cs,
         m_lumped=None,
         dt=dt,
         flowfield=flowfield,
@@ -66,6 +65,8 @@ def make_cantilever_wing(
 
 
 if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)
+
     coupled_system = make_cantilever_wing()
     result = coupled_system.static_solve(
         f_ext_dead=None,

@@ -22,7 +22,8 @@ from algebra.array_utils import split_to_vertex
 from aero.flowfields import FlowField
 from algebra.array_utils import ArrayList
 from plotting.aerogrid import plot_grid_to_vtk
-from utils import _make_pytree
+from plotting.pvd import write_pvd
+from utils import _make_pytree, index_to_arr
 
 
 @dataclass
@@ -239,7 +240,7 @@ class DynamicAeroCase:
 
     def get_surf_snapshot(self, i_ts: int, i_surf: int) -> AeroSurfaceSnapshot:
         r"""
-        Get snapshot at a given timestep and surface.
+        Get initial_snapshot at a given timestep and surface.
         :param i_ts: Timestep index
         :param i_surf: Surface index
         :return: StaticAero for the specified timestep
@@ -317,25 +318,42 @@ class DynamicAeroCase:
                 )
 
     def plot(
-            self, directory: os.PathLike, plot_bound: bool = True, plot_wake: bool = True
+            self, directory: os.PathLike, index: Optional[int | Sequence[int] | Array | slice] = None,
+            plot_bound: bool = True,
+            plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
-        Plot all aerodynamic surfaces in the time series snapshot to VTU files.
+        Plot all aerodynamic surfaces in the time series initial_snapshot to VTU files.
         :param directory: Directory to save VTU files.
+        :param index: Index of timesteps to plot
         :param plot_bound: If True, plot the bound surfaces.
         :param plot_wake: If True, plot the wake surfaces.
         :return: Sequence of paths to the saved VTU files.
         """
-        # TODO: add PVD file
-        paths = []
-        for i_ts in range(self.n_tstep):
-            for i_surf in range(self.n_surf):
-                paths.extend(
+
+        index_ = index_to_arr(index=index, n_entries=self.n_tstep)
+
+        pvd_paths = []
+        for i_surf in range(self.n_surf):
+            paths = []
+
+            for i_ts in index_:
+                paths.append(
                     self.get_surf_snapshot(i_ts=i_ts, i_surf=i_surf).plot(
                         directory, plot_bound=plot_bound, plot_wake=plot_wake
                     )
                 )
-        return paths
+
+            if plot_bound:
+                bound_name = f"aero_dynamic_surf_{i_surf}_bound_ts"
+                pvd_paths.append(write_pvd(directory=directory, name=bound_name, filedirs=list(zip(*paths))[0],
+                                           times=list(self.t[index_])))
+
+            if plot_wake:
+                wake_name = f"aero_dynamic_surf_{i_surf}_wake_ts"
+                pvd_paths.append(write_pvd(directory=directory, name=wake_name, filedirs=list(zip(*paths))[-1],
+                                           times=list(self.t[index_])))
+        return pvd_paths
 
     def get_c(self, i_ts: int) -> ArrayList:
         r"""
@@ -492,7 +510,7 @@ class DynamicAeroCase:
             rho * self._gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)
         )
 
-    def get_v_background[T](self, i_ts: int, x_target: T) -> T:
+    def get_v_background[T: Array | ArrayList](self, i_ts: int, x_target: T) -> T:
         r"""
         Get background velocity at specified points and time step.
         :param i_ts: Timestep index
@@ -506,7 +524,7 @@ class DynamicAeroCase:
         else:
             raise NotImplementedError
 
-    def get_v_ind[T](self, i_ts: int, x_target: T) -> T:
+    def get_v_ind[T: Array | ArrayList](self, i_ts: int, x_target: T) -> T:
         return compute_v_ind(
             cs=x_target,
             zetas=self.zeta_full(i_ts),
@@ -514,7 +532,7 @@ class DynamicAeroCase:
             kernels=self.kernels,
         )
 
-    def get_v_tot[T](self, i_ts: int, x: T) -> T:
+    def get_v_tot[T: Array | ArrayList](self, i_ts: int, x: T) -> T:
         r"""
         Obtain the total velocity at specified points and time step.
         :param i_ts: Timestep index
@@ -527,7 +545,7 @@ class DynamicAeroCase:
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
-        Obtain a snapshot of the aerodynamic state at a given time step index.
+        Obtain a initial_snapshot of the aerodynamic state at a given time step index.
         :param i_ts: Timestep index
         :return: AeroSnapshot object.
         """
@@ -555,14 +573,14 @@ class DynamicAeroCase:
         )
 
     @classmethod
-    def from_static_case(cls, snapshot: AeroSnapshot, n_tstep: int) -> DynamicAeroCase:
+    def initialise(cls, initial_snapshot: AeroSnapshot, n_tstep: int) -> DynamicAeroCase:
         r"""
         Use a snapshot from a single timestep to create a solution object with many timesteps.
-        :param snapshot: Initial snapshot of the aerodynamic state.
+        :param initial_snapshot: Initial snapshot of the aerodynamic state.
         :param n_tstep: Number of timesteps.
         :return: New DynamicAeroCase object with n_tstep timesteps, with the initial case set to i_ts=0.
         """
-        return snapshot.to_dynamic(i_ts=0, n_tstep=n_tstep)
+        return initial_snapshot.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -600,12 +618,12 @@ class DynamicAeroCase:
 @_make_pytree
 class AeroSnapshot(DynamicAeroCase):
     r"""
-    Class to hold snapshot of multiple aerodynamic surfaces at a single time step.
+    Class to hold initial_snapshot of multiple aerodynamic surfaces at a single time step.
 
     This class subclasses DynamicAeroCase but internally stores all arrays with a
     leading time dimension of length 1 so that it can reuse all of
-    DynamicAeroCase's methods. When users request a single-surface snapshot via
-    indexing (snapshot[i_surf]) they receive an AeroSurfaceSnapshot with the
+    DynamicAeroCase's methods. When users request a single-surface initial_snapshot via
+    indexing (initial_snapshot[i_surf]) they receive an AeroSurfaceSnapshot with the
     time dimension removed for convenience.
     """
 
@@ -633,7 +651,7 @@ class AeroSnapshot(DynamicAeroCase):
             horseshoe: bool = False,
     ) -> None:
         r"""
-        Create an AeroSnapshot by wrapping per-snapshot arrays with a leading
+        Create an AeroSnapshot by wrapping per-initial_snapshot arrays with a leading
         time dimension of size 1 so that DynamicAeroCase functions operate
         normally.
         """
@@ -765,8 +783,8 @@ class AeroSnapshot(DynamicAeroCase):
 
     def to_dynamic(self, i_ts: int, n_tstep: int) -> DynamicAeroCase:
         """
-        Expand this single-time snapshot into a DynamicAeroCase with n_tstep
-        timesteps, placing the current snapshot at index i_ts (similar to the
+        Expand this single-time initial_snapshot into a DynamicAeroCase with n_tstep
+        timesteps, placing the current initial_snapshot at index i_ts (similar to the
         prior implementation).
         """
 
@@ -802,7 +820,7 @@ class AeroSnapshot(DynamicAeroCase):
 
     def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:
         """
-        Return a single-surface snapshot with the time dimension removed for
+        Return a single-surface initial_snapshot with the time dimension removed for
         convenience. Uses the stored i_ts index to pick the single time slice.
         """
         return AeroSurfaceSnapshot(
@@ -825,11 +843,12 @@ class AeroSnapshot(DynamicAeroCase):
     def plot(
             self,
             directory: os.PathLike | str,
+            _=None,
             plot_bound: bool = True,
             plot_wake: bool = True,
     ) -> Sequence[Path]:
         """
-        Plot all aerodynamic surfaces in this single-time snapshot to VTU files.
+        Plot all aerodynamic surfaces in this single-time initial_snapshot to VTU files.
         """
         directory_path = Path(directory)
         directory_path.mkdir(parents=True, exist_ok=True)
@@ -838,12 +857,13 @@ class AeroSnapshot(DynamicAeroCase):
             paths.extend(
                 self[i_surf].plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)
             )
+
         return paths
 
 
 class AeroSurfaceSnapshot:
     r"""
-    Data class to hold snapshot of a single aerodynamic surface at a single time step.
+    Data class to hold initial_snapshot of a single aerodynamic surface at a single time step.
     """
 
     def __init__(
@@ -875,7 +895,7 @@ class AeroSurfaceSnapshot:
         :param surf_b_name: Names of bound surface
         :param surf_w_name: Names of wake surface
         :param i_ts: Time step index
-        :param t: Time at this snapshot
+        :param t: Time at this initial_snapshot
         """
         self.zeta_b: Array = zeta_b
         self.zeta_b_dot: Array = zeta_b_dot
@@ -899,7 +919,7 @@ class AeroSurfaceSnapshot:
             plot_wake: bool = True,
     ) -> Sequence[Path]:
         r"""
-        Plot aerodynamic surface in the snapshot to VTU files.
+        Plot aerodynamic surface in the initial_snapshot to VTU files.
         :param directory: Directory to save VTU files.
         :param plot_bound: If True, plot the bound surface.
         :param plot_wake: If True, plot the wake surfaces.

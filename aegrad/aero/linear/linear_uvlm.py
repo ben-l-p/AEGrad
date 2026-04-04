@@ -1283,7 +1283,7 @@ class LinearUVLM:
 
     def reference_snapshot(self) -> DynamicAeroCase:
         r"""
-        Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        Get the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
         :return: StaticAero at reference state
         """
         return DynamicAeroCase(
@@ -1312,10 +1312,10 @@ class LinearUVLM:
             self, directory: os.PathLike, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
-        Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        Plot the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
         :param directory: File path to save the plots to
         :param plot_wake: If True, plot the wake grid
         """
         return self.reference_snapshot().plot(
-            Path(directory).resolve(), plot_wake=plot_wake
+            Path(directory).resolve(), index=None, plot_wake=plot_wake
         )

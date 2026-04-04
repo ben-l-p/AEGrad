@@ -91,7 +91,7 @@ class OutputSlices:
 @dataclass
 class InputUnflattened:
     r"""
-    Data class to hold unflattened input components, for either a single snapshot or a time series.
+    Data class to hold unflattened input components, for either a single initial_snapshot or a time series.
     :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     :param nu_b: Bound upwash, [n_surf][m, varphi, 3] or [n_surf][n_ts, m, varphi, 3]
@@ -107,7 +107,7 @@ class InputUnflattened:
 @dataclass
 class StateUnflattened:
     r"""
-    Data class to hold unflattened state components, for either a single snapshot or a time series.
+    Data class to hold unflattened state components, for either a single initial_snapshot or a time series.
     :param gamma_b: Bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
     :param gamma_w: Wake circulation strengths, [n_surf][m_star, varphi] or [n_surf][n_ts, m_star, varphi]
     :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
@@ -127,7 +127,7 @@ class StateUnflattened:
 @dataclass
 class OutputUnflattened:
     r"""
-    Data class to hold unflattened output components, for either a single snapshot or a time series.
+    Data class to hold unflattened output components, for either a single initial_snapshot or a time series.
     :param f_steady: Steady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     :param f_unsteady: Unsteady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
     """
@@ -209,7 +209,7 @@ class AeroLinearResult:
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
-        Get snapshot of aerodynamic surface at a single time step
+        Get initial_snapshot of aerodynamic surface at a single time step
         :param i_ts: Timestep index
         :return: DynamicAeroCase at specified time step
         """

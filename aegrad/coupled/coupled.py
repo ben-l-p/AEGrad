@@ -2,6 +2,7 @@ from typing import Optional, Sequence
 
 import jax
 from jax import Array, vmap
+from jax import numpy as jnp
 
 from algebra.se3 import hg_to_d
 from algebra.array_utils import ArrayList
@@ -11,10 +12,11 @@ from structure import BeamStructure
 from aero.data_structures import DynamicAeroCase
 from coupled.gradients.data_structures import AeroelasticDesignVariables
 from data_structures import ConvergenceSettings, ConvergenceStatus
-from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic
+from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic, DynamicAeroelasticSnapshot
 from print_utils import warn_if_32_bit
 from structure import StaticStructure
 from print_utils import VerbosityLevel
+from structure.time_integration import TimeIntregrator
 
 
 class BaseCoupledAeroelastic:
@@ -66,11 +68,38 @@ class BaseCoupledAeroelastic:
             structure_dv=self.structure.get_design_variables(struct_case=case.structure),
             aero_dv=self.aero.get_design_variables())
 
+    def reference_configuration(self,
+                                prescribed_dofs: Optional[Array],
+                                use_f_ext_follower: bool = False,
+                                use_f_ext_dead: bool = False,
+                                use_f_ext_aero: bool = False,
+                                t_init: float | Array = 0.0,
+                                ) -> StaticAeroelastic:
+        r"""
+        Obtain the static aeroelastic object describing the undeformed wing.
+        :param prescribed_dofs: Prescribed dofs for the structure
+        :param use_f_ext_follower: If true, allocate an array for follower forces.
+        :param use_f_ext_dead: If true, allocate an array for dead forces.
+        :param use_f_ext_aero: If true, allocate an array for aero forces.
+        :param t_init: Initial time
+        :return: Static aeroelastic object for undeformed wing
+        """
+        return StaticAeroelastic(
+            structure=self.structure.reference_configuration(
+                use_f_grav=self.structure.use_gravity,
+                use_f_ext_dead=use_f_ext_dead,
+                use_f_ext_follower=use_f_ext_follower,
+                use_f_aero=use_f_ext_aero,
+                prescribed_dofs=prescribed_dofs,
+            ),
+            aero=self.aero.solve_static(t=t_init, hg=self.structure.hg0, horseshoe=False),
+        )
+
     def static_solve(
             self,
             f_ext_follower: Optional[Array],
             f_ext_dead: Optional[Array],
-            prescribed_dofs: Sequence[int] | Array | slice | int,
+            prescribed_dofs: Sequence[int] | Array | slice | int | None,
             t: float | Array = 0.0,
             load_steps: int = 1,
             relaxation_factor: float = 1.0,
@@ -147,5 +176,76 @@ class BaseCoupledAeroelastic:
 
         return StaticAeroelastic(structure=struct_case, aero=aero_case)
 
-    def dynamic_solve(self) -> DynamicAeroelastic:
-        pass
+    def dynamic_solve(self,
+                      init_case: Optional[StaticAeroelastic | DynamicAeroelastic],
+                      f_ext_follower: Optional[Array],
+                      f_ext_dead: Optional[Array],
+                      prescribed_dofs: Sequence[int] | Array | slice | int | None,
+                      dt: Array | float,
+                      n_tstep: int,
+                      t_init: float = 0.0,
+                      load_steps: int = 1,
+                      relaxation_factor: float = 1.0,
+                      spectral_radius: float = 1.0,
+                      free_wake: bool = False,
+                      ) -> DynamicAeroelastic:
+
+        warn_if_32_bit()
+
+        # degrees of freedom to constrain or solve for
+        prescribed_dofs: Array = self.structure.make_prescribed_dofs_array(prescribed_dofs)
+        solve_dofs: Array = jnp.setdiff1d(
+            jnp.arange(self.structure.n_dof),
+            prescribed_dofs,
+            size=self.structure.n_dof - prescribed_dofs.size,
+        )
+
+        t = jnp.arange(n_tstep) * dt + t_init
+
+        self.structure.time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
+
+        # initialise aeroelastic case object
+        if init_case is None:
+            case: DynamicAeroelastic = DynamicAeroelastic.initialise(
+                initial_snapshot=self.reference_configuration(prescribed_dofs=prescribed_dofs,
+                                                              use_f_ext_follower=f_ext_follower is not None,
+                                                              use_f_ext_dead=f_ext_dead is not None,
+                                                              use_f_ext_aero=True).to_dynamic(t=None),
+                t=t, use_f_ext_follower=f_ext_follower is not None, use_f_ext_dead=f_ext_dead is not None,
+                aeroelastic_object=self)
+
+            # set forces at timestep 0
+            # this is important as the time integration scheme refers to these values when solving the first timestep
+            if f_ext_follower is not None:
+                case.structure.f_ext_follower = case.structure.f_ext_follower.at[0, ...].set(f_ext_follower[0, ...])
+            if f_ext_dead is not None:
+                case.structure.f_ext_dead = case.structure.f_ext_dead.at[0, ...].set(
+                    self.structure.make_f_dead_ext(f_ext=f_ext_dead[0, ...], rmat=case.structure.hg[0, :, :3, :3]))
+
+
+        elif isinstance(init_case, StaticAeroelastic | DynamicAeroelasticSnapshot):
+            case = DynamicAeroelastic.initialise(initial_snapshot=init_case, t=t,
+                                                 use_f_ext_follower=f_ext_follower is not None,
+                                                 use_f_ext_dead=f_ext_dead is not None, aeroelastic_object=self)
+        elif isinstance(init_case, DynamicAeroelastic):
+            if init_case.aero.n_tstep != 1: raise ValueError("init_case.aero.n_tstep != 1")
+            case = DynamicAeroelastic.initialise(initial_snapshot=init_case[0], t=t,
+                                                 use_f_ext_follower=f_ext_follower is not None,
+                                                 use_f_ext_dead=f_ext_dead is not None, aeroelastic_object=self)
+        else:
+            raise NotImplementedError
+
+        return self.structure.base_dynamic_solve(struct_case=case.structure,
+                                                 struct_convergence_status=ConvergenceStatus(
+                                                     self.structure.convergence_settings),
+                                                 t=t,
+                                                 relaxation_factor=relaxation_factor,
+                                                 solve_dofs=solve_dofs,
+                                                 load_steps=load_steps,
+                                                 f_ext_follower=f_ext_follower,
+                                                 f_ext_dead=f_ext_dead,
+                                                 aero_obj=self.aero,
+                                                 aero_case=case.aero,
+                                                 fsi_convergence_status=ConvergenceStatus(
+                                                     self.fsi_convergence_settings),
+                                                 free_wake=free_wake)
