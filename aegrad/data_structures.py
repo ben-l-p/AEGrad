@@ -176,9 +176,8 @@ class ConvergenceStatus:
         if t is None:
             # static message
             jax_print(
-                "| Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
-                "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
-                "{abs_force_val:.02e} |",
+                "| Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
+                "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
                 verbose_level=VerbosityLevel.NORMAL,
                 i_load_step=i_load_step,
                 i_iter=self.i_iter,
@@ -191,8 +190,8 @@ class ConvergenceStatus:
         else:
             # dynamic message
             jax_print(
-                "| Time: {t:.03e} | Load Step: {i_load_step:<2} | Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp.: {rel_disp_val:.02e} | Abs. "
-                "Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: {abs_force_val:.02e} |",
+                "| {t:.03e} | Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
+                "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
                 verbose_level=VerbosityLevel.NORMAL,
                 t=t,
                 i_load_step=i_load_step,
@@ -210,9 +209,8 @@ class ConvergenceStatus:
         if t is None:
             # static message
             jax_print(
-                "| FSI Iter: {i_iter:<3}             | Conv: {conv:1} | Rel. Disp: "
-                "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
-                "{abs_force_val:.02e} |",
+                "| FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | {rel_force_val:.03e} | "
+                "{abs_force_val:.03e} |           |",
                 verbose_level=VerbosityLevel.NORMAL,
                 i_iter=self.i_iter,
                 conv=self.converged,
@@ -224,9 +222,8 @@ class ConvergenceStatus:
         else:
             # dynamic message
             jax_print(
-                "| Time: {t:.03e} | FSI Iter: {i_iter:<3} | Conv: {conv:1} | Rel. Disp: "
-                "{rel_disp_val:.02e} | Abs. Disp: {abs_disp_val:.02e} | Rel. Force: {rel_force_val:.02e} | Abs. Force: "
-                "{abs_force_val:.02e} |",
+                "| {t:.03e} | FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
+                "{rel_force_val:.03e} | {abs_force_val:.03e} |           |",
                 verbose_level=VerbosityLevel.NORMAL,
                 t=t,
                 i_iter=self.i_iter,
@@ -236,6 +233,14 @@ class ConvergenceStatus:
                 rel_force_val=self.rel_force_val,
                 abs_force_val=self.abs_force_val,
             )
+
+    def print_fsi_header(self, dynamic: bool) -> None:
+        if dynamic:
+            print("\n| Dynamic Solve                                                                               |")
+            print("| Time      | Iter        | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+        else:
+            print("\n| Static Solve                                                                    |")
+            print("| Iter        | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
 
     @staticmethod
     def _static_names() -> Sequence[str]:

@@ -686,8 +686,8 @@ class BaseBeamStructure:
         Compute the global inertial force vector.
         :param m_l: Disassembled system mass matrix, [n_elem, 12, 12]
         :param c_l: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
-        :param v: Nodal velocities in global frame, [n_node, 6]
-        :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        :param v: Nodal velocities in local frame, [n_node, 6]
+        :param v_dot: Nodal accelerations in local frame, [n_node, 6]
         :return: Inertial forces, [n_elem, 12]
         """
 
@@ -703,10 +703,10 @@ class BaseBeamStructure:
 
     def _make_f_iner_gyr_lumped(self, c_l_lumped: Array, v: Array, v_dot: Array) -> tuple[Array, Array]:
         r"""
-        Obtain the contribution to the inertial forces from the lumped masses.
+        Obtain the contribution to the inertialI forces from the lumped masses.
         :param c_l_lumped: Gyroscopic matrix from lumped masses, [n_node, 6, 6]
-        :param v: Nodal velocities in global frame, [n_node, 6]
-        :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        :param v: Nodal velocities in local frame, [n_node, 6]
+        :param v_dot: Nodal accelerations in local frame, [n_node, 6]
         :return: Inertial forces from lumped masses, [n_node, 6]
         """
         f_iner = -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot)  # [n_node, 6]
@@ -756,7 +756,7 @@ class BaseBeamStructure:
         r"""
         Compute the time derivative of the element relative configuration vectors from the nodal velocities.
         :param p_d: P(d) operator, [n_elem, 6, 12]
-        :param v: Nodal velocities in global frame, [n_node, 6]
+        :param v: Nodal velocities in local frame, [n_node, 6]
         :return: Element relative velocity vectors, [n_elem, 6]
         """
 
@@ -1281,7 +1281,8 @@ class BaseBeamStructure:
                            aero_obj: None,
                            aero_case: None,
                            fsi_convergence_status: None,
-                           free_wake: None) -> DynamicStructure:
+                           free_wake: None,
+                           include_unsteady_aero_force: None) -> DynamicStructure:
         ...
 
     @overload
@@ -1297,7 +1298,8 @@ class BaseBeamStructure:
                            aero_obj: UVLM,
                            aero_case: DynamicAeroCase,
                            fsi_convergence_status: ConvergenceStatus,
-                           free_wake: bool) -> DynamicAeroelastic:
+                           free_wake: bool,
+                           include_unsteady_aero_force: bool) -> DynamicAeroelastic:
         ...
 
     def base_dynamic_solve(self,
@@ -1312,7 +1314,8 @@ class BaseBeamStructure:
                            aero_obj: Optional[UVLM],
                            aero_case: Optional[DynamicAeroCase],
                            fsi_convergence_status: Optional[ConvergenceStatus],
-                           free_wake: Optional[bool]) -> DynamicStructure | DynamicAeroelastic:
+                           free_wake: Optional[bool],
+                           include_unsteady_aero_force: Optional[bool]) -> DynamicStructure | DynamicAeroelastic:
         r"""
         Generic dynamic solver. Both the structural dynamic solve, and aeroelastic dynamic solve, are formed as wrappers
         of this
@@ -1553,12 +1556,22 @@ class BaseBeamStructure:
             hg_n = self.update_hg(struct_sol.hg[i_ts - 1, ...], phi_n)
 
             if include_aero:
-                # we assume that the previous result is satisfactory and do not resolve
+                if aero_sol is None or aero_obj is None or fsi_convergence_status is None or free_wake is None or include_unsteady_aero_force is None:
+                    raise ValueError("Missing aero arguments")
+
+                hg_dot = jnp.einsum('ijk,ikl->ijl', hg_n, vmap(ha_to_ha_tilde, 0, 0)(q_n.v))  # [n_nodes, 4, 4]
+
+                # we solve again - whilst this can be wasteful when the solution is very close to previous, for steps
+                # with poor convergence, removing this step can quickly cause the aero and structural solutions to
+                # diverge
+                aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
+                                          free_wake=free_wake, horseshoe=False)
+
                 if aero_obj is None or aero_sol is None:
                     raise ValueError("Missing aero arguments")
 
                 f_ext_aero = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
-                                                              include_unsteady=True)
+                                                              include_unsteady=include_unsteady_aero_force)
             else:
                 f_ext_aero = None
 
@@ -1626,19 +1639,16 @@ class BaseBeamStructure:
             hg_n = self.update_hg(hg=struct_sol.hg[i_ts - 1, ...], phi=phi_n)
             hg_dot = jnp.einsum('ijk,ikl->ijl', hg_n, vmap(ha_to_ha_tilde, 0, 0)(v_n))  # [n_nodes, 4, 4]
 
-            if aero_obj is None or free_wake is None:
-                raise ValueError("aero_obj is None")
+            if aero_obj is None or free_wake is None or struct_sol.f_ext_aero is None or include_unsteady_aero_force is None:
+                raise ValueError("Missing aero parameters")
 
             aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
                                       free_wake=free_wake, horseshoe=False)
 
-            if struct_sol.f_ext_aero is None:
-                raise ValueError("struct_sol.f_ext_aero is None")
-
             f_aero_nm1 = struct_sol.f_ext_aero[i_ts - 1, ...]
 
             f_aero_n = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
-                                                        include_unsteady=True)
+                                                        include_unsteady=include_unsteady_aero_force)
 
             f_aero_alpha = self.time_integrator.calculate_f_alpha(f_nm1=f_aero_nm1, f_n=f_aero_n)
 
@@ -1907,4 +1917,4 @@ class BaseBeamStructure:
                                        None,
                                        None,
                                        None,
-                                       None)
+                                       None, None)

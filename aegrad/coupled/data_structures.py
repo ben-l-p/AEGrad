@@ -75,13 +75,16 @@ class DynamicAeroelastic:
 
     @classmethod
     def initialise(cls,
-                   initial_snapshot: DynamicAeroelasticSnapshot | StaticAeroelastic,
+                   initial_snapshot: DynamicAeroelasticSnapshot | DynamicAeroelastic | StaticAeroelastic,
                    t: Array,
                    use_f_ext_follower: bool,
                    use_f_ext_dead: bool,
                    aeroelastic_object: BaseCoupledAeroelastic) -> DynamicAeroelastic:
         if isinstance(initial_snapshot, DynamicAeroelasticSnapshot):
             init_struct: DynamicStructureSnapshot = initial_snapshot.structure
+            init_aero: AeroSnapshot = initial_snapshot.aero
+        elif isinstance(initial_snapshot, StaticAeroelastic):
+            init_struct: DynamicStructureSnapshot = initial_snapshot.structure.to_dynamic(t=None)
             init_aero: AeroSnapshot = initial_snapshot.aero
         elif isinstance(initial_snapshot, DynamicAeroelastic):
             if initial_snapshot.structure.n_tstep != 1: raise ValueError("initial_snapshot.structure.n_tstep != 1")

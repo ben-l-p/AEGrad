@@ -158,11 +158,14 @@ class BaseCoupledAeroelastic:
 
             return converge_status_, struct_case_np1, aero_case_np1
 
+        fsi_converge_status = ConvergenceStatus(self.fsi_convergence_settings)
+        fsi_converge_status.print_fsi_header(dynamic=False)
+
         convergence_status, struct_case, aero_case = jax.lax.while_loop(
             lambda args_: ~args_[0].get_status(),
             lambda args_: _convergence_loop(*args_),  # type: ignore
             (
-                ConvergenceStatus(self.fsi_convergence_settings),
+                fsi_converge_status,
                 self.structure.reference_configuration(
                     use_f_grav=self.structure.use_gravity,
                     use_f_ext_dead=f_ext_dead is not None,
@@ -177,7 +180,7 @@ class BaseCoupledAeroelastic:
         return StaticAeroelastic(structure=struct_case, aero=aero_case)
 
     def dynamic_solve(self,
-                      init_case: Optional[StaticAeroelastic | DynamicAeroelastic],
+                      init_case: Optional[StaticAeroelastic | DynamicAeroelastic | DynamicAeroelasticSnapshot],
                       f_ext_follower: Optional[Array],
                       f_ext_dead: Optional[Array],
                       prescribed_dofs: Sequence[int] | Array | slice | int | None,
@@ -188,6 +191,7 @@ class BaseCoupledAeroelastic:
                       relaxation_factor: float = 1.0,
                       spectral_radius: float = 1.0,
                       free_wake: bool = False,
+                      include_unsteady_aero_force: bool = True,
                       ) -> DynamicAeroelastic:
 
         warn_if_32_bit()
@@ -235,6 +239,9 @@ class BaseCoupledAeroelastic:
         else:
             raise NotImplementedError
 
+        fsi_converge_status: ConvergenceStatus = ConvergenceStatus(self.fsi_convergence_settings)
+        fsi_converge_status.print_fsi_header(dynamic=True)
+
         return self.structure.base_dynamic_solve(struct_case=case.structure,
                                                  struct_convergence_status=ConvergenceStatus(
                                                      self.structure.convergence_settings),
@@ -246,6 +253,6 @@ class BaseCoupledAeroelastic:
                                                  f_ext_dead=f_ext_dead,
                                                  aero_obj=self.aero,
                                                  aero_case=case.aero,
-                                                 fsi_convergence_status=ConvergenceStatus(
-                                                     self.fsi_convergence_settings),
-                                                 free_wake=free_wake)
+                                                 fsi_convergence_status=fsi_converge_status,
+                                                 free_wake=free_wake,
+                                                 include_unsteady_aero_force=include_unsteady_aero_force)

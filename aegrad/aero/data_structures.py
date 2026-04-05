@@ -408,7 +408,7 @@ class DynamicAeroCase:
         :param dt: Time step size
         """
 
-        def fd(arr):
+        def fd(arr: Array) -> Array:
             return finite_difference(i_ts, arr, dt, 0, order=1)
 
         if self._gamma_b_dot is None: raise ValueError("gamma_b_dot is None")
