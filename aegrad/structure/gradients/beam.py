@@ -572,7 +572,7 @@ class BeamStructure(BaseBeamStructure):
 
         # include initial state sensitivity
         if p_q0_p_x is not None:
-            d_j_d_x += p_q0_p_x.premult_adj(p_j0_p_q0 + adj[0, ...] @ p_r1_p_q0)
+            d_j_d_x += p_q0_p_x.premult_adj(-adj[0, ...])
 
         # restore original shape of j, and cut off zeros for past-end timestep
         adj = adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[:-1]

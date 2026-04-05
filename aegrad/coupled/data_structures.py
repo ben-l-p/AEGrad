@@ -125,6 +125,6 @@ class DynamicAeroelastic:
         :return: Paths of the structural and aerodynamic PVD files.
         """
         struct_pvd: Path = self.structure.plot(directory=directory, n_interp=n_interp, index=index)
-        aero_pvd: Sequence[Path] = self.aero.plot(directory=directory, plot_bound=plot_bound, plot_wake=plot_wake,
-                                                  index=index)
+        aero_pvd: Sequence[Path] = self.aero.plot(directory=directory,  # type: ignore
+                                                  plot_bound=plot_bound, plot_wake=plot_wake, index=index)
         return struct_pvd, aero_pvd

@@ -24,15 +24,16 @@ class BaseCoupledAeroelastic:
             self,
             structure: BeamStructure,
             aero: UVLM,
-            fsi_convergence_settings: Optional[ConvergenceSettings] = None,
+            fsi_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
+                                                                                rel_disp_tol=1e-7,
+                                                                                abs_disp_tol=1e-9,
+                                                                                rel_force_tol=1e-7,
+                                                                                abs_force_tol=1e-9),
             verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
     ):
         self.structure: BeamStructure = structure
         self.aero: UVLM = aero
-        if fsi_convergence_settings is None:
-            self.fsi_convergence_settings: ConvergenceSettings = ConvergenceSettings()
-        else:
-            self.fsi_convergence_settings = fsi_convergence_settings
+        self.fsi_convergence_settings: ConvergenceSettings = fsi_convergence_settings
         self.verbosity = verbosity
 
     def set_design_variables(
@@ -97,9 +98,9 @@ class BaseCoupledAeroelastic:
 
     def static_solve(
             self,
-            f_ext_follower: Optional[Array],
-            f_ext_dead: Optional[Array],
             prescribed_dofs: Sequence[int] | Array | slice | int | None,
+            f_ext_follower: Optional[Array] = None,
+            f_ext_dead: Optional[Array] = None,
             t: float | Array = 0.0,
             load_steps: int = 1,
             relaxation_factor: float = 1.0,
@@ -159,7 +160,7 @@ class BaseCoupledAeroelastic:
             return converge_status_, struct_case_np1, aero_case_np1
 
         fsi_converge_status = ConvergenceStatus(self.fsi_convergence_settings)
-        fsi_converge_status.print_fsi_header(dynamic=False)
+        fsi_converge_status.print_header(dynamic=False)
 
         convergence_status, struct_case, aero_case = jax.lax.while_loop(
             lambda args_: ~args_[0].get_status(),
@@ -177,15 +178,17 @@ class BaseCoupledAeroelastic:
             ),
         )
 
+        fsi_converge_status.print_footer(dynamic=False)
+
         return StaticAeroelastic(structure=struct_case, aero=aero_case)
 
     def dynamic_solve(self,
                       init_case: Optional[StaticAeroelastic | DynamicAeroelastic | DynamicAeroelasticSnapshot],
-                      f_ext_follower: Optional[Array],
-                      f_ext_dead: Optional[Array],
                       prescribed_dofs: Sequence[int] | Array | slice | int | None,
                       dt: Array | float,
                       n_tstep: int,
+                      f_ext_follower: Optional[Array] = None,
+                      f_ext_dead: Optional[Array] = None,
                       t_init: float = 0.0,
                       load_steps: int = 1,
                       relaxation_factor: float = 1.0,
@@ -240,19 +243,22 @@ class BaseCoupledAeroelastic:
             raise NotImplementedError
 
         fsi_converge_status: ConvergenceStatus = ConvergenceStatus(self.fsi_convergence_settings)
-        fsi_converge_status.print_fsi_header(dynamic=True)
+        fsi_converge_status.print_header(dynamic=True)
 
-        return self.structure.base_dynamic_solve(struct_case=case.structure,
-                                                 struct_convergence_status=ConvergenceStatus(
-                                                     self.structure.convergence_settings),
-                                                 t=t,
-                                                 relaxation_factor=relaxation_factor,
-                                                 solve_dofs=solve_dofs,
-                                                 load_steps=load_steps,
-                                                 f_ext_follower=f_ext_follower,
-                                                 f_ext_dead=f_ext_dead,
-                                                 aero_obj=self.aero,
-                                                 aero_case=case.aero,
-                                                 fsi_convergence_status=fsi_converge_status,
-                                                 free_wake=free_wake,
-                                                 include_unsteady_aero_force=include_unsteady_aero_force)
+        out = self.structure.base_dynamic_solve(struct_case=case.structure,
+                                                struct_convergence_status=ConvergenceStatus(
+                                                    self.structure.struct_convergence_settings),
+                                                t=t,
+                                                relaxation_factor=relaxation_factor,
+                                                solve_dofs=solve_dofs,
+                                                load_steps=load_steps,
+                                                f_ext_follower=f_ext_follower,
+                                                f_ext_dead=f_ext_dead,
+                                                aero_obj=self.aero,
+                                                aero_case=case.aero,
+                                                fsi_convergence_status=fsi_converge_status,
+                                                free_wake=free_wake,
+                                                include_unsteady_aero_force=include_unsteady_aero_force)
+
+        fsi_converge_status.print_footer(dynamic=True)
+        return out

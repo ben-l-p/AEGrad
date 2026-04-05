@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Optional, Sequence, Literal, overload, TYPE_CHECKING
+from typing import Optional, Sequence, Literal, overload, TYPE_CHECKING, cast
 from functools import partial
 
 from jax import numpy as jnp
@@ -52,7 +52,11 @@ class BaseBeamStructure:
             gravity: Optional[Array] = None,
             verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
             optional_jacobians: Optional[OptionalJacobians] = None,
-            convergence_settings: Optional[ConvergenceSettings] = None,
+            struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
+                                                                                   rel_disp_tol=1e-7,
+                                                                                   abs_disp_tol=1e-9,
+                                                                                   rel_force_tol=1e-7,
+                                                                                   abs_force_tol=1e-9)
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
@@ -127,11 +131,7 @@ class BaseBeamStructure:
             if optional_jacobians is not None
             else OptionalJacobians()
         )
-        self.convergence_settings: ConvergenceSettings = (
-            convergence_settings
-            if convergence_settings is not None
-            else ConvergenceSettings()
-        )
+        self.struct_convergence_settings: ConvergenceSettings = struct_convergence_settings
 
         self._time_integrator: Optional[TimeIntregrator] = None
 
@@ -1183,7 +1183,7 @@ class BaseBeamStructure:
 
             # algebra between undeformed and deformed arr_list_shapes, used to check relative convergence, [n_solve_dofs]
             # this is relatively expensive to compute
-            if self.convergence_settings.rel_disp_tol is not None:
+            if self.struct_convergence_settings.rel_disp_tol is not None:
                 h_full = vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_np1_full).ravel()[
                     solve_dofs
                 ]
@@ -1219,13 +1219,13 @@ class BaseBeamStructure:
                 (
                     i_load_step,
                     ConvergenceStatus(
-                        self.convergence_settings,
+                        self.struct_convergence_settings,
                     ),
                     hg_init,
                 ),
             )
 
-            if self.verbosity == VerbosityLevel.NORMAL:
+            if self.verbosity.value >= VerbosityLevel.NORMAL.value:
                 convergence_status.print_struct_message(None, i_load_step)
 
             return hg_solve
@@ -1390,7 +1390,7 @@ class BaseBeamStructure:
                 p_d_n,
                 eps_n,
                 total_f_ext_dead,
-                hg_n[:, :3, :3],
+                hg_update[:, :3, :3],
                 m_t,
             )  # [n_dof, n_dof]
 
@@ -1404,20 +1404,20 @@ class BaseBeamStructure:
 
             # residual forces, [n_solve_dofs]
             f_res_n_solve, f_abs_sum_n = self.make_f_res(
-                solve_dofs,
-                p_d_n,
-                eps_n,
-                hg_n,
-                f_ext_follower_alpha_steps[i_load_step, i_ts, ...]
+                solve_dofs=solve_dofs,
+                p_d=p_d_n,
+                eps=eps_n,
+                hg=hg_update,
+                f_ext_follower_n=f_ext_follower_alpha_steps[i_load_step, i_ts, ...]
                 if f_ext_follower_alpha_steps is not None
                 else None,
-                total_f_ext_dead,
-                True,
-                m_t,
-                c_l,
-                c_l_lumped,
-                q_alpha.v,
-                q_alpha.v_dot,
+                f_ext_dead_n=total_f_ext_dead,
+                dynamic=True,
+                m_t=m_t,
+                c_l=c_l,
+                c_l_lumped=c_l_lumped,
+                v=q_alpha.v,
+                v_dot=q_alpha.v_dot,
             )
 
             # system matrix, [n_solve_dofs, n_solve_dofs]
@@ -1456,7 +1456,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if self.verbosity.value == VerbosityLevel.VERBOSE.value:
+            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
                 struct_converge_status_.print_struct_message(t[i_ts], i_load_step)
 
             q_alpha_update = StructureMinimalStates(
@@ -1471,7 +1471,7 @@ class BaseBeamStructure:
                 struct_sol: DynamicStructure,
                 struct_converge_status: ConvergenceStatus,
                 aero_sol: None,
-                fsi_convergence_status: None,
+                fsi_convergence_status_: None,
         ) -> tuple[DynamicStructure, ConvergenceStatus, None, None]:
             ...
 
@@ -1481,7 +1481,7 @@ class BaseBeamStructure:
                 struct_sol: DynamicStructure,
                 struct_converge_status: ConvergenceStatus,
                 aero_sol: DynamicAeroCase,
-                fsi_convergence_status: ConvergenceStatus,
+                fsi_convergence_status_: ConvergenceStatus,
         ) -> tuple[DynamicStructure, ConvergenceStatus, DynamicAeroCase, ConvergenceStatus]:
             ...
 
@@ -1490,13 +1490,15 @@ class BaseBeamStructure:
                 struct_sol: DynamicStructure,
                 struct_converge_status: ConvergenceStatus,
                 aero_sol: Optional[DynamicAeroCase],
-                fsi_convergence_status: Optional[ConvergenceStatus],
+                fsi_convergence_status_: Optional[ConvergenceStatus],
         ) -> tuple[DynamicStructure, ConvergenceStatus, Optional[DynamicAeroCase], Optional[ConvergenceStatus]]:
             r"""
             Performs analysis on a single time step, including load stepping
             :param i_ts: Index of time step to solve
             :param struct_sol: Solution object, with results up to time step i_ts-1.
             :param struct_converge_status: Convergence status object.
+            :param aero_sol: Aero solution object, with results up to time step i_ts-1, if aero is included.
+            :param fsi_convergence_status_: Convergence status object.
             :return: Solution object with results up to time step i_ts.
             """
 
@@ -1509,22 +1511,32 @@ class BaseBeamStructure:
             q_alpha_init.varphi = None  # this value is not used during the loop
 
             if include_aero:
-                if aero_sol is None or fsi_convergence_status is None:
+                if aero_sol is None or fsi_convergence_status_ is None or struct_sol.f_ext_aero is None:
                     raise ValueError("Missing aero arguments")
 
-                fsi_convergence_status.reset_status()
+                fsi_convergence_status_.reset_status()
 
-                _, struct_sol, aero_sol, struct_converge_status, fsi_convergence_status, phi_alpha, q_alpha, _ = jax.lax.while_loop(
-                    lambda args_: ~args_[4].get_status(),
+                # f_ext_aero is stored in local frame, so we convert back to global
+                # so that both operands of the alpha blend are in the same (global) frame.
+                f_aero_nm1 = jnp.concatenate([
+                    jnp.einsum("ijk,ik->ij", struct_sol.hg[i_ts - 1, :, :3, :3],
+                               struct_sol.f_ext_aero[i_ts - 1, :, :3]),
+                    jnp.einsum("ijk,ik->ij", struct_sol.hg[i_ts - 1, :, :3, :3],
+                               struct_sol.f_ext_aero[i_ts - 1, :, 3:]),
+                ], axis=-1)
+
+                _, struct_sol, aero_sol, struct_converge_status, fsi_convergence_status_, phi_alpha, q_alpha, _, _ = jax.lax.while_loop(
+                    lambda args_: ~cast(ConvergenceStatus, args_[4]).get_status(),
                     lambda args_: fsi_convergence_loop(*args_),
                     (i_ts,
                      struct_sol,
                      aero_sol,
                      struct_converge_status,
-                     fsi_convergence_status,
+                     fsi_convergence_status_,
                      phi_alpha_init,
                      q_alpha_init,
-                     jnp.zeros((self.n_nodes, 6)),
+                     f_aero_nm1,  # this value is for the previous timesteps force, and is propogated unaltered
+                     f_aero_nm1,  # first guess for forcing at alpha is to use value from i_ts=n-1
                      ))
 
             else:
@@ -1538,6 +1550,12 @@ class BaseBeamStructure:
                     f_ext_aero_steps=None
                 )
 
+            # print message where we only require one message per timestep
+            if self.verbosity.value == VerbosityLevel.NORMAL.value:
+                struct_converge_status.print_struct_message(t=struct_sol.t[i_ts], i_load_step=load_steps - 1)
+                if include_aero and fsi_convergence_status_ is not None:
+                    fsi_convergence_status_.print_fsi_message(t=struct_sol.t[i_ts])
+
             # postprocess results for time step and store in solution object
             q_n, phi_n = self.time_integrator.calculate_q_n_from_q_alpha(
                 q_alpha=q_alpha,
@@ -1545,7 +1563,7 @@ class BaseBeamStructure:
                 phi_alpha=phi_alpha,
             )
 
-            # update pseudoacceleration
+            # update pseudo-acceleration
             q_n.a = self.time_integrator.calculate_a_n(
                 a_nm1=struct_sol.a[i_ts - 1, ...],
                 v_dot_nm1=struct_sol.v_dot[i_ts - 1, ...],
@@ -1556,22 +1574,13 @@ class BaseBeamStructure:
             hg_n = self.update_hg(struct_sol.hg[i_ts - 1, ...], phi_n)
 
             if include_aero:
-                if aero_sol is None or aero_obj is None or fsi_convergence_status is None or free_wake is None or include_unsteady_aero_force is None:
-                    raise ValueError("Missing aero arguments")
-
-                hg_dot = jnp.einsum('ijk,ikl->ijl', hg_n, vmap(ha_to_ha_tilde, 0, 0)(q_n.v))  # [n_nodes, 4, 4]
-
-                # we solve again - whilst this can be wasteful when the solution is very close to previous, for steps
-                # with poor convergence, removing this step can quickly cause the aero and structural solutions to
-                # diverge
-                aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
-                                          free_wake=free_wake, horseshoe=False)
-
-                if aero_obj is None or aero_sol is None:
+                if aero_sol is None or aero_obj is None or fsi_convergence_status_ is None or free_wake is None or include_unsteady_aero_force is None:
                     raise ValueError("Missing aero arguments")
 
                 f_ext_aero = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
                                                               include_unsteady=include_unsteady_aero_force)
+
+
             else:
                 f_ext_aero = None
 
@@ -1602,6 +1611,8 @@ class BaseBeamStructure:
             struct_sol.v_dot = struct_sol.v_dot.at[i_ts, ...].set(q_n.v_dot)
             struct_sol.a = struct_sol.a.at[i_ts, ...].set(q_n.a)
             struct_sol.hg = struct_sol.hg.at[i_ts, ...].set(hg_n)
+            struct_sol.varphi = struct_sol.varphi.at[i_ts, ...].set(vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_n))
+
             if f_ext_follower is not None:
                 struct_sol.f_ext_follower = struct_sol.f_ext_follower.at[i_ts, ...].set(
                     f_ext_follower[i_ts, ...]
@@ -1619,7 +1630,7 @@ class BaseBeamStructure:
             struct_sol.f_iner_gyr = struct_sol.f_iner_gyr.at[i_ts, ...].set(f_iner + f_gyr)
             struct_sol.f_res = struct_sol.f_res.at[i_ts, ...].set(f_res)
 
-            return struct_sol, struct_converge_status, aero_sol, fsi_convergence_status
+            return struct_sol, struct_converge_status, aero_sol, fsi_convergence_status_
 
         def fsi_convergence_loop(i_ts: int,
                                  struct_sol: DynamicStructure,
@@ -1628,8 +1639,9 @@ class BaseBeamStructure:
                                  fsi_converge_status: ConvergenceStatus,
                                  phi_alpha_init: Array,
                                  q_alpha_init: StructureMinimalStates,
+                                 f_aero_nm1: Array,
                                  f_aero_alpha_prev: Array) -> tuple[
-            int, DynamicStructure, DynamicAeroCase, ConvergenceStatus, ConvergenceStatus, Array, StructureMinimalStates, Array]:
+            int, DynamicStructure, DynamicAeroCase, ConvergenceStatus, ConvergenceStatus, Array, StructureMinimalStates, Array, Array]:
 
             # obtain coordinates at timestep (not alpha)
             phi_n = self.time_integrator.calculate_phi_from_phi_alpha(phi_alpha=phi_alpha_init)
@@ -1642,14 +1654,14 @@ class BaseBeamStructure:
             if aero_obj is None or free_wake is None or struct_sol.f_ext_aero is None or include_unsteady_aero_force is None:
                 raise ValueError("Missing aero parameters")
 
+            # evaluate aerodynamic forcing on beam
             aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
                                       free_wake=free_wake, horseshoe=False)
-
-            f_aero_nm1 = struct_sol.f_ext_aero[i_ts - 1, ...]
 
             f_aero_n = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
                                                         include_unsteady=include_unsteady_aero_force)
 
+            # aerodynamic force at alpha point, subsequently divided into load steps
             f_aero_alpha = self.time_integrator.calculate_f_alpha(f_nm1=f_aero_nm1, f_n=f_aero_n)
 
             f_aero_alpha_steps = self._make_load_steps_f(f=f_aero_alpha, weighting=load_step_weight,
@@ -1671,15 +1683,16 @@ class BaseBeamStructure:
             # update the FSI convergence object
             # note that for convenience we use the alpha properties
             fsi_converge_status.update(
-                delta_disp=phi_alpha_init - phi_alpha,
-                total_disp=phi_alpha,
-                delta_force=f_aero_alpha - f_aero_alpha_prev,
-                total_force=f_aero_alpha,
+                delta_disp=(phi_alpha_init - phi_alpha).ravel()[solve_dofs],
+                total_disp=phi_alpha.ravel()[solve_dofs],
+                delta_force=(f_aero_alpha - f_aero_alpha_prev).ravel()[solve_dofs],
+                total_force=f_aero_alpha.ravel()[solve_dofs],
             )
 
-            fsi_converge_status.print_fsi_message(t=t[i_ts])
+            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
+                fsi_converge_status.print_fsi_message(t=t[i_ts])
 
-            return i_ts, struct_sol, aero_sol, struct_converge_status, fsi_converge_status, phi_alpha, q_alpha, f_aero_alpha
+            return i_ts, struct_sol, aero_sol, struct_converge_status, fsi_converge_status, phi_alpha, q_alpha, f_aero_nm1, f_aero_alpha
 
         def struct_convergence_loop(
                 i_load_step: int,
@@ -1711,7 +1724,7 @@ class BaseBeamStructure:
                 (i_load_step, i_ts, struct_converge_status, hg_alpha, phi_alpha, q_alpha, f_ext_aero_steps),
             )
 
-            if self.verbosity.value == VerbosityLevel.NORMAL.value:
+            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
                 struct_converge_status.print_struct_message(t[i_ts], i_load_step)
 
             return i_ts, struct_converge_status, hg_solve, phi_alpha, q_alpha, f_ext_aero_steps
@@ -1903,7 +1916,7 @@ class BaseBeamStructure:
             use_f_ext_dead=f_ext_dead is not None, use_f_ext_aero=False
         )
         converge_status = ConvergenceStatus(
-            convergence_settings=self.convergence_settings
+            convergence_settings=self.struct_convergence_settings
         )
 
         return self.base_dynamic_solve(dynamic_struct,

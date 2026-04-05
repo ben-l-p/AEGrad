@@ -551,6 +551,8 @@ class UVLM:
                         zetas=case.zeta_full(i_ts - 1),
                         gammas=case.gamma_full(i_ts - 1),
                         kernels=[*self.kernels_b, *self.kernels_w],
+                        mirror_normal=self.mirror_normal,
+                        mirror_point=self.mirror_point,
                     )
                 return v
 
@@ -605,6 +607,8 @@ class UVLM:
                 zetas=case.zeta_w.index_all(i_ts, ...),
                 gammas=case.gamma_w.index_all(i_ts, ...),
                 kernels=self.kernels_w,
+                mirror_normal=self.mirror_normal,
+                mirror_point=self.mirror_point,
             )
 
         v_bc_n = ArrayList.einsum(

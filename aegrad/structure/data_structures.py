@@ -563,6 +563,9 @@ class DynamicStructure:
         Initialise a DynamicStructure object given an initial initial_snapshot and number of time steps.
         :param initial_snapshot: Snapshot at initial time step.
         :param t: Time step array, [n_tstep]
+        :param use_f_ext_follower: Whether to include follower force array
+        :param use_f_ext_dead: Whether to include dead force array
+        :param use_f_ext_aero: Whether to include aero force array
         :return: DynamicStructure object with arrays initialised to zero except for the first time step.
         """
         n_node = initial_snapshot.hg.shape[0]

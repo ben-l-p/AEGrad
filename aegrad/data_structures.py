@@ -14,11 +14,11 @@ from utils import _make_pytree
 
 @dataclass
 class ConvergenceSettings:
-    max_n_iter: Optional[int] = 40
-    rel_disp_tol: Optional[float] = 1e-8
-    abs_disp_tol: Optional[float] = 1e-12
-    rel_force_tol: Optional[float] = 1e-8
-    abs_force_tol: Optional[float] = 1e-12
+    max_n_iter: Optional[int]
+    rel_disp_tol: Optional[float]
+    abs_disp_tol: Optional[float]
+    rel_force_tol: Optional[float]
+    abs_force_tol: Optional[float]
 
 
 @_make_pytree
@@ -234,13 +234,21 @@ class ConvergenceStatus:
                 abs_force_val=self.abs_force_val,
             )
 
-    def print_fsi_header(self, dynamic: bool) -> None:
+    @staticmethod
+    def print_header(dynamic: bool) -> None:
         if dynamic:
-            print("\n| Dynamic Solve                                                                               |")
-            print("| Time      | Iter        | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+            print("\n|--------------------------------------- Dynamic Solve ---------------------------------------|")
+            print("|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
         else:
-            print("\n| Static Solve                                                                    |")
-            print("| Iter        | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+            print("\n|--------------------------------- Static Solve ----------------------------------|")
+            print("|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+
+    @staticmethod
+    def print_footer(dynamic: bool) -> None:
+        if dynamic:
+            print("|---------------------------------------------------------------------------------------------|")
+        else:
+            print("|---------------------------------------------------------------------------------|")
 
     @staticmethod
     def _static_names() -> Sequence[str]:

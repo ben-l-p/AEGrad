@@ -345,12 +345,12 @@ class DynamicAeroCase:
                 )
 
             if plot_bound:
-                bound_name = f"aero_dynamic_surf_{i_surf}_bound_ts"
+                bound_name = f"aero_dynamic_{self.surf_b_names[i_surf]}_ts"
                 pvd_paths.append(write_pvd(directory=directory, name=bound_name, filedirs=list(zip(*paths))[0],
                                            times=list(self.t[index_])))
 
             if plot_wake:
-                wake_name = f"aero_dynamic_surf_{i_surf}_wake_ts"
+                wake_name = f"aero_dynamic_{self.surf_w_names[i_surf]}_ts"
                 pvd_paths.append(write_pvd(directory=directory, name=wake_name, filedirs=list(zip(*paths))[-1],
                                            times=list(self.t[index_])))
         return pvd_paths
@@ -462,7 +462,7 @@ class DynamicAeroCase:
             include_unsteady: bool,
     ) -> Array:
         r"""
-        Project aerodynamic forcing at specified time step onto the beam grid.
+        Project aerodynamic forcing at specified time step onto the beam grid. Returned forces are in the global frame.
         :param i_ts: Timestep index.
         :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
         :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
@@ -530,6 +530,8 @@ class DynamicAeroCase:
             zetas=self.zeta_full(i_ts),
             gammas=self.gamma_full(i_ts),
             kernels=self.kernels,
+            mirror_normal=self.mirror_normal,
+            mirror_point=self.mirror_point,
         )
 
     def get_v_tot[T: Array | ArrayList](self, i_ts: int, x: T) -> T:

@@ -42,11 +42,11 @@ def compute_aic_grid(
     @jax.checkpoint
     def row(args: tuple) -> Array:
         ci, ni = args
-        m_infl = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)  # [m*(varphi+1), 3]
-        m_infl_ni = jnp.dot(m_infl, ni).reshape(m_panels, n_panels + 1)  # [m, varphi+1]
-        n_infl = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)  # [(m+1)*varphi, 3]
-        n_infl_ni = jnp.dot(n_infl, ni).reshape(m_panels + 1, n_panels)  # [m+1, varphi]
-        return -jnp.diff(m_infl_ni, axis=1) + jnp.diff(n_infl_ni, axis=0)  # [m, varphi]
+        m_influence = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)  # [m*(varphi+1), 3]
+        m_influence_ni = jnp.dot(m_influence, ni).reshape(m_panels, n_panels + 1)  # [m, varphi+1]
+        n_influence = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)  # [(m+1)*varphi, 3]
+        n_influence_ni = jnp.dot(n_influence, ni).reshape(m_panels + 1, n_panels)  # [m+1, varphi]
+        return -jnp.diff(m_influence_ni, axis=1) + jnp.diff(n_influence_ni, axis=0)  # [m, varphi]
 
     return jax.lax.map(
         row, (c.reshape(-1, 3), n.reshape(-1, 3) if n is not None else None), batch_size=batch_size
@@ -207,11 +207,13 @@ def compute_v_ind[T: Array | ArrayList](
         zetas: ArrayList,
         gammas: ArrayList,
         kernels: Sequence[KernelFunction],
+        mirror_point: Optional[Array],
+        mirror_normal: Optional[Array],
         batch_size: Optional[int] = BATCH_SIZE,
 ) -> T:
     """
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)
-    without materializing the full [c_m, c_n, m, varphi, 3] AIC.
+    without materialising the full [c_m, c_n, m, varphi, 3] AIC.
 
     The diff structure of compute_aic_grid is absorbed into gamma via the grads-diff
     identity: diff(AIC, axis) @ gamma == AIC @ adj_diff(gamma), so each filament
@@ -220,6 +222,8 @@ def compute_v_ind[T: Array | ArrayList](
     :param zetas: Grid vertices, [m+1, varphi+1, 3].
     :param gammas: Circulation strengths, [m, varphi].
     :param kernels: Kernel function.
+    :param mirror_point: Mirror point, [3]. If None, no mirroring will be done.
+    :param mirror_normal: Normal mirror vector, [3]. If None, no mirroring will be done.
     :param batch_size: Passed to lax.map.
     :return: [c_m, c_n, 3].
     """
@@ -247,5 +251,22 @@ def compute_v_ind[T: Array | ArrayList](
             v[-1] += v_ind_vmap(
                 c, m_vect, gamma_eff_m, kernel, batch_size
             ) + v_ind_vmap(c, n_vect, gamma_eff_n, kernel, batch_size)
+
+            if mirror_point is not None and mirror_normal is not None:
+                zeta_mirror = mirror_grid(
+                    zeta=zeta,
+                    mirror_point=mirror_point,
+                    mirror_normal=mirror_normal,
+                )
+                m_vect_mirror = jnp.stack(
+                    (zeta_mirror[:-1, :, :], zeta_mirror[1:, :, :]), axis=-2
+                )  # [m, varphi+1, 2, 3]
+                n_vect_mirror = jnp.stack(
+                    (zeta_mirror[:, :-1, :], zeta_mirror[:, 1:, :]), axis=-2
+                )  # [m+1, varphi, 2, 3]
+
+                v[-1] -= v_ind_vmap(
+                    c, m_vect_mirror, gamma_eff_m, kernel, batch_size
+                ) + v_ind_vmap(c, n_vect_mirror, gamma_eff_n, kernel, batch_size)
 
     return v[0] if isinstance(cs, Array) else v

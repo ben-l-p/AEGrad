@@ -706,7 +706,8 @@ class LinearUVLM:
 
             v_bc = (
                     compute_v_ind(
-                        cs=cs, zetas=zeta_ws, gammas=gamma_ws, kernels=self.kernels_w
+                        cs=cs, zetas=zeta_ws, gammas=gamma_ws, kernels=self.kernels_w, mirror_normal=self.mirror_normal,
+                        mirror_point=self.mirror_point
                     )
                     + self.reference.flowfield.surf_vmap_call(
                 cs, jnp.array(self.reference.t)
@@ -743,6 +744,8 @@ class LinearUVLM:
                     zetas=ArrayList([*zeta_b, *zeta_w]),
                     gammas=ArrayList([*gamma_b, *gamma_w]),
                     kernels=[*self.kernels_b, *self.kernels_w],
+                    mirror_normal=self.mirror_normal,
+                    mirror_point=self.mirror_point,
                 )
             return v_x
 
