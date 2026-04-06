@@ -167,6 +167,10 @@ class UVLM:
             raise ValueError("FlowField has not been set.")
         return self._flowfield
 
+    @flowfield.setter
+    def flowfield(self, flowfield: FlowField) -> None:
+        self._flowfield = flowfield
+
     @property
     def x0_b(self) -> ArrayList:
         r"""
@@ -489,6 +493,7 @@ class UVLM:
             static: bool,
             free_wake: bool,
             horseshoe: bool,
+            gamma_dot_relaxation: float,
     ) -> DynamicAeroCase:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
@@ -499,7 +504,11 @@ class UVLM:
         :param static: If true, perform a static solve
         :param free_wake: If true, use free wake propagation in dynamic solve
         :param horseshoe: If true, replace the wake with a horseshoe wake in static solve which extends a fixed distance
+        :param gamma_dot_relaxation: Relaxation parameter which filters gamma_dot
         """
+        if not (0.0 < gamma_dot_relaxation <= 1.0):
+            raise ValueError("Gamma_dot relaxation factor not in (0, 1]")
+
         if not static and horseshoe:
             warn(
                 "Horseshoe wake not compatible with non-static solve. Overriding horseshoe to False."
@@ -621,7 +630,7 @@ class UVLM:
         if static:
             case.set_gamma_w_static(i_ts)
         else:
-            case.compute_gamma_dot(i_ts, self.dt)
+            case.compute_gamma_dot(i_ts=i_ts, dt=self.dt, gamma_dot_relaxation=gamma_dot_relaxation)
             case.calculate_unsteady_forcing(i_ts=i_ts)
         case.calculate_steady_forcing(i_ts=i_ts)
 
@@ -698,7 +707,7 @@ class UVLM:
         case.t = case.t.at[0].set(t)
 
         out_case = self.solve(
-            case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe
+            case, 0, hg, None, static=True, free_wake=False, horseshoe=horseshoe, gamma_dot_relaxation=1.0
         )[0]
 
         return out_case
@@ -709,6 +718,7 @@ class UVLM:
             hg_t: Array,
             hg_dot_t: Array,
             free_wake: bool = False,
+            gamma_dot_relaxation: float = 0.7,
     ) -> DynamicAeroCase:
         r"""
         Solve the UVLM for prescribed grid motions.
@@ -716,6 +726,7 @@ class UVLM:
         :param hg_t: Beam global grid coordinates over time, [n_tstep, zeta_n, 4, 4].
         :param hg_dot_t: Beam global grid velocities over time, [n_tstep, zeta_n, 4, 4].
         :param free_wake: If true, use free wake propagation.
+        :param gamma_dot_relaxation: Relaxation factor for filtering computation in bound gamma_dot
         """
         check_arr_shape(hg_t, (None, None, 4, 4), "hg")
         check_if_all_se3_g(hg_t, True)
@@ -740,6 +751,7 @@ class UVLM:
                 static=False,
                 free_wake=free_wake,
                 horseshoe=False,
+                gamma_dot_relaxation=gamma_dot_relaxation,
             )
             jax_print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
             return case_

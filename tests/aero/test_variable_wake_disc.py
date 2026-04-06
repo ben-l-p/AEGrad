@@ -76,7 +76,7 @@ class TestVarWakeDisc:
             static_case = uvlm.solve_static()
 
             dynamic_case = uvlm.solve_prescribed_dynamic(
-                static_case, hg_t, hg_dot_t, False
+                static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
             )
             gamma_b.append(dynamic_case.gamma_b[0])
 

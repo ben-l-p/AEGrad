@@ -53,10 +53,10 @@ class BaseBeamStructure:
             verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
             optional_jacobians: Optional[OptionalJacobians] = None,
             struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
-                                                                                   rel_disp_tol=1e-7,
-                                                                                   abs_disp_tol=1e-9,
-                                                                                   rel_force_tol=1e-7,
-                                                                                   abs_force_tol=1e-9)
+                                                                                   rel_disp_tol=1e-6,
+                                                                                   abs_disp_tol=1e-8,
+                                                                                   rel_force_tol=1e-6,
+                                                                                   abs_force_tol=1e-8)
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters
@@ -1076,7 +1076,7 @@ class BaseBeamStructure:
             f_ext_aero: Optional[Array],
             prescribed_dofs: Sequence[int] | Array | slice | int | None,
             load_steps: int = 1,
-            relaxation_factor: float = 1.0,
+            struct_relaxation_factor: float = 1.0,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure_dv under external loads
@@ -1085,7 +1085,7 @@ class BaseBeamStructure:
         :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6]
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
-        :param relaxation_factor: Relaxation factor for updates, in range (0, 1].
+        :param struct_relaxation_factor: Relaxation factor for updates, in range (0, 1].
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -1101,8 +1101,8 @@ class BaseBeamStructure:
         if f_ext_dead is not None:
             check_arr_shape(f_ext_dead, (self.n_nodes, 6), "f_ext_dead")
 
-        if not (0.0 < relaxation_factor <= 1.0):
-            raise ValueError("relaxation_factor must be in the range (0, 1]")
+        if not (0.0 < struct_relaxation_factor <= 1.0):
+            raise ValueError("struct_relaxation_factor must be in the range (0, 1]")
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
@@ -1173,7 +1173,7 @@ class BaseBeamStructure:
 
             # solve for configuration increment, [n_solve_dofs]
             d_varphi_np1 = (
-                    jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * relaxation_factor
+                    jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * struct_relaxation_factor
             )
 
             # update configuration, [n_nodes_, 4, 4]
@@ -1273,7 +1273,7 @@ class BaseBeamStructure:
                            struct_case: DynamicStructure,
                            struct_convergence_status: ConvergenceStatus,
                            t: Array,
-                           relaxation_factor: float,
+                           struct_relaxation_factor: float,
                            solve_dofs: Array,
                            load_steps: int,
                            f_ext_dead: Optional[Array],
@@ -1282,7 +1282,8 @@ class BaseBeamStructure:
                            aero_case: None,
                            fsi_convergence_status: None,
                            free_wake: None,
-                           include_unsteady_aero_force: None) -> DynamicStructure:
+                           include_unsteady_aero_force: None,
+                           gamma_dot_relaxation_factor: None) -> DynamicStructure:
         ...
 
     @overload
@@ -1290,7 +1291,7 @@ class BaseBeamStructure:
                            struct_case: DynamicStructure,
                            struct_convergence_status: ConvergenceStatus,
                            t: Array,
-                           relaxation_factor: float,
+                           struct_relaxation_factor: float,
                            solve_dofs: Array,
                            load_steps: int,
                            f_ext_dead: Optional[Array],
@@ -1299,14 +1300,15 @@ class BaseBeamStructure:
                            aero_case: DynamicAeroCase,
                            fsi_convergence_status: ConvergenceStatus,
                            free_wake: bool,
-                           include_unsteady_aero_force: bool) -> DynamicAeroelastic:
+                           include_unsteady_aero_force: bool,
+                           gamma_dot_relaxation_factor: float) -> DynamicAeroelastic:
         ...
 
     def base_dynamic_solve(self,
                            struct_case: DynamicStructure,
                            struct_convergence_status: ConvergenceStatus,
                            t: Array,
-                           relaxation_factor: float,
+                           struct_relaxation_factor: float,
                            solve_dofs: Array,
                            load_steps: int,
                            f_ext_dead: Optional[Array],
@@ -1315,12 +1317,16 @@ class BaseBeamStructure:
                            aero_case: Optional[DynamicAeroCase],
                            fsi_convergence_status: Optional[ConvergenceStatus],
                            free_wake: Optional[bool],
-                           include_unsteady_aero_force: Optional[bool]) -> DynamicStructure | DynamicAeroelastic:
+                           include_unsteady_aero_force: Optional[bool],
+                           gamma_dot_relaxation_factor: Optional[float]) -> DynamicStructure | DynamicAeroelastic:
         r"""
         Generic dynamic solver. Both the structural dynamic solve, and aeroelastic dynamic solve, are formed as wrappers
         of this
         :return:
         """
+
+        if not (0.0 < struct_relaxation_factor <= 1.0):
+            raise ValueError("Relaxation factor must be in range (0, 1]")
 
         n_tstep = len(t)
 
@@ -1431,7 +1437,7 @@ class BaseBeamStructure:
             )[jnp.ix_(solve_dofs, solve_dofs)]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * relaxation_factor
+            d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * struct_relaxation_factor
             phi_np1 = phi_alpha.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
@@ -1651,12 +1657,14 @@ class BaseBeamStructure:
             hg_n = self.update_hg(hg=struct_sol.hg[i_ts - 1, ...], phi=phi_n)
             hg_dot = jnp.einsum('ijk,ikl->ijl', hg_n, vmap(ha_to_ha_tilde, 0, 0)(v_n))  # [n_nodes, 4, 4]
 
-            if aero_obj is None or free_wake is None or struct_sol.f_ext_aero is None or include_unsteady_aero_force is None:
+            if (aero_obj is None or free_wake is None or struct_sol.f_ext_aero is None
+                    or include_unsteady_aero_force is None or gamma_dot_relaxation_factor is None):
                 raise ValueError("Missing aero parameters")
 
             # evaluate aerodynamic forcing on beam
             aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
-                                      free_wake=free_wake, horseshoe=False)
+                                      free_wake=free_wake, horseshoe=False,
+                                      gamma_dot_relaxation=gamma_dot_relaxation_factor)
 
             f_aero_n = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
                                                         include_unsteady=include_unsteady_aero_force)
@@ -1779,8 +1787,8 @@ class BaseBeamStructure:
             f_ext_aero: Optional[Array],
             prescribed_dofs: Sequence[int] | Array | slice | int | None,
             load_steps: int = 1,
-            relaxation_factor: float = 1.0,
-            spectral_radius: float = 1.0,
+            struct_relaxation_factor: float = 1.0,
+            spectral_radius: float = 0.9,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure_dv under external loads
@@ -1793,16 +1801,13 @@ class BaseBeamStructure:
         :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
-        :param relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
+        :param struct_relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
         :param spectral_radius: Spectral radius for the time integrator, in the range [0, 1].
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
         # add a warning if using 32-bit floats
         warn_if_32_bit()
-
-        if not (0.0 < relaxation_factor <= 1.0):
-            raise ValueError("relaxation_factor must be in the range (0, 1]")
 
         if load_steps <= 0:
             raise ValueError("load_steps must be a positive integer")
@@ -1922,7 +1927,7 @@ class BaseBeamStructure:
         return self.base_dynamic_solve(dynamic_struct,
                                        converge_status,
                                        t,
-                                       relaxation_factor,
+                                       struct_relaxation_factor,
                                        solve_dofs,
                                        load_steps,
                                        f_ext_dead,
@@ -1930,4 +1935,4 @@ class BaseBeamStructure:
                                        None,
                                        None,
                                        None,
-                                       None, None)
+                                       None, None, None)

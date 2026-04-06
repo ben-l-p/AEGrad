@@ -401,11 +401,12 @@ class DynamicAeroCase:
             val = self._gamma_b[i_surf][i_ts, [-1], :]
             self._gamma_w[i_surf] = self._gamma_w[i_surf].at[i_ts, ...].set(val)
 
-    def compute_gamma_dot(self, i_ts: int, dt: Array) -> None:
+    def compute_gamma_dot(self, i_ts: int, dt: Array, gamma_dot_relaxation: float) -> None:
         r"""
         Calculate time derivative of bound circulation strengths at specified time step using finite difference.
         :param i_ts: Timestep index
         :param dt: Time step size
+        :param gamma_dot_relaxation: Relaxation factor which filters gamma_dot
         """
 
         def fd(arr: Array) -> Array:
@@ -413,9 +414,14 @@ class DynamicAeroCase:
 
         if self._gamma_b_dot is None: raise ValueError("gamma_b_dot is None")
         for i_surf in range(self.n_surf):
-            self._gamma_b_dot[i_surf] = (
-                self._gamma_b_dot[i_surf].at[i_ts, ...].set(fd(self._gamma_b[i_surf]))
-            )
+            # first obtain the current unfiltered, and previous filtered values for gamma_dot
+            gamma_b_dot_curr = fd(self._gamma_b[i_surf])
+            gamma_b_dot_prev = self._gamma_b_dot[i_surf][i_ts - 1, ...]
+
+            # blend with relaxation parameter
+            gamma_b_dot_filtered = gamma_dot_relaxation * gamma_b_dot_curr + (
+                    1.0 - gamma_dot_relaxation) * gamma_b_dot_prev
+            self._gamma_b_dot[i_surf] = self._gamma_b_dot[i_surf].at[i_ts, ...].set(gamma_b_dot_filtered)
 
     def calculate_steady_forcing(self, i_ts: int) -> None:
         r"""
@@ -506,6 +512,7 @@ class DynamicAeroCase:
         :return: Unsteady aerodynamic forcing for surface at grid vertex, [zeta_m, zeta_n, 3]
         """
         if self._gamma_b_dot is None: raise ValueError("No gamma_b_dot available")
+
         return split_to_vertex(
             rho * self._gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)
         )

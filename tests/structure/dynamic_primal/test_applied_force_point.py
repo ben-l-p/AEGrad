@@ -63,7 +63,7 @@ class TestLinXForcePoint:
             f_ext_dead=None,
             f_ext_aero=None,
             spectral_radius=1.0,
-            relaxation_factor=1.0,
+            struct_relaxation_factor=1.0,
         )
 
         v_expected = jnp.arange(n_tstep) * dt * v_dot_expected

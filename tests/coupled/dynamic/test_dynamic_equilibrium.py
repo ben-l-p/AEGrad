@@ -1,5 +1,7 @@
 from jax import numpy as jnp
 import jax
+
+from data_structures import ConvergenceSettings
 from models.cantilever_wing import make_cantilever_wing
 
 jax.config.update("jax_enable_x64", True)
@@ -20,6 +22,12 @@ class TestDynamicEquilibrium:
         k_cs = jnp.diag(jnp.array((1e6, 1e6, 1e6, 1e3, 1e3, 1e3)))
 
         wing = make_cantilever_wing(m=m, m_star=m_star, c_ref=c_ref, k_cs=k_cs, ea=0.25, n_nodes=n + 1, u_inf=u_inf)
+
+        # strict convergence
+        conv_settings = ConvergenceSettings(max_n_iter=25, abs_disp_tol=1e-9, rel_disp_tol=1e-7, abs_force_tol=1e-9,
+                                            rel_force_tol=1e-7)
+        wing.structure.struct_convergence_settings = conv_settings
+        wing.fsi_convergence_settings = conv_settings
 
         dt = c_ref / (m * u_inf_mag)
         n_tstep = 100

@@ -25,10 +25,10 @@ class BaseCoupledAeroelastic:
             structure: BeamStructure,
             aero: UVLM,
             fsi_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
-                                                                                rel_disp_tol=1e-7,
-                                                                                abs_disp_tol=1e-9,
-                                                                                rel_force_tol=1e-7,
-                                                                                abs_force_tol=1e-9),
+                                                                                rel_disp_tol=1e-3,
+                                                                                abs_disp_tol=1e-5,
+                                                                                rel_force_tol=1e-3,
+                                                                                abs_force_tol=1e-5),
             verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
     ):
         self.structure: BeamStructure = structure
@@ -129,7 +129,7 @@ class BaseCoupledAeroelastic:
                 f_ext_aero=f_aero_n,
                 prescribed_dofs=prescribed_dofs,
                 load_steps=load_steps,
-                relaxation_factor=relaxation_factor,
+                struct_relaxation_factor=relaxation_factor,
             )
 
             delta_n = vmap(hg_to_d)(
@@ -191,8 +191,9 @@ class BaseCoupledAeroelastic:
                       f_ext_dead: Optional[Array] = None,
                       t_init: float = 0.0,
                       load_steps: int = 1,
-                      relaxation_factor: float = 1.0,
-                      spectral_radius: float = 1.0,
+                      struct_relaxation_factor: float = 1.0,
+                      gamma_dot_relaxation_factor: float = 0.7,
+                      spectral_radius: float = 0.9,
                       free_wake: bool = False,
                       include_unsteady_aero_force: bool = True,
                       ) -> DynamicAeroelastic:
@@ -249,7 +250,7 @@ class BaseCoupledAeroelastic:
                                                 struct_convergence_status=ConvergenceStatus(
                                                     self.structure.struct_convergence_settings),
                                                 t=t,
-                                                relaxation_factor=relaxation_factor,
+                                                struct_relaxation_factor=struct_relaxation_factor,
                                                 solve_dofs=solve_dofs,
                                                 load_steps=load_steps,
                                                 f_ext_follower=f_ext_follower,
@@ -258,7 +259,8 @@ class BaseCoupledAeroelastic:
                                                 aero_case=case.aero,
                                                 fsi_convergence_status=fsi_converge_status,
                                                 free_wake=free_wake,
-                                                include_unsteady_aero_force=include_unsteady_aero_force)
+                                                include_unsteady_aero_force=include_unsteady_aero_force,
+                                                gamma_dot_relaxation_factor=gamma_dot_relaxation_factor)
 
         fsi_converge_status.print_footer(dynamic=True)
         return out

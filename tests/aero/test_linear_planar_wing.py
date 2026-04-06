@@ -87,7 +87,7 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False)
+        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
         if plot:
             dynamic_case.plot(Path("./test_outputs/heaving_test_nonlinear"))
 
@@ -174,7 +174,7 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 0].set(-alpha_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False)
+        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
         if plot:
             dynamic_case.plot(Path("./test_outputs/pitching_test_nonlinear"))
 
@@ -261,7 +261,7 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 0].set(-alpha_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False)
+        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
         if plot:
             dynamic_case.plot(
                 Path("./test_outputs/pitching_test_nonlinear_frozen_wake")
@@ -338,7 +338,7 @@ class TestLinearAero:
         hg_dot_t = jnp.zeros_like(hg_t)
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False)
+        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
         if plot:
             dynamic_case.plot(Path("./test_outputs/gust_test_nonlinear"))
 

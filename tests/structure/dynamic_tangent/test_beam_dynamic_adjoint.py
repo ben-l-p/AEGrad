@@ -4,7 +4,6 @@ from jax import numpy as jnp
 from jax import Array
 import jax
 
-from data_structures import ConvergenceSettings
 from structure import BeamStructure, StructureFullStates, StructuralDesignVariables
 
 jax.config.update("jax_enable_x64", True)
@@ -78,15 +77,6 @@ class TestBeamTranslationAdjoint:
         # should follow x = 0.5*(f/m)*t^2
         t = jnp.arange(n_tstep, dtype=float) * dt
         expected_x_t = 0.5 * f_mag / m_cs[0, 0] * t * t
-
-        dv = StructuralDesignVariables(
-            x0=beam.x0,
-            k_cs=beam.k_cs,
-            m_cs=beam.m_cs,
-            m_lumped=None,
-            f_ext_follower=f_ext,
-            f_ext_dead=jnp.zeros_like(f_ext),
-        )
 
         # note that we omit here the influence of the design parameters on the initial state
         # in reality, the initial acceleration in this case depends upon the design variables as it is a function of

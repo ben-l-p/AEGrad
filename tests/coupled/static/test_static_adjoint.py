@@ -6,6 +6,7 @@ from coupled.gradients.data_structures import (
     AeroelasticStates,
     AeroelasticDesignVariables, AeroelasticDesignGradients,
 )
+from data_structures import ConvergenceSettings
 from models import cantilever_wing
 
 jax.config.update("jax_enable_x64", True)
@@ -27,6 +28,13 @@ def _solve(u_inf: Array, k_cs: Array):
     wing = cantilever_wing.make_cantilever_wing(
         n_nodes=n_nodes, m=m, m_star=m_star, u_inf=u_inf, k_cs=k_cs
     )
+
+    # strict convergence
+    conv_settings = ConvergenceSettings(max_n_iter=25, abs_disp_tol=1e-9, rel_disp_tol=1e-7, abs_force_tol=1e-9,
+                                        rel_force_tol=1e-7)
+    wing.structure.struct_convergence_settings = conv_settings
+    wing.fsi_convergence_settings = conv_settings
+
     sol = wing.static_solve(
         f_ext_dead=None,
         f_ext_follower=None,
