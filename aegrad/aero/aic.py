@@ -179,7 +179,7 @@ def v_ind_vmap(
 ) -> Array:
     """
     Compute einsum("ijklm,kl->ijm", aic_vmap(c, zeta, kernel), gamma) without
-    materializing the full AIC. Contracts with gamma inside each lax.map step so
+    materialising the full AIC. Contracts with gamma inside each lax.map step so
     the per-row intermediate shrinks from [zeta_m*zeta_n, 3] to [3].
     :param c: Collocation points, [c_m, c_n, 3].
     :param zeta: Filament grid, [zeta_m, zeta_n, 2, 3].

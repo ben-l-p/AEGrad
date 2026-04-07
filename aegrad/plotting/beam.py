@@ -27,7 +27,7 @@ def interpolate_beam(
     :param include_endpoints: Whether to include the original nodes in the output (if False, only the interpolated points are returned)
     :return: Interpolated SE(3) transforms along the beam, [n_interp, 4, 4]
     """
-    # beamwise coordinates, [n_interp]
+    # beam-wise coordinates, [n_interp]
     s_l = (
         jnp.linspace(0.0, 1.0, n_interp)
         if include_endpoints
@@ -59,12 +59,12 @@ def create_beam_unstructured_grid(
 ) -> tuple[vtk.vtkUnstructuredGrid, Optional[Array], Optional[Array]]:
     """
     Create a VTK UnstructuredGrid representing line (beam) elements.
-    :param hg: Array of node SE(3) transformations, [n_nodes_, 4, 4]
-    :param conn: Connectivity array with shape, [n_elems, 2]
-    :param o0: Array of local beam orientation transformations, [n_elems, 3, 3]
-    :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints)
+    :param hg: Array of node SE(3) transformations, [n_nodes, 4, 4].
+    :param conn: Connectivity array with shape, [n_elems, 2].
+    :param o0: Array of local beam orientation transformations, [n_elems, 3, 3].
+    :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints).
     :return: vtkUnstructuredGrid with VTK_LINE cells, array of SE(3) transforms interpolated case, and element mapping
-    array (mapping each new interpolated element to the original element index)
+    array (mapping each new interpolated element to the original element index).
     """
     n_nodes = hg.shape[0]
     n_elems = conn.shape[0]
@@ -77,7 +77,7 @@ def create_beam_unstructured_grid(
 
     conn = jnp.asarray(conn)
     if conn.ndim != 2 or conn.shape[1] != 2:
-        raise ValueError("conn must be a 2D array with shape (n_elems, 2)")
+        raise ValueError("Connectivity must be a 2D array with shape (n_elems, 2)")
 
     ug = vtk.vtkUnstructuredGrid()
 

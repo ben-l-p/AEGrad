@@ -3,7 +3,7 @@ from jax import numpy as jnp
 from jax import Array
 
 from coupled.gradients.data_structures import (
-    AeroelasticStates,
+    AeroelasticFullStates,
     AeroelasticDesignVariables, AeroelasticDesignGradients,
 )
 from data_structures import ConvergenceSettings
@@ -19,7 +19,7 @@ u_inf_base = jnp.array((10.0, 0.0, 0.1))
 k_cs_base = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2)))
 
 
-def _objective(states: AeroelasticStates, _: AeroelasticDesignVariables) -> Array:
+def _objective(states: AeroelasticFullStates, _: AeroelasticDesignVariables) -> Array:
     """Scalar objective: z-component of root internal force."""
     return states.structure.f_int[0, 2]
 

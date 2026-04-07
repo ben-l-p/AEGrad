@@ -638,36 +638,37 @@ class DynamicStructure:
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
         :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_tstep, n_nodes_, 6, 6]
         """
+        idx = "hijk,hik->hij"
         if self.f_ext_follower is not None:
             self.f_ext_follower = self.f_ext_follower.at[...].set(
-                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_follower[...])
+                jnp.einsum(idx, nodal_chi, self.f_ext_follower[...])
             )
         if self.f_ext_dead is not None:
             self.f_ext_dead = self.f_ext_dead.at[...].set(
-                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_dead)
+                jnp.einsum(idx, nodal_chi, self.f_ext_dead)
             )
         if self.f_ext_aero is not None:
             self.f_ext_aero = self.f_ext_aero.at[...].set(
-                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_ext_aero)
+                jnp.einsum(idx, nodal_chi, self.f_ext_aero)
             )
         if self.f_grav is not None:
             self.f_grav = self.f_grav.at[...].set(
-                jnp.einsum("hijk,hik->hij", nodal_chi, self.f_grav)
+                jnp.einsum(idx, nodal_chi, self.f_grav)
             )
         self.f_int = self.f_int.at[...].set(
-            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_int)
+            jnp.einsum(idx, nodal_chi, self.f_int)
         )
         self.f_iner_gyr = self.f_iner_gyr.at[...].set(
-            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_iner_gyr)
+            jnp.einsum(idx, nodal_chi, self.f_iner_gyr)
         )
         self.f_res = self.f_iner_gyr.at[...].set(
-            jnp.einsum("hijk,hik->hij", nodal_chi, self.f_res)
+            jnp.einsum(idx, nodal_chi, self.f_res)
         )
-        self.v = self.v.at[...].set(jnp.einsum("hijk,hik->hij", nodal_chi, self.v))
+        self.v = self.v.at[...].set(jnp.einsum(idx, nodal_chi, self.v))
         self.v_dot = self.v_dot.at[...].set(
-            jnp.einsum("hijk,hik->hij", nodal_chi, self.v_dot)
+            jnp.einsum(idx, nodal_chi, self.v_dot)
         )
-        self.a = self.a.at[...].set(jnp.einsum("hijk,hik->hij", nodal_chi, self.a))
+        self.a = self.a.at[...].set(jnp.einsum(idx, nodal_chi, self.a))
 
     def to_global(self) -> None:
         """Convert local structure_dv results to global frame."""

@@ -41,7 +41,7 @@ from structure.data_structures import StructureMinimalStates
 
 class BaseBeamStructure:
     r"""
-    Class to represent nonlinear beam structure_dv model
+    Class to represent nonlinear beam structure model
     """
 
     def __init__(
@@ -59,11 +59,11 @@ class BaseBeamStructure:
                                                                                    abs_force_tol=1e-8)
     ) -> None:
         r"""
-        Initialise BaseBeamStructure class with all non-design parameters
-        :param num_nodes: Number of nodes in the structure_dv
-        :param connectivity: Connectivity array of arr_list_shapes [n_elem, 2]
-        :param y_vector: Vector defining the y direction for each element, [n_elem, 3]
-        :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3]
+        Initialise BaseBeamStructure class with all non-design parameters.
+        :param num_nodes: Number of nodes in the structure.
+        :param connectivity: Connectivity array of arr_list_shapes [n_elem, 2].
+        :param y_vector: Vector defining the y direction for each element, [n_elem, 3].
+        :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3].
         """
 
         _check_type(num_nodes, int)
@@ -95,7 +95,7 @@ class BaseBeamStructure:
         self.y_vector: Array = y_vector
         self.use_lumped_mass: bool = False
 
-        # initialize design variables with default values
+        # initialise design variables with default values
         self.x0: Array = jnp.zeros((num_nodes, 3))
         self.m: Array = jnp.zeros((self.n_elem, 6, 6))
         self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
@@ -157,12 +157,12 @@ class BaseBeamStructure:
             remove_checks: bool = False,
     ) -> None:
         r"""
-        Set design variables and compute initial configuration dependent quantities
-        :param coords: Node coordinates, [n_nodes_, 3]
-        :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6]
-        :param m_cs: Cross-section mass matrices, [n_elem, 6, 6]
-        :param m_lumped: Lumped mass matrices at nodes, [n_nodes_, 6, 6]
-        :param remove_checks: Flag to ignore input checks, used when Jitted.
+        Set design variables and compute initial configuration dependent quantities.
+        :param coords: Node coordinates, [n_nodes_, 3].
+        :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6].
+        :param m_cs: Cross-section mass matrices, [n_elem, 6, 6].
+        :param m_lumped: Lumped mass matrices at nodes, [n_nodes_, 6, 6].
+        :param remove_checks: Flag to ignore input checks, used when function is JIT compiled.
         """
         # populate arrays
         self.k_cs = self.k_cs.at[...].set(k_cs)
@@ -426,7 +426,7 @@ class BaseBeamStructure:
         :return: Stiffness matrix contribution from gravity forces, [n_elem, 12, 12]
         """
 
-        # pertubations in mass matrix integration
+        # perturbations in mass matrix integration
         g_ab = jnp.zeros(12)
         g_ab = g_ab.at[:3].set(self.gravity_vec)
         g_ab = g_ab.at[6:9].set(self.gravity_vec)
@@ -443,8 +443,7 @@ class BaseBeamStructure:
             0,
         )(self.m_cs, d, self.ad_inv_o0, self.l0, p_d_g)
 
-        # pertubations in gravity direction
-        # [n_nodes_, 3, 3]
+        # perturbations in gravity direction, [n_nodes_, 3, 3]
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
             jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
         )
@@ -495,13 +494,13 @@ class BaseBeamStructure:
     ) -> Array:
         r"""
         Compute the full tangent stiffness matrix, with contributions from stiffness, dead forces and gravity.
-        :param d: Element relative configuration, [n_elem, 6]
-        :param p_d: P(d) operator, [n_elem, 6, 12]
-        :param eps: Strain vectors, [n_elem, 6]
-        :param f_ext_dead: External dead forces in global reference, [n_node, 6]
-        :param rmat: Nodal rotation matrices, [n_node, 3, 3]
-        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
-        :return: Tangent stiffness matrix with all contributions, [n_dof, n_dof]
+        :param d: Element relative configuration, [n_elem, 6].
+        :param p_d: P(d) operator, [n_elem, 6, 12].
+        :param eps: Strain vectors, [n_elem, 6].
+        :param f_ext_dead: External dead forces in global reference, [n_node, 6].
+        :param rmat: Nodal rotation matrices, [n_node, 3, 3].
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12].
+        :return: Tangent stiffness matrix with all contributions, [n_dof, n_dof].
         """
 
         k_t = self.assemble_matrix_from_entries(self._make_k_t(d, p_d, eps))
@@ -587,13 +586,13 @@ class BaseBeamStructure:
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
-        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
-        :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12]
-        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6]
-        :param k_t: System stiffness matrix, [n_dof, n_dof]
-        :param t_n: Tangent operator T(varphi), [n_nodes_, 6, 6]
-        :param ti: Time integration parameters
-        :return: System matrix, [n_dof, n_dof]
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12].
+        :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12].
+        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6].
+        :param k_t: System stiffness matrix, [n_dof, n_dof].
+        :param t_n: Tangent operator T(varphi), [n_nodes_, 6, 6].
+        :param ti: Time integration parameters.
+        :return: System matrix, [n_dof, n_dof].
         """
 
         # note that k_t is already assembled for convenience
@@ -766,6 +765,16 @@ class BaseBeamStructure:
 
         return jnp.einsum("ijk,ik->ij", p_d, v_elem)  # [n_elem, 6]
 
+    @staticmethod
+    def make_hg_dot(hg: Array, v: Array) -> Array:
+        r"""
+        Obtain the time derivative of the nodal coordinates.
+        :param hg: Node coordinates, [n_node, 4, 4].
+        :param v: Node local velocities, [n_node, 6]
+        :return: Coordinate time derivative, [n_node, 4, 4]
+        """
+        return jnp.einsum('ijk,ikl->ijl', hg, vmap(ha_to_ha_tilde, 0, 0)(v))  # [n_nodes, 4, 4]
+
     @overload
     def resolve_forces(
             self,
@@ -836,18 +845,18 @@ class BaseBeamStructure:
         Array,
     ]:
         r"""
-        Obtain all components of the force from a final solution
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
-        :param dynamic: Whether to compute dynamic forces
-        :param f_ext_follower: External follower forces in local reference, [n_node, 6]
-        :param f_ext_dead: External dead forces in global reference, [n_node, 6]
-        :param f_ext_aero: External aero forces in global reference, [n_node, 6]
-        :param v: Nodal velocities in global frame, [n_node, 6]
-        :param v_dot: Nodal accelerations in global frame, [n_node, 6]
+        Obtain all components of the force from a final solution.
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4].
+        :param dynamic: Whether to compute dynamic forces.
+        :param f_ext_follower: External follower forces in local reference, [n_node, 6].
+        :param f_ext_dead: External dead forces in global reference, [n_node, 6].
+        :param f_ext_aero: External aero forces in global reference, [n_node, 6].
+        :param v: Nodal velocities in global frame, [n_node, 6].
+        :param v_dot: Nodal accelerations in global frame, [n_node, 6].
         :param stop_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
-        the node coordinates, as these these are small but nonzero values in practice.
+        the node coordinates, as these are small but nonzero values in practice.
         :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
-        gyroscopic forces, inertial forces and residual forces
+        gyroscopic forces, inertial forces and residual forces.
         """
 
         def prop_grad(x: Array) -> Array:
@@ -980,19 +989,19 @@ class BaseBeamStructure:
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
         This is the force imbalance that the nonlinear solver will seek to drive to zero. Additionally, returns an
         "absolute sum" of all forces, used for relative convergence checks.
-        :param solve_dofs: Optional array of degrees of freedom to solve for [n_solve_dofs]
-        :param p_d: P(d) operator, [n_elem, 6, 12]
-        :param eps: Element strain vectors, [n_elem, 6]
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
-        :param f_ext_follower_n: Nodal follower forces, [n_node, 6]
-        :param f_ext_dead_n: Nodal dead forces, [n_node, 6]
-        :param dynamic: Flag for whether to compute dynamic entries
-        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12]
-        :param c_l: Dissembled system gyroscopic matrix, [n_elem, 12, 12]
-        :param c_l_lumped: Lumped gyroscopic matrix, [n_node, 6, 6]
-        :param v: Nodal velocities, [n_node, 6]
-        :param v_dot: Nodal accelerations, [n_node, 6]
-        :return: Residual force vector, [n_dof], absolute sum of forces, [n_dof]
+        :param solve_dofs: Optional array of degrees of freedom to solve for [n_solve_dofs].
+        :param p_d: P(d) operator, [n_elem, 6, 12].
+        :param eps: Element strain vectors, [n_elem, 6].
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4].
+        :param f_ext_follower_n: Nodal follower forces, [n_nodes, 6].
+        :param f_ext_dead_n: Nodal dead forces, [n_nodes, 6].
+        :param dynamic: Flag for whether to compute dynamic entries.
+        :param m_t: Disassembled system mass matrix, [n_elem, 12, 12].
+        :param c_l: Dissembled system gyroscopic matrix, [n_elem, 12, 12].
+        :param c_l_lumped: Lumped gyroscopic matrix, [n_nodes, 6, 6].
+        :param v: Nodal velocities, [n_nodes, 6].
+        :param v_dot: Nodal accelerations, [n_node, 6].
+        :return: Residual force vector, [n_dof], absolute sum of forces, [n_dof].
         """
 
         f_res = self.make_f_int(p_d, eps)  # [n_elem, 12]
@@ -1079,10 +1088,10 @@ class BaseBeamStructure:
             struct_relaxation_factor: float = 1.0,
     ) -> StaticStructure:
         r"""
-        Perform static solve of the structure_dv under external loads
-        :param f_ext_follower: External forces array of follower forces [n_node, 6]
-        :param f_ext_dead: External forces array of dead loads [n_node, 6]
-        :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6]
+        Perform static solve of the structure_dv under external loads.
+        :param f_ext_follower: External forces array of follower forces [n_node, 6].
+        :param f_ext_dead: External forces array of dead loads [n_node, 6].
+        :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6].
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
         :param struct_relaxation_factor: Relaxation factor for updates, in range (0, 1].
@@ -1361,12 +1370,12 @@ class BaseBeamStructure:
             Optional[Array],
         ]:
             r"""
-            Solution update for a single iteration of the nonlinear solver at a given time step and load step
-            :param i_load_step: Loadstep index
-            :param i_ts: Time step index
-            :param struct_converge_status_: ConvergenceStatus object for the current iteration, used to track convergence and
-            print messages.
-            :param hg_n: Transformation matrices at iteration varphi, [n_nodes_, 4, 4]
+            Solution update for a single iteration of the nonlinear solver at a given time step and load step.
+            :param i_load_step: Load step index.
+            :param i_ts: Time step index.
+            :param struct_converge_status_: ConvergenceStatus object for the current iteration, used to track
+            convergence and print messages.
+            :param hg_n: Transformation matrices at iteration varphi, [n_nodes_, 4, 4].
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration varphi+1.
             """
@@ -1541,7 +1550,7 @@ class BaseBeamStructure:
                      fsi_convergence_status_,
                      phi_alpha_init,
                      q_alpha_init,
-                     f_aero_nm1,  # this value is for the previous timesteps force, and is propogated unaltered
+                     f_aero_nm1,  # this value is for the previous timesteps force, and is propagated unaltered
                      f_aero_nm1,  # first guess for forcing at alpha is to use value from i_ts=n-1
                      ))
 
@@ -1655,16 +1664,16 @@ class BaseBeamStructure:
                                                                 v_nm1=struct_sol.v[i_ts - 1, ...])
 
             hg_n = self.update_hg(hg=struct_sol.hg[i_ts - 1, ...], phi=phi_n)
-            hg_dot = jnp.einsum('ijk,ikl->ijl', hg_n, vmap(ha_to_ha_tilde, 0, 0)(v_n))  # [n_nodes, 4, 4]
+            hg_dot = self.make_hg_dot(hg=hg_n, v=v_n)
 
             if (aero_obj is None or free_wake is None or struct_sol.f_ext_aero is None
                     or include_unsteady_aero_force is None or gamma_dot_relaxation_factor is None):
                 raise ValueError("Missing aero parameters")
 
             # evaluate aerodynamic forcing on beam
-            aero_sol = aero_obj.solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
-                                      free_wake=free_wake, horseshoe=False,
-                                      gamma_dot_relaxation=gamma_dot_relaxation_factor)
+            aero_sol = aero_obj.case_solve(case=aero_sol, i_ts=i_ts, hg=hg_n, hg_dot=hg_dot, static=False,
+                                           free_wake=free_wake, horseshoe=False,
+                                           gamma_dot_relaxation=gamma_dot_relaxation_factor)
 
             f_aero_n = aero_sol.project_forcing_to_beam(i_ts=i_ts, rmat=hg_n[:, :3, :3], x0_aero=aero_obj.x0_b,
                                                         include_unsteady=include_unsteady_aero_force)
@@ -1713,15 +1722,16 @@ class BaseBeamStructure:
         ) -> tuple[int, ConvergenceStatus, Array, Array, StructureMinimalStates, Optional[Array]]:
             r"""
             Convergence loop within each load step of a time step.
-            :param i_load_step: Load step index
-            :param i_ts: Time step index
+            :param i_load_step: Load step index.
+            :param i_ts: Time step index.
             :param struct_converge_status: ConvergenceStatus object to update with convergence information during load
             stepping.
-            :param hg_alpha: Node transformations at the beginning of the load step, [n_nodes, 4, 4]
-            :param phi_alpha: Node configuration increments in algebra space, [n_nodes, 6]
-            :param q_alpha: Minimal states at intermediate alpha step
-            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6]
-            :return: Time step index, convergence status, and updated configuration, velocities, accelerations, and optional aerodynamic forcing.
+            :param hg_alpha: Node transformations at the beginning of the load step, [n_nodes, 4, 4].
+            :param phi_alpha: Node configuration increments in algebra space, [n_nodes, 6].
+            :param q_alpha: Minimal states at intermediate alpha step.
+            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6].
+            :return: Time step index, convergence status, and updated configuration, velocities, accelerations, and
+            optional aerodynamic forcing.
             """
 
             struct_converge_status.reset_status()
@@ -1794,11 +1804,11 @@ class BaseBeamStructure:
         Perform dynamic solve of the structure_dv under external loads
         :param init_state: Initial state of the structure_dv, either as a DynamicStructureSnapshot or StaticStructure. If
         None, the reference configuration is used with zero velocities.
-        :param n_tstep: Number of time steps to simulate
-        :param dt: Time step length
-        :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces
-        :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces
-        :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces
+        :param n_tstep: Number of time steps to simulate.
+        :param dt: Time step length.
+        :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces.
+        :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces.
+        :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces.
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
         :param struct_relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
@@ -1880,7 +1890,7 @@ class BaseBeamStructure:
                 varphi=init_state__.varphi,
                 v=init_state__.v,
                 v_dot=init_state__.v_dot,
-                a=init_state__.v_dot,  # initial pseudoacceleration set equal to initial acceleration
+                a=init_state__.v_dot,  # initial pseudo-acceleration set equal to initial acceleration
                 f_ext_follower=init_state__.f_ext_follower,
                 f_ext_dead=f_ext_dead_,
                 f_ext_aero=f_ext_aero_,

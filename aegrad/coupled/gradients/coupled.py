@@ -6,12 +6,13 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
+from coupled import DynamicAeroelastic
 from structure.data_structures import OptionalJacobians
 
 from coupled.gradients.data_structures import (
-    AeroelasticStates,
+    AeroelasticFullStates,
     AeroelasticDesignVariables,
-    AeroelasticDesignGradients,
+    AeroelasticDesignGradients, AeroelasticMinimalStates,
 )
 
 from coupled.coupled import BaseCoupledAeroelastic
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
     from coupled.coupled import StaticAeroelastic
 
 type AeroelasticObjectiveFunction = Callable[
-    [AeroelasticStates, AeroelasticDesignVariables], Array
+    [AeroelasticFullStates, AeroelasticDesignVariables], Array
 ]
 
 
@@ -34,7 +35,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             varphi: Array,
             t: Array,
             use_horseshoe: bool,
-    ) -> tuple[AeroelasticStates, Array]:
+    ) -> tuple[AeroelasticFullStates, Array]:
         r"""
         Obtain useful states and forcing residual from design variables and a minimal configuration vector.
         """
@@ -116,7 +117,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             v_dot=None,
         )[0]
 
-        return AeroelasticStates(structure=struct_states, aero=aero_states), f_res
+        return AeroelasticFullStates(structure=struct_states, aero=aero_states), f_res
 
     @jax.jit(static_argnums=(0, 1, 2, 3))
     def static_adjoint(
@@ -187,3 +188,53 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         )
 
         return dv.split_adjoint(d_f_d_x=d_f_d_x_dict, f_shape=f_shape)
+
+    def dynamic_adjoint(self,
+                        case: DynamicAeroelastic,
+                        objective: AeroelasticObjectiveFunction,
+                        free_wake: bool, gamma_dot_relaxation: float = 0.7,
+                        p_q0_p_x: Optional[AeroelasticDesignVariables] = None,
+                        ):
+        r"""
+        Compute the adjoint of a coupled dynamic aeroelastic system.
+        :param case: Dynamic aeroelastic case
+        :param objective: Objective function that takes the system full states, design variables and timestep index, and returns an array
+        :param free_wake: Whether to use a free wake formulation.
+        :param gamma_dot_relaxation: Damping for gamma dot computation. TODO: include this and free_wake in case object
+        :param p_q0_p_x: Gradient of initial states with respect to design variables. In practice, this is found from the static solve.
+        :return: Gradient of sum of objective across timesteps with respect to design variables.
+        """
+
+        solve_dofs = jnp.setdiff1d(
+            jnp.arange(self.structure.n_dof),
+            case.structure.prescribed_dofs,
+            size=self.structure.n_dof - case.structure.prescribed_dofs.size,
+        )
+
+        dv = self.get_design_variables(case=case)
+
+        def timestep_residual(
+                i_ts: int,
+                t: Array,
+                q_nm1: AeroelasticMinimalStates,
+                q_n: AeroelasticMinimalStates,
+                dv_: AeroelasticDesignVariables,
+        ) -> Array:
+            inner_case = self.case_from_dv(dv=dv_)
+
+            # compute structural residual
+            r_struct: Array = inner_case.structure.timestep_residual(i_ts=i_ts, q_nm1=q_nm1.structure,
+                                                                     q_n=q_n.structure,
+                                                                     dv_=dv_.structure, f_aero_nm1=q_nm1.aero.f_total,
+                                                                     f_aero_n=q_n.aero.f_total)
+
+            # obtain node coordinates and coordinate velocities
+            hg_n = inner_case.structure.calculate_hg_from_varphi(varphi=q_n.structure.varphi)
+            hg_dot_n = inner_case.structure.make_hg_dot(hg=hg_n, v=q_n.structure.v)
+
+            # compute aero residual
+            r_aero: Array = inner_case.aero.timestep_residual(hg_n=hg_n, hg_dot_n=hg_dot_n, t_n=t, q_nm1=q_nm1.aero,
+                                                              q_n=q_n.aero, free_wake=free_wake, dv=dv.aero,
+                                                              gamma_dot_relaxation=gamma_dot_relaxation)
+
+            return jnp.concatenate((r_struct, r_aero))

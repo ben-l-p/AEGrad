@@ -104,7 +104,7 @@ class BeamStructure(BaseBeamStructure):
     ) -> StructuralDesignVariables:
         r"""
         Computes the static grads of the structure_dv, which is used to compute gradients of the loss with respect to
-        the structure_dv's parameters.
+        the structure's parameters.
         :param structure: StaticStructure containing the current state of the structure_dv.
         :param objective: Objective function that takes the structure_dv and design variables and returns an array
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
@@ -201,6 +201,141 @@ class BeamStructure(BaseBeamStructure):
 
         return StructuralDesignVariables(**dv.from_adjoint(f_shape, p_f_p_x - rhs))
 
+    def timestep_residual(
+            self,
+            i_ts: int,
+            q_nm1: StructureMinimalStates,
+            q_n: StructureMinimalStates,
+            dv_: StructuralDesignVariables,
+            f_aero_nm1: Optional[Array],
+            f_aero_n: Optional[Array],
+    ) -> Array:
+        r"""
+        Function which finds the residual of the structural problem forward from timestep n-1 to timestep n.
+        :param i_ts: Timestep index n
+        :param q_nm1: Minimal structural states at timestep n-1.
+        :param q_n: Minimal structural states at timestep n.
+        :param dv_: Structural design variables.
+        :param f_aero_nm1: Optional aerodynamic forcing from timestep n-1, projected onto the beam [n_nodes, 6].
+        :param f_aero_n: Optional aerodynamic forcing from timestep n, projected onto the beam [n_nodes, 6].
+        :return: Residual for step.
+        """
+
+        # time integrator parameters
+        dt = self.time_integrator.dt
+        beta = self.time_integrator.beta
+        gamma = self.time_integrator.gamma
+        alpha_f = self.time_integrator.alpha_f
+        alpha_m = self.time_integrator.alpha_m
+
+        # state updates obtained from time integrator without knowledge of structural problem
+        phi_n = (
+                dt * q_nm1.v + (0.5 - beta) * dt * dt * q_nm1.a + beta * dt * dt * q_n.a
+        )
+
+        varphi_res = vmap(
+            lambda vp_n, vp_nm1, phi: log_se3(
+                exp_se3(-vp_n) @ exp_se3(vp_nm1) @ exp_se3(phi)
+            ),
+            0,
+            0,
+            0,
+        )(q_n.varphi, q_nm1.varphi, phi_n)
+
+        v_res = q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a - q_n.v
+
+        a_res = (
+                        (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
+                ) / (1.0 - alpha_m) - q_n.a
+
+        # updates to v_dot, which are obtained from relation to other states through structural problem
+
+        inner_case = self.case_from_dv(
+            dv=dv_
+        )  # allows for gradients w.r.t. design variables
+
+        # solve problem between timesteps, as should be done for the used time integrator method
+        phi_alpha, q_alpha = inner_case.time_integrator.calculate_q_alpha(
+            q_nm1=q_nm1, q_n=q_n, phi_n=phi_n
+        )
+        hg_alpha = inner_case.calculate_hg_from_varphi(q_alpha.varphi)
+
+        i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
+
+        f_ext_dead_alpha = (
+            inner_case.time_integrator.calculate_f_alpha(
+                f_nm1=dv_.f_ext_dead[i_ts_nm1, ...], f_n=dv_.f_ext_dead[i_ts, ...]
+            )
+            if dv_.f_ext_dead is not None
+            else None
+        )
+        f_ext_follower_alpha = (
+            inner_case.time_integrator.calculate_f_alpha(
+                f_nm1=dv_.f_ext_follower[i_ts_nm1, ...],
+                f_n=dv_.f_ext_follower[i_ts, ...],
+            )
+            if dv_.f_ext_follower is not None
+            else None
+        )
+
+        if f_aero_n is not None and f_aero_nm1 is not None:
+            f_ext_aero_alpha = inner_case.time_integrator.calculate_f_alpha(f_nm1=f_aero_nm1, f_n=f_aero_nm1)
+        else:
+            f_ext_aero_alpha = None
+
+        (
+            d_alpha,
+            _,
+            f_dead_res,
+            _,
+            f_grav_alpha,
+            f_int_alpha,
+            f_gyr_alpha,
+            f_iner_alpha,
+            _,
+        ) = inner_case.resolve_forces(
+            hg=hg_alpha,
+            dynamic=True,
+            f_ext_follower=f_ext_follower_alpha,
+            f_ext_dead=f_ext_dead_alpha,
+            f_ext_aero=f_ext_aero_alpha,
+            v=q_alpha.v,
+            v_dot=q_alpha.v_dot,
+            stop_gradients=True
+        )
+
+        # use stop gradient to prevent effective stiffness contribution
+        m_alpha = inner_case.assemble_matrix_from_entries(
+            inner_case.make_m_t(d=d_alpha)
+        )
+        if inner_case.use_lumped_mass:
+            m_alpha += jax.scipy.linalg.block_diag(*inner_case.m_lumped)
+
+        # calculate non-inertial forcing residual
+        f_res_non_iner = f_int_alpha + f_gyr_alpha
+        if inner_case.use_gravity:
+            f_res_non_iner += f_grav_alpha
+        if (
+                f_dead_res is not None
+        ):  # use the output from the resolve forces function, as it's in the local frame
+            f_res_non_iner += f_dead_res
+        if f_ext_follower_alpha is not None:
+            f_res_non_iner += f_ext_follower_alpha
+
+        # from forcing residual, solve for v_dot which satisfies f_res=0
+        v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(
+            -1, 6
+        )
+
+        # find v_dot_nm1 from its alpha value
+        v_dot_res = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (
+                1.0 - alpha_f
+        ) - q_n.v_dot
+
+        return jnp.stack(
+            (varphi_res, v_res, v_dot_res, a_res), axis=0
+        )  # [4, n_nodes, 6]
+
     # @jax.jit(static_argnums=(0, 1, 2, 3))
     def dynamic_adjoint(
             self,
@@ -216,11 +351,11 @@ class BeamStructure(BaseBeamStructure):
         respect to design variables. The objective has structure
         :math:`J = \sum_{i=1}^N \left(j(\mathbf{x}, \mathbf{y}_i)\right)` where :math:`\mathbf{x}` are the design variables
         and :math:`\mathbf{y}` are the structural states at each timestep, which depend on the design variables through
-        the dynamic structure equations. The grads is computed by first solving a backward pass to obtain the grads
+        the dynamic structure equations. The gradient is computed by first solving a backward pass to obtain the grads
         states, and then using these to compute the gradient w.r.t. design variables in a forward pass.
         :param structure: Dynamic structure solution object.
         :param objective: Objective function :math:`j(\mathbf{x}, \mathbf{y}_i)`
-        :param p_q0_p_x: Optional jacobian used to describe the sensitivites of the initial structural degrees of
+        :param p_q0_p_x: Optional Jacobian used to describe the sensitivities of the initial structural degrees of
         freedom to the design variables.
         :param optional_jacobians: Optional Jacobians to use for solution
         :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
@@ -241,12 +376,6 @@ class BeamStructure(BaseBeamStructure):
             f_ext_follower=structure.f_ext_follower,
             f_ext_dead=gs.f_ext_dead,
         )
-
-        alpha_f = self.time_integrator.alpha_f
-        alpha_m = self.time_integrator.alpha_m
-        beta = self.time_integrator.beta
-        gamma = self.time_integrator.gamma
-        dt = self.time_integrator.dt
 
         struct_states_init = StructureFullStates(
             v=structure.v[0, ...],
@@ -271,124 +400,6 @@ class BeamStructure(BaseBeamStructure):
 
         free_state_ix = jnp.concatenate([solve_dofs + i * self.n_dof for i in range(4)])
 
-        def timestep_residual(
-                i_ts: int,
-                q_nm1: StructureMinimalStates,
-                q_n: StructureMinimalStates,
-                dv_: StructuralDesignVariables,
-        ) -> Array:
-            r"""
-            Function which finds the residual of the structural problem forward from timestep varphi-1 to timestep varphi.
-            :param i_ts: Timestep index varphi
-            :param q_nm1: Mimimal structural states at timestep varphi-1
-            :param q_n: Minimal structural states at timestep varphi
-            :param dv_: Structural design variables
-            :return: Residual for step
-            """
-
-            # state updates obtained from time integrator without knowledge of structural problem
-            phi_n = (
-                    dt * q_nm1.v + (0.5 - beta) * dt * dt * q_nm1.a + beta * dt * dt * q_n.a
-            )
-
-            varphi_res = vmap(
-                lambda vp_n, vp_nm1, phi: log_se3(
-                    exp_se3(-vp_n) @ exp_se3(vp_nm1) @ exp_se3(phi)
-                ),
-                0,
-                0,
-                0,
-            )(q_n.varphi, q_nm1.varphi, phi_n)
-
-            v_res = q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a - q_n.v
-
-            a_res = (
-                            (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
-                    ) / (1.0 - alpha_m) - q_n.a
-
-            # updates to v_dot, which are obtained from relation to other states through structural problem
-
-            inner_case = self.case_from_dv(
-                dv=dv_
-            )  # allows for gradients w.r.t. design variables
-
-            # solve problem between timesteps, as should be done for the used time integrator method
-            phi_alpha, q_alpha = inner_case.time_integrator.calculate_q_alpha(
-                q_nm1=q_nm1, q_n=q_n, phi_n=phi_n
-            )
-            hg_alpha = inner_case.calculate_hg_from_varphi(q_alpha.varphi)
-
-            i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
-
-            f_ext_dead_alpha = (
-                inner_case.time_integrator.calculate_f_alpha(
-                    f_nm1=dv_.f_ext_dead[i_ts_nm1, ...], f_n=dv_.f_ext_dead[i_ts, ...]
-                )
-                if dv_.f_ext_dead is not None
-                else None
-            )
-            f_ext_follower_alpha = (
-                inner_case.time_integrator.calculate_f_alpha(
-                    f_nm1=dv_.f_ext_follower[i_ts_nm1, ...],
-                    f_n=dv_.f_ext_follower[i_ts, ...],
-                )
-                if dv_.f_ext_follower is not None
-                else None
-            )
-
-            (
-                d_alpha,
-                _,
-                f_dead_res,
-                _,
-                f_grav_alpha,
-                f_int_alpha,
-                f_gyr_alpha,
-                f_iner_alpha,
-                _,
-            ) = inner_case.resolve_forces(
-                hg=hg_alpha,
-                dynamic=True,
-                f_ext_follower=f_ext_follower_alpha,
-                f_ext_dead=f_ext_dead_alpha,
-                f_ext_aero=None,
-                v=q_alpha.v,
-                v_dot=q_alpha.v_dot,
-                stop_gradients=True
-            )
-
-            # use stop gradient to prevent effective stiffness contribution
-            m_alpha = inner_case.assemble_matrix_from_entries(
-                inner_case.make_m_t(d=d_alpha)
-            )
-            if inner_case.use_lumped_mass:
-                m_alpha += jax.scipy.linalg.block_diag(*inner_case.m_lumped)
-
-            # calculate non-inertial forcing residual
-            f_res_non_iner = f_int_alpha + f_gyr_alpha
-            if inner_case.use_gravity:
-                f_res_non_iner += f_grav_alpha
-            if (
-                    f_dead_res is not None
-            ):  # use the output from the resolve forces function, as it's in the local frame
-                f_res_non_iner += f_dead_res
-            if f_ext_follower_alpha is not None:
-                f_res_non_iner += f_ext_follower_alpha
-
-            # from forcing residual, solve for v_dot which satisfies f_res=0
-            v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(
-                -1, 6
-            )
-
-            # find v_dot_nm1 from its alpha value
-            v_dot_res = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (
-                    1.0 - alpha_f
-            ) - q_n.v_dot
-
-            return jnp.stack(
-                (varphi_res, v_res, v_dot_res, a_res), axis=0
-            )  # [4, n_nodes, 6]
-
         def p_r_n(
                 i_ts: int,
                 q_nm1: StructureMinimalStates,
@@ -412,8 +423,8 @@ class BeamStructure(BaseBeamStructure):
                     .set(q_n_free)
                     .reshape(4, -1, 6)
                 )
-                r_out = timestep_residual(
-                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__
+                r_out = self.timestep_residual(
+                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, f_aero_n=None, f_aero_nm1=None
                 )
                 return r_out.ravel()[free_state_ix]  # [n_adj_dof]
 
@@ -449,11 +460,12 @@ class BeamStructure(BaseBeamStructure):
         ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
             r"""
             Function to obtain the grads states at timestep varphi, which is dependent on the grads at timestep varphi+1.
-            :param rev_i_ts: Reversed timestep index. JAX fori_loop does not allow for reverse indexing, and so this is explicitly reversed witin the function body to obtain i_ts.
-            :param d_j_d_x_: Design gradient to accumulate
-            :param adj_: Full grads matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof]
-            :param p_r_np1_p_q_n: Gradient of future step with respect to current state, [5*n_dof, 5*n_dof]
-            :param q_n: Current minimal states
+            :param rev_i_ts: Reversed timestep index. JAX loop does not allow for reverse indexing, and so this is.
+            explicitly reversed within the function body to obtain i_ts.
+            :param d_j_d_x_: Design gradient to accumulate.
+            :param adj_: Full grads matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof].
+            :param p_r_np1_p_q_n: Gradient of future step with respect to current state, [5*n_dof, 5*n_dof].
+            :param q_n: Current minimal states.
             :return: Updated grads matrix, gradient of current step with respect to previous state and current state.
             """
 

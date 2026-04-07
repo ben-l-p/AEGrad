@@ -36,8 +36,8 @@ class TimeIntregrator:
         r"""
         Predict the next increment based on current velocity and acceleration.
         :param v_nm1: Previous velocity, [n_nodes_, 6].
-        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
-        :param a_n_pred: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
+        :param a_n_pred: Next pseudo-acceleration prediction [n_nodes_, 6].
         :return: Initial guess for next increment, [n_nodes_, 6].
         """
         return self.dt * v_nm1 + self.dt * self.dt * (
@@ -60,8 +60,8 @@ class TimeIntregrator:
         r"""
         Predict the next velocity based on current velocity and acceleration.
         :param v_nm1: Previous velocity, [n_nodes_, 6].
-        :param a_nm1: Previous pesudoacceleration, [n_nodes_, 6].
-        :param a_n_pred: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
+        :param a_n_pred: Next pseudo-acceleration prediction [n_nodes_, 6].
         :return: Initial guess for next velocity, [n_nodes_, 6].
         """
         return (
@@ -72,10 +72,10 @@ class TimeIntregrator:
 
     def predict_v_dot(self, v_dot_nm1: Array, a_nm1: Array, a_n: Array) -> Array:
         r"""
-        Predict the acceleration based on previous pseudoacceleration and acceleration.
+        Predict the acceleration based on previous pseudo-acceleration and acceleration.
         :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
-        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
-        :param a_n: Next pseudoacceleration prediction [n_nodes_, 6].
+        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
+        :param a_n: Next pseudo-acceleration prediction [n_nodes_, 6].
         :return: Predicted acceleration, [n_nodes_, 6].
         """
         return (
@@ -84,20 +84,20 @@ class TimeIntregrator:
 
     def predict_a(self, v_dot_nm1: Array, a_nm1: Array) -> Array:
         r"""
-        Predict the pseudoacceleration based on previous pseudoacceleration and acceleration.
+        Predict the pseudo-acceleration based on previous pseudo-acceleration and acceleration.
         :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
-        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
-        :return: Predicted pseudoacceleration, [n_nodes_, 6].
+        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
+        :return: Predicted pseudo-acceleration, [n_nodes_, 6].
         """
         return (self.alpha_f * v_dot_nm1 - self.alpha_m * a_nm1) / (1.0 - self.alpha_m)
 
     def calculate_a_n(self, v_dot_nm1: Array, v_dot_n: Array, a_nm1: Array) -> Array:
         r"""
-        Calculate the pseudoacceleration at the next time step.
+        Calculate the pseudo-acceleration at the next time step.
         :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
         :param v_dot_n: Next acceleration, [n_nodes_, 6].
-        :param a_nm1: Previous pseudoacceleration, [n_nodes_, 6].
-        :return: Pseudoacceleration at next time step, [n_nodes_, 6].
+        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
+        :return: pseudo-acceleration at next time step, [n_nodes_, 6].
         """
         return (
                 1.0

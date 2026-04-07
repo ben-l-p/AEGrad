@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Optional, Sequence
 
 import jax
@@ -63,6 +64,10 @@ class BaseCoupledAeroelastic:
             x0_aero=x0_aero,
             hg0=self.structure.hg0,
         )
+
+    def case_from_dv(self, dv: AeroelasticDesignVariables) -> BaseCoupledAeroelastic:
+        return BaseCoupledAeroelastic(structure=self.structure.case_from_dv(dv.structure),
+                                      aero=self.aero.case_from_dv(dv.aero), )
 
     def get_design_variables(self, case: StaticAeroelastic | DynamicAeroelastic) -> AeroelasticDesignVariables:
         return AeroelasticDesignVariables(

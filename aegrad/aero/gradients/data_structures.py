@@ -32,7 +32,9 @@ class AeroFullStates:
 class AeroMinimalStates:
     gamma_b: ArrayList
     gamma_w: ArrayList
+    gamma_b_dot: ArrayList
     zeta_w: ArrayList
+    f_total: Optional[Array]  # this is optional as it isn't needed when solving the primal UVLM
 
 
 @jax.tree_util.register_dataclass

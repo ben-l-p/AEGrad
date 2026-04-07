@@ -14,8 +14,9 @@ from aero.gradients.data_structures import (
     AeroFullStates,
     AeroDesignVariables,
     AeroDesignGradients,
-    AeroStateGradients,
+    AeroStateGradients, AeroMinimalStates,
 )
+from structure.data_structures import StructureMinimalStates
 from structure.gradients.data_structures import StructuralStateGradients
 from algebra.array_utils import ArrayList, ArrayListShape
 
@@ -29,9 +30,16 @@ from data_structures import DesignVariables
 
 @jax.tree_util.register_dataclass
 @dataclass
-class AeroelasticStates:
+class AeroelasticFullStates:
     aero: AeroFullStates
     structure: StructureFullStates
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class AeroelasticMinimalStates:
+    aero: AeroMinimalStates
+    structure: StructureMinimalStates
 
 
 @jax.tree_util.register_dataclass

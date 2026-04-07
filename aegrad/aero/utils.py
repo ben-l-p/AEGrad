@@ -83,7 +83,7 @@ def calculate_steady_forcing(
     :param zeta_dot_bs: Bound grids velocities, [n_surf][zeta_m, zeta_n, 3]
     :param gamma_bs: Bound grid circulation, [n_surf][gamma_m, gamma_n]
     :param gamma_ws: Bound grid circulation, [n_surf][gamma_m, gamma_n]
-    :param rho: Flowfield density
+    :param rho: Flow field density
     :param v_func: Total velocity as a function of coordinate
     :param v_inputs: Additive inputs for total velocity on bound grid vertex
     """
@@ -176,15 +176,15 @@ def propagate_surf_wake(
     r"""
     Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
     downstream data.
-    :param gamma_b_n: Bound circulation at time varphi, [m, varphi]
-    :param gamma_w_n: Wake circulation at time varphi, [m_star, varphi]
-    :param zeta_b_np1: Bound grid at time varphi+1, [zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time varphi, [zeta_star_m, zeta_n, 3]
-    :param delta_w: Desired wake discretisation, [zeta_star_m, 3] or None for uniform
-    :param v_func: Function that computes the velocity, [3] -> [3]
-    :param dt: Time step
-    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [zeta_star_m, zeta_n, 3], [zeta_m_star, zeta_n]
+    :param gamma_b_n: Bound circulation at time varphi, [m, varphi].
+    :param gamma_w_n: Wake circulation at time varphi, [m_star, varphi].
+    :param zeta_b_np1: Bound grid at time varphi+1, [zeta_m, zeta_n, 3].
+    :param zeta_w_n: Wake grid at time varphi, [zeta_star_m, zeta_n, 3].
+    :param delta_w: Desired wake discretisation, [zeta_star_m, 3] or None for uniform.
+    :param v_func: Function that computes the velocity, [3] -> [3].
+    :param dt: Time step length.
+    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
+    :return: New wake grid and circulation, [zeta_star_m, zeta_n, 3], [zeta_m_star, zeta_n].
     """
 
     # trailing edge positions and circulations
@@ -199,7 +199,7 @@ def propagate_surf_wake(
         zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
         gamma_base = gamma_w_n[:-1, ...]  # [gamma_w_m - 1, gamma_n]
 
-    # values at t=varphi+1 before rediscretisation
+    # values at t=varphi+1 before re-discretisation
     gamma_w_np1 = jnp.concatenate(
         (gamma_te[None, ...], gamma_base), axis=0
     )  # [gamma_w_m+1 | gamma_w_m, gamma_n]
@@ -207,13 +207,13 @@ def propagate_surf_wake(
     # if the wake is free, this should be embedded here
     v = v_func(zeta_base)  # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
 
-    # wake coordinates at t=varphi+1 before rediscretisation
+    # wake coordinates at t=varphi+1 before re-discretisation
     zeta_w_np1 = jnp.concatenate(
         (zeta_te[None, :, :], zeta_base + dt * v), axis=0
     )  # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
 
     if delta_w is not None:
-        # streamline coordinates before rediscretisation
+        # streamline coordinates before re-discretisation
         s_zeta_w = jnp.concatenate(
             (
                 jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
@@ -399,7 +399,7 @@ def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array
     Mirror a grid of points across a plane defined by a point and a varphi vector.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3].
     :param mirror_point: Point in mirror plane, [3].
-    :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalized.
+    :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalised.
     :return: Mirrored grid of points, [zeta_m, zeta_n, 3].
     """
     diff = zeta - mirror_point[None, None, :]  # [zeta_m, zeta_n, 3]
@@ -407,3 +407,37 @@ def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array
     return (
             zeta - 2.0 * diff_n[:, :, None] * mirror_normal[None, None, :]
     )  # [zeta_m, zeta_n, 3]
+
+
+def project_forcing_to_beam(
+        f_total: ArrayList,
+        rmat: Array,
+        dof_mapping: ArrayList,
+        x0_aero: ArrayList,
+) -> Array:
+    r"""
+    Project aerodynamic forcing at specified time step onto the beam grid. Returned forces are in the global frame.
+    :param f_total: Total force on aerodynamic grid, [n_surf][m+1, n+1, 3]
+    :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
+    :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
+    :param dof_mapping: Mapping between aero and beam discretisations.
+    :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
+    """
+
+    n_nodes = rmat.shape[0]
+    result = jnp.zeros((n_nodes, 6))
+
+    for i_surf in range(len(f_total)):
+        # rotate relative distances to get moment arms
+        this_rmat = rmat[dof_mapping[i_surf], ...]  # [zeta_n, 3, 3]
+        r_x0 = jnp.einsum(
+            "ijk,lik->lij", this_rmat, x0_aero[i_surf]
+        )  # relative distance [zeta_n, zeta_m, 3]
+
+        result = result.at[dof_mapping[i_surf], :3].set(
+            f_total[i_surf].sum(axis=0)
+        )  # forcing is sum along strip [zeta_n, 3]
+        result = result.at[dof_mapping[i_surf], 3:].set(
+            jnp.cross(r_x0, f_total[i_surf]).sum(axis=0)
+        )  # moment is r x_target f summed along strip [zeta_n, 3]
+    return result

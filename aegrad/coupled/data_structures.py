@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from coupled.coupled import BaseCoupledAeroelastic
 from structure.data_structures import DynamicStructure
 
-from coupled.gradients.data_structures import AeroelasticStates
+from coupled.gradients.data_structures import AeroelasticFullStates
 
 
 class StaticAeroelastic:
@@ -33,7 +33,7 @@ class StaticAeroelastic:
         self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
 
     def get_full_states(self):
-        return AeroelasticStates(structure=self.structure.get_full_states(), aero=self.aero.get_full_states())
+        return AeroelasticFullStates(structure=self.structure.get_full_states(), aero=self.aero.get_full_states())
 
     @overload
     def to_dynamic(self, t: None) -> DynamicAeroelasticSnapshot:

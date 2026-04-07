@@ -14,10 +14,9 @@ from aero.utils import (
     KernelFunction,
     compute_c,
     compute_nc,
-    calculate_steady_forcing,
+    calculate_steady_forcing, project_forcing_to_beam,
 )
 from print_utils import warn
-from algebra.base import finite_difference
 from algebra.array_utils import split_to_vertex
 from aero.flowfields import FlowField
 from algebra.array_utils import ArrayList
@@ -29,7 +28,7 @@ from utils import _make_pytree, index_to_arr
 @dataclass
 class GridDiscretization:
     r"""
-    Data class to hold grid discretization parameters
+    Data class to hold grid discretisation parameters
     :param m: Number of panels in the chordwise direction
     :param n: Number of panels in the spanwise direction
     :param m_star: Number of wake panels in the chordwise direction
@@ -401,28 +400,6 @@ class DynamicAeroCase:
             val = self._gamma_b[i_surf][i_ts, [-1], :]
             self._gamma_w[i_surf] = self._gamma_w[i_surf].at[i_ts, ...].set(val)
 
-    def compute_gamma_dot(self, i_ts: int, dt: Array, gamma_dot_relaxation: float) -> None:
-        r"""
-        Calculate time derivative of bound circulation strengths at specified time step using finite difference.
-        :param i_ts: Timestep index
-        :param dt: Time step size
-        :param gamma_dot_relaxation: Relaxation factor which filters gamma_dot
-        """
-
-        def fd(arr: Array) -> Array:
-            return finite_difference(i_ts, arr, dt, 0, order=1)
-
-        if self._gamma_b_dot is None: raise ValueError("gamma_b_dot is None")
-        for i_surf in range(self.n_surf):
-            # first obtain the current unfiltered, and previous filtered values for gamma_dot
-            gamma_b_dot_curr = fd(self._gamma_b[i_surf])
-            gamma_b_dot_prev = self._gamma_b_dot[i_surf][i_ts - 1, ...]
-
-            # blend with relaxation parameter
-            gamma_b_dot_filtered = gamma_dot_relaxation * gamma_b_dot_curr + (
-                    1.0 - gamma_dot_relaxation) * gamma_b_dot_prev
-            self._gamma_b_dot[i_surf] = self._gamma_b_dot[i_surf].at[i_ts, ...].set(gamma_b_dot_filtered)
-
     def calculate_steady_forcing(self, i_ts: int) -> None:
         r"""
         Calculate steady aerodynamic forcing for all surfaces at specified time step
@@ -476,30 +453,11 @@ class DynamicAeroCase:
         :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
         """
 
-        n_nodes = rmat.shape[0]
-        result = jnp.zeros((n_nodes, 6))
+        f_total = self._f_steady.index_all(i_ts, ...)
+        if include_unsteady:
+            f_total += self._f_unsteady.index_all(i_ts, ...)
 
-        if self._f_unsteady is None: raise ValueError("No unsteady forcing available")
-
-        for i_surf in range(self.n_surf):
-            # forcing for this surface
-            this_force = self._f_steady[i_surf][i_ts, ...]  # [ zeta_m, zeta_n, 3]
-            if include_unsteady:
-                this_force += self._f_unsteady[i_surf][i_ts, ...]
-
-            # rotate relative distances to get moment arms
-            this_rmat = rmat[self.dof_mapping[i_surf], ...]  # [zeta_n, 3, 3]
-            r_x0 = jnp.einsum(
-                "ijk,lik->lij", this_rmat, x0_aero[i_surf]
-            )  # relative distance [zeta_n, zeta_m, 3]
-
-            result = result.at[self.dof_mapping[i_surf], :3].set(
-                this_force.sum(axis=0)
-            )  # forcing is sum along strip [zeta_n, 3]
-            result = result.at[self.dof_mapping[i_surf], 3:].set(
-                jnp.cross(r_x0, this_force).sum(axis=0)
-            )  # moment is r x_target f summed along strip [zeta_n, 3]
-        return result
+        return project_forcing_to_beam(f_total=f_total, rmat=rmat, x0_aero=x0_aero, dof_mapping=self.dof_mapping)
 
     def _calculate_surf_unsteady_forcing(
             self, i_ts: int, i_surf: int, nc: Array, rho: Array
@@ -554,7 +512,7 @@ class DynamicAeroCase:
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
-        Obtain a initial_snapshot of the aerodynamic state at a given time step index.
+        Obtain a snapshot of the aerodynamic state at a given time step index.
         :param i_ts: Timestep index
         :return: AeroSnapshot object.
         """
@@ -720,8 +678,9 @@ class AeroSnapshot(DynamicAeroCase):
         return self._c.index_all(0, ...)
 
     @c.setter
-    def c(self, value: ArrayList) -> None:
-        self._c = value.index_all(None, ...)
+    def c(self, value: Optional[ArrayList]) -> None:
+        if value is not None:
+            self._c = value.index_all(None, ...)
 
     @property
     def nc(self) -> ArrayList:
@@ -729,8 +688,9 @@ class AeroSnapshot(DynamicAeroCase):
         return self._nc.index_all(0, ...)
 
     @nc.setter
-    def nc(self, value: ArrayList) -> None:
-        self._nc = value.index_all(None, ...)
+    def nc(self, value: Optional[ArrayList]) -> None:
+        if value is not None:
+            self._nc = value.index_all(None, ...)
 
     @property
     def gamma_b(self) -> ArrayList:
