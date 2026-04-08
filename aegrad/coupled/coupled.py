@@ -18,6 +18,7 @@ from print_utils import warn_if_32_bit
 from structure import StaticStructure
 from print_utils import VerbosityLevel
 from structure.time_integration import TimeIntregrator
+from structure.utils import get_solve_dofs
 
 
 class BaseCoupledAeroelastic:
@@ -207,11 +208,7 @@ class BaseCoupledAeroelastic:
 
         # degrees of freedom to constrain or solve for
         prescribed_dofs: Array = self.structure.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs: Array = jnp.setdiff1d(
-            jnp.arange(self.structure.n_dof),
-            prescribed_dofs,
-            size=self.structure.n_dof - prescribed_dofs.size,
-        )
+        solve_dofs = get_solve_dofs(n_dof=self.structure.n_dof, prescribed_dofs=prescribed_dofs)
 
         t = jnp.arange(n_tstep) * dt + t_init
 

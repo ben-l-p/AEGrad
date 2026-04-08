@@ -13,6 +13,7 @@ from print_utils import warn
 from algebra.base import chi
 from plotting.beam import plot_beam_to_vtk
 from plotting.pvd import write_pvd
+from structure.utils import transform_nodal_vect
 from utils import _make_pytree, index_to_arr
 from structure.gradients.data_structures import StructureFullStates
 
@@ -119,32 +120,28 @@ class StaticStructure:
         return StructureFullStates(v=None, v_dot=None, hg=self.hg,
                                    eps=self.eps, f_int=self.f_int)
 
-    def _transform(self, nodal_chi: Array) -> None:
+    def _transform(self, rmat: Array) -> None:
         r"""
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
-        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_nodes_, 6, 6]
+        :param rmat: Nodal rotations, [n_nodes, 3, 3]
         """
         if self.f_ext_follower is not None:
-            self.f_ext_follower = self.f_ext_follower.at[...].set(
-                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_follower)
-            )
+            self.f_ext_follower = self.f_ext_follower.at[...].set(transform_nodal_vect(self.f_ext_follower, rmat))
+
         if self.f_ext_dead is not None:
-            self.f_ext_dead = self.f_ext_dead.at[...].set(
-                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_dead)
-            )
+            self.f_ext_dead = self.f_ext_dead.at[...].set(transform_nodal_vect(self.f_ext_dead, rmat))
+
         if self.f_ext_aero is not None:
-            self.f_ext_aero = self.f_ext_aero.at[...].set(
-                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_ext_aero)
-            )
+            self.f_ext_aero = self.f_ext_aero.at[...].set(transform_nodal_vect(self.f_ext_aero, rmat))
+
         if self.f_grav is not None:
-            self.f_grav = self.f_grav.at[...].set(
-                jnp.einsum("ijk,ik->ij", nodal_chi, self.f_grav)
-            )
+            self.f_grav = self.f_grav.at[...].set(transform_nodal_vect(self.f_grav, rmat))
+
         self.f_int = self.f_int.at[...].set(
-            jnp.einsum("ijk,ik->ij", nodal_chi, self.f_int)
+            transform_nodal_vect(self.f_int, rmat)
         )
         self.f_res = self.f_int.at[...].set(
-            jnp.einsum("ijk,ik->ij", nodal_chi, self.f_res)
+            transform_nodal_vect(self.f_res, rmat)
         )
 
     def to_global(self) -> None:
@@ -156,8 +153,7 @@ class StaticStructure:
             return
 
         self.local = False
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes_, 6, 6]
-        self._transform(nodal_chi)
+        self._transform(rmat=self.hg[:, :3, :3])
 
     def to_local(self) -> None:
         """Convert global structure_dv results to local frame."""
@@ -167,11 +163,7 @@ class StaticStructure:
         else:
             self.local = True
 
-        nodal_chi = vmap(chi, 0, 0)(
-            jnp.transpose(self.hg[:, :3, :3], (0, 2, 1))
-        )  # [n_nodes_, 6, 6]
-
-        self._transform(nodal_chi)
+        self._transform(rmat=jnp.transpose(self.hg[:, :3, :3], (0, 2, 1)))
 
     def plot(self, directory: os.PathLike | str, n_interp: int = 0) -> Path:
         r"""
@@ -544,6 +536,7 @@ class DynamicStructure:
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
             a=self.a[i_ts, ...],
+            f_ext_aero=self.f_ext_aero[i_ts, ...] if self.f_ext_aero is not None else None,
         )
 
     def get_full_states(self, i_ts: int | Array) -> StructureFullStates:
@@ -633,42 +626,31 @@ class DynamicStructure:
             prescribed_dofs=initial_snapshot.prescribed_dofs,
         )
 
-    def _transform(self, nodal_chi: Array) -> None:
+    def _transform(self, rmat: Array) -> None:
         r"""
         Transform orientation-dependent results between frames using the nodal chi transformation matrices.
-        :param nodal_chi: Nodal rotations represented as chi transformation matrices, [n_tstep, n_nodes_, 6, 6]
+        :param rmat: Nodal rotations, [n_tstep, n_nodes_, 3, 3]
         """
-        idx = "hijk,hik->hij"
+
         if self.f_ext_follower is not None:
             self.f_ext_follower = self.f_ext_follower.at[...].set(
-                jnp.einsum(idx, nodal_chi, self.f_ext_follower[...])
-            )
+                transform_nodal_vect(vect=self.f_ext_follower, rmat=rmat))
+
         if self.f_ext_dead is not None:
-            self.f_ext_dead = self.f_ext_dead.at[...].set(
-                jnp.einsum(idx, nodal_chi, self.f_ext_dead)
-            )
+            self.f_ext_dead = self.f_ext_dead.at[...].set(transform_nodal_vect(vect=self.f_ext_dead, rmat=rmat))
+
         if self.f_ext_aero is not None:
-            self.f_ext_aero = self.f_ext_aero.at[...].set(
-                jnp.einsum(idx, nodal_chi, self.f_ext_aero)
-            )
+            self.f_ext_aero = self.f_ext_aero.at[...].set(transform_nodal_vect(vect=self.f_ext_aero, rmat=rmat))
+
         if self.f_grav is not None:
-            self.f_grav = self.f_grav.at[...].set(
-                jnp.einsum(idx, nodal_chi, self.f_grav)
-            )
-        self.f_int = self.f_int.at[...].set(
-            jnp.einsum(idx, nodal_chi, self.f_int)
-        )
-        self.f_iner_gyr = self.f_iner_gyr.at[...].set(
-            jnp.einsum(idx, nodal_chi, self.f_iner_gyr)
-        )
-        self.f_res = self.f_iner_gyr.at[...].set(
-            jnp.einsum(idx, nodal_chi, self.f_res)
-        )
-        self.v = self.v.at[...].set(jnp.einsum(idx, nodal_chi, self.v))
-        self.v_dot = self.v_dot.at[...].set(
-            jnp.einsum(idx, nodal_chi, self.v_dot)
-        )
-        self.a = self.a.at[...].set(jnp.einsum(idx, nodal_chi, self.a))
+            self.f_grav = self.f_grav.at[...].set(transform_nodal_vect(vect=self.f_grav, rmat=rmat))
+
+        self.f_int = self.f_int.at[...].set(transform_nodal_vect(vect=self.f_int, rmat=rmat))
+        self.f_iner_gyr = self.f_iner_gyr.at[...].set(transform_nodal_vect(vect=self.f_iner_gyr, rmat=rmat))
+        self.f_res = self.f_res.at[...].set(transform_nodal_vect(vect=self.f_res, rmat=rmat))
+        self.v = self.v.at[...].set(transform_nodal_vect(vect=self.v, rmat=rmat))
+        self.v_dot = self.v_dot.at[...].set(transform_nodal_vect(vect=self.v_dot, rmat=rmat))
+        self.a = self.a.at[...].set(transform_nodal_vect(vect=self.a, rmat=rmat))
 
     def to_global(self) -> None:
         """Convert local structure_dv results to global frame."""
@@ -678,10 +660,7 @@ class DynamicStructure:
         else:
             self.local = False
 
-        nodal_chi = vmap(vmap(chi, 0, 0), 1, 1)(
-            self.hg[:, :, :3, :3]
-        )  # [n_tstep, n_nodes_, 6, 6]
-        self._transform(nodal_chi)
+        self._transform(rmat=self.hg[:, :, :3, :3])
 
     def to_local(self) -> None:
         """Convert global structure_dv results to local frame."""
@@ -691,13 +670,7 @@ class DynamicStructure:
         else:
             self.local = True
 
-        nodal_chi = vmap(
-            vmap(chi, 0, 0),
-            1,
-        )(
-            jnp.transpose(self.hg[:, :, :3, :3], (0, 1, 3, 2))
-        )  # [n_tstep, n_nodes_, 6, 6]
-        self._transform(nodal_chi)
+        self._transform(rmat=jnp.transpose(self.hg[:, :, :3, :3], (0, 1, 3, 2)))
 
     def plot(
             self,
@@ -769,11 +742,13 @@ class StructureMinimalStates:
             v: Array,
             v_dot: Array,
             a: Array,
+            f_ext_aero: Optional[Array] = None,
     ):
         self._varphi: Optional[Array] = varphi
         self.v: Array = v
         self.v_dot: Array = v_dot
         self.a: Array = a
+        self.f_ext_aero: Optional[Array] = f_ext_aero
 
     @property
     def varphi(self) -> Array:
@@ -787,16 +762,27 @@ class StructureMinimalStates:
 
     @classmethod
     def from_mat(cls, stacked_mat: Array) -> StructureMinimalStates:
-        return StructureMinimalStates(*stacked_mat)
+        return StructureMinimalStates(*stacked_mat.reshape(stacked_mat.shape[0], -1, 6))
 
     def to_mat(self) -> Array:
-        return jnp.stack(
+        out = jnp.stack(
             (self.varphi, self.v, self.v_dot, self.a), 0
         )  # [4, n_nodes, 6]
 
+        if self.f_ext_aero is not None:
+            out = jnp.concatenate((out, self.f_ext_aero[None, ...]), 0)
+        return out
+
+    def ravel(self) -> Array:
+        return self.to_mat().ravel()
+
+    @property
+    def n_states(self) -> int:
+        return self.to_mat().size
+
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "_varphi", "v", "v_dot", "a"
+        return "_varphi", "v", "v_dot", "a", "f_ext_aero"
 
     @staticmethod
     def _static_names() -> Sequence[str]:

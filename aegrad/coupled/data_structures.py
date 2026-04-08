@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from coupled.coupled import BaseCoupledAeroelastic
 from structure.data_structures import DynamicStructure
 
-from coupled.gradients.data_structures import AeroelasticFullStates
+from coupled.gradients.data_structures import AeroelasticFullStates, AeroelasticMinimalStates
 
 
 class StaticAeroelastic:
@@ -33,7 +33,10 @@ class StaticAeroelastic:
         self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
 
     def get_full_states(self):
-        return AeroelasticFullStates(structure=self.structure.get_full_states(), aero=self.aero.get_full_states())
+        if self.structure.f_ext_aero is None: raise ValueError("f_ext_aero is None")
+
+        return AeroelasticFullStates(structure=self.structure.get_full_states(),
+                                     aero=self.aero.get_states(i_ts=0))
 
     @overload
     def to_dynamic(self, t: None) -> DynamicAeroelasticSnapshot:
@@ -111,6 +114,25 @@ class DynamicAeroelastic:
         struct_case.f_ext_aero = struct_case.f_ext_aero.at[0, ...].set(f_aero_local)
 
         return DynamicAeroelastic(structure=struct_case, aero=aero_case)
+
+    def get_full_states(self, i_ts: int | Array) -> AeroelasticFullStates:
+        r"""
+        Get the full aeroelastic states for the system at a given timestep.
+        :param i_ts: Time step index .
+        :return: Full aeroelastic states.
+        """
+        return AeroelasticFullStates(structure=self.structure.get_full_states(i_ts=i_ts),
+                                     aero=self.aero.get_states(i_ts=i_ts))
+
+    def get_minimal_states(self, i_ts: int | Array) -> AeroelasticMinimalStates:
+        r"""
+        Get the minimal aeroelastic states for the system at a given timestep.
+        :param i_ts: Time step index.
+        :return: Minimal aeroelastic states.
+        """
+
+        return AeroelasticMinimalStates(structure=self.structure.get_minimal_states(i_ts=i_ts),
+                                        aero=self.aero.get_states(i_ts=i_ts))
 
     def plot(self, directory: os.PathLike | str, index: Optional[int | Sequence[int] | Array | slice] = None,
              n_interp: int = 0,

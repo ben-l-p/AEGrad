@@ -1,8 +1,9 @@
 from __future__ import annotations
 import math
-from typing import Optional, Sequence
+from operator import mul
+from typing import Optional, Sequence, OrderedDict
 from collections import UserList
-from functools import singledispatch
+from functools import singledispatch, reduce
 from types import EllipsisType
 
 from jax import numpy as jnp
@@ -218,7 +219,7 @@ class ArrayList(UserList[Array]):
         return flatten_to_1d(self)
 
     @classmethod
-    def unravel(cls, vect: Array, arr_list_shapes: ArrayListShape) -> ArrayList:
+    def from_vector(cls, vect: Array, arr_list_shapes: ArrayListShape) -> ArrayList:
         r"""
         Unravel a 1D vector into a sequence of arrays with the given shapes.
         :param vect: Input 1D vector to unravel.
@@ -235,7 +236,7 @@ class ArrayList(UserList[Array]):
 
     def index_all(
             self,
-            *idx: Optional[EllipsisType | int | slice],
+            *idx: Optional[EllipsisType | int | slice | Array],
     ) -> ArrayList:
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(varphi).
@@ -277,7 +278,11 @@ class ArrayList(UserList[Array]):
         Get the arr_list_shapes of the arrays in the ArrayList.
         :return: ArrayListShape containing the arr_list_shapes of the arrays in the ArrayList.
         """
-        return ArrayListShape(n_arrays=len(self), shapes=[arr.shape for arr in self])
+        return ArrayListShape(shapes=[arr.shape for arr in self])
+
+    @property
+    def size(self) -> int:
+        return sum([arr.size for arr in self])
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -301,9 +306,10 @@ class ArrayListShape:
     Class to hold the arr_list_shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.
     """
 
-    def __init__(self, n_arrays: int, shapes: Sequence[tuple[int, ...]]) -> None:
-        self.n_arrays = n_arrays
-        self.shapes = shapes
+    def __init__(self, shapes: Sequence[tuple[int, ...]]) -> None:
+        self.shapes: Sequence[tuple[int, ...]] = shapes
+        self.n_arrays: int = len(self.shapes)
+        self.sizes: Sequence[int] = [reduce(mul, shape, 1) for shape in self.shapes]
 
     def __iter__(self):
         return iter(self.shapes)
@@ -316,6 +322,12 @@ class ArrayListShape:
 
     def __repr__(self):
         return f"ArrayListShape(n_arrays={self.n_arrays}), shapes={self.shapes}"
+
+    def total_size(self) -> int:
+        r"""
+        Get the total number of entries in the ArrayList.
+        """
+        return sum(self.sizes)
 
 
 @singledispatch
@@ -359,3 +371,32 @@ def split_to_vertex(arr: Array, axes: int | Sequence[int]) -> Array:
 @split_to_vertex.register
 def _(arrs: ArrayList, axes: int | Sequence[int]) -> ArrayList:
     return ArrayList([split_to_vertex(arr, axes) for arr in arrs])
+
+
+def vect_to_arrs(vect: Array, shapes: OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]]) -> OrderedDict[
+    str, Optional[Array | ArrayList]]:
+    r"""
+    Reconstruct a dictionary with a combination of key-Array and key-ArrayList pairs. The shapes of the arrays and array
+    lists are specified in the shapes argument, which is an ordered dictionary mapping
+    :param vect: Data vector.
+    :param shapes: Shapes for unflattened data.
+    :return: Ordered dictionary of unflattened data.
+    """
+
+    out_vals = OrderedDict()
+    cnt: int = 0
+
+    for name, shape in shapes.items():
+        if isinstance(shape, tuple):
+            sz = reduce(mul, shape, 1)
+            out_vals[name] = vect[cnt:cnt + sz].reshape(shape)
+            cnt += sz
+        elif isinstance(shape, ArrayListShape):
+            sz = shape.total_size()
+            out_vals[name] = ArrayList.from_vector(vect=vect[cnt:cnt + sz], arr_list_shapes=shape)
+            cnt += sz
+        elif shape is None:
+            out_vals[name] = None
+        else:
+            raise TypeError("Shape must be a tuple or an ArrayListShape.")
+    return out_vals

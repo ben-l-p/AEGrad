@@ -219,3 +219,27 @@ def _make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
     c_t = jax.jacobian(_g_iner_func)(v)  # d_{g_iner}/d_v
 
     return jnp.stack((c_l, c_t), axis=0)
+
+
+def get_solve_dofs(n_dof: int, prescribed_dofs: Array) -> Array:
+    r"""
+    Obtain the index of degrees of freedom to solve for, given the index of prescribed degrees of freedom.
+    :param n_dof: Total number of degrees of freedom
+    :param prescribed_dofs: Index of prescribed degrees of freedom
+    :return: Index of degrees of freedom to solve for
+    """
+    return jnp.setdiff1d(jnp.arange(n_dof), prescribed_dofs, size=n_dof - len(prescribed_dofs))
+
+
+def transform_nodal_vect(vect: Array, rmat: Array) -> Array:
+    r"""
+    Rotate a nodal vector quantity.
+    :param vect: Nodal vectors, [..., n_nodes, 6]
+    :param rmat: Rotation matrix, [..., n_nodes, 3, 3]
+    :return: Rotated vectors, [..., n_nodes, 6]
+    """
+
+    idx = "...ijk,...ik->...ij"
+    vect_lin = jnp.einsum(idx, rmat, vect[..., :3])
+    vect_rot = jnp.einsum(idx, rmat, vect[..., 3:])
+    return jnp.concatenate((vect_lin, vect_rot), axis=-1)

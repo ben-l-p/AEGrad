@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
+from structure.utils import transform_nodal_vect
 from utils import _make_pytree
 from algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
 from aero.utils import propagate_wake, compute_c, compute_nc, calculate_steady_forcing, project_forcing_to_beam
@@ -32,7 +33,7 @@ from aero.utils import KernelFunction, biot_savart_epsilon
 
 from algebra.se3 import vect_product as se3_vect_product
 from aero.aic import compute_v_ind, compute_aic_solve
-from aero.gradients.data_structures import AeroDesignVariables, AeroMinimalStates
+from aero.gradients.data_structures import AeroDesignVariables, AeroStates
 
 if TYPE_CHECKING:
     from aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
@@ -532,7 +533,7 @@ class UVLM:
 
     def base_solve(
             self,
-            q_nm1: AeroMinimalStates,
+            q_nm1: AeroStates,
             t: Array,
             hg: Optional[Array],
             hg_dot: Optional[Array],
@@ -743,10 +744,10 @@ class UVLM:
         :param gamma_dot_relaxation: Relaxation parameter which filters gamma_dot
         """
 
-        q_nm1 = AeroMinimalStates(gamma_b=case.gamma_b.index_all(i_ts - 1, ...),
-                                  gamma_w=case.gamma_w.index_all(i_ts - 1, ...),
-                                  gamma_b_dot=case.gamma_b_dot.index_all(i_ts - 1, ...),
-                                  zeta_w=case.zeta_w.index_all(i_ts - 1, ...), f_total=None)
+        q_nm1 = AeroStates(gamma_b=case.gamma_b.index_all(i_ts - 1, ...),
+                           gamma_w=case.gamma_w.index_all(i_ts - 1, ...),
+                           gamma_b_dot=case.gamma_b_dot.index_all(i_ts - 1, ...),
+                           zeta_w=case.zeta_w.index_all(i_ts - 1, ...))
 
         if not static:
             case.t = case.t.at[i_ts].set(
@@ -957,8 +958,9 @@ class UVLM:
             Path(directory).resolve(), plot_wake=plot_wake
         )
 
-    def timestep_residual(self, hg_n: Array, hg_dot_n: Array, t_n: Array, free_wake: bool, q_n: AeroMinimalStates,
-                          q_nm1: AeroMinimalStates, dv: AeroDesignVariables, gamma_dot_relaxation: float) -> Array:
+    def timestep_residual(self, hg_n: Array, hg_dot_n: Array, t_n: Array, free_wake: bool, q_n: AeroStates,
+                          q_nm1: AeroStates, dv: AeroDesignVariables, f_aero_beam_n: Array,
+                          gamma_dot_relaxation: float) -> Array:
         r"""
         Compute the residual vector to the UVLM equations. These are given as:
 
@@ -987,6 +989,7 @@ class UVLM:
         :param q_n: Aero minimal states at timestep n.
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aero design variables.
+        :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the global frame.
         :param gamma_dot_relaxation: Relaxation factor g for gamma_b_dot time integration, must match the forward solve.
         :return: Residual vector.
         """
@@ -997,20 +1000,25 @@ class UVLM:
             q_nm1=q_nm1, t=t_n, hg=hg_n, hg_dot=hg_dot_n, static=False, free_wake=free_wake,
             horseshoe=False, gamma_dot_relaxation=gamma_dot_relaxation)
 
-        if gamma_b_dot_n is None or f_unsteady is None or q_n.f_total is None:
+        if gamma_b_dot_n is None or f_unsteady is None:
             raise ValueError("Non-optional aero parameters are set to None")
 
         # project forcing onto beam
         f_total_zeta = f_steady + f_unsteady
-        f_aero_beam = project_forcing_to_beam(f_total=f_total_zeta, rmat=hg_n[:, :3, :3], dof_mapping=self.dof_mapping,
-                                              x0_aero=inner_case.x0_b)
+        f_aero_beam_global = project_forcing_to_beam(f_total=f_total_zeta, rmat=hg_n[:, :3, :3],
+                                                     dof_mapping=self.dof_mapping,
+                                                     x0_aero=inner_case.x0_b)
+        f_aero_beam_local = transform_nodal_vect(vect=f_aero_beam_global,
+                                                 rmat=jnp.transpose(hg_n[:, :3, :3], (0, 2, 1)))
 
         # evaluate residuals
         gamma_b_res = (gamma_b_n - q_n.gamma_b).ravel()
         gamma_w_res = (gamma_w_n - q_n.gamma_w).ravel()
         gamma_b_dot_res = (gamma_b_dot_n - q_n.gamma_b_dot).ravel()
         zeta_w_res = (zeta_w_n - q_n.zeta_w).ravel()
-        f_aero_res = (f_aero_beam - q_n.f_total).ravel()
+
+        # compared in the local frame for compatibility with the structure
+        f_aero_res = (f_aero_beam_local - f_aero_beam_n).ravel()
 
         return jnp.concatenate((gamma_b_res, gamma_w_res, gamma_b_dot_res, zeta_w_res, f_aero_res))
 

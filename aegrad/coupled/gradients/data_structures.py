@@ -5,16 +5,16 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict
 
 import jax
 from jax import Array
+from jax import numpy as jnp
 
 from aero.gradients.data_structures import (
-    AeroFullStates,
     AeroDesignVariables,
     AeroDesignGradients,
-    AeroStateGradients, AeroMinimalStates,
+    AeroStateGradients, AeroStates,
 )
 from structure.data_structures import StructureMinimalStates
 from structure.gradients.data_structures import StructuralStateGradients
@@ -31,15 +31,38 @@ from data_structures import DesignVariables
 @jax.tree_util.register_dataclass
 @dataclass
 class AeroelasticFullStates:
-    aero: AeroFullStates
+    aero: AeroStates
     structure: StructureFullStates
 
 
-@jax.tree_util.register_dataclass
-@dataclass
+@_make_pytree
 class AeroelasticMinimalStates:
-    aero: AeroMinimalStates
-    structure: StructureMinimalStates
+    def __init__(self, structure: StructureMinimalStates, aero: AeroStates):
+        self.structure: StructureMinimalStates = structure
+        self.aero: AeroStates = aero
+
+    @staticmethod
+    def from_vector(vect: Array, n_dof: int,
+                    aero_shapes: OrderedDict[
+                        str, Optional[tuple[int, ...] | ArrayListShape]]) -> AeroelasticMinimalStates:
+        struct = StructureMinimalStates.from_mat(vect[:5 * n_dof].reshape(5, n_dof))
+        aero = AeroStates.from_vector(vect[5 * n_dof:], aero_shapes)
+        return AeroelasticMinimalStates(structure=struct, aero=aero)
+
+    def ravel(self) -> Array:
+        return jnp.concatenate([self.structure.ravel(), self.aero.ravel()])
+
+    @property
+    def n_states(self) -> int:
+        return self.structure.n_states + self.aero.n_states
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "structure", "aero"
 
 
 @jax.tree_util.register_dataclass
@@ -83,6 +106,17 @@ class AeroelasticDesignVariables(DesignVariables):
         return AeroelasticDesignGradients(
             structure_dv=struct_dv, aero_dv=aero_dv, f_shape=f_shape
         )
+
+    def premult_adj(self, adj: Array) -> AeroelasticDesignVariables:
+        return AeroelasticDesignVariables(
+            structure_dv=self.structure.premult_adj(adj),
+            aero_dv=self.aero.premult_adj(adj),
+        )
+
+    def __iadd__(self, other: AeroelasticDesignVariables) -> AeroelasticDesignVariables:
+        self.structure += other.structure
+        self.aero += other.aero
+        return self
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:

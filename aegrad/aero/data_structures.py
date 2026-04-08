@@ -9,7 +9,7 @@ from jax import numpy as jnp
 from jax import Array
 
 from aero.aic import compute_v_ind
-from aero.gradients.data_structures import AeroFullStates
+from aero.gradients.data_structures import AeroStates
 from aero.utils import (
     KernelFunction,
     compute_c,
@@ -207,9 +207,13 @@ class DynamicAeroCase:
     def i_ts(self, i_ts_arr: Array | int) -> None:
         self._i_ts = i_ts_arr
 
-    def get_full_states(self) -> AeroFullStates:
-        return AeroFullStates(f_steady=self.f_steady, f_unsteady=self.f_unsteady, gamma_b=self.gamma_b,
-                              gamma_w=self.gamma_w)
+    def get_states(self, i_ts: int | Array) -> AeroStates:
+        # here we obtain the structural forcing externally, as it is saved in the beam data structures
+        # note that the forcing is in the local frame
+        return AeroStates(gamma_b=self.gamma_b.index_all(i_ts, ...),
+                          gamma_w=self.gamma_w.index_all(i_ts, ...),
+                          gamma_b_dot=self.gamma_b_dot.index_all(i_ts, ...),
+                          zeta_w=self.zeta_w.index_all(i_ts, ...))
 
     def gamma_full(self, i_ts: int) -> ArrayList:
         r"""

@@ -5,36 +5,60 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict
 
 import jax
 from jax import Array, numpy as jnp
 
 if TYPE_CHECKING:
     from aero.data_structures import DynamicAeroCase
-from algebra.array_utils import ArrayList, ArrayListShape
+from algebra.array_utils import ArrayList, ArrayListShape, vect_to_arrs
 from plotting.aerogrid import plot_grid_to_vtk
 from utils import _make_pytree
 from data_structures import DesignVariables
 
 
-@jax.tree_util.register_dataclass
-@dataclass
-class AeroFullStates:
-    f_steady: ArrayList
-    f_unsteady: Optional[ArrayList]
-    gamma_b: ArrayList
-    gamma_w: ArrayList
+@_make_pytree
+class AeroStates:
+    def __init__(self, gamma_b: ArrayList, gamma_w: ArrayList, gamma_b_dot: ArrayList, zeta_w: ArrayList) -> None:
+        self.gamma_b: ArrayList = gamma_b
+        self.gamma_w: ArrayList = gamma_w
+        self.gamma_b_dot: ArrayList = gamma_b_dot
+        self.zeta_w: ArrayList = zeta_w
 
+    def shapes(self) -> OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]]:
+        r"""
+        Obtain the shapes of all arrays within the data structure.
+        :return: Dictionary of name - shape pairs of all arrays within the data structure.
+        """
+        return OrderedDict(gamma_b=self.gamma_b.shape, gamma_w=self.gamma_w.shape, gamma_b_dot=self.gamma_b_dot.shape,
+                           zeta_w=self.zeta_w.shape)
 
-@jax.tree_util.register_dataclass
-@dataclass
-class AeroMinimalStates:
-    gamma_b: ArrayList
-    gamma_w: ArrayList
-    gamma_b_dot: ArrayList
-    zeta_w: ArrayList
-    f_total: Optional[Array]  # this is optional as it isn't needed when solving the primal UVLM
+    @staticmethod
+    def from_vector(vect: Array,
+                    shapes: OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]]) -> AeroStates:
+        return AeroStates(**vect_to_arrs(vect, shapes))
+
+    def ravel(self) -> Array:
+        r"""
+        Ravel the data structure to a vector in a given order.
+        :return: Data vector
+        """
+
+        return jnp.concatenate(
+            [self.gamma_b.ravel(), self.gamma_w.ravel(), self.gamma_b_dot.ravel(), self.zeta_w.ravel()])
+
+    @property
+    def n_states(self) -> int:
+        return self.gamma_b.size + self.gamma_w.size + self.gamma_b_dot.size + self.zeta_w.size
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "gamma_b", "gamma_w", "gamma_b_dot", "zeta_w"
 
 
 @jax.tree_util.register_dataclass
@@ -61,6 +85,19 @@ class AeroDesignVariables(DesignVariables):
             self.get_shapes()
         )
         self.mapping, self.n_x = self.make_index_mapping()
+
+    def __iadd__(self, other: AeroDesignVariables) -> AeroDesignVariables:
+        self.x0_aero = ArrayList([self.x0_aero[i] + other.x0_aero[i] for i in range(len(self.x0_aero))])
+        self.u_inf += other.u_inf
+        self.rho += other.rho
+        return self
+
+    def premult_adj(self, adj: Array) -> AeroDesignVariables:
+        return AeroDesignVariables(
+            x0_aero=ArrayList([jnp.einsum("ij,j...->i...", adj, self.x0_aero[i]) for i in range(len(self.x0_aero))]),
+            u_inf=jnp.einsum("ij,j...->i...", adj, self.u_inf),
+            rho=jnp.einsum("ij,j...->i...", adj, self.rho),
+        )
 
     def get_vars(self) -> dict[str, Array | ArrayList]:
         return {

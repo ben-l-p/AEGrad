@@ -23,7 +23,7 @@ from structure.data_structures import (
 )
 from data_structures import ConvergenceSettings, ConvergenceStatus
 from print_utils import warn, warn_if_32_bit, VerbosityLevel
-from structure.utils import _check_connectivity, _n_elem_per_node
+from structure.utils import _check_connectivity, _n_elem_per_node, get_solve_dofs, transform_nodal_vect
 from algebra.array_utils import check_arr_shape, check_arr_dtype
 from structure.utils import (
     _k_t_entry,
@@ -35,7 +35,7 @@ from algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, ha_to_ha_tilde
 from algebra.so3 import vec_to_skew
 from structure.time_integration import TimeIntregrator
 from algebra.se3 import t_se3, log_se3
-from structure.gradients.data_structures import StructuralDesignVariables
+from structure.gradients.data_structures import StructuralDesignVariables, StructureFullStates
 from structure.data_structures import StructureMinimalStates
 
 
@@ -669,9 +669,7 @@ class BaseBeamStructure:
         :return: External forces, [n_node, 6]
         """
 
-        f_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, :3])  # [n_node, 3]
-        m_rot = jnp.einsum("ikj,ik->ij", rmat, f_ext[:, 3:])  # [n_node, 3]
-        return jnp.concatenate((f_rot, m_rot), axis=-1)
+        return transform_nodal_vect(f_ext, rmat)
 
     def split_vector_to_elements(self, vec: Array) -> Array:
         return jnp.concatenate(
@@ -1060,6 +1058,21 @@ class BaseBeamStructure:
             vmap(exp_se3, 0, 0)(phi.reshape(-1, 6)),
         )
 
+    def minimal_states_to_full_states(self, q: StructureMinimalStates) -> StructureFullStates:
+        r"""
+        Convert a minimal set of states to a useful set of full states.
+        :param q: Minimal set of structural states
+        :return: Full set of structural states
+        """
+        hg = self.calculate_hg_from_varphi(q.varphi)
+        d = self.make_d(hg=hg)
+        eps = self.make_eps(d=d)
+        p_d = self.make_p_d(d=d)
+        f_int = self.make_f_int(eps=eps, p_d=p_d)
+        return StructureFullStates(
+            v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_int=f_int
+        )
+
     def make_prescribed_dofs_array(
             self,
             prescribed_dofs: Sequence[int] | Array | slice | int | None,
@@ -1115,11 +1128,7 @@ class BaseBeamStructure:
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs = jnp.setdiff1d(
-            jnp.arange(self.n_dof),
-            prescribed_dofs_arr,
-            size=self.n_dof - prescribed_dofs_arr.size,
-        )
+        solve_dofs = get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=prescribed_dofs_arr)
 
         # process external forces for load stepping
         load_step_weight: Array = jnp.linspace(0.0, 1.0, load_steps + 1)[
@@ -1824,7 +1833,7 @@ class BaseBeamStructure:
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs = jnp.setdiff1d(jnp.arange(self.n_dof), prescribed_dofs_arr)
+        solve_dofs = get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=prescribed_dofs_arr)
 
         # check and process external forces
         def check_force(arr: Optional[Array], name: str) -> Optional[Array]:

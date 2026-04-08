@@ -18,6 +18,7 @@ from structure.gradients.data_structures import (
 from algebra.se3 import t_se3, exp_se3, log_se3
 from structure import DynamicStructure
 from structure.data_structures import StructureMinimalStates
+from structure.utils import get_solve_dofs
 
 type StructuralObjectiveFunction = Callable[
     [StructureFullStates, StructuralDesignVariables, Optional[int | Array]], Array
@@ -111,11 +112,8 @@ class BeamStructure(BaseBeamStructure):
         :return: Gradient of objective function output with respect to design variables.
         """
 
-        solve_dofs = jnp.setdiff1d(
-            jnp.arange(self.n_dof),
-            structure.prescribed_dofs,
-            size=self.n_dof - structure.prescribed_dofs.size,
-        )
+        solve_dofs = get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=structure.prescribed_dofs)
+
         if optional_jacobians is not None:
             self.optional_jacobians = optional_jacobians
 
@@ -207,8 +205,6 @@ class BeamStructure(BaseBeamStructure):
             q_nm1: StructureMinimalStates,
             q_n: StructureMinimalStates,
             dv_: StructuralDesignVariables,
-            f_aero_nm1: Optional[Array],
-            f_aero_n: Optional[Array],
     ) -> Array:
         r"""
         Function which finds the residual of the structural problem forward from timestep n-1 to timestep n.
@@ -216,8 +212,6 @@ class BeamStructure(BaseBeamStructure):
         :param q_nm1: Minimal structural states at timestep n-1.
         :param q_n: Minimal structural states at timestep n.
         :param dv_: Structural design variables.
-        :param f_aero_nm1: Optional aerodynamic forcing from timestep n-1, projected onto the beam [n_nodes, 6].
-        :param f_aero_n: Optional aerodynamic forcing from timestep n, projected onto the beam [n_nodes, 6].
         :return: Residual for step.
         """
 
@@ -278,15 +272,15 @@ class BeamStructure(BaseBeamStructure):
             else None
         )
 
-        if f_aero_n is not None and f_aero_nm1 is not None:
-            f_ext_aero_alpha = inner_case.time_integrator.calculate_f_alpha(f_nm1=f_aero_nm1, f_n=f_aero_nm1)
+        if q_n.f_ext_aero is not None and q_nm1.f_ext_aero is not None:
+            f_aero_alpha = inner_case.time_integrator.calculate_f_alpha(f_nm1=q_nm1.f_ext_aero, f_n=q_n.f_ext_aero)
         else:
-            f_ext_aero_alpha = None
+            f_aero_alpha = None
 
         (
             d_alpha,
             _,
-            f_dead_res,
+            f_dead_alpha,  # dead force in local frame
             _,
             f_grav_alpha,
             f_int_alpha,
@@ -298,7 +292,7 @@ class BeamStructure(BaseBeamStructure):
             dynamic=True,
             f_ext_follower=f_ext_follower_alpha,
             f_ext_dead=f_ext_dead_alpha,
-            f_ext_aero=f_ext_aero_alpha,
+            f_ext_aero=None,  # this is None here, as we already have the aero force in the local frame
             v=q_alpha.v,
             v_dot=q_alpha.v_dot,
             stop_gradients=True
@@ -316,11 +310,13 @@ class BeamStructure(BaseBeamStructure):
         if inner_case.use_gravity:
             f_res_non_iner += f_grav_alpha
         if (
-                f_dead_res is not None
+                f_dead_alpha is not None
         ):  # use the output from the resolve forces function, as it's in the local frame
-            f_res_non_iner += f_dead_res
+            f_res_non_iner += f_dead_alpha
         if f_ext_follower_alpha is not None:
             f_res_non_iner += f_ext_follower_alpha
+        if f_aero_alpha is not None:
+            f_res_non_iner += f_aero_alpha
 
         # from forcing residual, solve for v_dot which satisfies f_res=0
         v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(
@@ -365,25 +361,12 @@ class BeamStructure(BaseBeamStructure):
             self.optional_jacobians = optional_jacobians
 
         # make copy of structure_dv which has been converted to global coordinates, used to extract dead forces.
-        gs = copy(structure)
+        gs = deepcopy(structure)
         gs.to_global()
 
-        dv = StructuralDesignVariables(
-            x0=self.x0,
-            k_cs=self.k_cs,
-            m_cs=self.m_cs if self.use_m_cs else None,
-            m_lumped=self.m_lumped if self.use_lumped_mass else None,
-            f_ext_follower=structure.f_ext_follower,
-            f_ext_dead=gs.f_ext_dead,
-        )
+        dv = self.get_design_variables(struct_case=structure)
 
-        struct_states_init = StructureFullStates(
-            v=structure.v[0, ...],
-            v_dot=structure.v_dot[0, ...],
-            hg=structure.hg[0, ...],
-            eps=structure.eps[0, ...],
-            f_int=structure.f_int[0, ...],
-        )
+        struct_states_init = structure.get_full_states(i_ts=0)
 
         j_properties = jax.eval_shape(
             lambda: jnp.atleast_1d(objective(struct_states_init, dv, None))
@@ -392,11 +375,7 @@ class BeamStructure(BaseBeamStructure):
         n_j = j_properties.size
 
         # assemble
-        solve_dofs = jnp.setdiff1d(
-            jnp.arange(self.n_dof),
-            structure.prescribed_dofs,
-            size=self.n_dof - len(structure.prescribed_dofs),
-        )
+        solve_dofs = get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=structure.prescribed_dofs)
 
         free_state_ix = jnp.concatenate([solve_dofs + i * self.n_dof for i in range(4)])
 
@@ -424,7 +403,7 @@ class BeamStructure(BaseBeamStructure):
                     .reshape(4, -1, 6)
                 )
                 r_out = self.timestep_residual(
-                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, f_aero_n=None, f_aero_nm1=None
+                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__
                 )
                 return r_out.ravel()[free_state_ix]  # [n_adj_dof]
 
