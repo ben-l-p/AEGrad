@@ -65,7 +65,7 @@ class LinearUVLM:
             gamma_dot_state: bool = False,
     ):
         r"""
-        Initialize linear UVLM system about a reference state.
+        Initialise linear UVLM system about a reference state.
         :param case: UVLM case object to linearise.
         :param reference: StaticAero representing the reference state for linearisation.
         :param wake_type: Instance of LinearWakeType enum to specify wake treatment.
@@ -110,7 +110,7 @@ class LinearUVLM:
         # reference state
         self.reference: AeroSnapshot = reference
 
-        # slices of individial surface components in full vector
+        # slices of individual surface components in full vector
         self.input_slices, self.n_inputs = self._make_input_slices()
         self.state_slices, self.n_states = self._make_state_slices()
         self.output_slices, self.n_outputs = self._make_output_slices()
@@ -694,9 +694,9 @@ class LinearUVLM:
             Boundary condition velocity at collocation points.
             :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :param zeta_ws: Wake vertex positions at time=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3
-            :param zeta_bs_dot: Wake vertex velocities at time=varphi+1, [n_surf][zetas_m, zeta_n, 3]
-            :return: Boundary condition velocity at collocation points, [m_tot*n_tot]
+            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3.
+            :param zeta_bs_dot: Wake vertex velocities at time=varphi+1, [n_surf][zetas_m, zeta_n, 3].
+            :return: Boundary condition velocity at collocation points, [m_tot * n_tot].
             """
             # all values given at time=varphi+1
             cs = compute_c(zeta_bs)
@@ -1309,6 +1309,9 @@ class LinearUVLM:
             mirror_point=self.reference.mirror_point,
             flowfield=self.reference.flowfield,
             dof_mapping=self.reference.dof_mapping,
+            free_wake=self.reference.free_wake,
+            gamma_dot_relaxation=self.reference.gamma_dot_relaxation,
+            static_horseshoe=self.reference.static_horseshoe,
         )
 
     def plot_reference(

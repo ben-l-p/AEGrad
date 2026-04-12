@@ -57,7 +57,7 @@ class TestVarWakeDisc:
         hg_dot_t = jnp.zeros_like(hg_t)
         hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
 
-        # wake discretization for variable wake model
+        # wake discretisation for variable wake model
         delta_w_var = jnp.ones(m_star_var) * dt * flowfield.u_inf_mag
 
         gamma_b = []

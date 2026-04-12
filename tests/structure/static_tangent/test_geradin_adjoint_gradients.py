@@ -62,7 +62,7 @@ class TestGeradinBeamAdjointGradients:
             ss = StructureFullStates(
                 hg=result_.hg,
                 eps=result_.eps,
-                f_int=result_.f_int,
+                f_elem=result_.f_elem,
                 v=None,
                 v_dot=None,
             )
@@ -78,7 +78,7 @@ class TestGeradinBeamAdjointGradients:
             f_ext_follower=None,
         )
 
-        # ideally this would be jacrev, but reverse-mode AD is currently unsupported
+        # ideally this would be jax.jacrev, but reverse-mode AD is currently unsupported
         grads_ad = jax.jacfwd(resolve_obj)(dv)
         assert grads_adj.f_ext_dead is not None, "Gradient w.r.t. external forces is None"
         assert jnp.allclose(grads_adj.f_ext_dead, grads_ad.f_ext_dead, atol=2e-6), (

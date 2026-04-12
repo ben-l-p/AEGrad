@@ -5,8 +5,8 @@ import jax.numpy as jnp
 
 
 def check_if_so3_g(
-    rmat: Array,
-    raise_if_false: bool = True,
+        rmat: Array,
+        raise_if_false: bool = True,
 ) -> bool:
     r"""
     Check if rotation matrix is a valid SO3 group element
@@ -31,10 +31,10 @@ def check_if_so3_g(
             )
         return False
 
-    # if not othogonal
+    # if not orthogonal
     if not (
-        jnp.allclose(rmat.T @ rmat, jnp.eye(3))
-        and jnp.allclose(rmat @ rmat.T, jnp.eye(3))
+            jnp.allclose(rmat.T @ rmat, jnp.eye(3))
+            and jnp.allclose(rmat @ rmat.T, jnp.eye(3))
     ):
         if raise_if_false:
             raise ValueError("Matrix is not SO3 as it is not orthogonal")
@@ -197,7 +197,7 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     :return: Beam tangent stiffness matrix, [12, 12]
     """
     if (isinstance(coeffs, Array) and coeffs.shape != (6,)) or (
-        isinstance(coeffs, Sequence) and len(coeffs) != 6
+            isinstance(coeffs, Sequence) and len(coeffs) != 6
     ):
         raise ValueError("Coefficients array must be of arr_list_shapes (6, )")
 
@@ -209,22 +209,22 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     k_upper_left = jnp.array(
         [
             [eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-            [0.0, 12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
-            [0.0, 0.0, 12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
+            [0.0, 12.0 * eiz / l ** 3, 0.0, 0.0, 0.0, 6.0 * eiz / l ** 2],
+            [0.0, 0.0, 12.0 * eiy / l ** 3, 0.0, -6.0 * eiy / l ** 2, 0.0],
             [0.0, 0.0, 0.0, gjx / l, 0.0, 0.0],
-            [0.0, 0.0, -6.0 * eiy / l**2, 0.0, 4.0 * eiy / l, 0.0],
-            [0.0, 6.0 * eiz / l**2, 0.0, 0.0, 0.0, 4.0 * eiz / l],
+            [0.0, 0.0, -6.0 * eiy / l ** 2, 0.0, 4.0 * eiy / l, 0.0],
+            [0.0, 6.0 * eiz / l ** 2, 0.0, 0.0, 0.0, 4.0 * eiz / l],
         ]
     )
 
     k_upper_right = jnp.array(
         [
             [-eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-            [0.0, -12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
-            [0.0, 0.0, -12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
+            [0.0, -12.0 * eiz / l ** 3, 0.0, 0.0, 0.0, 6.0 * eiz / l ** 2],
+            [0.0, 0.0, -12.0 * eiy / l ** 3, 0.0, -6.0 * eiy / l ** 2, 0.0],
             [0.0, 0.0, 0.0, -gjx / l, 0.0, 0.0],
-            [0.0, 0.0, 6.0 * eiy / l**2, 0.0, 2.0 * eiy / l, 0.0],
-            [0.0, -6.0 * eiz / l**2, 0.0, 0.0, 0.0, 2.0 * eiz / l],
+            [0.0, 0.0, 6.0 * eiy / l ** 2, 0.0, 2.0 * eiy / l, 0.0],
+            [0.0, -6.0 * eiz / l ** 2, 0.0, 0.0, 0.0, 2.0 * eiz / l],
         ]
     )
 
@@ -238,7 +238,7 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
 
 
 def const_curvature_beam(
-    kappa: float | Array, s: float | Array, direction: Literal["y", "z"]
+        kappa: float | Array, s: float | Array, direction: Literal["y", "z"]
 ) -> Array:
     r"""
     For a beam with constant curvature, with base node at the origin and curvature in the positive z direction

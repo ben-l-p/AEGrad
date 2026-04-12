@@ -129,7 +129,7 @@ def calculate_steady_forcing(
             v_rel_chordwise += neighbour_average(v_input, axes=0)
             v_rel_spanwise += neighbour_average(v_input, axes=1)
 
-        # equivelant strengths of filaments
+        # equivalent strengths of filaments
         gamma_chordwise = jnp.zeros(
             v_rel_chordwise.shape[:-1]
         )  # [gamma_m, gamma_n+1, 3]
@@ -232,13 +232,13 @@ def propagate_surf_wake(
             s_zeta_w, axes=(0, 1)
         )  # [gamma_w_m + 1, gamma_w_n]
 
-        # vertex coordinates along desired discretized streamline, [m_star + 1]
+        # vertex coordinates along desired discretised streamline, [m_star + 1]
         s_zeta_w_redisc = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
 
-        # midpoint coordinates along desired discretized streamline, [m_star]
+        # midpoint coordinates along desired discretised streamline, [m_star]
         s_gamma_w_redisc = neighbour_average(s_zeta_w_redisc, axes=(0,))
 
-        # rediscretise coordinates onto desired grid
+        # re-discretise coordinates onto desired grid
         zeta_w_np1 = vmap(
             vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1),
             in_axes=(None, None, 1),
@@ -247,7 +247,7 @@ def propagate_surf_wake(
             s_zeta_w_redisc, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0))
         )  # [zeta_w_m, zeta_n, 3]
 
-        # rediscretise gamma onto desired grid
+        # re-discretise gamma onto desired grid
         gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(
             s_gamma_w_redisc, s_gamma_w.T, gamma_w_np1.T
         )  # [zeta_w_m, zeta_n, 3]
@@ -279,7 +279,7 @@ def propagate_wake(
     :param v_func: Function that computes the velocity, [3] -> [3]
     :param dt: Time step
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, varphi]
+    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n]
     """
 
     n_surf = len(gamma_b_n)
@@ -324,7 +324,7 @@ def make_unit_epsilon(r: Array) -> Array:
     r"""
     Differentiable function to obtain a smoothed unit vector. As r -> 0, the output approaches zero instead of being
     undefined.
-    :param r: Vector to be normalized, [3]
+    :param r: Vector to be normalised, [3]
     :return: Unit vector, [3]
     """
     return r / jnp.sqrt(jnp.sum(r ** 2) + EPSILON ** 2)

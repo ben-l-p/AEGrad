@@ -49,7 +49,7 @@ class TestGeradinBeamADGradients:
 
             return cls.get_tip_disp_rot(result)
 
-        eps = 10.0  # large epsilon as stiffnesses are large
+        eps = 10.0  # large epsilon as stiffness are large
         base_result = func(base_eay)
         perturb_result = func(base_eay + eps)
         grads_fd = (perturb_result - base_result) / eps

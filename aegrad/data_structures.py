@@ -345,7 +345,7 @@ class DesignVariables:
             [_inner_ravel(var) for var in self.get_vars().values() if var is not None],  # type: ignore
             axis=1,
         )
-        check_arr_shape(arr, (f_size, x_size), "Internal jacobian")
+        check_arr_shape(arr, (f_size, x_size), "Internal Jacobian")
         return arr
 
     def ravel(self) -> Array:

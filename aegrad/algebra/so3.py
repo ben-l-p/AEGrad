@@ -19,7 +19,7 @@ def vec_to_skew(vec: Array) -> Array:
 
 def skew_to_vec(mat: Array) -> Array:
     r"""
-    Converts a skew-symmetric matrix to a 3D vector. Note this refers to both skew symmetic entries for consistent
+    Converts a skew-symmetric matrix to a 3D vector. Note this refers to both skew symmetric entries for consistent
     gradients.
     :param mat: Skew-symmetric matrix, [3, 3]
     :return: 3D vector, [3]

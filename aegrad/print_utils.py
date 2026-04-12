@@ -30,7 +30,7 @@ def set_verbosity(level: VerbosityLevel) -> None:
 
 
 def make_color(text: str, color: Colour) -> str:
-    # info on coloring from https://vascosim.medium.com/how-to-print-colored-text-in-python-52f6244e2e30
+    # info on colouring from https://vascosim.medium.com/how-to-print-colored-text-in-python-52f6244e2e30
     return f"\033[{color.value}m{text}\033[0m"
 
 
@@ -52,14 +52,14 @@ def warn_if_32_bit() -> None:
 
 
 def jax_print(
-    message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
+        message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
 ) -> None:
     if VERBOSITY_LEVEL.value >= verbose_level.value:
         jax.debug.print(message, **kwargs)
 
 
 def print_with_time(
-    init_message: str, final_message: str, verbose_level=VerbosityLevel.NORMAL
+        init_message: str, final_message: str, verbose_level=VerbosityLevel.NORMAL
 ):
     def decorator(func):
         @wraps(func)

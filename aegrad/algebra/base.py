@@ -1,8 +1,6 @@
 from __future__ import annotations
 from math import factorial
-from typing import Callable
 
-import jax
 from jax import numpy as jnp, Array
 from jax.scipy.special import bernoulli
 from jax.lax import cond
@@ -82,41 +80,6 @@ def finite_difference(
         _order0,
         lambda: cond(order == 1, _order1, lambda: cond(order == 2, _order2, _err)),
     )
-
-
-def taylor_series(
-        func: Callable[[Array], Array], x0: Array, order: int
-) -> Callable[[Array], Array]:
-    r"""
-    Computes the Taylor series expansion of a function around a point x0 up to a specified order.
-    :param func: Function to compute the Taylor series expansion of, which takes an Array and returns an Array.
-    :param x0: Point around which to compute the Taylor series expansion, [varphi,].
-    :param order: Order of the Taylor series expansion (number of terms to include). Must be a non-negative integer.
-    :return: Function that takes an Array and returns the Taylor series expansion of func around x0 up to the
-    specified order, [varphi,].
-    TODO: This implementation is not efficient for high order Taylor series expansions, as it computes large Jacobian
-    matrices. Using the jax.experimental.jet API may be more efficient.
-    """
-
-    def get_jvp(delta: Array, order_: int) -> Array:
-        curr_func = func
-        for _ in range(order_):
-            curr_func = jax.jacobian(curr_func)
-        mat = curr_func(x0)
-
-        for _ in range(order_):
-            mat @= delta
-        return mat
-
-    def inner_func(x: Array) -> Array:
-        f_x = func(x0)
-
-        for i in range(1, order + 1):
-            delta = x - x0
-            f_x += get_jvp(delta, i) / factorial(i)
-        return f_x
-
-    return inner_func
 
 
 def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:

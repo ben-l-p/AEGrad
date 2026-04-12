@@ -27,7 +27,7 @@ class StructureFullStates:
     v_dot: Optional[Array]
     hg: Array
     eps: Array
-    f_int: Array
+    f_elem: Array
 
 
 @jax.tree_util.register_dataclass

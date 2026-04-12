@@ -245,6 +245,10 @@ class BaseCoupledAeroelastic:
         else:
             raise NotImplementedError
 
+        # set other aero arguments
+        case.aero.gamma_dot_relaxation_factor = gamma_dot_relaxation_factor
+        case.aero.free_wake = free_wake
+
         fsi_converge_status: ConvergenceStatus = ConvergenceStatus(self.fsi_convergence_settings)
         fsi_converge_status.print_header(dynamic=True)
 

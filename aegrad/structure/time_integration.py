@@ -32,65 +32,6 @@ class TimeIntregrator:
                 self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
-    def predict_phi(self, v_nm1: Array, a_nm1: Array, a_n_pred: Array) -> Array:
-        r"""
-        Predict the next increment based on current velocity and acceleration.
-        :param v_nm1: Previous velocity, [n_nodes_, 6].
-        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
-        :param a_n_pred: Next pseudo-acceleration prediction [n_nodes_, 6].
-        :return: Initial guess for next increment, [n_nodes_, 6].
-        """
-        return self.dt * v_nm1 + self.dt * self.dt * (
-                (0.5 - self.beta) * a_nm1 + self.beta * a_n_pred
-        )
-
-    @staticmethod
-    def predict_varphi(varphi_nm1: Array, phi_n_pred: Array) -> Array:
-        r"""
-        Predict the next total twist based on current velocity and acceleration.
-        :param varphi_nm1: Previous total twist, [n_nodes_, 6].
-        :param phi_n_pred: Predicted step increment, [n_nodes_, 6].
-        :return: Initial guess for next twist, [n_nodes_, 6].
-        """
-        return vmap(
-            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
-        )(varphi_nm1, phi_n_pred)
-
-    def predict_v(self, v_nm1: Array, a_nm1: Array, a_n_pred: Array) -> Array:
-        r"""
-        Predict the next velocity based on current velocity and acceleration.
-        :param v_nm1: Previous velocity, [n_nodes_, 6].
-        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
-        :param a_n_pred: Next pseudo-acceleration prediction [n_nodes_, 6].
-        :return: Initial guess for next velocity, [n_nodes_, 6].
-        """
-        return (
-                v_nm1
-                + (1.0 - self.gamma) * self.dt * a_nm1
-                + self.gamma * self.dt * a_n_pred
-        )
-
-    def predict_v_dot(self, v_dot_nm1: Array, a_nm1: Array, a_n: Array) -> Array:
-        r"""
-        Predict the acceleration based on previous pseudo-acceleration and acceleration.
-        :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
-        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
-        :param a_n: Next pseudo-acceleration prediction [n_nodes_, 6].
-        :return: Predicted acceleration, [n_nodes_, 6].
-        """
-        return (
-                (1.0 - self.alpha_m) * a_n + self.alpha_m * a_nm1 - self.alpha_f * v_dot_nm1
-        ) / (1.0 - self.alpha_f)
-
-    def predict_a(self, v_dot_nm1: Array, a_nm1: Array) -> Array:
-        r"""
-        Predict the pseudo-acceleration based on previous pseudo-acceleration and acceleration.
-        :param v_dot_nm1: Previous acceleration, [n_nodes_, 6].
-        :param a_nm1: Previous pseudo-acceleration, [n_nodes_, 6].
-        :return: Predicted pseudo-acceleration, [n_nodes_, 6].
-        """
-        return (self.alpha_f * v_dot_nm1 - self.alpha_m * a_nm1) / (1.0 - self.alpha_m)
-
     def calculate_a_n(self, v_dot_nm1: Array, v_dot_n: Array, a_nm1: Array) -> Array:
         r"""
         Calculate the pseudo-acceleration at the next time step.
@@ -132,12 +73,20 @@ class TimeIntregrator:
         :param q_nm1: State at timestep varphi
         :return: Predicted state at timestep varphi+1
         """
-        a = self.predict_a(v_dot_nm1=q_nm1.v_dot, a_nm1=q_nm1.a)
-        phi = self.predict_phi(v_nm1=q_nm1.v, a_nm1=q_nm1.a, a_n_pred=a)
-        varphi = self.predict_varphi(varphi_nm1=q_nm1.varphi, phi_n_pred=phi)
-        v = self.predict_v(v_nm1=q_nm1.v, a_nm1=q_nm1.a, a_n_pred=a)
-        v_dot = self.predict_v_dot(v_dot_nm1=q_nm1.v_dot, a_nm1=q_nm1.a, a_n=a)
-        return phi, StructureMinimalStates(varphi=varphi, v=v, v_dot=v_dot, a=a)
+        a_n = (self.alpha_f * q_nm1.v_dot - self.alpha_m * q_nm1.a) / (1.0 - self.alpha_m)
+
+        phi_n = self.dt * q_nm1.v + self.dt * self.dt * ((0.5 - self.beta) * q_nm1.a + self.beta * a_n)
+
+        varphi_n = vmap(
+            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
+        )(q_nm1.varphi, phi_n)
+
+        v_n = q_nm1.v + (1.0 - self.gamma) * self.dt * q_nm1.a + self.gamma * self.dt * a_n
+
+        v_dot_n = ((1.0 - self.alpha_m) * a_n + self.alpha_m * q_nm1.a - self.alpha_f * q_nm1.v_dot) / (
+                1.0 - self.alpha_f)
+
+        return phi_n, StructureMinimalStates(varphi=varphi_n, v=v_n, v_dot=v_dot_n, a=a_n)
 
     def calculate_f_alpha(self, f_nm1: Array, f_n: Array) -> Array:
         return (1.0 - self.alpha_f) * f_n + self.alpha_f * f_nm1
@@ -198,15 +147,3 @@ class TimeIntregrator:
         """
 
         return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
-
-    def calculate_v_dot_from_v_dot_alpha(
-            self, v_dot_alpha: Array, v_dot_nm1: Array
-    ) -> Array:
-        r"""
-        Obtain the full timestep acceleration from the alpha increment and the previous acceleration.
-        :param v_dot_alpha: Acceleration at alpha step, [n_nodes, 6].
-        :param v_dot_nm1: Acceleration at timestep varphi-1, [n_nodes, 6].
-        :return: Acceleration at timestep varphi, [n_nodes, 6].
-        """
-
-        return (v_dot_alpha - self.alpha_f * v_dot_nm1) / (1.0 - self.alpha_f)

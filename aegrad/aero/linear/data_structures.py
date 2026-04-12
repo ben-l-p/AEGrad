@@ -92,10 +92,10 @@ class OutputSlices:
 class InputUnflattened:
     r"""
     Data class to hold unflattened input components, for either a single initial_snapshot or a time series.
-    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
-    :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
-    :param nu_b: Bound upwash, [n_surf][m, varphi, 3] or [n_surf][n_ts, m, varphi, 3]
-    :param nu_w: Wake upwash, [n_surf][m_star, varphi, 3] or [n_surf][n_ts, m_star, varphi, 3]
+    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
+    :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
+    :param nu_b: Bound upwash, [n_surf][m, varphi, 3] or [n_surf][n_ts, m, varphi, 3].
+    :param nu_w: Wake upwash, [n_surf][m_star, varphi, 3] or [n_surf][n_ts, m_star, varphi, 3].
     """
 
     zeta_b: ArrayList
@@ -108,12 +108,12 @@ class InputUnflattened:
 class StateUnflattened:
     r"""
     Data class to hold unflattened state components, for either a single initial_snapshot or a time series.
-    :param gamma_b: Bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
-    :param gamma_w: Wake circulation strengths, [n_surf][m_star, varphi] or [n_surf][n_ts, m_star, varphi]
-    :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
-    :param gamma_b_dot: Bound circulation time derivatives, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi]
-    :param zeta_w: Wake grid coordinates, [n_surf][zeta_m_star, zeta_n, 3] or [n_surf][n_ts, zeta_m_star, zeta_n, 3]
-    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
+    :param gamma_b: Bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
+    :param gamma_w: Wake circulation strengths, [n_surf][m_star, varphi] or [n_surf][n_ts, m_star, varphi].
+    :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
+    :param gamma_b_dot: Bound circulation time derivatives, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
+    :param zeta_w: Wake grid coordinates, [n_surf][zeta_m_star, zeta_n, 3] or [n_surf][n_ts, zeta_m_star, zeta_n, 3].
+    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
     """
 
     gamma_b: ArrayList
@@ -128,8 +128,8 @@ class StateUnflattened:
 class OutputUnflattened:
     r"""
     Data class to hold unflattened output components, for either a single initial_snapshot or a time series.
-    :param f_steady: Steady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
-    :param f_unsteady: Unsteady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3]
+    :param f_steady: Steady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
+    :param f_unsteady: Unsteady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
     """
 
     f_steady: ArrayList
@@ -254,7 +254,7 @@ class AeroLinearResult:
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,
             t=self.t,
-            horseshoe=False,
+            static_horseshoe=False,
             c=None,
             nc=None,
             kernels=self.reference.kernels,
@@ -262,4 +262,6 @@ class AeroLinearResult:
             mirror_normal=None,
             flowfield=self.reference.flowfield,
             dof_mapping=self.reference.dof_mapping,
+            free_wake=self.reference.free_wake,
+            gamma_dot_relaxation=self.reference.gamma_dot_relaxation,
         )

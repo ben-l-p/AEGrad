@@ -362,11 +362,11 @@ def t_star(s_l: Array, d: Array) -> Array:
 
 def q(s_l: Array, d: Array, ad_inv: Array) -> Array:
     r"""
-    Matrix which described pertubations in the algebra element along an element with respect to the algebra elements at
+    Matrix which described perturbations in the algebra element along an element with respect to the algebra elements at
     both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &
     T^*(s, \mathbf{d})]`. Formulation from "A geometric local frame approach for flexible multibody systems",
     by Sonneville, 2015, Eq 6.145, p. 90.
-    :param s_l: Relative position along the element :math:`\frac{s}{l0} \ivarphi [0, 1]`, [].
+    :param s_l: Relative position along the element :math:`\frac{s}{l0} \varphi [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
     :param ad_inv: Adjoint action for base rotation, [6, 6].
     :return: :math:`Q(s, \mathbf{d})` matrix, [6, 12].
@@ -378,9 +378,9 @@ def q(s_l: Array, d: Array, ad_inv: Array) -> Array:
 
 def q_dot(s_l: Array, d: Array, d_dot: Array, ad_inv: Array) -> Array:
     r"""
-    Time derivative of the matrix which described pertubations in the algebra element along an element with respect to
+    Time derivative of the matrix which described perturbations in the algebra element along an element with respect to
     the algebra elements at both ends of the element, :math:`\dot{Q}(s, \mathbf{d})`.
-    :param s_l: Relative position along the element :math:`\frac{s}{l0} \ivarphi [0, 1]`, [].
+    :param s_l: Relative position along the element :math:`\frac{s}{l0} \varphi [0, 1]`, [].
     :param d: Relative se(3) configuration vector, [6].
     :param d_dot: Time derivative of relative se(3) configuration vector, [6].
     :param ad_inv: Adjoint action for base rotation, [6, 6].

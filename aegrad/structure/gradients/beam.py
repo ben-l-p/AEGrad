@@ -1,5 +1,5 @@
 from __future__ import annotations
-from copy import copy, deepcopy
+from copy import deepcopy
 from typing import Optional, Callable
 
 import jax
@@ -18,7 +18,7 @@ from structure.gradients.data_structures import (
 from algebra.se3 import t_se3, exp_se3, log_se3
 from structure import DynamicStructure
 from structure.data_structures import StructureMinimalStates
-from structure.utils import get_solve_dofs
+from structure.utils import get_solve_dofs, transform_nodal_vect
 
 type StructuralObjectiveFunction = Callable[
     [StructureFullStates, StructuralDesignVariables, Optional[int | Array]], Array
@@ -43,6 +43,15 @@ class BeamStructure(BaseBeamStructure):
 
         return inner_case
 
+    def minimal_states_to_full_states(self, q: StructureMinimalStates,
+                                      dv: Optional[StructuralDesignVariables] = None) -> StructureFullStates:
+        struct = self.case_from_dv(dv) if dv is not None else self
+        hg = struct.calculate_hg_from_varphi(q.varphi)
+        d = struct.make_d(hg=hg)
+        eps = struct.make_eps(d=d)
+        f_elem = struct.make_f_elem(eps=eps)
+        return StructureFullStates(v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem)
+
     def _structural_states_res_from_dv_varphi(
             self,
             dv: StructuralDesignVariables,
@@ -62,9 +71,8 @@ class BeamStructure(BaseBeamStructure):
         d = inner_case.make_d(hg)
         p_d = inner_case.make_p_d(d)
         eps = inner_case.make_eps(d)
-        f_int = inner_case.assemble_vector_from_entries(
-            inner_case.make_f_int(p_d, eps)
-        ).reshape(-1, 6)
+        f_elem = jnp.einsum('ijk,ik->ij', inner_case.k_cs, eps)
+
         if inner_case.use_gravity:
             m_t = inner_case.make_m_t(d)
         else:
@@ -73,7 +81,7 @@ class BeamStructure(BaseBeamStructure):
         ss = StructureFullStates(
             hg=hg,
             eps=eps,
-            f_int=f_int,
+            f_elem=f_elem,
             v=None,
             v_dot=None,
         )
@@ -123,10 +131,15 @@ class BeamStructure(BaseBeamStructure):
         eps = structure.eps
         p_d = self.make_p_d(d)
         m_t = self.make_m_t(d) if self.use_gravity else None
+        f_elem = self.make_f_elem(eps=eps)
 
-        # make copy of structure_dv which has been converted to global coordinates.
-        gs = copy(structure)
-        gs.to_global()
+        # Recover original global dead force: structure.f_ext_dead = R @ f_global (local),
+        # so f_global = R^T @ structure.f_ext_dead
+        rmat_t = jnp.transpose(structure.hg[:, :3, :3], (0, 2, 1))
+        f_ext_dead_global = (
+            transform_nodal_vect(structure.f_ext_dead, rmat_t)
+            if structure.f_ext_dead is not None else None
+        )
 
         # make design variables for current state of structure_dv
         dv = StructuralDesignVariables(
@@ -135,13 +148,13 @@ class BeamStructure(BaseBeamStructure):
             m_cs=self.m_cs if self.use_m_cs else None,
             m_lumped=self.m_lumped if self.use_lumped_mass else None,
             f_ext_follower=structure.f_ext_follower,
-            f_ext_dead=gs.f_ext_dead,
+            f_ext_dead=f_ext_dead_global,
         )
 
         struct_states = StructureFullStates(
             hg=structure.hg,
             eps=eps,
-            f_int=structure.f_int,
+            f_elem=f_elem,
             v_dot=None,
             v=None,
         )
@@ -179,6 +192,11 @@ class BeamStructure(BaseBeamStructure):
             n_u_full, n_u_full
         )[jnp.ix_(solve_dofs, solve_dofs)]
 
+        # gradient of residual w.r.t. minimal states via JAX (exact)
+        # d_res_d_n = jax.jacfwd(
+        #     lambda varphi_: self._structural_states_res_from_dv_varphi(dv, varphi_)[1]
+        # )(structure.varphi).reshape(n_u_full, n_u_full)[jnp.ix_(solve_dofs, solve_dofs)]
+
         # gradient of residual w.r.t. design variables
         p_res_p_x = (jax.jacrev if n_u < n_x else jax.jacfwd)(
             lambda dv_: self._structural_states_res_from_dv_varphi(
@@ -205,6 +223,7 @@ class BeamStructure(BaseBeamStructure):
             q_nm1: StructureMinimalStates,
             q_n: StructureMinimalStates,
             dv_: StructuralDesignVariables,
+            solve_dofs: Optional[Array] = None,
     ) -> Array:
         r"""
         Function which finds the residual of the structural problem forward from timestep n-1 to timestep n.
@@ -319,9 +338,15 @@ class BeamStructure(BaseBeamStructure):
             f_res_non_iner += f_aero_alpha
 
         # from forcing residual, solve for v_dot which satisfies f_res=0
-        v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(
-            -1, 6
-        )
+        # restrict solve to free DOFs to avoid prescribed-DOF reaction forces contaminating
+        # the free-DOF accelerations through off-diagonal mass matrix terms
+        if solve_dofs is not None:
+            f_res_free = f_res_non_iner.ravel()[solve_dofs]
+            m_free = m_alpha[jnp.ix_(solve_dofs, solve_dofs)]
+            v_dot_free = jnp.linalg.solve(m_free, f_res_free)
+            v_dot_alpha = jnp.zeros(self.n_dof).at[solve_dofs].set(v_dot_free).reshape(-1, 6)
+        else:
+            v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(-1, 6)
 
         # find v_dot_nm1 from its alpha value
         v_dot_res = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (
@@ -403,7 +428,7 @@ class BeamStructure(BaseBeamStructure):
                     .reshape(4, -1, 6)
                 )
                 r_out = self.timestep_residual(
-                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__
+                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, solve_dofs=solve_dofs
                 )
                 return r_out.ravel()[free_state_ix]  # [n_adj_dof]
 
@@ -424,10 +449,9 @@ class BeamStructure(BaseBeamStructure):
             hg = self.calculate_hg_from_varphi(q_n.varphi)
             d = self.make_d(hg=hg)
             eps = self.make_eps(d=d)
-            p_d = self.make_p_d(d=d)
-            f_int = self.make_f_int(eps=eps, p_d=p_d)
+            f_elem = self.make_f_elem(eps=eps)
             return StructureFullStates(
-                v=q_n.v, v_dot=q_n.v_dot, eps=eps, hg=hg, f_int=f_int
+                v=q_n.v, v_dot=q_n.v_dot, eps=eps, hg=hg, f_elem=f_elem
             )
 
         def time_loop(

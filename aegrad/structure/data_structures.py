@@ -45,22 +45,24 @@ class StaticStructure:
             f_ext_aero: Optional[Array],
             f_grav: Optional[Array],
             f_int: Array,
+            f_elem: Array,
             f_res: Array,
             prescribed_dofs: Optional[Array],
             local: bool = True,
     ):
-        self.hg: Array = hg  # [n_nodes_, 4, 4]
+        self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
         self.varphi: Array = varphi  # [n_nodes, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
-        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
-        self.f_int: Array = f_int  # [n_nodes_, 6]
-        self.f_res: Array = f_res  # [n_nodes_, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
+        self.f_int: Array = f_int  # [n_nodes, 6]
+        self.f_elem: Array = f_elem  # [n_elem, 6]
+        self.f_res: Array = f_res  # [n_nodes, 6]
         self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
         self.local: bool = local
 
@@ -101,6 +103,7 @@ class StaticStructure:
             f_ext_aero=self.f_ext_aero,
             f_grav=self.f_grav,
             f_int=self.f_int,
+            f_elem=self.f_elem,
             f_iner_gyr=zero_f_iner,
             f_res=self.f_res,
             t=zero_time,
@@ -118,7 +121,7 @@ class StaticStructure:
 
     def get_full_states(self) -> StructureFullStates:
         return StructureFullStates(v=None, v_dot=None, hg=self.hg,
-                                   eps=self.eps, f_int=self.f_int)
+                                   eps=self.eps, f_elem=self.f_elem)
 
     def _transform(self, rmat: Array) -> None:
         r"""
@@ -169,7 +172,7 @@ class StaticStructure:
         r"""
         Plot beam results to VTK files in the specified directory.
         :param directory: Path to write files to.
-        :param n_interp: Number of interpolation points to add between each element for smoother visualization.
+        :param n_interp: Number of interpolation points to add between each element for smoother visualisation.
         """
         return self.to_dynamic(t=None).plot(directory, n_interp)
 
@@ -189,6 +192,7 @@ class StaticStructure:
             "f_ext_aero",
             "f_grav",
             "f_int",
+            "f_elem",
             "f_res",
         )
 
@@ -212,6 +216,7 @@ class DynamicStructureSnapshot:
             f_ext_aero: Optional[Array],
             f_grav: Optional[Array],
             f_int: Array,
+            f_elem: Array,
             f_iner_gyr: Array,
             f_res: Array,
             t: Array,
@@ -219,22 +224,23 @@ class DynamicStructureSnapshot:
             prescribed_dofs: Optional[Array],
             local: bool = True,
     ):
-        self.hg: Array = hg  # [n_nodes_, 4, 4]
+        self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
         self.varphi: Array = varphi  # [n_nodes, 6]
-        self.v: Array = v  # [n_nodes_, 6]
-        self.v_dot: Array = v_dot  # [n_nodes_, 6]
-        self.a: Array = a  # [n_nodes_, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes_, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes_, 6]
-        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes_, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_nodes_, 6]
-        self.f_int: Array = f_int  # [n_nodes_, 6]
-        self.f_iner: Array = f_iner_gyr  # [n_nodes_, 6]
-        self.f_res: Array = f_res  # [n_nodes_, 6]
+        self.v: Array = v  # [n_nodes, 6]
+        self.v_dot: Array = v_dot  # [n_nodes, 6]
+        self.a: Array = a  # [n_nodes, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_nodes, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_nodes, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_nodes, 6]
+        self.f_int: Array = f_int  # [n_nodes, 6]
+        self.f_elem: Array = f_elem  # [n_elem, 6]
+        self.f_iner: Array = f_iner_gyr  # [n_nodes, 6]
+        self.f_res: Array = f_res  # [n_nodes, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
         self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
@@ -255,6 +261,7 @@ class DynamicStructureSnapshot:
             f_ext_aero=self.f_ext_aero,
             f_grav=self.f_grav,
             f_int=self.f_int,
+            f_elem=self.f_elem,
             f_res=self.f_res,
             prescribed_dofs=self.prescribed_dofs,
         )
@@ -303,7 +310,7 @@ class DynamicStructureSnapshot:
         else:
             self.local = False
 
-        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes_, 6, 6]
+        nodal_chi = vmap(chi, 0, 0)(self.hg[:, :3, :3])  # [n_nodes, 6, 6]
         self._transform(nodal_chi)
 
     def to_local(self) -> None:
@@ -322,12 +329,12 @@ class DynamicStructureSnapshot:
     def plot(self, directory: os.PathLike | str, n_interp: int = 0) -> Path:
         r"""
         Plot beam results to VTK files in the specified directory. Other beam object types will first convert to a
-        DynmaicStructureSnapshot before plotting.
+        DynamicStructureSnapshot before plotting.
         :param directory: Path to write files to.
-        :param n_interp: Number of interpolation points to add between each element for smoother visualization.
+        :param n_interp: Number of interpolation points to add between each element for smoother visualisation.
         """
 
-        # represent all vectors in the intertial frame
+        # represent all vectors in the inertial frame
         data = deepcopy(
             self
         )  # prevent modification of original data when converting frames for plotting
@@ -449,28 +456,30 @@ class DynamicStructure:
             f_ext_aero: Optional[Array],
             f_grav: Optional[Array],
             f_int: Array,
+            f_elem: Array,
             f_iner: Array,
             f_res: Array,
             t: Array,
             n_tstep: int,
             prescribed_dofs: Optional[Array],
     ):
-        self.hg: Array = hg  # [n_tstep, n_nodes_, 4, 4]
+        self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
         self.varphi: Array = varphi  # [n_tstep, n_nodes, 6]
-        self.v: Array = v  # [n_tstep, n_nodes_, 6]
-        self.v_dot: Array = v_dot  # [n_tstep, n_nodes_, 6]
-        self.a: Array = a  # [n_tstep, n_nodes_, 6]
-        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes_, 6]
-        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes_, 6]
-        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_tstep, n_nodes_, 6]
-        self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes_, 6]
-        self.f_int: Array = f_int  # [n_tstep, n_nodes_, 6]
-        self.f_iner_gyr: Array = f_iner  # [n_tstep, n_nodes_, 6]
-        self.f_res: Array = f_res  # [n_tstep, n_nodes_, 6]
+        self.v: Array = v  # [n_tstep, n_nodes, 6]
+        self.v_dot: Array = v_dot  # [n_tstep, n_nodes, 6]
+        self.a: Array = a  # [n_tstep, n_nodes, 6]
+        self.f_ext_follower: Optional[Array] = f_ext_follower  # [n_tstep, n_nodes, 6]
+        self.f_ext_dead: Optional[Array] = f_ext_dead  # [n_tstep, n_nodes, 6]
+        self.f_ext_aero: Optional[Array] = f_ext_aero  # [n_tstep, n_nodes, 6]
+        self.f_grav: Optional[Array] = f_grav  # [n_tstep, n_nodes, 6]
+        self.f_int: Array = f_int  # [n_tstep, n_nodes, 6]
+        self.f_elem: Array = f_elem  # [n_tstep, n_elem, 6]
+        self.f_iner_gyr: Array = f_iner  # [n_tstep, n_nodes, 6]
+        self.f_res: Array = f_res  # [n_tstep, n_nodes, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
         self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
@@ -496,6 +505,7 @@ class DynamicStructure:
             else None,
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_int=self.f_int[i_ts, ...],
+            f_elem=self.f_elem[i_ts, ...],
             f_res=self.f_res[i_ts, ...],
             prescribed_dofs=self.prescribed_dofs,
         )
@@ -524,6 +534,7 @@ class DynamicStructure:
             f_grav=self.f_grav[i_ts, ...] if self.f_grav is not None else None,
             f_iner_gyr=self.f_iner_gyr[i_ts, ...],
             f_int=self.f_int[i_ts, ...],
+            f_elem=self.f_elem[i_ts, ...],
             f_res=self.f_res[i_ts, ...],
             t=self.t[i_ts],
             i_ts=i_ts,
@@ -541,7 +552,7 @@ class DynamicStructure:
 
     def get_full_states(self, i_ts: int | Array) -> StructureFullStates:
         return StructureFullStates(v=self.v[i_ts, ...], v_dot=self.v_dot[i_ts, ...], hg=self.hg[i_ts, ...],
-                                   eps=self.eps[i_ts, ...], f_int=self.f_int[i_ts, ...])
+                                   eps=self.eps[i_ts, ...], f_elem=self.f_elem[i_ts, ...])
 
     @classmethod
     def initialise(
@@ -602,6 +613,7 @@ class DynamicStructure:
             else None
         )
         f_int = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_int)
+        f_elem = jnp.zeros((n_tstep, n_elem, 6)).at[0, ...].set(initial_snapshot.f_elem)
         f_iner = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_iner)
         f_res = jnp.zeros((n_tstep, n_node, 6)).at[0, ...].set(initial_snapshot.f_res)
         return cls(
@@ -619,6 +631,7 @@ class DynamicStructure:
             f_ext_aero=f_ext_aero,
             f_grav=f_grav,
             f_int=f_int,
+            f_elem=f_elem,
             f_iner=f_iner,
             f_res=f_res,
             t=t,
@@ -680,10 +693,10 @@ class DynamicStructure:
     ) -> Path:
         r"""
         Plot the beam for specified time steps to VTU files in the specified directory. Additionally, a PVD
-        file is created to include time data for visualization in Paraview.
+        file is created to include time data for visualisation in Paraview.
         :param directory: Path to write files to
         :param index: Single or multiple time step indices to plot. If None, all time steps are plotted.
-        :param n_interp: Number of interpolation points to add between each element for smoother visualization.
+        :param n_interp: Number of interpolation points to add between each element for smoother visualisation.
         """
         index_ = index_to_arr(index=index, n_entries=self.n_tstep)
 
@@ -727,6 +740,7 @@ class DynamicStructure:
             "f_ext_aero",
             "f_grav",
             "f_int",
+            "f_elem",
             "f_iner_gyr",
             "f_res",
             "t",
@@ -753,7 +767,7 @@ class StructureMinimalStates:
     @property
     def varphi(self) -> Array:
         if self._varphi is None:
-            raise ValueError("Varphi is None")
+            raise ValueError("varphi is None")
         return self._varphi
 
     @varphi.setter

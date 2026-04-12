@@ -12,7 +12,7 @@ from utils import _make_pytree
 @_make_pytree
 class LinearOperator:
     r"""
-    Linear operator represented by a function, either as A(x_target) or Ax.
+    Linear operator represented by a function, either as A(x_target) or A @ x.
     """
 
     def __init__(

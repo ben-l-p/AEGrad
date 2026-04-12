@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from typing import Optional, Sequence, Literal, overload, TYPE_CHECKING, cast
 from functools import partial
 
@@ -10,10 +9,10 @@ import jax
 from jax.scipy.linalg import block_diag
 
 from aero.data_structures import DynamicAeroCase
-from aero.uvlm import UVLM
 
 if TYPE_CHECKING:
     from coupled.data_structures import DynamicAeroelastic
+    from aero.uvlm import UVLM
 from utils import _check_type
 from structure.data_structures import (
     StaticStructure,
@@ -227,10 +226,19 @@ class BaseBeamStructure:
         :return: StructuralDesignVariables dataclass containing design variables
         """
 
-        gs = copy.deepcopy(struct_case)
-        gs.to_global()
+        # struct_case.f_ext_dead = R @ f_global (local frame convention from make_f_dead_ext)
+        # recover f_global = R^T @ f_ext_dead
+        hg = struct_case.hg
+        if hg.ndim == 4:  # DynamicStructure: [n_tstep, n_nodes, 4, 4]
+            rmat_t = jnp.transpose(hg[:, :, :3, :3], (0, 1, 3, 2))
+        else:  # StaticStructure: [n_nodes, 4, 4]
+            rmat_t = jnp.transpose(hg[:, :3, :3], (0, 2, 1))
+        f_ext_dead_global = (
+            transform_nodal_vect(struct_case.f_ext_dead, rmat_t)
+            if struct_case.f_ext_dead is not None else None
+        )
         return StructuralDesignVariables(x0=self.x0, m_cs=self.m_cs, k_cs=self.k_cs, m_lumped=self.m_lumped,
-                                         f_ext_dead=gs.f_ext_dead, f_ext_follower=gs.f_ext_follower)
+                                         f_ext_dead=f_ext_dead_global, f_ext_follower=struct_case.f_ext_follower)
 
     def reference_configuration(
             self,
@@ -256,6 +264,7 @@ class BaseBeamStructure:
             f_ext_aero=jnp.zeros((self.n_nodes, 6)) if use_f_aero else None,
             f_grav=jnp.zeros((self.n_nodes, 6)) if use_f_grav else None,
             f_int=jnp.zeros((self.n_nodes, 6)),
+            f_elem=jnp.zeros((self.n_elem, 6)),
             f_res=jnp.zeros((self.n_nodes, 6)),
             local=True,
             prescribed_dofs=prescribed_dofs,
@@ -615,6 +624,14 @@ class BaseBeamStructure:
 
         return mat
 
+    def make_f_elem(self, eps: Array) -> Array:
+        r"""
+        Compute the forces within the elements as :math:`\mathbf{f}_{elem} = \mathcal{K}_{cs} \epsilon`
+        :param eps: Element strain vectors, [n_elem, 6]
+        :return: Element forces, [n_elem, 6]
+        """
+        return jnp.einsum('ijk,ik->ij', self.k_cs, eps)
+
     def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
         Assemble global internal force vector as a function of the element relative configuration vectors
@@ -669,7 +686,7 @@ class BaseBeamStructure:
         :return: External forces, [n_node, 6]
         """
 
-        return transform_nodal_vect(f_ext, rmat)
+        return transform_nodal_vect(f_ext, jnp.swapaxes(rmat, -1, -2))
 
     def split_vector_to_elements(self, vec: Array) -> Array:
         return jnp.concatenate(
@@ -1067,10 +1084,9 @@ class BaseBeamStructure:
         hg = self.calculate_hg_from_varphi(q.varphi)
         d = self.make_d(hg=hg)
         eps = self.make_eps(d=d)
-        p_d = self.make_p_d(d=d)
-        f_int = self.make_f_int(eps=eps, p_d=p_d)
+        f_elem = self.make_f_elem(eps=eps)
         return StructureFullStates(
-            v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_int=f_int
+            v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem
         )
 
     def make_prescribed_dofs_array(
@@ -1269,6 +1285,7 @@ class BaseBeamStructure:
             )
         )
         varphi = self.calculate_varphi_from_hg(hg)
+        f_elem = self.make_f_elem(eps=eps)  # compute loads in each element
 
         return StaticStructure(
             hg=hg,
@@ -1278,6 +1295,7 @@ class BaseBeamStructure:
             eps=eps,
             varphi=varphi,
             f_int=f_int,
+            f_elem=f_elem,
             f_ext_follower=f_ext_follower,
             f_ext_dead=f_ext_dead_local,
             f_ext_aero=f_ext_aero_local,
@@ -1651,6 +1669,7 @@ class BaseBeamStructure:
                 if struct_sol.f_grav is None: raise ValueError("struct_sol.f_grav is None")
                 struct_sol.f_grav = struct_sol.f_grav.at[i_ts, ...].set(f_grav)
             struct_sol.f_int = struct_sol.f_int.at[i_ts, ...].set(f_int)
+            struct_sol.f_elem = struct_sol.f_elem.at[i_ts, ...].set(self.make_f_elem(eps=eps))
             struct_sol.f_iner_gyr = struct_sol.f_iner_gyr.at[i_ts, ...].set(f_iner + f_gyr)
             struct_sol.f_res = struct_sol.f_res.at[i_ts, ...].set(f_res)
 
@@ -1890,6 +1909,8 @@ class BaseBeamStructure:
                     max_res=max_res,
                 )
 
+            f_elem = self.make_f_elem(eps=eps)
+
             return DynamicStructureSnapshot(
                 hg=init_state__.hg,
                 conn=self.connectivity,
@@ -1905,6 +1926,7 @@ class BaseBeamStructure:
                 f_ext_aero=f_ext_aero_,
                 f_grav=f_grav,
                 f_int=f_int,
+                f_elem=f_elem,
                 f_iner_gyr=f_iner + f_gyr,  # type: ignore
                 f_res=f_res,
                 t=init_state__.t,

@@ -20,7 +20,7 @@ k_cs_base = jnp.diag(jnp.array((1e6, 1e6, 1e6, 4e2, 4e2, 4e2)))
 
 def _objective(states: AeroelasticFullStates, *_) -> Array:
     """Scalar objective: z-component of root internal force."""
-    return states.structure.f_int[0, 2]
+    return states.structure.f_elem[0, 2]
 
 
 def _solve(u_inf: Array, k_cs: Array):
@@ -43,11 +43,14 @@ def _solve(u_inf: Array, k_cs: Array):
     return wing, sol
 
 
-class TestStaticAeroelasticAdjoint:
+class TestForwardStaticAeroelasticAdjoint:
+    forward_mode: bool = True
+
     @classmethod
     def setup_class(cls):
         cls.wing, cls.sol = _solve(u_inf=u_inf_base, k_cs=k_cs_base)
-        cls.grad: AeroelasticDesignGradients = cls.wing.static_adjoint(case=cls.sol, objective=_objective)
+        cls.grad: AeroelasticDesignGradients = \
+            cls.wing.static_adjoint(case=cls.sol, objective=_objective, forward_adjoint=cls.forward_mode)[0]
         cls.objective_val: Array = _objective(cls.sol.get_full_states(), cls.wing.get_design_variables(case=cls.sol))
 
     @classmethod
@@ -83,3 +86,7 @@ class TestStaticAeroelasticAdjoint:
         assert jnp.allclose(fd_grad,
                             adj_grad,
                             rtol=1e-3), f"Gradient mismatch with respect to k_cs[:, 3, 3], Adjoint={adj_grad}, FD={fd_grad}"
+
+
+class TestReversedForwardStaticAeroelasticAdjoint(TestForwardStaticAeroelasticAdjoint):
+    forward_mode: bool = False

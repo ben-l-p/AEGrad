@@ -6,8 +6,7 @@ import jax
 
 from aero.utils import KernelFunction, mirror_grid
 from algebra.array_utils import ArrayList, block_axis
-
-BATCH_SIZE = 128
+from constants import AIC_BATCH_SIZE
 
 
 def compute_aic_grid(
@@ -15,7 +14,7 @@ def compute_aic_grid(
         n: Optional[Array],
         zeta: Array,
         kernel: KernelFunction,
-        batch_size: Optional[int] = BATCH_SIZE,
+        batch_size: Optional[int] = AIC_BATCH_SIZE,
 ):
     """
     Compute the aerodynamic influence coefficient (AIC) across grids of points.
@@ -175,7 +174,7 @@ def v_ind_vmap(
         zeta: Array,
         gamma: Array,
         kernel: KernelFunction,
-        batch_size: Optional[int] = BATCH_SIZE,
+        batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> Array:
     """
     Compute einsum("ijklm,kl->ijm", aic_vmap(c, zeta, kernel), gamma) without
@@ -209,7 +208,7 @@ def compute_v_ind[T: Array | ArrayList](
         kernels: Sequence[KernelFunction],
         mirror_point: Optional[Array],
         mirror_normal: Optional[Array],
-        batch_size: Optional[int] = BATCH_SIZE,
+        batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> T:
     """
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)

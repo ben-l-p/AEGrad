@@ -18,14 +18,14 @@ class TestLinearOperator:
             f"Expected NaN, but got {bs}"
         )
 
-        # collinear influnence should be nan
+        # collinear influence should be nan
         x = jnp.array([0.0, 1.0, 0.0])
         y = jnp.array([[0.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
         assert jnp.all(jnp.isnan(bs := biot_savart(x, y))), (
             f"Expected NaN, but got {bs}"
         )
 
-        # defined influnence when not on the filament line
+        # defined influence when not on the filament line
         x = jnp.array([0.1, 0.0, 0.0])
         y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         assert not jnp.all(jnp.isnan(bs := biot_savart(x, y))), (
@@ -35,7 +35,7 @@ class TestLinearOperator:
     @staticmethod
     def test_biot_savart_epsilon():
         r"""
-        Test the biot_savart epsillon kernel function
+        Test the biot_savart epsilon kernel function
         """
 
         # influence at midpoint should be zero
@@ -45,14 +45,14 @@ class TestLinearOperator:
             f"Expected zero, but got {bs}"
         )
 
-        # collinear influnence should be zero
+        # collinear influence should be zero
         x = jnp.array([0.0, 1.0, 0.0])
         y = jnp.array([[0.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
         assert jnp.allclose(bs := biot_savart_epsilon(x, y), 0.0), (
             f"Expected zero, but got {bs}"
         )
 
-        # defined influnence when not on the filament line should approximately match baseline
+        # defined influence when not on the filament line should approximately match baseline
         x = jnp.array([0.1, 0.0, 0.0])
         y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         bs = biot_savart(x, y)

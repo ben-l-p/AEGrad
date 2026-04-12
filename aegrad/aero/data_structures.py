@@ -16,6 +16,7 @@ from aero.utils import (
     compute_nc,
     calculate_steady_forcing, project_forcing_to_beam,
 )
+
 from print_utils import warn
 from algebra.array_utils import split_to_vertex
 from aero.flowfields import FlowField
@@ -66,7 +67,9 @@ class DynamicAeroCase:
             t: Array,
             i_ts: int | Array,
             dof_mapping: ArrayList,
-            horseshoe: bool = False,
+            static_horseshoe: bool,
+            free_wake: bool,
+            gamma_dot_relaxation: float,
     ) -> None:
         r"""
         Time series of multiple aerodynamic surfaces
@@ -104,7 +107,11 @@ class DynamicAeroCase:
         self.n_surf: int = len(surf_b_names)
         self.n_tstep: int = len(t)
         self.dof_mapping: ArrayList = dof_mapping
-        self.horseshoe: bool = horseshoe
+
+        # settings
+        self.static_horseshoe: bool = static_horseshoe
+        self.free_wake: bool = free_wake
+        self.gamma_dot_relaxation: float = gamma_dot_relaxation
 
     @property
     def zeta_b(self) -> ArrayList:
@@ -262,7 +269,7 @@ class DynamicAeroCase:
             surf_w_name=self.surf_w_names[i_surf],
             i_ts=i_ts,
             t=self.t[i_ts],
-            horseshoe=self.horseshoe,
+            static_horseshoe=self.static_horseshoe,
             dof_mapping=self.dof_mapping[i_surf],
         )
 
@@ -535,7 +542,9 @@ class DynamicAeroCase:
             surf_w_names=self.surf_w_names,
             t=self._t[i_ts],
             i_ts=i_ts,
-            horseshoe=self.horseshoe,
+            static_horseshoe=self.static_horseshoe,
+            free_wake=self.free_wake,
+            gamma_dot_relaxation=self.gamma_dot_relaxation,
             kernels=self.kernels,
             mirror_point=self.mirror_point,
             mirror_normal=self.mirror_normal,
@@ -561,7 +570,9 @@ class DynamicAeroCase:
             "n_surf",
             "_i_ts",
             "n_tstep",
-            "horseshoe",
+            "static_horseshoe",
+            "gamma_dot_relaxation",
+            "free_wake",
             "kernels",
             "mirror_point",
             "mirror_normal",
@@ -619,7 +630,9 @@ class AeroSnapshot(DynamicAeroCase):
             t: float | Array,
             i_ts: int,
             dof_mapping: ArrayList,
-            horseshoe: bool = False,
+            static_horseshoe: bool,
+            free_wake: bool,
+            gamma_dot_relaxation: float,
     ) -> None:
         r"""
         Create an AeroSnapshot by wrapping per-initial_snapshot arrays with a leading
@@ -648,7 +661,9 @@ class AeroSnapshot(DynamicAeroCase):
             t=jnp.atleast_1d(t),
             i_ts=i_ts,
             dof_mapping=dof_mapping,
-            horseshoe=horseshoe,
+            static_horseshoe=static_horseshoe,
+            free_wake=free_wake,
+            gamma_dot_relaxation=gamma_dot_relaxation
         )
 
     @property
@@ -788,7 +803,9 @@ class AeroSnapshot(DynamicAeroCase):
             t=jnp.zeros(n_tstep).at[i_ts].set(self.t),
             i_ts=i_ts,
             dof_mapping=self.dof_mapping,
-            horseshoe=self.horseshoe,
+            static_horseshoe=self.static_horseshoe,
+            free_wake=self.free_wake,
+            gamma_dot_relaxation=self.gamma_dot_relaxation,
         )
 
     def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:
@@ -809,7 +826,7 @@ class AeroSnapshot(DynamicAeroCase):
             surf_w_name=self.surf_w_names[i_surf],
             i_ts=self.i_ts,
             t=self.t,
-            horseshoe=self.horseshoe,
+            static_horseshoe=self.static_horseshoe,
             dof_mapping=self.dof_mapping[i_surf],
         )
 
@@ -853,7 +870,7 @@ class AeroSurfaceSnapshot:
             surf_w_name: str,
             i_ts: int,
             t: Array,
-            horseshoe: bool,
+            static_horseshoe: bool,
             dof_mapping: Array,
     ) -> None:
         r"""
@@ -882,7 +899,7 @@ class AeroSurfaceSnapshot:
         self.surf_w_name: str = surf_w_name
         self.i_ts: int = i_ts
         self.t: Array = t
-        self.horseshoe: bool = horseshoe
+        self.static_horseshoe: bool = static_horseshoe
         self.dof_mapping: Array = dof_mapping
 
     def plot(

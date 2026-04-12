@@ -143,7 +143,7 @@ def _integrate_c_t(
 
         def _g_iner_ab_integr(s_l: Array, v: Array) -> Array:
             r"""
-            Integrand for intertial forcing with zero acceleration
+            Integrand for inertial forcing with zero acceleration
             """
             d_dot_ = p(d, ad_inv) @ v
             q_mat = q(s_l, d, ad_inv)
@@ -176,7 +176,7 @@ def _integrate_c_t(
         # the contribution from q_dot
         c_t_ = jax.jacobian(_g_iner_ab, argnums=0)(v_ab)  # [12, 12]
 
-        # obtain the linear contribution seperately - these are combined when q_dot is omitted for simplicity
+        # obtain the linear contribution separately - these are combined when q_dot is omitted for simplicity
         c_l_ = length * gauss_legendre(
             _c_l_integr,
             jnp.array((0.0, 1.0)),

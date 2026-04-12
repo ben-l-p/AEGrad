@@ -1,21 +1,21 @@
 [project]
 name = "aegrad"
 version = "0.1.0"
-description = "Solver for automatic differentiation of UVLM/nonlinear beam aeroelastic simulations."
+description = "Solver for obtaining design variable sensitivites of UVLM/nonlinear beam aeroelastic simulations."
 authors = ["Ben Preston"]
 requires-python = "==3.12.*"
 dependencies = [
-    "jax==0.9.0.1",
-    "pytest==9.0.2",
-    "ruff==0.15.1",
+    "jax==0.9.2",
+    "pytest==9.0.3",
+    "ruff==0.15.9",
     "tensorboard==2.20.0",
-    "vtk==9.6.0",
-    "xprof==2.21.6",
+    "vtk==9.6.1",
+    "xprof==2.22.1",
 ]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["./tests"]
 pythonpath = ["aegrad"]
-python_files = ["test*.py"] # run all files ending with .py
+python_files = ["test*.py"]
 addopts = "-q --tb=short"
