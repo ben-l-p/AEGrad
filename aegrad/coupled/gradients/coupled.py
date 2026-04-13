@@ -10,6 +10,7 @@ from aero.gradients.data_structures import AeroDesignVariables, AeroStates
 from aero.utils import project_forcing_to_beam
 from algebra.array_utils import ArrayList
 from coupled import DynamicAeroelastic
+from print_utils import jax_print, VerbosityLevel
 from structure import StructuralDesignVariables
 from structure.data_structures import OptionalJacobians, StructureMinimalStates
 
@@ -77,7 +78,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         f_elem = inner_case.structure.make_f_elem(eps=eps)
 
         if inner_case.structure.use_gravity:
-            m_t = inner_case.structure.make_m_t(jax.lax.stop_gradient(d))
+            m_t = inner_case.structure.make_m_t(d)
         else:
             m_t = None
 
@@ -429,9 +430,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 ).T
             )
 
-            jax.debug.print(
+            jax_print(
                 "Solved grads for timestep {i_ts}",
-                i_ts=i_ts,
+                i_ts=i_ts, verbose_level=VerbosityLevel.NORMAL
             )
 
             # accumulate design derivative with adj_.T @ p_s_p_x
@@ -483,12 +484,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             ),
         )
 
-        # # test loop
-        # d_j_d_x, adj, p_r1_p_q0, _ = time_loop(rev_i_ts=0, d_j_d_x_=dv_grad_init,
-        #                                        adj_=jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof)),
-        #                                        p_r_np1_p_q_n=jnp.zeros((n_adj_dof, n_adj_dof)),
-        #                                        q_n=case.get_minimal_states(i_ts=-1), )
-
         # solve initial timestep adjoint, as there is no r0
         p_j0_p_q0: Array
         p_j0_p_x: StructuralDesignVariables
@@ -527,7 +522,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     adj[1, :, :] @ p_r1_p_q0)
 
             # add zero terms for prescribed dofs
-            p_j0_p_q0_full.at[:, free_state_ix].add(p_j0_p_q0)
+            p_j0_p_q0_full = p_j0_p_q0_full.at[:, free_state_ix].add(p_j0_p_q0)
             d_j_d_x += p_q0_p_x.premult_adj(p_j0_p_q0_full)
 
         # restore original shape of j, and cut off zeros for past-end timestep and initial timestep which are always 0

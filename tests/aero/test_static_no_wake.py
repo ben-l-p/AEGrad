@@ -15,7 +15,6 @@ class TestRotInvariance:
         the X and Y directions with positive angle of attack.
         """
 
-        set_verbosity(VerbosityLevel.SILENT)
         mn = 5
         width = 1.0
         disc = GridDiscretization(mn, mn, 0)

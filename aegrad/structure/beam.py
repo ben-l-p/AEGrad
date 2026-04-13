@@ -21,7 +21,7 @@ from structure.data_structures import (
     OptionalJacobians,
 )
 from data_structures import ConvergenceSettings, ConvergenceStatus
-from print_utils import warn, warn_if_32_bit, VerbosityLevel
+from print_utils import warn, warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
 from structure.utils import _check_connectivity, _n_elem_per_node, get_solve_dofs, transform_nodal_vect
 from algebra.array_utils import check_arr_shape, check_arr_dtype
 from structure.utils import (
@@ -49,7 +49,6 @@ class BaseBeamStructure:
             connectivity: Array,
             y_vector: Array,
             gravity: Optional[Array] = None,
-            verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
             optional_jacobians: Optional[OptionalJacobians] = None,
             struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
                                                                                    rel_disp_tol=1e-6,
@@ -122,7 +121,6 @@ class BaseBeamStructure:
             self.gravity_vec = jnp.zeros((3,))
 
         # other settings
-        self.verbosity: VerbosityLevel = verbosity
         self.use_m_cs: bool = False
 
         self.optional_jacobians: OptionalJacobians = (
@@ -173,7 +171,6 @@ class BaseBeamStructure:
             if self.use_gravity and m_lumped is None:
                 warn(
                     "No mass matrices provided, but gravity is enabled. Assuming zero mass.",
-                    current_level=self.verbosity,
                 )
         if m_lumped is not None:
             self.m_lumped = self.m_lumped.at[...].set(m_lumped)
@@ -1232,7 +1229,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if self.verbosity.value == VerbosityLevel.VERBOSE.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
                 converge_status.print_struct_message(None, i_load_step)
 
             return i_load_step, converge_status, hg_np1_full
@@ -1259,7 +1256,7 @@ class BaseBeamStructure:
                 ),
             )
 
-            if self.verbosity.value >= VerbosityLevel.NORMAL.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
                 convergence_status.print_struct_message(None, i_load_step)
 
             return hg_solve
@@ -1498,7 +1495,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
                 struct_converge_status_.print_struct_message(t[i_ts], i_load_step)
 
             q_alpha_update = StructureMinimalStates(
@@ -1593,7 +1590,7 @@ class BaseBeamStructure:
                 )
 
             # print message where we only require one message per timestep
-            if self.verbosity.value == VerbosityLevel.NORMAL.value:
+            if VERBOSITY_LEVEL.value == VerbosityLevel.NORMAL.value:
                 struct_converge_status.print_struct_message(t=struct_sol.t[i_ts], i_load_step=load_steps - 1)
                 if include_aero and fsi_convergence_status_ is not None:
                     fsi_convergence_status_.print_fsi_message(t=struct_sol.t[i_ts])
@@ -1734,7 +1731,7 @@ class BaseBeamStructure:
                 total_force=f_aero_alpha.ravel()[solve_dofs],
             )
 
-            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
                 fsi_converge_status.print_fsi_message(t=t[i_ts])
 
             return i_ts, struct_sol, aero_sol, struct_converge_status, fsi_converge_status, phi_alpha, q_alpha, f_aero_nm1, f_aero_alpha
@@ -1770,7 +1767,7 @@ class BaseBeamStructure:
                 (i_load_step, i_ts, struct_converge_status, hg_alpha, phi_alpha, q_alpha, f_ext_aero_steps),
             )
 
-            if self.verbosity.value >= VerbosityLevel.VERBOSE.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
                 struct_converge_status.print_struct_message(t[i_ts], i_load_step)
 
             return i_ts, struct_converge_status, hg_solve, phi_alpha, q_alpha, f_ext_aero_steps

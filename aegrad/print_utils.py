@@ -21,7 +21,7 @@ class VerbosityLevel(Enum):
     VERBOSE = 3
 
 
-VERBOSITY_LEVEL = VerbosityLevel.NORMAL
+VERBOSITY_LEVEL = VerbosityLevel.NORMAL  # default value
 
 
 def set_verbosity(level: VerbosityLevel) -> None:
@@ -56,28 +56,3 @@ def jax_print(
 ) -> None:
     if VERBOSITY_LEVEL.value >= verbose_level.value:
         jax.debug.print(message, **kwargs)
-
-
-def print_with_time(
-        init_message: str, final_message: str, verbose_level=VerbosityLevel.NORMAL
-):
-    def decorator(func):
-        @wraps(func)
-        def inner(*args, **kwargs):
-            if VERBOSITY_LEVEL.value >= verbose_level.value:
-                print(make_color(init_message, Colour.BLUE))
-                start_time = time.time()
-                result = func(*args, **kwargs)
-                end_time = time.time()
-                print(
-                    make_color(
-                        final_message.format(end_time - start_time), Colour.GREEN
-                    )
-                )
-            else:
-                result = func(*args, **kwargs)
-            return result
-
-        return inner
-
-    return decorator

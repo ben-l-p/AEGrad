@@ -1024,7 +1024,7 @@ class UVLM:
                                                      dof_mapping=self.dof_mapping,
                                                      x0_aero=inner_case.x0_b)
         f_aero_beam_local = transform_nodal_vect(vect=f_aero_beam_global,
-                                                 rmat=hg_n[:, :3, :3])
+                                                 rmat=jnp.swapaxes(hg_n[:, :3, :3], -2, -1))
 
         # evaluate residuals
         gamma_b_res = (gamma_b_n - q_n.gamma_b).ravel()

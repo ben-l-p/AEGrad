@@ -14,7 +14,7 @@ from aero.data_structures import DynamicAeroCase
 from coupled.gradients.data_structures import AeroelasticDesignVariables
 from data_structures import ConvergenceSettings, ConvergenceStatus
 from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic, DynamicAeroelasticSnapshot
-from print_utils import warn_if_32_bit
+from print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
 from structure import StaticStructure
 from print_utils import VerbosityLevel
 from structure.time_integration import TimeIntregrator
@@ -31,12 +31,10 @@ class BaseCoupledAeroelastic:
                                                                                 abs_disp_tol=1e-5,
                                                                                 rel_force_tol=1e-3,
                                                                                 abs_force_tol=1e-5),
-            verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
     ):
         self.structure: BeamStructure = structure
         self.aero: UVLM = aero
         self.fsi_convergence_settings: ConvergenceSettings = fsi_convergence_settings
-        self.verbosity = verbosity
 
     def set_design_variables(
             self,
@@ -160,7 +158,7 @@ class BaseCoupledAeroelastic:
                 t=t, hg=struct_case_np1.hg, horseshoe=horseshoe
             )
 
-            if self.verbosity.value >= VerbosityLevel.NORMAL.value:
+            if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
                 converge_status_.print_fsi_message(None)
 
             return converge_status_, struct_case_np1, aero_case_np1

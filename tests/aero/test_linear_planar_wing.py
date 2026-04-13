@@ -65,7 +65,6 @@ class TestLinearAero:
     def test_linear_operator_heaving_wing(
             cls, plot: bool = False, use_matrix: bool = False
     ):
-        set_verbosity(VerbosityLevel.SILENT)
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
@@ -146,7 +145,6 @@ class TestLinearAero:
     def test_linear_operator_pitching_wing(
             cls, plot: bool = False, use_matrix: bool = False
     ):
-        set_verbosity(VerbosityLevel.SILENT)
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
@@ -233,7 +231,6 @@ class TestLinearAero:
     def test_linear_operator_pitching_wing_frozen_wake(
             cls, plot: bool = False, use_matrix: bool = False
     ):
-        set_verbosity(VerbosityLevel.SILENT)
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield, ea=1.0)
@@ -321,7 +318,6 @@ class TestLinearAero:
     def test_linear_operator_cosine_gust(
             cls, plot: bool = False, use_matrix: bool = False
     ):
-        set_verbosity(VerbosityLevel.SILENT)
 
         flowfield = OneMinusCosine(
             TestLinearAero.u_inf,

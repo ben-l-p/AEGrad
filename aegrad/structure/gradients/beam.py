@@ -6,6 +6,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
+from print_utils import jax_print, VerbosityLevel
 from structure.beam import BaseBeamStructure
 from structure import OptionalJacobians
 from structure.data_structures import (
@@ -315,7 +316,7 @@ class BeamStructure(BaseBeamStructure):
             f_ext_aero=None,  # this is None here, as we already have the aero force in the local frame
             v=q_alpha.v,
             v_dot=q_alpha.v_dot,
-            stop_gradients=True
+            stop_gradients=False
         )
 
         # use stop gradient to prevent effective stiffness contribution
@@ -516,10 +517,7 @@ class BeamStructure(BaseBeamStructure):
                 ).T
             )
 
-            jax.debug.print(
-                "Solved grads for timestep {i_ts}",
-                i_ts=i_ts,
-            )
+            jax_print("Adjoint for timestep {i_ts} solved", i_ts=i_ts, verbose_level=VerbosityLevel.NORMAL)
 
             # accumulate design derivative with adj_.T @ p_s_p_x
             # do not add anything for timestep 0 as the Jacobians refer to ts = -1

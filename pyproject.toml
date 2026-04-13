@@ -5,9 +5,10 @@ description = "Solver for obtaining design variable sensitivites of UVLM/nonline
 authors = ["Ben Preston"]
 requires-python = "==3.12.*"
 dependencies = [
+    "importlib-resources==7.1.0",
     "jax==0.9.2",
     "pytest==9.0.3",
-    "ruff==0.15.9",
+    "ruff==0.15.10",
     "tensorboard==2.20.0",
     "vtk==9.6.1",
     "xprof==2.22.1",

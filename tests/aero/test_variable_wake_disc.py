@@ -11,8 +11,6 @@ from print_utils import set_verbosity, VerbosityLevel
 class TestVarWakeDisc:
     @staticmethod
     def test_var_wake_disc():
-        set_verbosity(VerbosityLevel.SILENT)
-
         u_inf = jnp.array((10.0, 0.0, 0.0))
         rho_inf = 1.225
         m = 6

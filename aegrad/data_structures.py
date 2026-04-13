@@ -237,18 +237,25 @@ class ConvergenceStatus:
     @staticmethod
     def print_header(dynamic: bool) -> None:
         if dynamic:
-            print("\n|--------------------------------------- Dynamic Solve ---------------------------------------|")
-            print("|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+            jax_print(
+                "\n|--------------------------------------- Dynamic Solve ---------------------------------------|",
+                verbose_level=VerbosityLevel.NORMAL)
+            jax_print("|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
+                      verbose_level=VerbosityLevel.NORMAL)
         else:
-            print("\n|--------------------------------- Static Solve ----------------------------------|")
-            print("|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |")
+            jax_print("\n|--------------------------------- Static Solve ----------------------------------|",
+                      verbose_level=VerbosityLevel.NORMAL)
+            jax_print("|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
+                      verbose_level=VerbosityLevel.NORMAL)
 
     @staticmethod
     def print_footer(dynamic: bool) -> None:
         if dynamic:
-            print("|---------------------------------------------------------------------------------------------|")
+            jax_print("|---------------------------------------------------------------------------------------------|",
+                      verbose_level=VerbosityLevel.NORMAL)
         else:
-            print("|---------------------------------------------------------------------------------|")
+            jax_print("|---------------------------------------------------------------------------------|",
+                      verbose_level=VerbosityLevel.NORMAL)
 
     @staticmethod
     def _static_names() -> Sequence[str]:
