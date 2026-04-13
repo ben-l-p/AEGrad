@@ -73,42 +73,39 @@ class AeroDesignVariables(DesignVariables):
     def __init__(
             self,
             x0_aero: ArrayList,
-            u_inf: Array,
-            rho: Array,
+            flowfield: dict[str, Array],
     ):
         super().__init__()
         self.x0_aero: ArrayList = x0_aero
-        self.u_inf: Array = u_inf
-        self.rho: Array = rho
+        self.flowfield: dict[str, Array] = flowfield
 
-        self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = (
+        self.shapes: dict[
+            str, Optional[tuple[int, ...] | ArrayListShape] | dict[str, tuple[int, ...] | ArrayListShape]] = (
             self.get_shapes()
         )
         self.mapping, self.n_x = self.make_index_mapping()
 
     def __iadd__(self, other: AeroDesignVariables) -> AeroDesignVariables:
         self.x0_aero = ArrayList([self.x0_aero[i] + other.x0_aero[i] for i in range(len(self.x0_aero))])
-        self.u_inf += other.u_inf
-        self.rho += other.rho
+        for k in self.flowfield.keys():
+            self.flowfield[k] += other.flowfield[k]
         return self
 
     def premult_adj(self, adj: Array) -> AeroDesignVariables:
         return AeroDesignVariables(
             x0_aero=ArrayList([jnp.einsum("ij,j...->i...", adj, self.x0_aero[i]) for i in range(len(self.x0_aero))]),
-            u_inf=jnp.einsum("ij,j...->i...", adj, self.u_inf),
-            rho=jnp.einsum("ij,j...->i...", adj, self.rho),
+            flowfield={k: jnp.einsum("ij,j...->i...", adj, v) for k, v in self.flowfield.items()}
         )
 
-    def get_vars(self) -> dict[str, Array | ArrayList]:
+    def get_vars(self) -> dict[str, Array | ArrayList | dict[str, Array]]:
         return {
             "x0_aero": self.x0_aero,
-            "u_inf": self.u_inf,
-            "rho": self.rho,
+            "flowfield": self.flowfield
         }
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "x0_aero", "u_inf", "rho"
+        return "x0_aero", "flowfield"
 
 
 @_make_pytree
@@ -116,13 +113,11 @@ class AeroDesignGradients:
     def __init__(
             self,
             x0_aero: ArrayList,
-            u_inf: Array,
-            rho: Array,
+            flowfield: dict[str, Array],
             f_shape: tuple[int, ...],
     ):
         self.x0_aero: ArrayList = x0_aero
-        self.u_inf: Array = u_inf
-        self.rho: Array = rho
+        self.flowfield: dict[str, Array] = flowfield
 
         self.f_shape: tuple[int, ...] = f_shape
         self.f_size: int = reduce(mul, f_shape, 1)
@@ -172,4 +167,4 @@ class AeroDesignGradients:
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "x0_aero", "u_inf", "rho"
+        return "x0_aero", "flowfield"

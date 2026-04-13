@@ -231,6 +231,7 @@ class BeamStructure(BaseBeamStructure):
         :param q_nm1: Minimal structural states at timestep n-1.
         :param q_n: Minimal structural states at timestep n.
         :param dv_: Structural design variables.
+        :param solve_dofs: Array of dofs to solve for each timestep n.
         :return: Residual for step.
         """
 

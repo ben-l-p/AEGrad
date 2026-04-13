@@ -83,7 +83,8 @@ class AeroelasticDesignVariables(DesignVariables):
         self.structure: StructuralDesignVariables = structure_dv
         self.aero: AeroDesignVariables = aero_dv
 
-        self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = self.get_shapes()
+        self.shapes: OrderedDict[str, Optional[
+            tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def get_vars(self) -> dict[str, Optional[Array]]:

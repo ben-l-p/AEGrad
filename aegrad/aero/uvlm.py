@@ -28,7 +28,7 @@ from aero.data_structures import (
     DynamicAeroCase,
     AeroSnapshot,
 )
-from aero.flowfields import FlowField, Constant
+from aero.flowfields import FlowField
 from aero.utils import KernelFunction, biot_savart_epsilon
 
 from algebra.se3 import vect_product as se3_vect_product
@@ -347,11 +347,10 @@ class UVLM:
         :param dv: Design variables.
         :return: Beam structure object with the same functionality as self.
         """
-        # TODO: generalise flowfield
         inner_case = deepcopy(self)
         inner_case.set_design_variables(
             dt=self.dt,
-            flowfield=Constant(u_inf=dv.u_inf, rho=dv.rho, relative_motion=self.flowfield.relative_motion),
+            flowfield=inner_case.flowfield.from_design_variables(dv.flowfield),
             delta_w=self.delta_w,
             x0_aero=dv.x0_aero,
             hg0=self.hg0
@@ -360,8 +359,7 @@ class UVLM:
         return inner_case
 
     def get_design_variables(self) -> AeroDesignVariables:
-        # TODO: generalise
-        return AeroDesignVariables(x0_aero=self.x0_b, u_inf=self.flowfield.u_inf, rho=self.flowfield.rho)
+        return AeroDesignVariables(x0_aero=self.x0_b, flowfield=self.flowfield.to_design_variables())
 
     def _hg_to_zeta(self, hg: Array) -> ArrayList:
         r"""

@@ -64,7 +64,7 @@ class TestForwardStaticAeroelasticAdjoint:
                              new_wing.get_design_variables(case=new_sol))
 
         fd_grad = (new_obj - cls.objective_val) / eps
-        adj_grad = cls.grad.aero.u_inf[0]
+        adj_grad = cls.grad.aero.flowfield['u_inf'][0]
 
         assert jnp.allclose(fd_grad,
                             adj_grad,

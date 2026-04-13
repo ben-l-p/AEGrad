@@ -3,7 +3,7 @@ from __future__ import annotations
 from _operator import mul
 from dataclasses import dataclass
 from functools import reduce
-from typing import Optional, Sequence, overload
+from typing import Optional, Sequence, overload, OrderedDict
 
 from jax import Array, numpy as jnp
 
@@ -287,19 +287,29 @@ class DesignVariables:
         # should only be used in child classes
         return ()
 
-    def get_shapes(self) -> dict[str, Optional[tuple[int, ...] | ArrayListShape]]:
+    def get_shapes(self) -> OrderedDict[
+        str, Optional[tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]]:
         def _elem_shape(
-                elem: Optional[Array | ArrayList],
-        ) -> Optional[tuple[int, ...] | ArrayListShape]:
+                elem: Optional[Array | ArrayList | dict[str, Array | ArrayList]],
+        ) -> Optional[tuple[int, ...] | ArrayListShape | dict[str, tuple[int, ...] | ArrayListShape]]:
             if elem is None:
                 return None
+            elif isinstance(elem, dict):
+                sub_dict = OrderedDict()
+                for k_, v in sorted(elem.items()):
+                    sub_dict[k_] = v.shape
+                return sub_dict
             else:
                 return elem.shape
 
-        return {k: _elem_shape(var) for k, var in self.get_vars().items()}
+        out_dict = OrderedDict()
+        for k, var in self.get_vars().items():
+            out_dict[k] = _elem_shape(var)
 
-    def make_index_mapping(self) -> tuple[dict[str, Optional[Array | ArrayList]], int]:
-        mapping = {}
+        return out_dict
+
+    def make_index_mapping(self) -> tuple[OrderedDict[str, Optional[Array | ArrayList | OrderedDict[str, Array]]], int]:
+        mapping = OrderedDict()
         cnt = 0
         for name, shape in self.shapes.items():
             if shape is not None:
@@ -316,6 +326,13 @@ class DesignVariables:
                         )
                         cnt += var_size
                     mapping[name] = ArrayList(submappings)
+                elif isinstance(shape, OrderedDict):
+                    submappings = OrderedDict()
+                    for k, v in shape.items():
+                        var_size = reduce(mul, v, 1)
+                        submappings[k] = jnp.arange(cnt, cnt + var_size).reshape(v)
+                        cnt += var_size
+                    mapping[name] = submappings
                 else:
                     raise ValueError("Invalid shape type in DesignVariables.")
             else:
@@ -331,13 +348,15 @@ class DesignVariables:
         def _inner_ravel(var: Array | ArrayList) -> Array:
             ...
 
-        def _inner_ravel(var: Optional[Array | ArrayList]) -> Optional[Array]:
+        def _inner_ravel(var: Optional[Array | ArrayList | OrderedDict[str, Array | ArrayList]]) -> Optional[Array]:
             if var is None:
                 return None
             elif isinstance(var, Array):
                 return var.reshape(f_size, -1)
             elif isinstance(var, ArrayList):
                 return jnp.concatenate([_inner_ravel(subvar) for subvar in var])
+            elif isinstance(var, dict):
+                return jnp.concatenate([_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1)
             else:
                 raise ValueError("Invalid variable type in DesignVariables.")
 
@@ -358,8 +377,8 @@ class DesignVariables:
 
     def from_adjoint(
             self, f_shape: tuple[int, ...], df_dx: Array
-    ) -> dict[str, Array | ArrayList]:
-        out_dict = {}
+    ) -> OrderedDict[str, Array | ArrayList]:
+        out_dict = OrderedDict()
         for name in self.shapes.keys():
             if (this_mapping := self.mapping[name]) is not None:
                 if isinstance((this_shapes := self.shapes[name]), tuple):
@@ -375,6 +394,13 @@ class DesignVariables:
                             )
                         )
                     out_dict[name] = ArrayList(subarrays)
+                elif isinstance((this_shapes := self.shapes[name]), dict):
+                    subarrays = OrderedDict()
+                    for k, v in this_shapes.items():
+                        subarrays[k] = df_dx[:, this_mapping[k]].reshape(
+                            *f_shape, *this_shapes[k]
+                        )
+                    out_dict[name] = subarrays
                 else:
                     raise ValueError("Invalid shape type in DesignVariables.")
             else:

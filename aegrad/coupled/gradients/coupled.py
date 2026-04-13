@@ -20,7 +20,6 @@ from coupled.gradients.data_structures import (
 )
 
 from coupled.coupled import BaseCoupledAeroelastic
-from aero.flowfields import Constant
 from algebra.se3 import exp_se3
 from structure.gradients.data_structures import StructureFullStates
 from structure.utils import get_solve_dofs, transform_nodal_vect
@@ -55,11 +54,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             m_cs=dv.structure.m_cs,
             m_lumped=dv.structure.m_lumped,
             dt=self.aero.dt,
-            flowfield=Constant(
-                u_inf=dv.aero.u_inf,
-                rho=dv.aero.rho,
-                relative_motion=self.aero.flowfield.relative_motion,
-            ),  # TODO: generalise
+            flowfield=self.aero.flowfield.from_design_variables(design_variables=dv.aero.flowfield),
             delta_w=self.aero.delta_w,
             x0_aero=dv.aero.x0_aero,
             remove_checks=True,
@@ -464,9 +459,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                                                    else None),
             aero_dv=AeroDesignVariables(
                 x0_aero=ArrayList([jnp.zeros((*j_shape, *arr.shape)) for arr in self.aero.x0_b]),
-                u_inf=jnp.zeros((*j_shape, 3)),
-                rho=jnp.zeros((*j_shape,)))
-        )
+                flowfield={k: jnp.zeros((*j_shape, *v.shape)) for k, v in
+                           self.aero.flowfield.to_design_variables().items()}))
 
         n_dof = self.structure.n_dof
         n_aero_states = minimal_states_init.aero.n_states

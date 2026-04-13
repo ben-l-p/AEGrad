@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import reduce
 import os
 from pathlib import Path
-from typing import Optional, Sequence, Self, TYPE_CHECKING
+from typing import Optional, Sequence, Self, TYPE_CHECKING, OrderedDict
 
 import jax
 from jax import Array, numpy as jnp
@@ -55,7 +55,8 @@ class StructuralDesignVariables(DesignVariables):
         self.f_ext_follower: Optional[Array] = f_ext_follower
         self.f_ext_dead: Optional[Array] = f_ext_dead
 
-        self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = self.get_shapes()
+        self.shapes: OrderedDict[str, Optional[
+            tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def __iadd__(self, other: StructuralDesignVariables) -> Self:
