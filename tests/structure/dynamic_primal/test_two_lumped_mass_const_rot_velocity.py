@@ -46,9 +46,10 @@ class TestTwoXLumpedMassConstXRotVelocity:
         )
         conn = jnp.array([[0, 1]])
 
-        m_mat_lumped = block_diag(jnp.eye(3) * m_lumped, jnp.eye(3) * j_lumped)[None, :]
+        m_mat_lumped = jnp.broadcast_to(block_diag(jnp.eye(3) * m_lumped, jnp.eye(3) * j_lumped)[None, :], (2, 6, 6))
 
-        struct = BeamStructure(2, conn, cls.y_vect, None)
+        struct = BeamStructure(num_nodes=2, connectivity=conn, y_vector=cls.y_vect,
+                               m_lumped_index=jnp.array((0, 1), dtype=int))
         struct.set_design_variables(
             coords, jnp.diag(k_coeffs), None, m_lumped=m_mat_lumped
         )

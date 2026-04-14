@@ -5,7 +5,6 @@ from aero.uvlm import UVLM
 from aero.utils import make_rectangular_grid
 from aero.data_structures import GridDiscretization
 from aero.flowfields import Constant
-from print_utils import set_verbosity, VerbosityLevel
 
 
 class TestVarWakeDisc:

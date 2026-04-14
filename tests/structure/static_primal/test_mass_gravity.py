@@ -32,7 +32,8 @@ class TestTwoNodeXGravityZ:
         Ensure total mass of beam is correct
         """
 
-        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(num_nodes=2, connectivity=jnp.array([[0, 1]]), y_vector=cls.y_vector,
+                                   gravity=cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
 
         m_t = cls.struct.make_m_t(cls.struct.d0)
@@ -56,7 +57,8 @@ class TestTwoNodeXGravityZ:
         Ensure weight of beam is correct
         """
 
-        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(num_nodes=2, connectivity=jnp.array([[0, 1]]), y_vector=cls.y_vector,
+                                   gravity=cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
         f_g = cls.struct.assemble_vector_from_entries(
             cls.struct._make_f_grav(
@@ -79,7 +81,8 @@ class TestTwoNodeXGravityZ:
         Ensure weight of beam is correct
         """
 
-        cls.struct = BeamStructure(2, jnp.array([[0, 1]]), cls.y_vector, cls.g_vec)
+        cls.struct = BeamStructure(num_nodes=2, connectivity=jnp.array([[0, 1]]), y_vector=cls.y_vector,
+                                   gravity=cls.g_vec)
         cls.struct.set_design_variables(cls.coords, cls.k_cs, cls.m_cs)
 
         # make beam curved around local y

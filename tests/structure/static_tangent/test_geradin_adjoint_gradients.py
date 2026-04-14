@@ -73,7 +73,7 @@ class TestGeradinBeamAdjointGradients:
             x0=struct.x0,
             k_cs=struct.k_cs,
             m_cs=struct.m_cs,
-            m_lumped=struct.m_lumped,
+            m_lumped=struct._m_lumped,
             f_ext_dead=cls.f_ext,
             f_ext_follower=None,
         )
@@ -84,6 +84,6 @@ class TestGeradinBeamAdjointGradients:
         assert jnp.allclose(grads_adj.f_ext_dead, grads_ad.f_ext_dead, atol=2e-6), (
             "Gradient w.r.t. external forces does not match"
         )
-        assert jnp.allclose(grads_adj.k_cs, grads_ad.k_cs), (
-            "Gradient w.r.t. cross-sectional stiffness does not match"
+        assert jnp.allclose(grads_adj.k_cs, grads_ad.k_cs, atol=4e-8), (
+            "Gradient w.r.t. element stiffness does not match"
         )

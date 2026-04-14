@@ -108,7 +108,7 @@ class AeroelasticDesignVariables(DesignVariables):
             structure_dv=struct_dv, aero_dv=aero_dv, f_shape=f_shape
         )
 
-    def premult_adj(self, adj: Array) -> AeroelasticDesignVariables:
+    def premultiply_adj(self, adj: Array) -> AeroelasticDesignVariables:
         return AeroelasticDesignVariables(
             structure_dv=self.structure.premult_adj(adj),
             aero_dv=self.aero.premult_adj(adj),

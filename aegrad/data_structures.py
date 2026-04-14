@@ -325,21 +325,21 @@ class DesignVariables:
                     mapping[name] = jnp.arange(cnt, cnt + var_size).reshape(shape)
                     cnt += var_size
                 elif isinstance(shape, ArrayListShape):
-                    submappings = []
+                    sub_mappings = []
                     for i_arr in range(shape.n_arrays):
                         var_size = reduce(mul, shape.shapes[i_arr], 1)
-                        submappings.append(
+                        sub_mappings.append(
                             jnp.arange(cnt, cnt + var_size).reshape(shape.shapes[i_arr])
                         )
                         cnt += var_size
-                    mapping[name] = ArrayList(submappings)
+                    mapping[name] = ArrayList(sub_mappings)
                 elif isinstance(shape, OrderedDict):
-                    submappings = OrderedDict()
+                    sub_mappings = OrderedDict()
                     for k, v in shape.items():
                         var_size = reduce(mul, v, 1)
-                        submappings[k] = jnp.arange(cnt, cnt + var_size).reshape(v)
+                        sub_mappings[k] = jnp.arange(cnt, cnt + var_size).reshape(v)
                         cnt += var_size
-                    mapping[name] = submappings
+                    mapping[name] = sub_mappings
                 else:
                     raise ValueError("Invalid shape type in DesignVariables.")
             else:

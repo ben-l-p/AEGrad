@@ -32,13 +32,14 @@ class TestLinXForcePoint:
         dt = 0.001
 
         struct = BeamStructure(
-            1,
-            conn,
-            jnp.zeros((0, 3)),
+            num_nodes=1,
+            connectivity=conn,
+            y_vector=jnp.zeros((0, 3)),
+            m_lumped_index=jnp.zeros((1,), dtype=int),
         )
 
         struct.set_design_variables(
-            coords, jnp.zeros((0, 6, 6)), None, m_lump[None, ...]
+            coords=coords, k_cs=jnp.zeros((0, 6, 6)), m_cs=None, m_lumped=m_lump[None, ...]
         )
 
         v_dot_expected = cls.f / m_lump[cls.f_direction_index, cls.f_direction_index]

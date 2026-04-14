@@ -16,8 +16,7 @@ from data_structures import ConvergenceSettings, ConvergenceStatus
 from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic, DynamicAeroelasticSnapshot
 from print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
 from structure import StaticStructure
-from print_utils import VerbosityLevel
-from structure.time_integration import TimeIntregrator
+from structure.time_integration import TimeIntegrator
 from structure.utils import get_solve_dofs
 
 
@@ -210,7 +209,7 @@ class BaseCoupledAeroelastic:
 
         t = jnp.arange(n_tstep) * dt + t_init
 
-        self.structure.time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
+        self.structure.time_integrator = TimeIntegrator(spectral_radius=spectral_radius, dt=dt)
 
         # initialise aeroelastic case object
         if init_case is None:

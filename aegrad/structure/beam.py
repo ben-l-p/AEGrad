@@ -32,8 +32,8 @@ from structure.utils import (
 )
 from algebra.se3 import p, rmat_to_ha_hat, hg_to_d, exp_se3, ha_to_ha_tilde
 from algebra.so3 import vec_to_skew
-from structure.time_integration import TimeIntregrator
-from algebra.se3 import t_se3, log_se3
+from structure.time_integration import TimeIntegrator
+from algebra.se3 import t_se3
 from structure.gradients.data_structures import StructuralDesignVariables, StructureFullStates
 from structure.data_structures import StructureMinimalStates
 
@@ -48,6 +48,9 @@ class BaseBeamStructure:
             num_nodes: int,
             connectivity: Array,
             y_vector: Array,
+            k_cs_index: Optional[Array] = None,
+            m_cs_index: Optional[Array] = None,
+            m_lumped_index: Optional[Array] = None,
             gravity: Optional[Array] = None,
             optional_jacobians: Optional[OptionalJacobians] = None,
             struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(max_n_iter=25,
@@ -61,7 +64,15 @@ class BaseBeamStructure:
         :param num_nodes: Number of nodes in the structure.
         :param connectivity: Connectivity array of arr_list_shapes [n_elem, 2].
         :param y_vector: Vector defining the y direction for each element, [n_elem, 3].
+        :param k_cs_index: Array defining the index from the library of k_cs to use for each element, [n_elem]. If none
+        is passed, it is assumed that there is a single entry in the library which is used for all elements.
+        :param m_cs_index: Array defining the index from the library of m_cs to use for each element, [n_elem]. If none
+        is passed, it is assumed that there is a single entry in the library which is used for all elements.
+        :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as
+        that for the lumped mass data [n_lumped_mass].
         :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3].
+        :param optional_jacobians: Define which Jacobians contributions are to be used for solution.
+        :param struct_convergence_settings: Structure convergence settings.
         """
 
         _check_type(num_nodes, int)
@@ -72,7 +83,7 @@ class BaseBeamStructure:
         check_arr_dtype(connectivity, int, "connectivity")
         _check_connectivity(connectivity, num_nodes)
         self.connectivity: Array = connectivity  # [n_elem, 2]
-        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes_]
+        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes]
         self.n_elem: int = connectivity.shape[0]
 
         self.dof_per_elem: Array = jnp.zeros((self.n_elem, 12), dtype=int)
@@ -91,15 +102,13 @@ class BaseBeamStructure:
 
         check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
         self.y_vector: Array = y_vector
-        self.use_lumped_mass: bool = False
-
+        self.use_lumped_mass: bool = m_lumped_index is not None
         # initialise design variables with default values
         self.x0: Array = jnp.zeros((num_nodes, 3))
-        self.m: Array = jnp.zeros((self.n_elem, 6, 6))
-        self.m_cs: Array = jnp.zeros((self.n_elem, 6, 6))
-        self.k_cs: Array = jnp.zeros((self.n_elem, 6, 6))
-        self.m_lumped: Array = jnp.zeros((num_nodes, 6, 6))
-        self.m_t_lumped: Array = jnp.zeros((self.n_dof, self.n_dof))
+
+        self._m_cs: Optional[Array] = None
+        self._k_cs: Optional[Array] = None
+        self._m_lumped: Optional[Array] = None
 
         # initialise auxiliary arrays
         self.o0: Array = jnp.zeros((self.n_elem, 3, 3))
@@ -120,6 +129,27 @@ class BaseBeamStructure:
         else:
             self.gravity_vec = jnp.zeros((3,))
 
+        # indexing
+        if k_cs_index is None:
+            k_cs_index_ = jnp.zeros(self.n_elem, dtype=int)
+        else:
+            check_arr_shape(k_cs_index, (self.n_elem,), "k_cs_index")
+            check_arr_dtype(k_cs_index, int, "k_cs_index")
+            k_cs_index_ = k_cs_index
+        self.k_cs_index: Array = k_cs_index_
+
+        if m_cs_index is None:
+            m_cs_index_ = jnp.zeros(self.n_elem, dtype=int)
+        else:
+            check_arr_shape(m_cs_index, (self.n_elem,), "m_cs_index")
+            check_arr_dtype(m_cs_index, int, "k_cs_index")
+            m_cs_index_ = m_cs_index
+        self.m_cs_index: Array = m_cs_index_
+
+        if m_lumped_index is not None:
+            check_arr_dtype(m_lumped_index, int, "m_lumped_index")
+        self.m_lumped_index: Optional[Array] = m_lumped_index
+
         # other settings
         self.use_m_cs: bool = False
 
@@ -130,10 +160,40 @@ class BaseBeamStructure:
         )
         self.struct_convergence_settings: ConvergenceSettings = struct_convergence_settings
 
-        self._time_integrator: Optional[TimeIntregrator] = None
+        self._time_integrator: Optional[TimeIntegrator] = None
 
     @property
-    def time_integrator(self) -> TimeIntregrator:
+    def k_cs(self) -> Array:
+        if self._k_cs is None:
+            raise ValueError("k_cs has not been set. Please set k_cs before accessing.")
+        return self._k_cs
+
+    @k_cs.setter
+    def k_cs(self, k_cs: Array) -> None:
+        self._k_cs = k_cs
+
+    @property
+    def m_cs(self) -> Array:
+        if self._m_cs is None:
+            raise ValueError("m_cs has not been set. Please set m_cs before accessing.")
+        return self._m_cs
+
+    @m_cs.setter
+    def m_cs(self, m_cs: Array) -> None:
+        self._m_cs = m_cs
+
+    @property
+    def m_lumped(self) -> Array:
+        if self._m_lumped is None:
+            raise ValueError("m_lumped has not been set. Please set m_lumped before accessing.")
+        return self._m_lumped
+
+    @m_lumped.setter
+    def m_lumped(self, m_lumped: Array) -> None:
+        self._m_lumped = m_lumped
+
+    @property
+    def time_integrator(self) -> TimeIntegrator:
         if self._time_integrator is None:
             raise ValueError(
                 "Time integrator has not been set. Please set time_integrator before accessing."
@@ -141,7 +201,7 @@ class BaseBeamStructure:
         return self._time_integrator
 
     @time_integrator.setter
-    def time_integrator(self, ti: TimeIntregrator) -> None:
+    def time_integrator(self, ti: TimeIntegrator) -> None:
         self._time_integrator = ti
 
     def set_design_variables(
@@ -155,29 +215,60 @@ class BaseBeamStructure:
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities.
-        :param coords: Node coordinates, [n_nodes_, 3].
-        :param k_cs: Cross-section stiffness matrices, [n_elem, 6, 6].
-        :param m_cs: Cross-section mass matrices, [n_elem, 6, 6].
-        :param m_lumped: Lumped mass matrices at nodes, [n_nodes_, 6, 6].
+        :param coords: Node coordinates, [n_nodes, 3].
+        :param k_cs: Cross-section stiffness matrices, [n_entry, 6, 6] or [6, 6].
+        :param m_cs: Cross-section mass matrices, [n_entry, 6, 6] or [6, 6].
+        :param m_lumped: Lumped mass matrices at nodes, [n_entry, 6, 6].
         :param remove_checks: Flag to ignore input checks, used when function is JIT compiled.
         """
+
+        # coordinates
+        check_arr_shape(coords, (self.n_nodes, 3), "coords")
+        self.x0 = self.x0.at[...].set(coords)
+
         # populate arrays
-        self.k_cs = self.k_cs.at[...].set(k_cs)
-        if m_cs is not None:
-            self.m_cs = self.m_cs.at[...].set(m_cs)
-            self.use_m_cs: bool = True
-        else:
-            self.use_m_cs = False
-            if self.use_gravity and m_lumped is None:
+        if k_cs.ndim == 2:
+            k_cs = k_cs[None, ...]
+        check_arr_shape(k_cs, (None, 6, 6), "k_cs")
+
+        if not remove_checks and k_cs.shape[0] != jnp.unique_values(self.k_cs_index).size:
+            warn(
+                "Redundant values in k_cs which are not used for solution due to no corresponding entry in k_cs_index.")
+
+        self.k_cs = k_cs
+        if m_cs is None:
+            if not remove_checks and self.use_gravity and m_lumped is None:
                 warn(
                     "No mass matrices provided, but gravity is enabled. Assuming zero mass.",
                 )
-        if m_lumped is not None:
-            self.m_lumped = self.m_lumped.at[...].set(m_lumped)
-            self.m_t_lumped = self.m_t_lumped.at[...].set(block_diag(*self.m_lumped))
-            self.use_lumped_mass = True
+            m_cs_ = jnp.zeros((6, 6))
+        else:
+            m_cs_ = m_cs
 
-        self.x0 = self.x0.at[...].set(coords)
+        if m_cs_.ndim == 2:
+            m_cs_ = m_cs_[None, ...]
+
+        check_arr_shape(m_cs_, (None, 6, 6), "m_cs")
+
+        if not remove_checks and m_cs_.shape[0] != jnp.unique_values(self.m_cs_index).size and m_cs is not None:
+            warn(
+                "Redundant values in m_cs which are not used for solution due to no corresponding entry in "
+                "m_cs_index.")
+
+        self.m_cs = m_cs_
+
+        if m_lumped is not None:
+            if not remove_checks:
+                check_arr_shape(m_lumped, (None, 6, 6), "m_lumped")
+
+                if self.m_lumped_index is None:
+                    raise ValueError("m_lumped_index has not been set")
+
+                if m_lumped.shape[0] != self.m_lumped_index.size:
+                    raise ValueError(
+                        "Number of entries in m_lumped does not match number of indices in m_lumped_index.")
+
+            self.m_lumped = m_lumped
 
         # obtain initial orientation and length
         x_elem = jnp.take(self.x0, self.connectivity, axis=0)  # [n_elem, 2, 3]
@@ -212,7 +303,7 @@ class BaseBeamStructure:
 
         self.hg0 = jnp.broadcast_to(
             jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
-        )  # [n_nodes_, 4, 4]
+        )  # [n_nodes, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
     def get_design_variables(self, struct_case: StaticStructure | DynamicStructure) -> StructuralDesignVariables:
@@ -234,7 +325,7 @@ class BaseBeamStructure:
             transform_nodal_vect(struct_case.f_ext_dead, rmat_t)
             if struct_case.f_ext_dead is not None else None
         )
-        return StructuralDesignVariables(x0=self.x0, m_cs=self.m_cs, k_cs=self.k_cs, m_lumped=self.m_lumped,
+        return StructuralDesignVariables(x0=self.x0, m_cs=self.m_cs, k_cs=self.k_cs, m_lumped=self._m_lumped,
                                          f_ext_dead=f_ext_dead_global, f_ext_follower=struct_case.f_ext_follower)
 
     def reference_configuration(
@@ -275,35 +366,8 @@ class BaseBeamStructure:
         """
         return vmap(hg_to_d, (0, 0), 0)(self.hg0, hg)
 
-    @staticmethod
-    def calculate_phi_from_hg(hg_nm1: Array, hg_n: Array) -> Array:
-        r"""
-        Calculate the twist increment from timestep varphi to timestep varphi+1
-        :param hg_nm1: Coordinates from timestep varphi-1, [n_nodes, 4, 4]
-        :param hg_n: Coordinates from timestep varphi, [n_nodes, 4, 4]
-        :return: Increment phi, [n_nodes, 6]
-        """
-        return vmap(hg_to_d, (0, 0), 0)(
-            hg_nm1,
-            hg_n,
-        )
-
-    @staticmethod
-    def calculate_varphi_from_phi(varphi_nm1: Array, phi_n: Array) -> Array:
-        r"""
-        Update the varphi vector with the timestep change phi.
-        :param varphi_nm1: Twists from reference to timestep varphi, [n_nodes, 6]
-        :param phi_n: Twists from timestep varphi to timestep varphi+1, [n_nodes, 6]
-        :return: Twists from reference to timestep varphi+1, [n_nodes, 6]
-        """
-        return vmap(
-            lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)),
-            (0, 0),
-            0,
-        )(varphi_nm1, phi_n)
-
     def calculate_hg_from_varphi(self, varphi: Array) -> Array:
-        exp_varphi = vmap(exp_se3)(varphi)  # [n_nodes_, 4, 4]
+        exp_varphi = vmap(exp_se3)(varphi)  # [n_nodes, 4, 4]
         return jnp.einsum("ijk,ikl->ijl", self.hg0, exp_varphi)
 
     def assemble_matrix_from_entries(self, entries: Array) -> Array:
@@ -331,6 +395,40 @@ class BaseBeamStructure:
         vect = jnp.zeros(self.n_dof)
         vect = vect.at[self.dof_per_elem[:, :6]].add(entries[:, :6])
         return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
+
+    def add_lumped_contributions_to_arr(self, arr: Array, lumped_arr: Array) -> Array:
+        r"""
+        Add lumped contributions to an array
+        :param arr: Full array, [6*n_node, 6*n_node]
+        :param lumped_arr: Lumped contributions, [n_lump, 6, 6]
+        :return: In-place updated array, [6*n_node, 6*n_node]
+        """
+
+        if self.m_lumped_index is None:
+            raise ValueError("m_lumped_index is None")
+
+        def add_block(carry, x):
+            node_idx, block = x
+            dofs = node_idx * 6 + jnp.arange(6)
+            return carry.at[jnp.ix_(dofs, dofs)].add(block), None
+
+        arr, _ = jax.lax.scan(add_block, arr, (self.m_lumped_index, lumped_arr))
+        return arr
+
+    def add_lumped_contributions_to_vec(self, vec: Array, lumped_vec: Array) -> Array:
+        r"""
+        Add lumped contributions to an array
+        :param vec: Full vector, [6*n_node]
+        :param lumped_vec: Lumped contributions, [n_lump, 6]
+        :return: In-place updated vector, [6*n_node]
+        """
+
+        if self.m_lumped_index is None:
+            raise ValueError("m_lumped_index is None")
+
+        idx = (self.m_lumped_index[:, None] * 6 + jnp.arange(6)[None, :]).ravel()  # [n_lump * 6]
+
+        return vec.at[idx].add(lumped_vec)
 
     def _make_load_steps_f(
             self, f: Optional[Array], weighting: Array, apply_alpha_weighting: bool
@@ -400,7 +498,7 @@ class BaseBeamStructure:
             p_d,
             self.l0,
             eps,
-            self.k_cs,
+            self.k_cs[self.k_cs_index, ...],
             self.ad_inv_o0,
         )  # [n_elem, 12, 12]
 
@@ -447,9 +545,9 @@ class BaseBeamStructure:
             )[1],
             (0, 0, 0, 0, 0),
             0,
-        )(self.m_cs, d, self.ad_inv_o0, self.l0, p_d_g)
+        )(self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0, p_d_g)
 
-        # perturbations in gravity direction, [n_nodes_, 3, 3]
+        # perturbations in gravity direction, [n_nodes, 3, 3]
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
             jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
         )
@@ -476,18 +574,15 @@ class BaseBeamStructure:
         r"""
         Compute the contribution to the stiffness matrix from gravity forces for the lumped masses.
         :param rmat: Nodal rotation matrices, [n_node, 3, 3]
-        :return: Stiffness contribution from gravity forces for lumped masses, [n_node, 6, 6]
+        :return: Stiffness contribution from gravity forces for lumped masses, [n_lumped, 6, 6]
         """
-        # [n_nodes_, 3, 3]
+        # [n_lumped, 3, 3]
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
-            jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)
+            jnp.einsum("ikj,k->ij", rmat[self.m_lumped_index, ...], self.gravity_vec)
         )
 
-        return (
-            jnp.zeros((self.n_nodes, 6, 6))
-            .at[:, :, 3:]
-            .set(jnp.einsum("ijk,ikl->ijl", self.m_lumped[:, :, 3:], d_g_d_omega))
-        )
+        return jnp.zeros_like(self.m_lumped).at[:, :, 3:].set(
+            jnp.einsum("ijk,ikl->ijl", self.m_lumped[:, :, 3:], d_g_d_omega))
 
     def _make_k_t_full(
             self,
@@ -519,7 +614,8 @@ class BaseBeamStructure:
                 self._make_k_t_grav(d, p_d, rmat, m_t)
             )
             if self.use_lumped_mass:
-                k_t += block_diag(*self._make_k_t_grav_lumped(rmat))
+                k_t_lumped = self._make_k_t_grav_lumped(rmat)
+                k_t = self.add_lumped_contributions_to_arr(arr=k_t, lumped_arr=k_t_lumped)
         return k_t
 
     def make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
@@ -531,7 +627,7 @@ class BaseBeamStructure:
         :return: Elementwise mass matrix, [n_elem, 12, 12]
         """
         return vmap(partial(_integrate_m_l, int_order=int_order), (0, 0, 0, 0), 0)(
-            self.m_cs, d, self.ad_inv_o0, self.l0
+            self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0
         )
 
     def _make_c_t(
@@ -558,7 +654,7 @@ class BaseBeamStructure:
             (0, 0, 0, 0, 0, 0),
             0,
         )(
-            self.m_cs,
+            self.m_cs[self.m_cs_index, ...],
             jnp.concatenate(
                 (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]),
                 axis=-1,
@@ -576,9 +672,9 @@ class BaseBeamStructure:
         r"""
         Obtain the gyroscopic matrix contribution from the lumped masses.
         :param v: Nodal velocities in global frame, [n_node, 6]
-        :return: Gyroscopic L and T matrix entries from lumped masses, [n_node, 6, 6], [n_node, 6, 6]
+        :return: Gyroscopic L and T matrix entries from lumped masses, [n_lumped, 6, 6], [n_lumped, 6, 6]
         """
-        c_t_l = vmap(_make_c_t_lumped, (0, 0), 0)(self.m_lumped, v)  # [n_node, 2, 6, 6]
+        c_t_l = vmap(_make_c_t_lumped, (0, 0), 0)(self.m_lumped, v[self.m_lumped_index, ...])  # [n_lumped, 2, 6, 6]
         return c_t_l[:, 0, :, :], c_t_l[:, 1, :, :]
 
     def _make_sys_matrix(
@@ -588,15 +684,15 @@ class BaseBeamStructure:
             c_t_lumped: Optional[Array],
             k_t: Array,
             t_n: Array,
-            ti: TimeIntregrator,
+            ti: TimeIntegrator,
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
         :param m_t: Disassembled system mass matrix, [n_elem, 12, 12].
         :param c_t: Disassembled system gyroscopic matrix, [n_elem, 12, 12].
-        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_node, 6, 6].
+        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, [n_lumped, 6, 6].
         :param k_t: System stiffness matrix, [n_dof, n_dof].
-        :param t_n: Tangent operator T(varphi), [n_nodes_, 6, 6].
+        :param t_n: Tangent operator T(varphi), [n_nodes, 6, 6].
         :param ti: Time integration parameters.
         :return: System matrix, [n_dof, n_dof].
         """
@@ -614,10 +710,8 @@ class BaseBeamStructure:
 
         if self.use_lumped_mass:
             if c_t_lumped is None: raise ValueError("c_t_lumped needs to be passed")
-            mat += (
-                    self.m_t_lumped * ti.beta_prime
-                    + block_diag(*c_t_lumped) * ti.gamma_prime
-            )
+            mat = self.add_lumped_contributions_to_arr(arr=mat, lumped_arr=self.m_lumped * ti.beta_prime)
+            mat = self.add_lumped_contributions_to_arr(arr=mat, lumped_arr=c_t_lumped * ti.gamma_prime)
 
         return mat
 
@@ -627,7 +721,7 @@ class BaseBeamStructure:
         :param eps: Element strain vectors, [n_elem, 6]
         :return: Element forces, [n_elem, 6]
         """
-        return jnp.einsum('ijk,ik->ij', self.k_cs, eps)
+        return jnp.einsum('ijk,ik->ij', self.k_cs[self.k_cs_index, ...], eps)
 
     def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
@@ -637,7 +731,7 @@ class BaseBeamStructure:
         :return: Internal forces, [n_elem, 12]
         """
 
-        return -jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs, eps)
+        return -jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs[self.k_cs_index, ...], eps)
 
     def _make_f_grav(self, m_t: Array, rmat: Array) -> Array:
         r"""
@@ -666,13 +760,13 @@ class BaseBeamStructure:
         r"""
         Compute the global gravitational force vector contribution from the lumped masses.
         :param rmat: Rotation matrices at nodes, [n_node, 3, 3]
-        :return: Lumped gravity force vector, [n_node, 6]
+        :return: Lumped gravity force vector, [n_lumped, 6]
         """
-        f_rot = jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)  # [n_node, 3]
+        f_rot = jnp.einsum("ikj,k->ij", rmat[self.m_lumped_index, ...], self.gravity_vec)  # [n_lumped, 3]
         f_rot_tot = jnp.concatenate(
-            (f_rot, jnp.zeros((self.n_nodes, 3))), axis=-1
-        )  # [n_node, 6]
-        return jnp.einsum("ijk,ik->ij", self.m_lumped, f_rot_tot)  # [n_node, 6]
+            (f_rot, jnp.zeros_like(f_rot)), axis=-1
+        )  # [n_lumped, 6]
+        return jnp.einsum("ijk,ik->ij", self.m_lumped, f_rot_tot)  # [n_lumped, 6]
 
     @staticmethod
     def make_f_dead_ext(f_ext: Array, rmat: Array) -> Array:
@@ -714,14 +808,14 @@ class BaseBeamStructure:
 
     def _make_f_iner_gyr_lumped(self, c_l_lumped: Array, v: Array, v_dot: Array) -> tuple[Array, Array]:
         r"""
-        Obtain the contribution to the inertialI forces from the lumped masses.
-        :param c_l_lumped: Gyroscopic matrix from lumped masses, [n_node, 6, 6]
+        Obtain the contribution to the inertial forces from the lumped masses.
+        :param c_l_lumped: Gyroscopic matrix from lumped masses, [n_lumped, 6, 6]
         :param v: Nodal velocities in local frame, [n_node, 6]
         :param v_dot: Nodal accelerations in local frame, [n_node, 6]
-        :return: Inertial forces from lumped masses, [n_node, 6]
+        :return: Inertial forces from lumped masses, [n_lumped, 6]
         """
-        f_iner = -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot)  # [n_node, 6]
-        f_gyr = - jnp.einsum("ijk,ik->ij", c_l_lumped, v)  # [n_node, 6]
+        f_iner = -jnp.einsum("ijk,ik->ij", self.m_lumped, v_dot[self.m_lumped_index, ...])  # [n_lumped, 6]
+        f_gyr = -jnp.einsum("ijk,ik->ij", c_l_lumped, v[self.m_lumped_index, ...])  # [n_lumped, 6]
         return f_iner, f_gyr
 
     def make_eps(self, d: Array) -> Array:
@@ -746,7 +840,7 @@ class BaseBeamStructure:
     def make_d(self, hg: Array) -> Array:
         r"""
         Compute the element relative configuration vectors from the nodal homogeneous transformation matrices
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4]
         :return: Element relative configuration vectors, [n_elem, 6]
         """
 
@@ -858,7 +952,7 @@ class BaseBeamStructure:
     ]:
         r"""
         Obtain all components of the force from a final solution.
-        :param hg: Nodal homogeneous transformation matrices, [n_nodes_, 4, 4].
+        :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4].
         :param dynamic: Whether to compute dynamic forces.
         :param f_ext_follower: External follower forces in local reference, [n_node, 6].
         :param f_ext_dead: External dead forces in global reference, [n_node, 6].
@@ -909,7 +1003,8 @@ class BaseBeamStructure:
                 self._make_f_grav(m_t, hg[:, :3, :3])  # type: ignore
             ).reshape(-1, 6)
             if self.use_lumped_mass:
-                this_f_grav += self._make_f_grav_lumped(hg[:, :3, :3])
+                f_grav_lumped = self._make_f_grav_lumped(hg[:, :3, :3])
+                this_f_grav = self.add_lumped_contributions_to_vec(vec=this_f_grav, lumped_vec=f_grav_lumped)
             this_f_res += this_f_grav
         else:
             this_f_grav = None
@@ -925,7 +1020,10 @@ class BaseBeamStructure:
             this_f_gyr = self.assemble_vector_from_entries(this_f_gyr).reshape(-1, 6)
 
             if self.use_lumped_mass:
-                this_f_iner += sum(self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot))  # type: ignore
+                f_iner_lumped, f_gyr_lumped = self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot)  # type: ignore
+                this_f_iner = self.add_lumped_contributions_to_vec(
+                    this_f_iner.ravel(), (f_iner_lumped + f_gyr_lumped).ravel()
+                ).reshape(-1, 6)
             this_f_res += this_f_iner
         else:
             this_f_iner = None
@@ -1042,14 +1140,14 @@ class BaseBeamStructure:
 
         if self.use_lumped_mass:
             if dynamic:
-                f_iner_gyr_lumped = jnp.add(*self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot)).ravel()
-
-                f_res_vect += f_iner_gyr_lumped
-                f_abs_sum_vect += jnp.abs(f_iner_gyr_lumped)
+                f_iner_lumped, f_gyr_lumped = self._make_f_iner_gyr_lumped(c_l_lumped, v, v_dot)
+                f_iner_gyr_lumped = (f_iner_lumped + f_gyr_lumped).ravel()
+                f_res_vect = self.add_lumped_contributions_to_vec(f_res_vect, f_iner_gyr_lumped)
+                f_abs_sum_vect = self.add_lumped_contributions_to_vec(f_abs_sum_vect, jnp.abs(f_iner_gyr_lumped))
             if self.use_gravity:
                 f_grav_lumped = self._make_f_grav_lumped(hg[:, :3, :3]).ravel()
-                f_res_vect += f_grav_lumped
-                f_abs_sum_vect += jnp.abs(f_grav_lumped)
+                f_res_vect = self.add_lumped_contributions_to_vec(vec=f_res_vect, lumped_vec=f_grav_lumped)
+                f_abs_sum_vect = self.add_lumped_contributions_to_vec(vec=f_abs_sum_vect, lumped_vec=f_grav_lumped)
 
         if solve_dofs is not None:
             return f_res_vect[solve_dofs], f_abs_sum_vect[
@@ -1062,9 +1160,9 @@ class BaseBeamStructure:
     def update_hg(hg: Array, phi: Array) -> Array:
         r"""
         Update the nodal homogeneous transformation matrices with the configuration increments.
-        :param hg: Existing nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
-        :param phi: Perturbation to the configuration vector, [n_nodes_, 6]
-        :return: Updated nodal homogeneous transformation matrices, [n_nodes_, 4, 4]
+        :param hg: Existing nodal homogeneous transformation matrices, [n_nodes, 4, 4]
+        :param phi: Perturbation to the configuration vector, [n_nodes, 6]
+        :return: Updated nodal homogeneous transformation matrices, [n_nodes, 4, 4]
         """
         return jnp.einsum(
             "ijk,ikl->ijl",
@@ -1207,7 +1305,7 @@ class BaseBeamStructure:
                     jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * struct_relaxation_factor
             )
 
-            # update configuration, [n_nodes_, 4, 4]
+            # update configuration, [n_nodes, 4, 4]
             hg_np1_full = self.update_hg(
                 hg_n, jnp.zeros(self.n_dof).at[solve_dofs].set(d_varphi_np1)
             )
@@ -1399,7 +1497,7 @@ class BaseBeamStructure:
             :param i_ts: Time step index.
             :param struct_converge_status_: ConvergenceStatus object for the current iteration, used to track
             convergence and print messages.
-            :param hg_n: Transformation matrices at iteration varphi, [n_nodes_, 4, 4].
+            :param hg_n: Transformation matrices at iteration varphi, [n_nodes, 4, 4].
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration varphi+1.
             """
@@ -1784,8 +1882,8 @@ class BaseBeamStructure:
             Performs load stepping iterations for a given time step
             :param i_ts: Timestep index for which to perform load stepping
             :param struct_converge_status: ConvergenceStatus object to update with load stepping convergence information
-            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes_, 4, 4]
-            :param phi_alpha: Nodal updates to the configuration in the algebra space, [n_nodes_, 6]
+            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4]
+            :param phi_alpha: Nodal updates to the configuration in the algebra space, [n_nodes, 6]
             :param q_alpha: Minimal states at intermediate alpha step
             :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6]
             :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
@@ -1875,7 +1973,7 @@ class BaseBeamStructure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        self.time_integrator = TimeIntregrator(spectral_radius=spectral_radius, dt=dt)
+        self.time_integrator = TimeIntegrator(spectral_radius=spectral_radius, dt=dt)
 
         def evaluate_initial_equilibrium(
                 init_state__: DynamicStructureSnapshot,

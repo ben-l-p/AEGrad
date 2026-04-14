@@ -6,7 +6,7 @@ from algebra.se3 import log_se3, exp_se3, hg_to_d
 from structure.data_structures import StructureMinimalStates
 
 
-class TimeIntregrator:
+class TimeIntegrator:
     r"""
     Container for time integration parameters.
     """
@@ -16,7 +16,7 @@ class TimeIntregrator:
             spectral_radius: float | Array,
             dt: float | Array,
     ):
-        if 1.0 <= spectral_radius < 0.0:
+        if 1.0 < spectral_radius < 0.0:
             warn(
                 "Spectral radius should be between 0.0 and 1.0 to guarantee stability."
             )

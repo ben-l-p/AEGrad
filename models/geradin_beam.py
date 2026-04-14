@@ -34,7 +34,7 @@ def geradin_beam(
         .at[:, direction_index]
         .set(jnp.linspace(0, length, n_nodes))
     )
-    struct = BeamStructure(n_nodes, conn, y_vect[None, :])
+    struct = BeamStructure(num_nodes=n_nodes, connectivity=conn, y_vector=y_vect[None, :])
 
     k_coeffs = jnp.full(6, 1e12)
     k_coeffs = k_coeffs.at[1:3].set(3.231e8)

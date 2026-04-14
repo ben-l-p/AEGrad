@@ -17,7 +17,8 @@ class TestLumpedMassTranslationAdjoint:
         conn = jnp.zeros((0, 2), dtype=int)
         y_vect = jnp.zeros((0, 3))
 
-        beam = BeamStructure(num_nodes=n_nodes, connectivity=conn, y_vector=y_vect)
+        beam = BeamStructure(num_nodes=n_nodes, connectivity=conn, y_vector=y_vect,
+                             m_lumped_index=jnp.zeros((1,), dtype=int))
 
         coords = jnp.array(((0.0, 0.0, 0.0),))
         m_l = jnp.diag(jnp.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))[None, :]

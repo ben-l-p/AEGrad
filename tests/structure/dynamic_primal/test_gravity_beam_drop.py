@@ -33,7 +33,7 @@ class TestXGravityXBeamDrop:
         n_tstep = 1000
         dt = 0.001
 
-        struct = BeamStructure(2, conn, cls.y_vect, g_vec)
+        struct = BeamStructure(num_nodes=2, connectivity=conn, y_vector=cls.y_vect, gravity=g_vec)
         struct.set_design_variables(coords, k_cs, m_cs)
 
         init_cond = struct.reference_configuration().to_dynamic()

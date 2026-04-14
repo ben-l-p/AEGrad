@@ -13,7 +13,6 @@ from aero.linear import LinearWakeType, InputUnflattened
 from aero.data_structures import AeroSnapshot
 from aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aero.flowfields import FlowField, Constant, OneMinusCosine
-from print_utils import set_verbosity, VerbosityLevel
 
 
 class TestLinearAero:

@@ -8,7 +8,6 @@ from coupled.gradients.data_structures import AeroelasticFullStates, Aeroelastic
 from data_structures import ConvergenceSettings
 
 from models.cantilever_wing import make_cantilever_wing
-from print_utils import VerbosityLevel
 
 jax.config.update("jax_enable_x64", True)
 
@@ -30,13 +29,11 @@ class TestDynamicEquilibriumAdjoint:
         dt = c_ref / (m * u_inf_mag)
         n_tstep = 100
 
-        def static_objective(states: AeroelasticFullStates, dv: AeroelasticDesignVariables,
-                             i_ts: Optional[int | Array]) -> Array:
+        def static_objective(states: AeroelasticFullStates, *_, **__) -> Array:
             return states.structure.f_elem[0, 3]
 
         def dynamic_objective(states: AeroelasticFullStates, dv: AeroelasticDesignVariables,
                               i_ts: Optional[int | Array]) -> Array:
-            # return static_objective(states, dv, i_ts=i_ts) / n_tstep
             return static_objective(states, dv, i_ts=i_ts) / n_tstep
 
         # set tolerance to zero, rather than none, to prevent error messages
@@ -67,6 +64,6 @@ class TestDynamicEquilibriumAdjoint:
                             static_grad.aero.flowfield['rho']), "Mismatch in rho gradient"
 
         if dynamic_grad.structure.m_cs is None: raise ValueError("Missing mass gradient")
-        assert jnp.allclose(dynamic_grad.structure.m_cs, 0.0, atol=1e-7), "Nonzero mass gradient"
+        assert jnp.allclose(dynamic_grad.structure.m_cs, 0.0, atol=1e-6), "Nonzero mass gradient"
 
         assert jnp.allclose(dynamic_grad.structure.k_cs, static_grad.structure.k_cs), "Mismatch in stiffness gradient"

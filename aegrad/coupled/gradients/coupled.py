@@ -438,7 +438,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             # accumulate design derivative with adj_.T @ p_s_p_x
             # do not add anything for timestep 0 as the Jacobians refer to ts = -1
             # handle this with another routine, and use zero adjoint states
-            d_j_d_x_ += p_r_n_p_dv.premult_adj(adj_[i_ts, ...])
+            d_j_d_x_ += p_r_n_p_dv.premultiply_adj(adj_[i_ts, ...])
 
             # add on direct contribution from objective
             d_j_d_x_ += p_j_n_p_x
@@ -523,7 +523,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             # add zero terms for prescribed dofs
             p_j0_p_q0_full = p_j0_p_q0_full.at[:, free_state_ix].add(p_j0_p_q0)
-            d_j_d_x += p_q0_p_x.premult_adj(p_j0_p_q0_full)
+            d_j_d_x += p_q0_p_x.premultiply_adj(p_j0_p_q0_full)
 
         # restore original shape of j, and cut off zeros for past-end timestep and initial timestep which are always 0
         adj = adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[1:-1]
