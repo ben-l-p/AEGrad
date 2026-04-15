@@ -6,7 +6,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from print_utils import jax_print, VerbosityLevel
+from utils.print_utils import jax_print, VerbosityLevel
 from structure.beam import BaseBeamStructure
 from structure import OptionalJacobians
 from structure.data_structures import (
@@ -255,13 +255,13 @@ class BeamStructure(BaseBeamStructure):
             0,
             0,
             0,
-        )(q_n.varphi, q_nm1.varphi, phi_n)
+        )(q_n.varphi, q_nm1.varphi, phi_n).ravel()[solve_dofs]
 
-        v_res = q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a - q_n.v
+        v_res = (q_nm1.v + (1.0 - gamma) * dt * q_nm1.a + gamma * dt * q_n.a - q_n.v).ravel()[solve_dofs]
 
-        a_res = (
-                        (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
-                ) / (1.0 - alpha_m) - q_n.a
+        a_res = ((
+                         (1.0 - alpha_f) * q_n.v_dot + alpha_f * q_nm1.v_dot - alpha_m * q_nm1.a
+                 ) / (1.0 - alpha_m) - q_n.a).ravel()[solve_dofs]
 
         # updates to v_dot, which are obtained from relation to other states through structural problem
 
@@ -324,7 +324,7 @@ class BeamStructure(BaseBeamStructure):
             inner_case.make_m_t(d=d_alpha)
         )
         if inner_case.use_lumped_mass:
-            m_alpha += jax.scipy.linalg.block_diag(*inner_case.m_lumped)
+            m_alpha = inner_case.add_lumped_contributions_to_arr(arr=m_alpha, lumped_arr=inner_case.m_lumped)
 
         # calculate non-inertial forcing residual
         f_res_non_iner = f_int_alpha + f_gyr_alpha
@@ -340,24 +340,20 @@ class BeamStructure(BaseBeamStructure):
             f_res_non_iner += f_aero_alpha
 
         # from forcing residual, solve for v_dot which satisfies f_res=0
-        # restrict solve to free DOFs to avoid prescribed-DOF reaction forces contaminating
-        # the free-DOF accelerations through off-diagonal mass matrix terms
-        if solve_dofs is not None:
-            f_res_free = f_res_non_iner.ravel()[solve_dofs]
-            m_free = m_alpha[jnp.ix_(solve_dofs, solve_dofs)]
-            v_dot_free = jnp.linalg.solve(m_free, f_res_free)
-            v_dot_alpha = jnp.zeros(self.n_dof).at[solve_dofs].set(v_dot_free).reshape(-1, 6)
+        # restrict solve to free DOFs to avoid prescribed-DOF reaction forces
+        if solve_dofs is None:
+            solve_dofs_: Array | ellipsis = ...
         else:
-            v_dot_alpha = jnp.linalg.solve(m_alpha, f_res_non_iner.ravel()).reshape(-1, 6)
+            solve_dofs_: Array | ellipsis = solve_dofs
+            m_alpha = m_alpha[jnp.ix_(solve_dofs, solve_dofs)]
 
-        # find v_dot_nm1 from its alpha value
-        v_dot_res = (v_dot_alpha - alpha_f * q_nm1.v_dot) / (
-                1.0 - alpha_f
-        ) - q_n.v_dot
+        # find the v_dot residual to satisfy the structural problem
+        v_dot_res = (f_res_non_iner.ravel()[solve_dofs_] / (1.0 - alpha_f) - m_alpha @ (
+                alpha_f / (1.0 - alpha_f) * q_nm1.v_dot.ravel()[solve_dofs_] + q_n.v_dot.ravel()[solve_dofs_]))
 
         return jnp.stack(
             (varphi_res, v_res, v_dot_res, a_res), axis=0
-        )  # [4, n_nodes, 6]
+        ).ravel()  # [4*n_free_dof]
 
     # @jax.jit(static_argnums=(0, 1, 2, 3))
     def dynamic_adjoint(
@@ -429,10 +425,9 @@ class BeamStructure(BaseBeamStructure):
                     .set(q_n_free)
                     .reshape(4, -1, 6)
                 )
-                r_out = self.timestep_residual(
+                return self.timestep_residual(
                     i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, solve_dofs=solve_dofs
                 )
-                return r_out.ravel()[free_state_ix]  # [n_adj_dof]
 
             return jax.jacrev(inner, argnums=(0, 1, 2))(
                 q_nm1.to_mat().ravel()[free_state_ix],

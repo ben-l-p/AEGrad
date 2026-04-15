@@ -16,7 +16,7 @@ class SupportsPytree(Protocol):
 T = TypeVar("T", bound=SupportsPytree)
 
 
-def _make_pytree(cls: type[T]) -> type[T]:
+def make_pytree(cls: type[T]) -> type[T]:
     """
     Convert an object to a pytree structure_dv.
     :param cls: Class to be converted to a pytree.
@@ -39,13 +39,13 @@ def _make_pytree(cls: type[T]) -> type[T]:
     return cls
 
 
-def _check_type(obj: Any, type_: type) -> None:
+def check_type(obj: Any, type_: type) -> None:
     if not isinstance(obj, type_):
         raise TypeError(f"Expected {type_}, but got {obj}.")
     return
 
 
-def _shallow_asdict(obj):
+def shallow_asdict(obj):
     if not is_dataclass(obj):
         raise TypeError("object must be a dataclass")
     return {f.name: getattr(obj, f.name) for f in fields(obj)}

@@ -38,6 +38,10 @@ def compute_aic_grid(
         -1, 2, 3
     )
 
+    # account for the case where there are no source panels to prevent division by zero
+    if not c_m or not c_n or not m_panels or not n_panels:
+        return jnp.zeros((c_m, c_n, m_panels, n_panels))
+
     @jax.checkpoint
     def row(args: tuple) -> Array:
         ci, ni = args

@@ -12,7 +12,7 @@ from jax import Array, vmap
 from jax.lax import fori_loop
 
 from structure.utils import transform_nodal_vect
-from utils import _make_pytree
+from utils.utils import make_pytree
 from algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
 from aero.utils import propagate_wake, compute_c, compute_nc, calculate_steady_forcing, project_forcing_to_beam
 from constants import HORSESHOE_LENGTH
@@ -37,10 +37,10 @@ from aero.gradients.data_structures import AeroDesignVariables, AeroStates
 
 if TYPE_CHECKING:
     from aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
-from print_utils import warn, jax_print
+from utils.print_utils import warn, jax_print
 
 
-@_make_pytree
+@make_pytree
 class UVLM:
     r"""
     Class to define an unsteady vortex lattice method aerodynamic case with arbitrary number of aerodynamic surfaces.

@@ -5,11 +5,11 @@ import jax
 from jax import Array, numpy as jnp, jacobian
 
 from algebra.array_utils import check_arr_shape
-from print_utils import warn, jax_print
-from utils import _make_pytree
+from utils.print_utils import warn, jax_print
+from utils.utils import make_pytree
 
 
-@_make_pytree
+@make_pytree
 class LinearOperator:
     r"""
     Linear operator represented by a function, either as A(x_target) or A @ x.
@@ -252,7 +252,7 @@ class BlockLinear:
         return blk
 
 
-@_make_pytree
+@make_pytree
 class LinearSystem:
     r"""
     Linear system represented in state-space form, with tools for time-stepping

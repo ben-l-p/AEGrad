@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from coupled.data_structures import StaticAeroelastic
     from structure import StructureFullStates, StructuralDesignVariables
 from structure.gradients.data_structures import StructureDesignGradients
-from utils import _make_pytree
-from data_structures import DesignVariables
+from utils.utils import make_pytree
+from utils.data_structures import DesignVariables
 
 
 @jax.tree_util.register_dataclass
@@ -35,7 +35,7 @@ class AeroelasticFullStates:
     structure: StructureFullStates
 
 
-@_make_pytree
+@make_pytree
 class AeroelasticMinimalStates:
     def __init__(self, structure: StructureMinimalStates, aero: AeroStates):
         self.structure: StructureMinimalStates = structure
@@ -72,7 +72,7 @@ class AeroelasticStateGradients:
     structure: StructuralStateGradients
 
 
-@_make_pytree
+@make_pytree
 class AeroelasticDesignVariables(DesignVariables):
     def __init__(
             self,
@@ -124,7 +124,7 @@ class AeroelasticDesignVariables(DesignVariables):
         return "structure", "aero"
 
 
-@_make_pytree
+@make_pytree
 class AeroelasticDesignGradients:
     def __init__(
             self,

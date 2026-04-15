@@ -5,7 +5,7 @@ from jax import Array
 import jax
 
 from coupled.gradients.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
-from data_structures import ConvergenceSettings
+from utils.data_structures import ConvergenceSettings
 
 from models.cantilever_wing import make_cantilever_wing
 

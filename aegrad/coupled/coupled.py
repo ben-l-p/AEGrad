@@ -12,9 +12,9 @@ from aero.flowfields import FlowField
 from structure import BeamStructure
 from aero.data_structures import DynamicAeroCase
 from coupled.gradients.data_structures import AeroelasticDesignVariables
-from data_structures import ConvergenceSettings, ConvergenceStatus
+from utils.data_structures import ConvergenceSettings, ConvergenceStatus
 from coupled.data_structures import StaticAeroelastic, DynamicAeroelastic, DynamicAeroelasticSnapshot
-from print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
+from utils.print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
 from structure import StaticStructure
 from structure.time_integration import TimeIntegrator
 from structure.utils import get_solve_dofs

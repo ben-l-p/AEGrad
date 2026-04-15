@@ -9,7 +9,7 @@ from types import EllipsisType
 from jax import numpy as jnp
 from jax import Array
 
-from utils import _make_pytree
+from utils.utils import make_pytree
 
 
 def optional_add(*arrs: Optional[Array]) -> Optional[Array]:
@@ -145,7 +145,7 @@ def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
         raise TypeError("Axis must be an int or a sequence of ints.")
 
 
-@_make_pytree
+@make_pytree
 class ArrayList(UserList[Array]):
     r"""
     Class to hold a sequence of arrays, with overloaded arithmetic operations. This allows for more elegant handling of

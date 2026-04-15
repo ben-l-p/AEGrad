@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 import jax
 
-from data_structures import ConvergenceSettings
+from utils.data_structures import ConvergenceSettings
 from models.cantilever_wing import make_cantilever_wing
 
 jax.config.update("jax_enable_x64", True)

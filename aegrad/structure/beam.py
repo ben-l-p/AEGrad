@@ -13,15 +13,15 @@ from aero.data_structures import DynamicAeroCase
 if TYPE_CHECKING:
     from coupled.data_structures import DynamicAeroelastic
     from aero.uvlm import UVLM
-from utils import _check_type
+from utils.utils import check_type
 from structure.data_structures import (
     StaticStructure,
     DynamicStructure,
     DynamicStructureSnapshot,
     OptionalJacobians,
 )
-from data_structures import ConvergenceSettings, ConvergenceStatus
-from print_utils import warn, warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
+from utils.data_structures import ConvergenceSettings, ConvergenceStatus
+from utils.print_utils import warn, warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
 from structure.utils import _check_connectivity, _n_elem_per_node, get_solve_dofs, transform_nodal_vect
 from algebra.array_utils import check_arr_shape, check_arr_dtype
 from structure.utils import (
@@ -75,7 +75,7 @@ class BaseBeamStructure:
         :param struct_convergence_settings: Structure convergence settings.
         """
 
-        _check_type(num_nodes, int)
+        check_type(num_nodes, int)
         self.n_nodes: int = num_nodes
         self.n_dof: int = num_nodes * 6
 

@@ -1,5 +1,5 @@
 import pytest
-from print_utils import set_verbosity, VerbosityLevel
+from utils.print_utils import set_verbosity, VerbosityLevel
 
 
 @pytest.fixture(autouse=True, scope="session")

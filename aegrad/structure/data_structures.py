@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from jax import numpy as jnp, Array
 from jax import vmap
 
-from print_utils import warn
+from utils.print_utils import warn
 from algebra.base import chi
 from plotting.beam import plot_beam_to_vtk
 from plotting.pvd import write_pvd
 from structure.utils import transform_nodal_vect
-from utils import _make_pytree, index_to_arr
+from utils.utils import make_pytree, index_to_arr
 from structure.gradients.data_structures import StructureFullStates
 
 
@@ -28,7 +28,7 @@ class OptionalJacobians:
     d_f_int_d_p_d: bool = False  # geometric stiffness
 
 
-@_make_pytree
+@make_pytree
 class StaticStructure:
     """Object to hold the full state and forces of a static structure_dv analysis."""
 
@@ -436,7 +436,7 @@ class DynamicStructureSnapshot:
         )
 
 
-@_make_pytree
+@make_pytree
 class DynamicStructure:
     """Object to hold the full state and forces of a dynamic structure_dv analysis across multiple timesteps."""
 
@@ -748,7 +748,7 @@ class DynamicStructure:
         )
 
 
-@_make_pytree
+@make_pytree
 class StructureMinimalStates:
     def __init__(
             self,

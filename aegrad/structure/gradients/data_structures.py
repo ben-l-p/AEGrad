@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from structure.data_structures import StaticStructure
 from algebra.array_utils import ArrayListShape
 
-from utils import _make_pytree
-from data_structures import DesignVariables
+from utils.utils import make_pytree
+from utils.data_structures import DesignVariables
 
 
 @jax.tree_util.register_dataclass
@@ -36,7 +36,7 @@ class StructuralStateGradients:
     d_hg_d_u: Array
 
 
-@_make_pytree
+@make_pytree
 class StructuralDesignVariables(DesignVariables):
     def __init__(
             self,
@@ -125,7 +125,7 @@ class StructuralDesignVariables(DesignVariables):
         )
 
 
-@_make_pytree
+@make_pytree
 class StructureDesignGradients:
     def __init__(
             self,

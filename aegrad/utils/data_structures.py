@@ -8,8 +8,8 @@ from typing import Optional, Sequence, overload, OrderedDict
 from jax import Array, numpy as jnp
 
 from algebra.array_utils import ArrayListShape, ArrayList, check_arr_shape
-from print_utils import warn, jax_print, VerbosityLevel
-from utils import _make_pytree
+from utils.print_utils import warn, jax_print, VerbosityLevel
+from utils.utils import make_pytree
 
 
 @dataclass
@@ -21,7 +21,7 @@ class ConvergenceSettings:
     abs_force_tol: Optional[float]
 
 
-@_make_pytree
+@make_pytree
 class ConvergenceStatus:
     def __init__(self, convergence_settings: ConvergenceSettings):
         r"""

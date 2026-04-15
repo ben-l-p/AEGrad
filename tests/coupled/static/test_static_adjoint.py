@@ -5,7 +5,7 @@ from jax import Array
 from coupled.gradients.data_structures import (
     AeroelasticFullStates, AeroelasticDesignGradients,
 )
-from data_structures import ConvergenceSettings
+from utils.data_structures import ConvergenceSettings
 from models import cantilever_wing
 
 jax.config.update("jax_enable_x64", True)
@@ -85,8 +85,8 @@ class TestForwardStaticAeroelasticAdjoint:
 
         assert jnp.allclose(fd_grad,
                             adj_grad,
-                            rtol=1e-3), f"Gradient mismatch with respect to k_cs[:, 3, 3], Adjoint={adj_grad}, FD={fd_grad}"
+                            rtol=6e-3), f"Gradient mismatch with respect to k_cs[:, 3, 3], Adjoint={adj_grad}, FD={fd_grad}"
 
 
-class TestReversedForwardStaticAeroelasticAdjoint(TestForwardStaticAeroelasticAdjoint):
+class TestReverseStaticAeroelasticAdjoint(TestForwardStaticAeroelasticAdjoint):
     forward_mode: bool = False

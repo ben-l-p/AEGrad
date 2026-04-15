@@ -1,7 +1,7 @@
 from jax import Array, vmap
 from jax import numpy as jnp
 
-from print_utils import warn
+from utils.print_utils import warn
 from algebra.se3 import log_se3, exp_se3, hg_to_d
 from structure.data_structures import StructureMinimalStates
 

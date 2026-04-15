@@ -34,8 +34,8 @@ from algebra.linear_operators import LinearOperator, LinearSystem
 from algebra.array_utils import ArrayList, split_to_vertex
 from aero.flowfields import FlowField
 from aero.utils import biot_savart_cutoff, KernelFunction
-from utils import _shallow_asdict
-from print_utils import warn
+from utils.utils import shallow_asdict
+from utils.print_utils import warn
 from aero.aic import compute_aic_solve, compute_v_ind
 
 if TYPE_CHECKING:
@@ -325,7 +325,7 @@ class LinearUVLM:
         :return: InputUnflattened object.
         """
         return InputUnflattened(
-            **self._unpack_vector(u, _shallow_asdict(self.input_slices))
+            **self._unpack_vector(u, shallow_asdict(self.input_slices))
         )
 
     def _unpack_state_vector(self, x: Array) -> StateUnflattened:
@@ -335,7 +335,7 @@ class LinearUVLM:
         :return: StateUnflattened object.
         """
         return StateUnflattened(
-            **self._unpack_vector(x, _shallow_asdict(self.state_slices))
+            **self._unpack_vector(x, shallow_asdict(self.state_slices))
         )
 
     def _unpack_output_vector(self, y: Array) -> OutputUnflattened:
@@ -345,7 +345,7 @@ class LinearUVLM:
         :return: OutputUnflattened object.
         """
         return OutputUnflattened(
-            **self._unpack_vector(y, _shallow_asdict(self.output_slices))
+            **self._unpack_vector(y, shallow_asdict(self.output_slices))
         )
 
     def _unpack_input_vector_t(self, u_t: Array) -> InputUnflattened:
@@ -355,7 +355,7 @@ class LinearUVLM:
         :return: InputUnflattened object.
         """
         return InputUnflattened(
-            **self._unpack_vector(u_t, _shallow_asdict(self.input_slices), add_t=True)
+            **self._unpack_vector(u_t, shallow_asdict(self.input_slices), add_t=True)
         )
 
     def _unpack_state_vector_t(self, x_t: Array) -> StateUnflattened:
@@ -365,7 +365,7 @@ class LinearUVLM:
         :return: StateUnflattened object.
         """
         return StateUnflattened(
-            **self._unpack_vector(x_t, _shallow_asdict(self.state_slices), add_t=True)
+            **self._unpack_vector(x_t, shallow_asdict(self.state_slices), add_t=True)
         )
 
     def _unpack_output_vector_t(self, y_t: Array) -> OutputUnflattened:
@@ -375,7 +375,7 @@ class LinearUVLM:
         :return: OutputUnflattened object.
         """
         return OutputUnflattened(
-            **self._unpack_vector(y_t, _shallow_asdict(self.output_slices), add_t=True)
+            **self._unpack_vector(y_t, shallow_asdict(self.output_slices), add_t=True)
         )
 
     def _pack_vector(
@@ -407,7 +407,7 @@ class LinearUVLM:
         :return: Input vector, [n_inputs]
         """
         return self._pack_vector(
-            _shallow_asdict(self.input_slices), self.n_inputs, _shallow_asdict(u_input)
+            shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
         )
 
     def _pack_state_vector(self, x_state: StateUnflattened) -> Array:
@@ -417,7 +417,7 @@ class LinearUVLM:
         :return: State vector, [n_states]
         """
         return self._pack_vector(
-            _shallow_asdict(self.state_slices), self.n_states, _shallow_asdict(x_state)
+            shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
         )
 
     def _pack_output_vector(self, y_output: OutputUnflattened) -> Array:
@@ -427,9 +427,9 @@ class LinearUVLM:
         :return: Output vector, [n_outputs]
         """
         return self._pack_vector(
-            _shallow_asdict(self.output_slices),
+            shallow_asdict(self.output_slices),
             self.n_outputs,
-            _shallow_asdict(y_output),
+            shallow_asdict(y_output),
         )
 
     def _pack_vector_t(
@@ -467,7 +467,7 @@ class LinearUVLM:
         :return: Input vector time history, [n_tstep, n_inputs]
         """
         return self._pack_vector_t(
-            _shallow_asdict(self.input_slices), self.n_inputs, _shallow_asdict(u_input)
+            shallow_asdict(self.input_slices), self.n_inputs, shallow_asdict(u_input)
         )
 
     def _pack_state_vector_t(self, x_state: StateUnflattened) -> Array:
@@ -477,7 +477,7 @@ class LinearUVLM:
         :return: State vector time history, [n_tstep, n_states]
         """
         return self._pack_vector_t(
-            _shallow_asdict(self.state_slices), self.n_states, _shallow_asdict(x_state)
+            shallow_asdict(self.state_slices), self.n_states, shallow_asdict(x_state)
         )
 
     def _pack_output_vector_t(self, y_output: OutputUnflattened) -> Array:
@@ -487,9 +487,9 @@ class LinearUVLM:
         :return: Output vector time history, [n_tstep, n_outputs]
         """
         return self._pack_vector_t(
-            _shallow_asdict(self.output_slices),
+            shallow_asdict(self.output_slices),
             self.n_outputs,
-            _shallow_asdict(y_output),
+            shallow_asdict(y_output),
         )
 
     def _get_total(
@@ -530,7 +530,7 @@ class LinearUVLM:
         """
         return InputUnflattened(
             **self._get_total(
-                _shallow_asdict(u), _shallow_asdict(self.get_reference_inputs())
+                shallow_asdict(u), shallow_asdict(self.get_reference_inputs())
             )
         )
 
@@ -542,7 +542,7 @@ class LinearUVLM:
         """
         return StateUnflattened(
             **self._get_total(
-                _shallow_asdict(x), _shallow_asdict(self.get_reference_states())
+                shallow_asdict(x), shallow_asdict(self.get_reference_states())
             )
         )
 
@@ -554,7 +554,7 @@ class LinearUVLM:
         """
         return OutputUnflattened(
             **self._get_total(
-                _shallow_asdict(y), _shallow_asdict(self.get_reference_outputs())
+                shallow_asdict(y), shallow_asdict(self.get_reference_outputs())
             )
         )
 
@@ -566,8 +566,8 @@ class LinearUVLM:
         """
         return InputUnflattened(
             **self._get_total(
-                _shallow_asdict(u_t),
-                _shallow_asdict(self.get_reference_inputs()),
+                shallow_asdict(u_t),
+                shallow_asdict(self.get_reference_inputs()),
                 add_t=True,
             )
         )
@@ -580,8 +580,8 @@ class LinearUVLM:
         """
         return StateUnflattened(
             **self._get_total(
-                _shallow_asdict(x_t),
-                _shallow_asdict(self.get_reference_states()),
+                shallow_asdict(x_t),
+                shallow_asdict(self.get_reference_states()),
                 add_t=True,
             )
         )
@@ -594,8 +594,8 @@ class LinearUVLM:
         """
         return OutputUnflattened(
             **self._get_total(
-                _shallow_asdict(y_t),
-                _shallow_asdict(self.get_reference_outputs()),
+                shallow_asdict(y_t),
+                shallow_asdict(self.get_reference_outputs()),
                 add_t=True,
             )
         )
@@ -626,21 +626,21 @@ class LinearUVLM:
         Get a zero input unflattened object.
         :return: InputUnflattened object with zero arrays.
         """
-        return InputUnflattened(**self._get_zero(_shallow_asdict(self.input_slices)))
+        return InputUnflattened(**self._get_zero(shallow_asdict(self.input_slices)))
 
     def get_zero_state(self) -> StateUnflattened:
         r"""
         Get a zero state unflattened object.
         :return: StateUnflattened object with zero arrays.
         """
-        return StateUnflattened(**self._get_zero(_shallow_asdict(self.state_slices)))
+        return StateUnflattened(**self._get_zero(shallow_asdict(self.state_slices)))
 
     def get_zero_output(self) -> OutputUnflattened:
         r"""
         Get a zero output unflattened object.
         :return: OutputUnflattened object with zero arrays.
         """
-        return OutputUnflattened(**self._get_zero(_shallow_asdict(self.output_slices)))
+        return OutputUnflattened(**self._get_zero(shallow_asdict(self.output_slices)))
 
     def _unflatten_subvec(self, vec: Array, component: _LinearComponent) -> ArrayList:
         r"""

@@ -6,7 +6,7 @@ from functools import partial
 import vtk
 from vtk.numpy_interface import algorithms as algs  # type: ignore
 from vtk.numpy_interface import dataset_adapter as dsa  # type: ignore
-from print_utils import warn
+from utils.print_utils import warn
 
 import jax
 from jax import Array

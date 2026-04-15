@@ -5,7 +5,7 @@ from jax import numpy as jnp
 from jax import Array
 
 from algebra.array_utils import ArrayList, check_arr_shape
-from utils import _make_pytree
+from utils.utils import make_pytree
 
 
 class FlowField:
@@ -110,7 +110,7 @@ class FlowField:
         )
 
 
-@_make_pytree
+@make_pytree
 class Constant(FlowField):
     r"""
     Constant velocity flow field:
@@ -123,7 +123,7 @@ class Constant(FlowField):
             return jnp.zeros(3)
 
 
-@_make_pytree
+@make_pytree
 class OneMinusCosine(FlowField):
     r"""
     One minus cosine flow field.

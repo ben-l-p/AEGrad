@@ -14,11 +14,11 @@ if TYPE_CHECKING:
     from aero.data_structures import DynamicAeroCase
 from algebra.array_utils import ArrayList, ArrayListShape, vect_to_arrs
 from plotting.aerogrid import plot_grid_to_vtk
-from utils import _make_pytree
-from data_structures import DesignVariables
+from utils.utils import make_pytree
+from utils.data_structures import DesignVariables
 
 
-@_make_pytree
+@make_pytree
 class AeroStates:
     def __init__(self, gamma_b: ArrayList, gamma_w: ArrayList, gamma_b_dot: ArrayList, zeta_w: ArrayList) -> None:
         self.gamma_b: ArrayList = gamma_b
@@ -68,7 +68,7 @@ class AeroStateGradients:
     d_f_unsteady_d_u: Optional[ArrayList]
 
 
-@_make_pytree
+@make_pytree
 class AeroDesignVariables(DesignVariables):
     def __init__(
             self,
@@ -108,7 +108,7 @@ class AeroDesignVariables(DesignVariables):
         return "x0_aero", "flowfield"
 
 
-@_make_pytree
+@make_pytree
 class AeroDesignGradients:
     def __init__(
             self,

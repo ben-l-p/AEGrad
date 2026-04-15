@@ -15,4 +15,4 @@ EPSILON = 1e-7
 R_CUTOFF = 1e-4
 
 # batch size for limiting memory usage for AIC computation
-AIC_BATCH_SIZE = 0
+AIC_BATCH_SIZE = 2

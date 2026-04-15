@@ -17,13 +17,13 @@ from aero.utils import (
     calculate_steady_forcing, project_forcing_to_beam,
 )
 
-from print_utils import warn
+from utils.print_utils import warn
 from algebra.array_utils import split_to_vertex
 from aero.flowfields import FlowField
 from algebra.array_utils import ArrayList
 from plotting.aerogrid import plot_grid_to_vtk
 from plotting.pvd import write_pvd
-from utils import _make_pytree, index_to_arr
+from utils.utils import make_pytree, index_to_arr
 
 
 @dataclass
@@ -40,7 +40,7 @@ class GridDiscretization:
     m_star: int
 
 
-@_make_pytree
+@make_pytree
 class DynamicAeroCase:
     r"""
     Class to hold time series of multiple aerodynamic surfaces.
@@ -597,7 +597,7 @@ class DynamicAeroCase:
         )
 
 
-@_make_pytree
+@make_pytree
 class AeroSnapshot(DynamicAeroCase):
     r"""
     Class to hold initial_snapshot of multiple aerodynamic surfaces at a single time step.

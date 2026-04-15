@@ -10,7 +10,7 @@ from aero.gradients.data_structures import AeroDesignVariables, AeroStates
 from aero.utils import project_forcing_to_beam
 from algebra.array_utils import ArrayList
 from coupled import DynamicAeroelastic
-from print_utils import jax_print, VerbosityLevel
+from utils.print_utils import jax_print, VerbosityLevel
 from structure import StructuralDesignVariables
 from structure.data_structures import OptionalJacobians, StructureMinimalStates
 
@@ -311,7 +311,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             r_struct: Array = inner_case.structure.timestep_residual(i_ts=i_ts, q_nm1=q_nm1.structure,
                                                                      q_n=q_n.structure,
                                                                      dv_=dv_.structure,
-                                                                     solve_dofs=solve_dofs).ravel()
+                                                                     solve_dofs=solve_dofs)
 
             # obtain node coordinates and coordinate velocities
             hg_n = inner_case.structure.calculate_hg_from_varphi(varphi=q_n.structure.varphi)
@@ -357,7 +357,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     n_dof=self.structure.n_dof,
                     aero_shapes=minimal_states_init.aero.shapes(),
                 )
-                return timestep_residual(i_ts=i_ts, t=t, q_nm1=q_nm1_, q_n=q_n_, dv_=dv__).ravel()[free_state_ix]
+                return timestep_residual(i_ts=i_ts, t=t, q_nm1=q_nm1_, q_n=q_n_, dv_=dv__).ravel()
 
             return jax.jacrev(inner, argnums=(0, 1, 2))(
                 q_nm1.ravel()[free_state_ix],
