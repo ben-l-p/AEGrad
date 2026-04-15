@@ -111,6 +111,7 @@ class BeamStructure(BaseBeamStructure):
             optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
                 True, True, True, True
             ),
+            approx_grads: bool = True,
     ) -> StructuralDesignVariables:
         r"""
         Computes the static grads of the structure_dv, which is used to compute gradients of the loss with respect to
@@ -126,19 +127,11 @@ class BeamStructure(BaseBeamStructure):
         if optional_jacobians is not None:
             self.optional_jacobians = optional_jacobians
 
-        # base parameters
-        t_n = vmap(t_se3, 0, 0)(structure.varphi)  # [n_nodes_, 6, 6]
-        d = structure.d
-        eps = structure.eps
-        p_d = self.make_p_d(d)
-        m_t = self.make_m_t(d) if self.use_gravity else None
-        f_elem = self.make_f_elem(eps=eps)
-
-        # Recover original global dead force: structure.f_ext_dead = R @ f_global (local),
-        # so f_global = R^T @ structure.f_ext_dead
-        rmat_t = jnp.transpose(structure.hg[:, :3, :3], (0, 2, 1))
+        # Recover original global dead force: structure.f_ext_dead is stored in local frame as
+        # f_local = R^T @ f_global, so f_global = R @ f_local
+        rmat = structure.hg[:, :3, :3]
         f_ext_dead_global = (
-            transform_nodal_vect(structure.f_ext_dead, rmat_t)
+            transform_nodal_vect(structure.f_ext_dead, rmat)
             if structure.f_ext_dead is not None else None
         )
 
@@ -152,13 +145,7 @@ class BeamStructure(BaseBeamStructure):
             f_ext_dead=f_ext_dead_global,
         )
 
-        struct_states = StructureFullStates(
-            hg=structure.hg,
-            eps=eps,
-            f_elem=f_elem,
-            v_dot=None,
-            v=None,
-        )
+        struct_states = structure.get_full_states()
 
         # find shape of objective function output without evaluating function
         f_properties = jax.eval_shape(lambda: objective(struct_states, dv, None))
@@ -184,36 +171,23 @@ class BeamStructure(BaseBeamStructure):
             )
         )(dv).ravel_jacobian(n_f, n_x)  # [n_f, n_x]
 
-        # gradient of residual w.r.t. minimal states
-        # h and varphi have different tangent spaces, p_h_p_n = t(varphi)
-        d_res_d_h = -self._make_k_t_full(
-            d, p_d, eps, structure.f_ext_dead, structure.hg[:, :3, :3], m_t
-        ).reshape(n_u_full, -1, 6)  # [n_u_full, n_nodes_, 6]
-        d_res_d_n = jnp.einsum("ijk,jkl->ijl", d_res_d_h, t_n).reshape(
-            n_u_full, n_u_full
-        )[jnp.ix_(solve_dofs, solve_dofs)]
+        # gradient of residual w.r.t. minimal states via AD (exact)
+        p_res_p_x, p_res_p_varphi = (jax.jacfwd if n_u > n_x else jax.jacrev)(
+            lambda dv_, varphi_: self._structural_states_res_from_dv_varphi(dv=dv_, varphi=varphi_)[1], argnums=(0, 1)
+        )(dv, structure.varphi)
 
-        # gradient of residual w.r.t. minimal states via JAX (exact)
-        # d_res_d_n = jax.jacfwd(
-        #     lambda varphi_: self._structural_states_res_from_dv_varphi(dv, varphi_)[1]
-        # )(structure.varphi).reshape(n_u_full, n_u_full)[jnp.ix_(solve_dofs, solve_dofs)]
-
-        # gradient of residual w.r.t. design variables
-        p_res_p_x = (jax.jacrev if n_u < n_x else jax.jacfwd)(
-            lambda dv_: self._structural_states_res_from_dv_varphi(
-                dv_, structure.varphi
-            )[1]
-        )(dv).ravel_jacobian(n_u_full, n_x)[solve_dofs, :]  # [n_u, n_x]
+        p_res_p_x = p_res_p_x.ravel_jacobian(n_u_full, n_x)[solve_dofs, :]  # [n_u, n_x]
+        p_res_p_varphi = p_res_p_varphi.reshape(n_u_full, n_u_full)[jnp.ix_(solve_dofs, solve_dofs)]  # [n_u, n_u]
 
         if n_f > n_x:
             # forward mode
-            d_n_d_x = jnp.linalg.solve(d_res_d_n, p_res_p_x).reshape(
+            d_n_d_x = jnp.linalg.solve(p_res_p_varphi, p_res_p_x).reshape(
                 self.n_nodes, 6, n_x
             )  # [n_u, n_x]
             rhs = jnp.einsum("ij,ijk->k", p_f_p_n, d_n_d_x)  # [n_f, n_x]
         else:
             # reverse mode
-            d_f_d_res = jnp.linalg.solve(d_res_d_n.T, p_f_p_n.T).T  # [n_f, n_u]
+            d_f_d_res = jnp.linalg.solve(p_res_p_varphi.T, p_f_p_n.T).T  # [n_f, n_u]
             rhs = d_f_d_res @ p_res_p_x  # [n_f, n_x]
 
         return StructuralDesignVariables(**dv.from_adjoint(f_shape, p_f_p_x - rhs))
@@ -224,6 +198,7 @@ class BeamStructure(BaseBeamStructure):
             q_nm1: StructureMinimalStates,
             q_n: StructureMinimalStates,
             dv_: StructuralDesignVariables,
+            approx_grads: bool,
             solve_dofs: Optional[Array] = None,
     ) -> Array:
         r"""
@@ -232,6 +207,8 @@ class BeamStructure(BaseBeamStructure):
         :param q_nm1: Minimal structural states at timestep n-1.
         :param q_n: Minimal structural states at timestep n.
         :param dv_: Structural design variables.
+        :param approx_grads: If true, some gradient contributions which are assumed to be near-zero are removed to
+        decrease computational cost.
         :param solve_dofs: Array of dofs to solve for each timestep n.
         :return: Residual for step.
         """
@@ -316,7 +293,7 @@ class BeamStructure(BaseBeamStructure):
             f_ext_aero=None,  # this is None here, as we already have the aero force in the local frame
             v=q_alpha.v,
             v_dot=q_alpha.v_dot,
-            stop_gradients=False
+            approx_gradients=approx_grads
         )
 
         # use stop gradient to prevent effective stiffness contribution
@@ -355,7 +332,7 @@ class BeamStructure(BaseBeamStructure):
             (varphi_res, v_res, v_dot_res, a_res), axis=0
         ).ravel()  # [4*n_free_dof]
 
-    # @jax.jit(static_argnums=(0, 1, 2, 3))
+    @jax.jit(static_argnums=(0, 2, 4, 5))
     def dynamic_adjoint(
             self,
             structure: DynamicStructure,
@@ -364,6 +341,7 @@ class BeamStructure(BaseBeamStructure):
             optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
                 True, True, True, True
             ),
+            approx_grads: bool = True,
     ) -> tuple[StructuralDesignVariables, Array]:
         r"""
         Dynamic structure grads problem. This computes the gradient of the objective of the dynamic response with
@@ -377,15 +355,13 @@ class BeamStructure(BaseBeamStructure):
         :param p_q0_p_x: Optional Jacobian used to describe the sensitivities of the initial structural degrees of
         freedom to the design variables.
         :param optional_jacobians: Optional Jacobians to use for solution
+        :param approx_grads: If true, some gradient contributions which are assumed to be near-zero are removed to
+        decrease computational cost.
         :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
         """
 
         if optional_jacobians is not None:
             self.optional_jacobians = optional_jacobians
-
-        # make copy of structure_dv which has been converted to global coordinates, used to extract dead forces.
-        gs = deepcopy(structure)
-        gs.to_global()
 
         dv = self.get_design_variables(struct_case=structure)
 
@@ -426,10 +402,11 @@ class BeamStructure(BaseBeamStructure):
                     .reshape(4, -1, 6)
                 )
                 return self.timestep_residual(
-                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, solve_dofs=solve_dofs
+                    i_ts=i_ts, q_nm1=q_nm1_struct, q_n=q_n_struct, dv_=dv__, solve_dofs=solve_dofs,
+                    approx_grads=approx_grads
                 )
 
-            return jax.jacrev(inner, argnums=(0, 1, 2))(
+            return (jax.jacrev if len(solve_dofs) < dv.n_x else jax.jacfwd)(inner, argnums=(0, 1, 2))(
                 q_nm1.to_mat().ravel()[free_state_ix],
                 q_n.to_mat().ravel()[free_state_ix],
                 dv_,
@@ -531,11 +508,11 @@ class BeamStructure(BaseBeamStructure):
             m_lumped=jnp.zeros((*j_shape, *self.m_lumped.shape))
             if self.use_lumped_mass
             else None,
-            f_ext_dead=jnp.zeros((*j_shape, *gs.f_ext_dead.shape))
-            if gs.f_ext_dead is not None
+            f_ext_dead=jnp.zeros((*j_shape, *structure.f_ext_dead.shape))
+            if structure.f_ext_dead is not None
             else None,
-            f_ext_follower=jnp.zeros((*j_shape, *gs.f_ext_follower.shape))
-            if gs.f_ext_follower is not None
+            f_ext_follower=jnp.zeros((*j_shape, *structure.f_ext_follower.shape))
+            if structure.f_ext_follower is not None
             else None,
         )
 

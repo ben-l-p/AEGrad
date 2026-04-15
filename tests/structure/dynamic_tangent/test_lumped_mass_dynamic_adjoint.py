@@ -71,7 +71,7 @@ class TestLumpedMassTranslationAdjoint:
         t = jnp.arange(n_tstep, dtype=float) * dt
         expected_x_t = 0.5 * f_mag / m_l[0, 0, 0] * t * t
 
-        grads, adj = beam.dynamic_adjoint(structure=solution, objective=objective)
+        grads, adj = beam.dynamic_adjoint(structure=solution, objective=objective, approx_grads=False)
 
         f_follower_grad = cast(Array, grads.f_ext_follower)[0, :, 0, 0].sum()
         m_cs_grad = cast(Array, grads.m_lumped)[0, 0, 0, 0]

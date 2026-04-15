@@ -116,7 +116,7 @@ class TestDynamicGustAdjoint:
         wing_plus, _, sol_plus = _run_primal(k_cs_plus, _GUST_AMPLITUDE_BASE)
 
         fd_grad = (_total_objective(wing_plus, sol_plus) - self.baseline_obj) / eps
-        adj_grad = self.dynamic_grad.structure.k_cs[:, 3, 3].sum()
+        adj_grad = self.dynamic_grad.structure.k_cs[:, :, 3, 3].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
             f"Gradient mismatch w.r.t. k_cs[3,3]: adjoint={adj_grad:.6f}, FD={fd_grad:.6f}"

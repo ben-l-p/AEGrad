@@ -274,12 +274,14 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                         case: DynamicAeroelastic,
                         objective: AeroelasticObjectiveFunction,
                         p_varphi_p_x: Optional[Array] = None,
+                        approx_grads: bool = True
                         ) -> tuple[AeroelasticDesignVariables, Array]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
         :param case: Dynamic aeroelastic case
         :param objective: Objective function that takes the system full states, design variables and timestep index, and returns an array
         :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found from the static solve.
+        :param approx_grads: Whether to use gradient approximation or not.
         :return: Gradient of sum of objective across timesteps with respect to design variables.
         """
 
@@ -311,7 +313,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             r_struct: Array = inner_case.structure.timestep_residual(i_ts=i_ts, q_nm1=q_nm1.structure,
                                                                      q_n=q_n.structure,
                                                                      dv_=dv_.structure,
-                                                                     solve_dofs=solve_dofs)
+                                                                     solve_dofs=solve_dofs, approx_grads=approx_grads)
 
             # obtain node coordinates and coordinate velocities
             hg_n = inner_case.structure.calculate_hg_from_varphi(varphi=q_n.structure.varphi)

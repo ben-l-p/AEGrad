@@ -314,15 +314,15 @@ class BaseBeamStructure:
         :return: StructuralDesignVariables dataclass containing design variables
         """
 
-        # struct_case.f_ext_dead = R @ f_global (local frame convention from make_f_dead_ext)
-        # recover f_global = R^T @ f_ext_dead
+        # struct_case.f_ext_dead is stored in local frame: f_local = R^T @ f_global,
+        # so recover f_global = R @ f_local
         hg = struct_case.hg
         if hg.ndim == 4:  # DynamicStructure: [n_tstep, n_nodes, 4, 4]
-            rmat_t = jnp.transpose(hg[:, :, :3, :3], (0, 1, 3, 2))
+            rmat = hg[:, :, :3, :3]
         else:  # StaticStructure: [n_nodes, 4, 4]
-            rmat_t = jnp.transpose(hg[:, :3, :3], (0, 2, 1))
+            rmat = hg[:, :3, :3]
         f_ext_dead_global = (
-            transform_nodal_vect(struct_case.f_ext_dead, rmat_t)
+            transform_nodal_vect(struct_case.f_ext_dead, rmat)
             if struct_case.f_ext_dead is not None else None
         )
         return StructuralDesignVariables(x0=self.x0, m_cs=self.m_cs, k_cs=self.k_cs, m_lumped=self._m_lumped,
@@ -891,7 +891,7 @@ class BaseBeamStructure:
             f_ext_aero: Optional[Array],
             v: Array,
             v_dot: Array,
-            stop_gradients: bool = False,
+            approx_gradients: bool = False,
     ) -> tuple[
         Array,
         Array,
@@ -915,7 +915,7 @@ class BaseBeamStructure:
             f_ext_aero: Optional[Array],
             v: None,
             v_dot: None,
-            stop_gradients: bool = False,
+            approx_gradients: bool = False,
     ) -> tuple[
         Array,
         Array,
@@ -938,7 +938,7 @@ class BaseBeamStructure:
             f_ext_aero: Optional[Array],
             v,
             v_dot,
-            stop_gradients: bool = False,
+            approx_gradients: bool = False,
     ) -> tuple[
         Array,
         Array,
@@ -959,14 +959,14 @@ class BaseBeamStructure:
         :param f_ext_aero: External aero forces in global reference, [n_node, 6].
         :param v: Nodal velocities in global frame, [n_node, 6].
         :param v_dot: Nodal accelerations in global frame, [n_node, 6].
-        :param stop_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
+        :param approx_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
         the node coordinates, as these are small but nonzero values in practice.
         :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
         gyroscopic forces, inertial forces and residual forces.
         """
 
         def prop_grad(x: Array) -> Array:
-            return jax.lax.stop_gradient(x) if stop_gradients else x
+            return jax.lax.stop_gradient(x) if approx_gradients else x
 
         d = self.make_d(hg)
         eps = self.make_eps(d)
