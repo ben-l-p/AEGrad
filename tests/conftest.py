@@ -1,5 +1,8 @@
 import pytest
-from utils.print_utils import set_verbosity, VerbosityLevel
+import jax
+from aegrad.utils.print_utils import set_verbosity, VerbosityLevel
+
+jax.config.update("jax_enable_x64", True)
 
 
 @pytest.fixture(autouse=True, scope="session")

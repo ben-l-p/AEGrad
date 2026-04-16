@@ -1,12 +1,9 @@
 from jax import numpy as jnp
-import jax
 
-from structure import BeamStructure
-from algebra.base import chi
-from algebra.test_routines import const_curvature_beam
-from algebra.se3 import p
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure import BeamStructure
+from aegrad.algebra.base import chi
+from aegrad.algebra.test_routines import const_curvature_beam
+from aegrad.algebra.se3 import p
 
 
 class TestTwoNodeXBeamStrainsForces:

@@ -3,12 +3,9 @@ from typing import cast
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 from jax import vmap, Array
-import jax
 
-from structure import BeamStructure
-from algebra.se3 import log_se3
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure import BeamStructure
+from aegrad.algebra.se3 import log_se3
 
 
 class TestLinXForcePoint:

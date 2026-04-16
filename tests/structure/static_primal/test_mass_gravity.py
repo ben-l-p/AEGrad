@@ -1,10 +1,7 @@
 from jax import numpy as jnp
-import jax
 
-from structure import BeamStructure
-from algebra.se3 import exp_se3
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure import BeamStructure
+from aegrad.algebra.se3 import exp_se3
 
 
 class TestTwoNodeXGravityZ:

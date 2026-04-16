@@ -1,13 +1,9 @@
 from copy import deepcopy
 
-import jax
 from jax import Array, numpy as jnp
-
+from aegrad.structure import StructureFullStates
+from aegrad.utils.data_structures import ConvergenceSettings
 from models.geradin_beam import geradin_beam
-from structure import StructureFullStates
-from utils.data_structures import ConvergenceSettings
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestGeradinBeamGradients:
@@ -71,6 +67,7 @@ class TestGeradinBeamGradients:
         obj_pert = cls._objective(cls._solve(deepcopy(cls.struct), f_pert).get_full_states())
 
         fd_grad = (obj_pert - obj_base) / eps
+        if grads_adj.f_ext_dead is None: raise ValueError("Missing f_ext_dead gradient")
         adj_grad = grads_adj.f_ext_dead[-1, 2]
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)

@@ -1,14 +1,9 @@
-import jax
 from jax import numpy as jnp
 from jax import Array
 
-from coupled.gradients.data_structures import (
-    AeroelasticFullStates, AeroelasticDesignGradients,
-)
-from utils.data_structures import ConvergenceSettings
+from aegrad.coupled.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
+from aegrad.utils.data_structures import ConvergenceSettings
 from models import cantilever_wing
-
-jax.config.update("jax_enable_x64", True)
 
 # Small discretisation so tests run quickly
 n_nodes = 6
@@ -49,7 +44,7 @@ class TestForwardStaticAeroelasticAdjoint:
     @classmethod
     def setup_class(cls):
         cls.wing, cls.sol = _solve(u_inf=u_inf_base, k_cs=k_cs_base)
-        cls.grad: AeroelasticDesignGradients = \
+        cls.grad: AeroelasticDesignVariables = \
             cls.wing.static_adjoint(case=cls.sol, objective=_objective, forward_adjoint=cls.forward_mode)[0]
         cls.objective_val: Array = _objective(cls.sol.get_full_states(), cls.wing.get_design_variables(case=cls.sol))
 

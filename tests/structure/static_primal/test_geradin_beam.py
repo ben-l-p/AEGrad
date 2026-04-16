@@ -1,10 +1,7 @@
 from jax import numpy as jnp
-import jax
 
-from algebra.so3 import log_so3
+from aegrad.algebra.so3 import log_so3
 from models.geradin_beam import geradin_beam
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestGeradinBeam:

@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 
-from aero.utils import biot_savart, biot_savart_epsilon, biot_savart_cutoff
-from constants import R_CUTOFF
+from aegrad.aero.utils import biot_savart, biot_savart_epsilon, biot_savart_cutoff
+from aegrad.utils.constants import R_CUTOFF
 
 
 class TestLinearOperator:

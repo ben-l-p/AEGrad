@@ -1,15 +1,16 @@
+import pickle
 from typing import Optional
 
 from jax import numpy as jnp
 from jax import Array
 import jax
 
-from aero.data_structures import GridDiscretization
-from aero.flowfields import OneMinusCosine
-from aero.utils import make_rectangular_grid
-from aero.uvlm import UVLM
-from coupled import CoupledAeroelastic
-from coupled.gradients.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
+from aegrad.aero.data_structures import GridDiscretization
+from aegrad.aero.flowfields import OneMinusCosine
+from aegrad.aero.utils import make_rectangular_grid
+from aegrad.aero.uvlm import UVLM
+from aegrad.coupled import CoupledAeroelastic
+from aegrad.coupled.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
 
 from structure import BeamStructure
 
@@ -21,10 +22,14 @@ jax.config.update("jax_enable_x64", True)
 # m_star = 20
 # n_tstep = 1000
 
-m = 5
-n = 10
-# n = 6
-m_star = 8
+# m = 5
+# n = 10
+# m_star = 8
+# n_tstep = 10
+
+m = 2
+n = 5
+m_star = 6
 n_tstep = 10
 
 c_ref = 1.0
@@ -73,18 +78,7 @@ wing.set_design_variables(
     x0_aero=grid,
 )
 
-
-def static_objective(states: AeroelasticFullStates, dv: AeroelasticDesignVariables,
-                     i_ts: Optional[int | Array]) -> Array:
-    return states.structure.f_elem[0, 3]
-
-
-def dynamic_objective(states: AeroelasticFullStates, dv: AeroelasticDesignVariables,
-                      i_ts: Optional[int | Array]) -> Array:
-    return static_objective(states, dv, i_ts=i_ts) / n_tstep
-
-
-# # set tolerance to zero, rather than none, to prevent error messages
+# set tolerance to zero, rather than none, to prevent error messages
 # wing.structure.struct_convergence_settings = ConvergenceSettings(max_n_iter=100, rel_disp_tol=0.0,
 #                                                                  abs_disp_tol=0.0,
 #                                                                  rel_force_tol=0.0, abs_force_tol=0.0)
@@ -95,18 +89,47 @@ static_sol = wing.static_solve(prescribed_dofs=jnp.arange(6))
 
 dynamic_sol = wing.dynamic_solve(init_case=static_sol, prescribed_dofs=jnp.arange(6), spectral_radius=1.0,
                                  gamma_dot_relaxation_factor=0.7,
-                                 free_wake=False, dt=dt, n_tstep=n_tstep, include_unsteady_aero_force=False)
+                                 free_wake=False, dt=dt, n_tstep=n_tstep, include_unsteady_aero_force=True)
+
+# obtain the index with the largest WRBM
+i_max: int = int(jnp.argmax(dynamic_sol.structure.f_elem[:, 0, 5]))
+
+print(i_max)
+
+
+# objective which refers to a single timestep
+def objective(states: AeroelasticFullStates, dv: AeroelasticDesignVariables,
+              i_ts: Optional[int | Array]) -> Array:
+    return jax.lax.select(
+        i_ts == i_max,
+        states.structure.f_elem[0, 5],
+        jnp.zeros(()),
+    )
+
 
 dynamic_sol.plot(directory=f"./test_outputs/dynamic_coupled_adjoint")
 
-static_grad, static_adj = wing.static_adjoint(case=static_sol, objective=static_objective, forward_adjoint=True)
+static_grad, static_adj = wing.static_adjoint(case=static_sol, objective=objective, forward_adjoint=True)
 
-dynamic_grad, dynamic_adj = wing.dynamic_adjoint(case=dynamic_sol, objective=dynamic_objective,
+dynamic_grad, dynamic_adj = wing.dynamic_adjoint(case=dynamic_sol, objective=objective,
                                                  p_varphi_p_x=-static_adj)
 
-pass
+dynamic_grad.plot(case=dynamic_sol, directory=f"./test_outputs/dynamic_grad", i_ts=0)
 
-static_grad = None
-dynamic_grad = None
-static_adj = None
-dynamic_adj = None
+jax.block_until_ready(dynamic_grad)
+jax.block_until_ready(static_grad)
+jax.block_until_ready(dynamic_adj)
+jax.block_until_ready(static_adj)
+
+out_dict = {
+    "wing": wing,
+    "static_sol": static_sol,
+    "static_grad": static_grad,
+    "static_adj": static_adj,
+    "dynamic_sol": dynamic_sol,
+    "dynamic_grad": dynamic_grad,
+    "dynamic_adj": dynamic_adj,
+}
+
+with open("./test_outputs/cantilever_wing_output.pickle", "wb") as f:
+    pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)

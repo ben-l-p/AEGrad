@@ -4,14 +4,14 @@ from jax import Array
 from jax import numpy as jnp
 import jax
 
-from structure import BeamStructure
+from aegrad.structure import BeamStructure
 
 
 def flying_spaghetti(
         n_nodes: int, t: Array, use_gravity: bool = False
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
-    Creates a flying spaghetti model structure_dv.
+    Creates a flying spaghetti model structure.
     :param n_nodes: Number of nodes.
     :param t: Time array for dead force, [n_tstep]
     :param use_gravity: Whether to include gravity in the model.

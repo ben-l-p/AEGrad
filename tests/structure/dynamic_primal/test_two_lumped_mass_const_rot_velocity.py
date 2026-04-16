@@ -1,10 +1,7 @@
 from jax.scipy.linalg import block_diag
 from jax import numpy as jnp
-import jax
 
-from structure import BeamStructure
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure import BeamStructure
 
 
 class TestTwoXLumpedMassConstXRotVelocity:

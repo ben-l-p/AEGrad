@@ -3,11 +3,8 @@ from typing import cast
 from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 from jax import Array
-import jax
 
-from structure.beam import BaseBeamStructure
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure.beam import BaseBeamStructure
 
 
 class TestXGravityPointDrop:

@@ -4,12 +4,12 @@ import jax
 from jax import numpy as jnp
 from jax import Array
 
-from coupled.gradients.coupled import CoupledAeroelastic
-from structure import BeamStructure
-from aero.uvlm import UVLM
-from aero.utils import make_rectangular_grid
-from aero.data_structures import GridDiscretization
-from aero.flowfields import Constant
+from aegrad.coupled import CoupledAeroelastic
+from aegrad.structure import BeamStructure
+from aegrad.aero.uvlm import UVLM
+from aegrad.aero.utils import make_rectangular_grid
+from aegrad.aero.data_structures import GridDiscretization
+from aegrad.aero.flowfields import Constant
 
 
 def make_cantilever_wing(

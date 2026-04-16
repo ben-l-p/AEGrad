@@ -2,14 +2,11 @@ from typing import Optional
 
 from jax import numpy as jnp
 from jax import Array
-import jax
 
-from coupled.gradients.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
-from utils.data_structures import ConvergenceSettings
+from aegrad.coupled.data_structures import AeroelasticFullStates, AeroelasticDesignVariables
+from aegrad.utils.data_structures import ConvergenceSettings
 
 from models.cantilever_wing import make_cantilever_wing
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestDynamicEquilibriumAdjoint:

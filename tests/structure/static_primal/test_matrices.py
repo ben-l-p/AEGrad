@@ -1,11 +1,8 @@
 from jax import numpy as jnp
-import jax
 
-from structure.beam import BaseBeamStructure
-from algebra.so3 import vec_to_skew
-from algebra.se3 import p
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.structure.beam import BaseBeamStructure
+from aegrad.algebra.so3 import vec_to_skew
+from aegrad.algebra.se3 import p
 
 
 class TestStiffness:
@@ -37,25 +34,25 @@ class TestStiffness:
 
         du0t = vec_to_skew(du0[:3])
         k_t_exp = (
-            jnp.block(
-                [
-                    [k_uu, -0.5 * k_uu @ du0t, -k_uu, -0.5 * k_uu @ du0t],
+                jnp.block(
                     [
-                        0.5 * du0t @ k_uu,
-                        k_ww - 0.25 * du0t @ k_uu @ du0t,
-                        -0.5 * du0t @ k_uu,
-                        -k_ww - 0.25 * du0t @ k_uu @ du0t,
-                    ],
-                    [-k_uu, 0.5 * k_uu @ du0t, k_uu, 0.5 * k_uu @ du0t],
-                    [
-                        0.5 * du0t @ k_uu,
-                        -k_ww - 0.25 * du0t @ k_uu @ du0t,
-                        -0.5 * du0t @ k_uu,
-                        k_ww - 0.25 * du0t @ k_uu @ du0t,
-                    ],
-                ]
-            )
-            / l
+                        [k_uu, -0.5 * k_uu @ du0t, -k_uu, -0.5 * k_uu @ du0t],
+                        [
+                            0.5 * du0t @ k_uu,
+                            k_ww - 0.25 * du0t @ k_uu @ du0t,
+                            -0.5 * du0t @ k_uu,
+                            -k_ww - 0.25 * du0t @ k_uu @ du0t,
+                        ],
+                        [-k_uu, 0.5 * k_uu @ du0t, k_uu, 0.5 * k_uu @ du0t],
+                        [
+                            0.5 * du0t @ k_uu,
+                            -k_ww - 0.25 * du0t @ k_uu @ du0t,
+                            -0.5 * du0t @ k_uu,
+                            k_ww - 0.25 * du0t @ k_uu @ du0t,
+                        ],
+                    ]
+                )
+                / l
         )
 
         assert jnp.allclose(k_t, k_t_exp), (

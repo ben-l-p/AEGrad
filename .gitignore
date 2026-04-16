@@ -1,8 +1,10 @@
-# paraview files
+# output files
 *.vts
 *.vtp
 *.vtu
 *.pvd
+*.dat
+*.pickle
 
 # Claude files
 *.claude

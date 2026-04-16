@@ -1,9 +1,8 @@
-import jax
 from jax import numpy as jnp
 
-from algebra.base import clip_to_pi, chi
-from constants import SMALL_ANG_THRESH
-from algebra.so3 import (
+from aegrad.algebra.base import clip_to_pi, chi
+from aegrad.utils.constants import SMALL_ANG_THRESH
+from aegrad.algebra.so3 import (
     vec_to_skew,
     skew_to_vec,
     exp_so3,
@@ -13,7 +12,7 @@ from algebra.so3 import (
     bound_h_omega,
     bracket_so3,
 )
-from algebra.se3 import (
+from aegrad.algebra.se3 import (
     ha_to_ha_hat,
     ha_hat_to_ha,
     ha_to_ha_tilde,
@@ -32,15 +31,13 @@ from algebra.se3 import (
     hg_to_ha_hat,
     ha_to_ha_check,
 )
-from algebra.test_routines import (
+from aegrad.algebra.test_routines import (
     check_if_so3_a,
     check_if_so3_g,
     check_if_se3_a,
     check_if_se3_g,
 )
-from algebra.base import exp_sum, log_sum, t_sum, t_inv_sum
-
-jax.config.update("jax_enable_x64", True)
+from aegrad.algebra.base import exp_sum, log_sum, t_sum, t_inv_sum
 
 
 class TestConstants:
@@ -450,7 +447,7 @@ class TestExpLog:
         vec = jnp.linspace(0.1, 0.6, 6)
         hg = exp_se3(vec)
         check_if_se3_g(hg)
-        assert (out := log_se3(hg), vec), (
+        assert jnp.allclose((out := log_se3(hg)), vec), (
             f"SE3 Logarithm of exponential of vector should return same vector "
             f"{vec}, returned {out}"
         )
