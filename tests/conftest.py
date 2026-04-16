@@ -1,5 +1,5 @@
 import pytest
-from utils.print_utils import set_verbosity, VerbosityLevel
+from aegrad.utils.print_utils import set_verbosity, VerbosityLevel
 
 
 @pytest.fixture(autouse=True, scope="session")
