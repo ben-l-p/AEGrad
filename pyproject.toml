@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["aegrad"]
+where = ["."]
 exclude = ["models*"]
 
 [tool.pytest.ini_options]
