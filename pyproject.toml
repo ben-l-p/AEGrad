@@ -16,7 +16,6 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = ["models*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
