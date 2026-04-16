@@ -14,6 +14,9 @@ dependencies = [
     "xprof==2.22.1",
 ]
 
+[tool.setuptools.packages.find]
+exclude = ["models*"]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["./tests"]
