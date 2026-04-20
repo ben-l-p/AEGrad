@@ -341,7 +341,7 @@ class BeamStructure(BaseBeamStructure):
             optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
                 True, True, True, True
             ),
-            approx_grads: bool = True,
+            approx_grads: bool = False,
     ) -> tuple[StructuralDesignVariables, Array]:
         r"""
         Dynamic structure grads problem. This computes the gradient of the objective of the dynamic response with

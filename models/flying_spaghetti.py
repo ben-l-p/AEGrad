@@ -8,7 +8,7 @@ from aegrad.structure import BeamStructure
 
 
 def flying_spaghetti(
-        n_nodes: int, t: Array, use_gravity: bool = False
+    n_nodes: int, t: Array, use_gravity: bool = False
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
     Creates a flying spaghetti model structure.
@@ -97,3 +97,17 @@ if __name__ == "__main__":
     plot_path = Path("./flying_spaghetti_2d")
     stride = 10
     solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep_, stride))
+
+    i_ts_ = [0, 200, 400, 600, 800, 1000]
+
+    x_out = solution.hg[i_ts_, :, 0, 3]  # [n_i_ts, n_nodes]
+    z_out = solution.hg[i_ts_, :, 2, 3]  # [n_i_ts, n_nodes]
+
+    import numpy as np
+
+    np.savetxt(
+        "spaghetti_coords.dat",
+        np.concatenate((x_out, z_out), axis=0).T,
+        header="x0 x1 x2 x3 x4 x5 z0 z1 z2 z3 z4 z5",
+        comments="",
+    )

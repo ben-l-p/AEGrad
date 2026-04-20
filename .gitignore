@@ -15,3 +15,8 @@ CLAUDE.md
 
 # pycharm files
 .idea/
+
+# testing files
+test_output/
+tests/test_outputs/
+temp/case.py
