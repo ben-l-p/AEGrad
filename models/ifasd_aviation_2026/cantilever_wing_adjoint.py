@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # objective which refers to a single timestep
     def objective(
         states: AeroelasticFullStates,
-        dv: AeroelasticDesignVariables,
+        _: AeroelasticDesignVariables,
         i_ts: Optional[int | Array],
     ) -> Array:
         # zero everywhere except when i_ts==i_max

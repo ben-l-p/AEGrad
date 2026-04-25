@@ -60,6 +60,8 @@ if __name__ == "__main__":
     f_pert = f_ext.at[-1, 2].add(f_eps)
     f_pert_obj = _objective(_solve(struct, f_pert).get_full_states())
 
+    if grads_adj.f_ext_dead is None:
+        raise ValueError("f_ext_dead is None")
     f_fd_grad = (f_pert_obj - obj_base) / f_eps
     print("\nTip forcing gradient")
     print(f"Adjoint: {grads_adj.f_ext_dead[-1, 2]}")
@@ -70,6 +72,8 @@ if __name__ == "__main__":
     struct.k_cs = struct.k_cs.at[0, 4, 4].add(k_eps)
     k_pert_obj = _objective(_solve(struct, f_ext).get_full_states())
     k_fd_grad = (k_pert_obj - obj_base) / k_eps
+    if grads_adj.k_cs is None:
+        raise ValueError("k_cs is None")
     print("\nBeam bending stiffness gradient")
     print(f"Adjoint: {grads_adj.k_cs[0, 4, 4]}")
     print(f"Finite difference: {k_fd_grad}")

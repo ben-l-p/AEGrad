@@ -9,8 +9,13 @@ from models.geradin_beam import geradin_beam
 class TestGeradinBeamGradients:
     n_nodes = 20
     struct = geradin_beam(n_nodes, "x_target")
-    struct.struct_convergence_settings = ConvergenceSettings(max_n_iter=50, rel_force_tol=0.0, rel_disp_tol=0.0,
-                                                             abs_force_tol=0.0, abs_disp_tol=0.0)
+    struct.struct_convergence_settings = ConvergenceSettings(
+        max_n_iter=50,
+        rel_force_tol=0.0,
+        rel_disp_tol=0.0,
+        abs_force_tol=0.0,
+        abs_disp_tol=0.0,
+    )
     load = 600000.0
     f_ext = jnp.zeros((n_nodes, 6)).at[-1, 2].set(-load)
 
@@ -35,7 +40,9 @@ class TestGeradinBeamGradients:
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
-        grads_adj = cls.struct.static_adjoint(structure=result, objective=cls._objective)
+        grads_adj = cls.struct.static_adjoint(
+            structure=result, objective=cls._objective
+        )
 
         eps = 10.0  # large epsilon as stiffness values are large
         obj_base = cls._objective(result.get_full_states())
@@ -46,10 +53,14 @@ class TestGeradinBeamGradients:
         obj_pert = cls._objective(cls._solve(struct_pert, cls.f_ext).get_full_states())
 
         fd_grad = (obj_pert - obj_base) / eps
+        if grads_adj.k_cs is None:
+            raise ValueError("k_cs is None")
         adj_grad = grads_adj.k_cs[0, 4, 4]
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)
-        assert err < 1e-5, f"Stiffness gradient relative error {err:.2e} exceeds tolerance"
+        assert err < 1e-5, (
+            f"Stiffness gradient relative error {err:.2e} exceeds tolerance"
+        )
 
     @classmethod
     def test_force_gradient(cls):
@@ -58,16 +69,21 @@ class TestGeradinBeamGradients:
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
-        grads_adj = cls.struct.static_adjoint(structure=result, objective=cls._objective)
+        grads_adj = cls.struct.static_adjoint(
+            structure=result, objective=cls._objective
+        )
 
         eps = 1.0
         obj_base = cls._objective(result.get_full_states())
 
         f_pert = cls.f_ext.at[-1, 2].add(eps)
-        obj_pert = cls._objective(cls._solve(deepcopy(cls.struct), f_pert).get_full_states())
+        obj_pert = cls._objective(
+            cls._solve(deepcopy(cls.struct), f_pert).get_full_states()
+        )
 
         fd_grad = (obj_pert - obj_base) / eps
-        if grads_adj.f_ext_dead is None: raise ValueError("Missing f_ext_dead gradient")
+        if grads_adj.f_ext_dead is None:
+            raise ValueError("Missing f_ext_dead gradient")
         adj_grad = grads_adj.f_ext_dead[-1, 2]
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)

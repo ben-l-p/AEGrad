@@ -6,6 +6,7 @@ import jax
 
 from aegrad.structure import BeamStructure
 from aegrad.structure import StructureFullStates, StructuralDesignVariables
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 
 class TestLumpedMassTranslationAdjoint:
@@ -69,7 +70,12 @@ class TestLumpedMassTranslationAdjoint:
         t = jnp.arange(n_tstep, dtype=float) * dt
         expected_x_t = 0.5 * f_mag / m_l[0, 0, 0] * t * t
 
-        grads, adj = beam.dynamic_adjoint(structure=solution, objective=objective, approx_grads=False)
+        grads, adj = beam.dynamic_adjoint(
+            structure=solution, objective=objective, approx_grads=False,
+            grads_to_compute=StructuralGradsToCompute(
+                k_cs=True, m_cs=True, m_lumped=True, f_ext_follower=True, f_ext_dead=True,
+            ),
+        )
 
         f_follower_grad = cast(Array, grads.f_ext_follower)[0, :, 0, 0].sum()
         m_cs_grad = cast(Array, grads.m_lumped)[0, 0, 0, 0]

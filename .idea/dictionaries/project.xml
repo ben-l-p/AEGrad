@@ -5,11 +5,14 @@
       <w>Geradin</w>
       <w>Lobatto</w>
       <w>Raphson</w>
+      <w>angs</w>
       <w>arrs</w>
       <w>boldsymbol</w>
+      <w>coeffs</w>
       <w>conn</w>
       <w>discretise</w>
       <w>discretised</w>
+      <w>geradin</w>
       <w>jacobians</w>
       <w>nans</w>
       <w>primals</w>

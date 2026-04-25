@@ -16,7 +16,10 @@ from aegrad.utils.utils import make_pytree
 from aegrad.utils.data_structures import DesignVariables
 
 if TYPE_CHECKING:
-    from aegrad.structure.data_structures import StaticStructure, DynamicStructureSnapshot
+    from aegrad.structure.data_structures import (
+        StaticStructure,
+        DynamicStructureSnapshot,
+    )
 
 
 @jax.tree_util.register_dataclass
@@ -29,21 +32,31 @@ class StructureFullStates:
     f_elem: Array
 
 
+@dataclass
+class StructuralGradsToCompute:
+    x0: bool = False
+    k_cs: bool = True
+    m_cs: bool = True
+    m_lumped: bool = False
+    f_ext_follower: bool = False
+    f_ext_dead: bool = False
+
+
 @make_pytree
 class StructuralDesignVariables(DesignVariables):
     def __init__(
-            self,
-            x0: Array,
-            k_cs: Array,
-            m_cs: Optional[Array],
-            m_lumped: Optional[Array],
-            f_ext_follower: Optional[Array],
-            f_ext_dead: Optional[Array],
-            f_shape: tuple[int, ...],
+        self,
+        x0: Optional[Array],
+        k_cs: Optional[Array],
+        m_cs: Optional[Array],
+        m_lumped: Optional[Array],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        f_shape: tuple[int, ...],
     ):
         super().__init__()
-        self.x0: Array = x0
-        self.k_cs: Array = k_cs
+        self.x0: Optional[Array] = x0
+        self.k_cs: Optional[Array] = k_cs
         self.m_cs: Optional[Array] = m_cs
         self.m_lumped: Optional[Array] = m_lumped
         self.f_ext_follower: Optional[Array] = f_ext_follower
@@ -51,12 +64,19 @@ class StructuralDesignVariables(DesignVariables):
         self.f_shape: tuple[int, ...] = f_shape
         self.f_size: int = reduce(mul, f_shape, 1)
 
-        self.shapes: OrderedDict[str, Optional[
-            tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]] = self.get_shapes()
+        self.shapes: OrderedDict[
+            str,
+            Optional[
+                tuple[int, ...]
+                | ArrayListShape
+                | OrderedDict[str, tuple[int, ...] | ArrayListShape]
+            ],
+        ] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def __iadd__(self, other: StructuralDesignVariables) -> Self:
-        self.x0 += other.x0
+        if self.x0 is not None:
+            self.x0 += other.x0
         self.k_cs += other.k_cs
         self.m_cs += other.m_cs
         if self.m_lumped is not None:
@@ -67,11 +87,17 @@ class StructuralDesignVariables(DesignVariables):
             self.f_ext_dead += other.f_ext_dead
         return self
 
-    def premult_adj(self, adj: Array) -> StructuralDesignVariables:
+    def premultiply_adj(self, adj: Array) -> StructuralDesignVariables:
         return StructuralDesignVariables(
-            x0=jnp.einsum("ij,j...->i...", adj, self.x0),
-            k_cs=jnp.einsum("ij,j...->i...", adj, self.k_cs),
-            m_cs=jnp.einsum("ij,j...->i...", adj, self.m_cs),
+            x0=jnp.einsum("ij,j...->i...", adj, self.x0)
+            if self.x0 is not None
+            else None,
+            k_cs=jnp.einsum("ij,j...->i...", adj, self.k_cs)
+            if self.k_cs is not None
+            else None,
+            m_cs=jnp.einsum("ij,j...->i...", adj, self.m_cs)
+            if self.m_cs is not None
+            else None,
             m_lumped=jnp.einsum("ij,j...->i...", adj, self.m_lumped)
             if self.m_lumped is not None
             else None,
@@ -81,13 +107,13 @@ class StructuralDesignVariables(DesignVariables):
             f_ext_dead=jnp.einsum("ij,j...->i...", adj, self.f_ext_dead)
             if self.f_ext_dead is not None
             else None,
-            f_shape=(adj.shape[1],)
+            f_shape=(adj.shape[1],),
         )
 
     def zeros_like(self) -> StructuralDesignVariables:
         return StructuralDesignVariables(
-            x0=jnp.zeros_like(self.x0),
-            k_cs=jnp.zeros_like(self.k_cs),
+            x0=jnp.zeros_like(self.x0) if self.x0 is not None else None,
+            k_cs=jnp.zeros_like(self.k_cs) if self.k_cs is not None else None,
             m_cs=jnp.zeros_like(self.m_cs) if self.m_cs is not None else None,
             m_lumped=jnp.zeros_like(self.m_lumped)
             if self.m_lumped is not None
@@ -98,12 +124,16 @@ class StructuralDesignVariables(DesignVariables):
             f_ext_dead=jnp.zeros_like(self.f_ext_dead)
             if self.f_ext_dead is not None
             else None,
-            f_shape=self.f_shape
+            f_shape=self.f_shape,
         )
 
     def plot(
-            self, case: StaticStructure | DynamicStructureSnapshot, directory: os.PathLike | str, n_interp: int = 0
+        self,
+        case: StaticStructure | DynamicStructureSnapshot,
+        directory: os.PathLike | str,
+        n_interp: int = 0,
     ) -> Path:
+
         if self.f_size != 1:
             raise ValueError("Can only plot gradients for scalar objective functions.")
 
@@ -149,7 +179,7 @@ class StructuralDesignVariables(DesignVariables):
 
         Path(directory).mkdir(parents=True, exist_ok=True)
         file_name = Path(directory).joinpath(
-            f"beam_gradient"
+            "beam_gradient"
         )  # default file name for beam objects is "beam"
         return plot_beam_to_vtk(
             hg=case.hg,

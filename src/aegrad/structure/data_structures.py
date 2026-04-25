@@ -16,6 +16,7 @@ from aegrad.plotting.pvd import write_pvd
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree, index_to_arr
 from aegrad.structure.gradients.data_structures import StructureFullStates
+from aegrad.structure.utils import input_dof_index_to_tuple
 
 
 @dataclass
@@ -33,22 +34,22 @@ class StaticStructure:
     """Object to hold the full state and forces of a static structure analysis."""
 
     def __init__(
-            self,
-            hg: Array,
-            conn: Array,
-            o0: Array,
-            d: Array,
-            eps: Array,
-            varphi: Array,
-            f_ext_follower: Optional[Array],
-            f_ext_dead: Optional[Array],
-            f_ext_aero: Optional[Array],
-            f_grav: Optional[Array],
-            f_int: Array,
-            f_elem: Array,
-            f_res: Array,
-            prescribed_dofs: Optional[Array],
-            local: bool = True,
+        self,
+        hg: Array,
+        conn: Array,
+        o0: Array,
+        d: Array,
+        eps: Array,
+        varphi: Array,
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
+        f_grav: Optional[Array],
+        f_int: Array,
+        f_elem: Array,
+        f_res: Array,
+        prescribed_dofs: Optional[Array | tuple[int, ...]],
+        local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -63,22 +64,23 @@ class StaticStructure:
         self.f_int: Array = f_int  # [n_nodes, 6]
         self.f_elem: Array = f_elem  # [n_elem, 6]
         self.f_res: Array = f_res  # [n_nodes, 6]
-        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
+        self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
+            prescribed_dofs
+        )
         self.local: bool = local
 
     @overload
-    def to_dynamic(self) -> DynamicStructureSnapshot:
-        ...
+    def to_dynamic(self) -> DynamicStructureSnapshot: ...
 
     @overload
-    def to_dynamic(self, t: Array) -> DynamicStructure:
-        ...
+    def to_dynamic(self, t: Array) -> DynamicStructure: ...
 
     @overload
-    def to_dynamic(self, t: None) -> DynamicStructureSnapshot:
-        ...
+    def to_dynamic(self, t: None) -> DynamicStructureSnapshot: ...
 
-    def to_dynamic(self, t: Optional[Array] = None) -> DynamicStructureSnapshot | DynamicStructure:
+    def to_dynamic(
+        self, t: Optional[Array] = None
+    ) -> DynamicStructureSnapshot | DynamicStructure:
         """Convert static structure results to a dynamic structure initial_snapshot, with zeroed velocity/acceleration dependent
         entries."""
         n_nodes = self.hg.shape[0]
@@ -114,14 +116,18 @@ class StaticStructure:
         if t is None:
             return dyn_snapshot
         else:
-            return DynamicStructure.initialise(initial_snapshot=dyn_snapshot, t=t,
-                                               use_f_ext_aero=self.f_ext_aero is not None,
-                                               use_f_ext_follower=self.f_ext_follower is not None,
-                                               use_f_ext_dead=self.f_ext_dead is not None)
+            return DynamicStructure.initialise(
+                initial_snapshot=dyn_snapshot,
+                t=t,
+                use_f_ext_aero=self.f_ext_aero is not None,
+                use_f_ext_follower=self.f_ext_follower is not None,
+                use_f_ext_dead=self.f_ext_dead is not None,
+            )
 
     def get_full_states(self) -> StructureFullStates:
-        return StructureFullStates(v=None, v_dot=None, hg=self.hg,
-                                   eps=self.eps, f_elem=self.f_elem)
+        return StructureFullStates(
+            v=None, v_dot=None, hg=self.hg, eps=self.eps, f_elem=self.f_elem
+        )
 
     def _transform(self, rmat: Array) -> None:
         r"""
@@ -129,23 +135,27 @@ class StaticStructure:
         :param rmat: Nodal rotations, [n_nodes, 3, 3]
         """
         if self.f_ext_follower is not None:
-            self.f_ext_follower = self.f_ext_follower.at[...].set(transform_nodal_vect(self.f_ext_follower, rmat))
+            self.f_ext_follower = self.f_ext_follower.at[...].set(
+                transform_nodal_vect(self.f_ext_follower, rmat)
+            )
 
         if self.f_ext_dead is not None:
-            self.f_ext_dead = self.f_ext_dead.at[...].set(transform_nodal_vect(self.f_ext_dead, rmat))
+            self.f_ext_dead = self.f_ext_dead.at[...].set(
+                transform_nodal_vect(self.f_ext_dead, rmat)
+            )
 
         if self.f_ext_aero is not None:
-            self.f_ext_aero = self.f_ext_aero.at[...].set(transform_nodal_vect(self.f_ext_aero, rmat))
+            self.f_ext_aero = self.f_ext_aero.at[...].set(
+                transform_nodal_vect(self.f_ext_aero, rmat)
+            )
 
         if self.f_grav is not None:
-            self.f_grav = self.f_grav.at[...].set(transform_nodal_vect(self.f_grav, rmat))
+            self.f_grav = self.f_grav.at[...].set(
+                transform_nodal_vect(self.f_grav, rmat)
+            )
 
-        self.f_int = self.f_int.at[...].set(
-            transform_nodal_vect(self.f_int, rmat)
-        )
-        self.f_res = self.f_int.at[...].set(
-            transform_nodal_vect(self.f_res, rmat)
-        )
+        self.f_int = self.f_int.at[...].set(transform_nodal_vect(self.f_int, rmat))
+        self.f_res = self.f_int.at[...].set(transform_nodal_vect(self.f_res, rmat))
 
     def to_global(self) -> None:
         """
@@ -201,28 +211,28 @@ class DynamicStructureSnapshot:
     """Object to hold the full state and forces of a dynamic structure analysis timestep."""
 
     def __init__(
-            self,
-            hg: Array,
-            conn: Array,
-            o0: Array,
-            d: Array,
-            eps: Array,
-            varphi: Array,
-            v: Array,
-            v_dot: Array,
-            a: Array,
-            f_ext_follower: Optional[Array],
-            f_ext_dead: Optional[Array],
-            f_ext_aero: Optional[Array],
-            f_grav: Optional[Array],
-            f_int: Array,
-            f_elem: Array,
-            f_iner_gyr: Array,
-            f_res: Array,
-            t: Array,
-            i_ts: int,
-            prescribed_dofs: Optional[Array],
-            local: bool = True,
+        self,
+        hg: Array,
+        conn: Array,
+        o0: Array,
+        d: Array,
+        eps: Array,
+        varphi: Array,
+        v: Array,
+        v_dot: Array,
+        a: Array,
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
+        f_grav: Optional[Array],
+        f_int: Array,
+        f_elem: Array,
+        f_iner_gyr: Array,
+        f_res: Array,
+        t: Array,
+        i_ts: int,
+        prescribed_dofs: Optional[Array | tuple[int, ...]],
+        local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -243,7 +253,9 @@ class DynamicStructureSnapshot:
         self.f_res: Array = f_res  # [n_nodes, 6]
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
-        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
+        self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
+            prescribed_dofs
+        )
         self.local: bool = local
 
     def to_static(self) -> StaticStructure:
@@ -420,8 +432,12 @@ class DynamicStructureSnapshot:
             "v_dot_angular": v_dot_ang,
         }
         cell_scalar_data = {"element_number": elem_num}
-        cell_vector_data = {"eps_linear": eps_lin, "eps_angular": eps_ang, "f_elem_linear": f_elem_lin,
-                            "f_elem_angular": f_elem_ang}
+        cell_vector_data = {
+            "eps_linear": eps_lin,
+            "eps_angular": eps_ang,
+            "f_elem_linear": f_elem_lin,
+            "f_elem_angular": f_elem_ang,
+        }
 
         Path(directory).mkdir(parents=True, exist_ok=True)
         file_name = Path(directory).joinpath(
@@ -446,27 +462,27 @@ class DynamicStructure:
     """Object to hold the full state and forces of a dynamic structure analysis across multiple timesteps."""
 
     def __init__(
-            self,
-            hg: Array,
-            conn: Array,
-            o0: Array,
-            d: Array,
-            eps: Array,
-            varphi: Array,
-            v: Array,
-            v_dot: Array,
-            a: Array,
-            f_ext_follower: Optional[Array],
-            f_ext_dead: Optional[Array],
-            f_ext_aero: Optional[Array],
-            f_grav: Optional[Array],
-            f_int: Array,
-            f_elem: Array,
-            f_iner: Array,
-            f_res: Array,
-            t: Array,
-            n_tstep: int,
-            prescribed_dofs: Optional[Array],
+        self,
+        hg: Array,
+        conn: Array,
+        o0: Array,
+        d: Array,
+        eps: Array,
+        varphi: Array,
+        v: Array,
+        v_dot: Array,
+        a: Array,
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        f_ext_aero: Optional[Array],
+        f_grav: Optional[Array],
+        f_int: Array,
+        f_elem: Array,
+        f_iner: Array,
+        f_res: Array,
+        t: Array,
+        n_tstep: int,
+        prescribed_dofs: Optional[Array | tuple[int, ...]],
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
         self.conn: Array = conn  # [n_elem, 2]
@@ -487,7 +503,9 @@ class DynamicStructure:
         self.f_res: Array = f_res  # [n_tstep, n_nodes, 6]
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
-        self.prescribed_dofs: Array = prescribed_dofs if prescribed_dofs is not None else jnp.zeros((0,), dtype=int)
+        self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
+            prescribed_dofs
+        )
         self.local: bool = True
 
     def to_static(self, i_ts: int) -> StaticStructure:
@@ -552,21 +570,28 @@ class DynamicStructure:
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
             a=self.a[i_ts, ...],
-            f_ext_aero=self.f_ext_aero[i_ts, ...] if self.f_ext_aero is not None else None,
+            f_ext_aero=self.f_ext_aero[i_ts, ...]
+            if self.f_ext_aero is not None
+            else None,
         )
 
     def get_full_states(self, i_ts: int | Array) -> StructureFullStates:
-        return StructureFullStates(v=self.v[i_ts, ...], v_dot=self.v_dot[i_ts, ...], hg=self.hg[i_ts, ...],
-                                   eps=self.eps[i_ts, ...], f_elem=self.f_elem[i_ts, ...])
+        return StructureFullStates(
+            v=self.v[i_ts, ...],
+            v_dot=self.v_dot[i_ts, ...],
+            hg=self.hg[i_ts, ...],
+            eps=self.eps[i_ts, ...],
+            f_elem=self.f_elem[i_ts, ...],
+        )
 
     @classmethod
     def initialise(
-            cls,
-            initial_snapshot: DynamicStructureSnapshot,
-            t: Array,
-            use_f_ext_follower: bool,
-            use_f_ext_dead: bool,
-            use_f_ext_aero: bool,
+        cls,
+        initial_snapshot: DynamicStructureSnapshot,
+        t: Array,
+        use_f_ext_follower: bool,
+        use_f_ext_dead: bool,
+        use_f_ext_aero: bool,
     ) -> DynamicStructure:
         r"""
         Initialise a DynamicStructure object given an initial initial_snapshot and number of time steps.
@@ -594,7 +619,9 @@ class DynamicStructure:
         if use_f_ext_follower:
             f_ext_follower = jnp.zeros((n_tstep, n_node, 6))
             if initial_snapshot.f_ext_follower is not None:
-                f_ext_follower = f_ext_follower.at[0, ...].set(initial_snapshot.f_ext_follower)
+                f_ext_follower = f_ext_follower.at[0, ...].set(
+                    initial_snapshot.f_ext_follower
+                )
         else:
             f_ext_follower = None
 
@@ -652,22 +679,37 @@ class DynamicStructure:
 
         if self.f_ext_follower is not None:
             self.f_ext_follower = self.f_ext_follower.at[...].set(
-                transform_nodal_vect(vect=self.f_ext_follower, rmat=rmat))
+                transform_nodal_vect(vect=self.f_ext_follower, rmat=rmat)
+            )
 
         if self.f_ext_dead is not None:
-            self.f_ext_dead = self.f_ext_dead.at[...].set(transform_nodal_vect(vect=self.f_ext_dead, rmat=rmat))
+            self.f_ext_dead = self.f_ext_dead.at[...].set(
+                transform_nodal_vect(vect=self.f_ext_dead, rmat=rmat)
+            )
 
         if self.f_ext_aero is not None:
-            self.f_ext_aero = self.f_ext_aero.at[...].set(transform_nodal_vect(vect=self.f_ext_aero, rmat=rmat))
+            self.f_ext_aero = self.f_ext_aero.at[...].set(
+                transform_nodal_vect(vect=self.f_ext_aero, rmat=rmat)
+            )
 
         if self.f_grav is not None:
-            self.f_grav = self.f_grav.at[...].set(transform_nodal_vect(vect=self.f_grav, rmat=rmat))
+            self.f_grav = self.f_grav.at[...].set(
+                transform_nodal_vect(vect=self.f_grav, rmat=rmat)
+            )
 
-        self.f_int = self.f_int.at[...].set(transform_nodal_vect(vect=self.f_int, rmat=rmat))
-        self.f_iner_gyr = self.f_iner_gyr.at[...].set(transform_nodal_vect(vect=self.f_iner_gyr, rmat=rmat))
-        self.f_res = self.f_res.at[...].set(transform_nodal_vect(vect=self.f_res, rmat=rmat))
+        self.f_int = self.f_int.at[...].set(
+            transform_nodal_vect(vect=self.f_int, rmat=rmat)
+        )
+        self.f_iner_gyr = self.f_iner_gyr.at[...].set(
+            transform_nodal_vect(vect=self.f_iner_gyr, rmat=rmat)
+        )
+        self.f_res = self.f_res.at[...].set(
+            transform_nodal_vect(vect=self.f_res, rmat=rmat)
+        )
         self.v = self.v.at[...].set(transform_nodal_vect(vect=self.v, rmat=rmat))
-        self.v_dot = self.v_dot.at[...].set(transform_nodal_vect(vect=self.v_dot, rmat=rmat))
+        self.v_dot = self.v_dot.at[...].set(
+            transform_nodal_vect(vect=self.v_dot, rmat=rmat)
+        )
         self.a = self.a.at[...].set(transform_nodal_vect(vect=self.a, rmat=rmat))
 
     def to_global(self) -> None:
@@ -691,10 +733,10 @@ class DynamicStructure:
         self._transform(rmat=jnp.transpose(self.hg[:, :, :3, :3], (0, 1, 3, 2)))
 
     def plot(
-            self,
-            directory: os.PathLike | str,
-            index: Optional[slice | Sequence[int] | int | Array] = None,
-            n_interp: int = 0,
+        self,
+        directory: os.PathLike | str,
+        index: Optional[slice | Sequence[int] | int | Array] = None,
+        n_interp: int = 0,
     ) -> Path:
         r"""
         Plot the beam for specified time steps to VTU files in the specified directory. Additionally, a PVD
@@ -756,12 +798,12 @@ class DynamicStructure:
 @make_pytree
 class StructureMinimalStates:
     def __init__(
-            self,
-            varphi: Optional[Array],
-            v: Array,
-            v_dot: Array,
-            a: Array,
-            f_ext_aero: Optional[Array] = None,
+        self,
+        varphi: Optional[Array],
+        v: Array,
+        v_dot: Array,
+        a: Array,
+        f_ext_aero: Optional[Array] = None,
     ):
         self._varphi: Optional[Array] = varphi
         self.v: Array = v
@@ -784,9 +826,7 @@ class StructureMinimalStates:
         return StructureMinimalStates(*stacked_mat.reshape(stacked_mat.shape[0], -1, 6))
 
     def to_mat(self) -> Array:
-        out = jnp.stack(
-            (self.varphi, self.v, self.v_dot, self.a), 0
-        )  # [4, n_nodes, 6]
+        out = jnp.stack((self.varphi, self.v, self.v_dot, self.a), 0)  # [4, n_nodes, 6]
 
         if self.f_ext_aero is not None:
             out = jnp.concatenate((out, self.f_ext_aero[None, ...]), 0)

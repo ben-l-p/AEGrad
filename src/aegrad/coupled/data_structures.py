@@ -19,7 +19,10 @@ from aegrad.structure.data_structures import DynamicStructure, StructureMinimalS
 if TYPE_CHECKING:
     from aegrad.structure.data_structures import StaticStructure
     from aegrad.coupled.coupled import BaseCoupledAeroelastic
-    from aegrad.structure.data_structures import DynamicStructureSnapshot, StructureFullStates, StaticStructure
+    from aegrad.structure.data_structures import (
+        DynamicStructureSnapshot,
+        StructureFullStates,
+    )
 
 
 class StaticAeroelastic:
@@ -28,30 +31,33 @@ class StaticAeroelastic:
         self.aero: AeroSnapshot = aero
 
     def plot(
-            self,
-            directory: os.PathLike | str,
-            n_interp: int = 0,
-            plot_bound: bool = True,
-            plot_wake: bool = True,
+        self,
+        directory: os.PathLike | str,
+        n_interp: int = 0,
+        plot_bound: bool = True,
+        plot_wake: bool = True,
     ):
         self.structure.plot(directory, n_interp=n_interp)
         self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
 
     def get_full_states(self):
-        if self.structure.f_ext_aero is None: raise ValueError("f_ext_aero is None")
+        if self.structure.f_ext_aero is None:
+            raise ValueError("f_ext_aero is None")
 
-        return AeroelasticFullStates(structure=self.structure.get_full_states(),
-                                     aero=self.aero.get_states(i_ts=0))
+        return AeroelasticFullStates(
+            structure=self.structure.get_full_states(),
+            aero=self.aero.get_states(i_ts=0),
+        )
 
     @overload
-    def to_dynamic(self, t: None) -> DynamicAeroelasticSnapshot:
-        ...
+    def to_dynamic(self, t: None) -> DynamicAeroelasticSnapshot: ...
 
     @overload
-    def to_dynamic(self, t: Array) -> DynamicAeroelastic:
-        ...
+    def to_dynamic(self, t: Array) -> DynamicAeroelastic: ...
 
-    def to_dynamic(self, t: Optional[Array]) -> DynamicAeroelasticSnapshot | DynamicAeroelastic:
+    def to_dynamic(
+        self, t: Optional[Array]
+    ) -> DynamicAeroelasticSnapshot | DynamicAeroelastic:
         if t is None:
             struct = self.structure.to_dynamic(t=t)
             return DynamicAeroelasticSnapshot(structure=struct, aero=self.aero)
@@ -79,42 +85,66 @@ class DynamicAeroelastic:
         self.aero: DynamicAeroCase = aero
 
     def __getitem__(self, i_ts: int) -> DynamicAeroelasticSnapshot:
-        return DynamicAeroelasticSnapshot(structure=self.structure[i_ts], aero=self.aero[i_ts])
+        return DynamicAeroelasticSnapshot(
+            structure=self.structure[i_ts], aero=self.aero[i_ts]
+        )
 
     @classmethod
-    def initialise(cls,
-                   initial_snapshot: DynamicAeroelasticSnapshot | DynamicAeroelastic | StaticAeroelastic,
-                   t: Array,
-                   use_f_ext_follower: bool,
-                   use_f_ext_dead: bool,
-                   aeroelastic_object: BaseCoupledAeroelastic) -> DynamicAeroelastic:
+    def initialise(
+        cls,
+        initial_snapshot: DynamicAeroelasticSnapshot
+        | DynamicAeroelastic
+        | StaticAeroelastic,
+        t: Array,
+        use_f_ext_follower: bool,
+        use_f_ext_dead: bool,
+        aeroelastic_object: BaseCoupledAeroelastic,
+    ) -> DynamicAeroelastic:
         if isinstance(initial_snapshot, DynamicAeroelasticSnapshot):
             init_struct: DynamicStructureSnapshot = initial_snapshot.structure
             init_aero: AeroSnapshot = initial_snapshot.aero
         elif isinstance(initial_snapshot, StaticAeroelastic):
-            init_struct: DynamicStructureSnapshot = initial_snapshot.structure.to_dynamic(t=None)
+            init_struct: DynamicStructureSnapshot = (
+                initial_snapshot.structure.to_dynamic(t=None)
+            )
             init_aero: AeroSnapshot = initial_snapshot.aero
         elif isinstance(initial_snapshot, DynamicAeroelastic):
-            if initial_snapshot.structure.n_tstep != 1: raise ValueError("initial_snapshot.structure.n_tstep != 1")
-            if initial_snapshot.aero.n_tstep != 1: raise ValueError("initial_snapshot.aero.n_tstep != 1")
+            if initial_snapshot.structure.n_tstep != 1:
+                raise ValueError("initial_snapshot.structure.n_tstep != 1")
+            if initial_snapshot.aero.n_tstep != 1:
+                raise ValueError("initial_snapshot.aero.n_tstep != 1")
 
             init_struct: DynamicStructureSnapshot = initial_snapshot.structure[0]
             init_aero: AeroSnapshot = initial_snapshot.aero[0]
         else:
-            raise ValueError("initial_snapshot must be DynamicAeroelastic or DynamicAeroCase")
+            raise ValueError(
+                "initial_snapshot must be DynamicAeroelastic or DynamicAeroCase"
+            )
 
-        struct_case = DynamicStructure.initialise(initial_snapshot=init_struct, t=t, use_f_ext_aero=True,
-                                                  use_f_ext_follower=use_f_ext_follower, use_f_ext_dead=use_f_ext_dead)
-        aero_case = DynamicAeroCase.initialise(initial_snapshot=init_aero, n_tstep=len(t))
+        struct_case = DynamicStructure.initialise(
+            initial_snapshot=init_struct,
+            t=t,
+            use_f_ext_aero=True,
+            use_f_ext_follower=use_f_ext_follower,
+            use_f_ext_dead=use_f_ext_dead,
+        )
+        aero_case = DynamicAeroCase.initialise(
+            initial_snapshot=init_aero, n_tstep=len(t)
+        )
 
         # compute aerodynamic forcing at timestep 0
-        f_aero_init = aero_case.project_forcing_to_beam(i_ts=0, rmat=struct_case.hg[0, :, :3, :3],
-                                                        x0_aero=aeroelastic_object.aero.x0_b,
-                                                        include_unsteady=False)
-        f_aero_local = aeroelastic_object.structure.make_f_dead_ext(f_ext=f_aero_init,
-                                                                    rmat=struct_case.hg[0, :, :3, :3])
+        f_aero_init = aero_case.project_forcing_to_beam(
+            i_ts=0,
+            rmat=struct_case.hg[0, :, :3, :3],
+            x0_aero=aeroelastic_object.aero.x0_b,
+            include_unsteady=False,
+        )
+        f_aero_local = aeroelastic_object.structure.make_f_dead_ext(
+            f_ext=f_aero_init, rmat=struct_case.hg[0, :, :3, :3]
+        )
 
-        if struct_case.f_ext_aero is None: raise ValueError("f_ext_aero cannot be None")
+        if struct_case.f_ext_aero is None:
+            raise ValueError("f_ext_aero cannot be None")
 
         struct_case.f_ext_aero = struct_case.f_ext_aero.at[0, ...].set(f_aero_local)
 
@@ -126,8 +156,10 @@ class DynamicAeroelastic:
         :param i_ts: Time step index .
         :return: Full aeroelastic states.
         """
-        return AeroelasticFullStates(structure=self.structure.get_full_states(i_ts=i_ts),
-                                     aero=self.aero.get_states(i_ts=i_ts))
+        return AeroelasticFullStates(
+            structure=self.structure.get_full_states(i_ts=i_ts),
+            aero=self.aero.get_states(i_ts=i_ts),
+        )
 
     def get_minimal_states(self, i_ts: int | Array) -> AeroelasticMinimalStates:
         r"""
@@ -136,12 +168,19 @@ class DynamicAeroelastic:
         :return: Minimal aeroelastic states.
         """
 
-        return AeroelasticMinimalStates(structure=self.structure.get_minimal_states(i_ts=i_ts),
-                                        aero=self.aero.get_states(i_ts=i_ts))
+        return AeroelasticMinimalStates(
+            structure=self.structure.get_minimal_states(i_ts=i_ts),
+            aero=self.aero.get_states(i_ts=i_ts),
+        )
 
-    def plot(self, directory: os.PathLike | str, index: Optional[int | Sequence[int] | Array | slice] = None,
-             n_interp: int = 0,
-             plot_bound: bool = True, plot_wake: bool = True) -> tuple[Path, Sequence[Path]]:
+    def plot(
+        self,
+        directory: os.PathLike | str,
+        index: Optional[int | Sequence[int] | Array | slice] = None,
+        n_interp: int = 0,
+        plot_bound: bool = True,
+        plot_wake: bool = True,
+    ) -> tuple[Path, Sequence[Path]]:
         r"""
         Plots the aeroelastic dynamic system.
         :param directory: Directory to save the plots to.
@@ -151,9 +190,15 @@ class DynamicAeroelastic:
         :param plot_wake: Whether to plot the wake aerodynamic panels.
         :return: Paths of the structural and aerodynamic PVD files.
         """
-        struct_pvd: Path = self.structure.plot(directory=directory, n_interp=n_interp, index=index)
-        aero_pvd: Sequence[Path] = self.aero.plot(directory=directory,  # type: ignore
-                                                  plot_bound=plot_bound, plot_wake=plot_wake, index=index)
+        struct_pvd: Path = self.structure.plot(
+            directory=directory, n_interp=n_interp, index=index
+        )
+        aero_pvd: Sequence[Path] = self.aero.plot(
+            directory=directory,  # type: ignore
+            plot_bound=plot_bound,
+            plot_wake=plot_wake,
+            index=index,
+        )
         return struct_pvd, aero_pvd
 
 
@@ -171,11 +216,13 @@ class AeroelasticMinimalStates:
         self.aero: AeroStates = aero
 
     @staticmethod
-    def from_vector(vect: Array, n_dof: int,
-                    aero_shapes: OrderedDict[
-                        str, Optional[tuple[int, ...] | ArrayListShape]]) -> AeroelasticMinimalStates:
-        struct = StructureMinimalStates.from_mat(vect[:5 * n_dof].reshape(5, n_dof))
-        aero = AeroStates.from_vector(vect[5 * n_dof:], aero_shapes)
+    def from_vector(
+        vect: Array,
+        n_dof: int,
+        aero_shapes: OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]],
+    ) -> AeroelasticMinimalStates:
+        struct = StructureMinimalStates.from_mat(vect[: 5 * n_dof].reshape(5, n_dof))
+        aero = AeroStates.from_vector(vect[5 * n_dof :], aero_shapes)
         return AeroelasticMinimalStates(structure=struct, aero=aero)
 
     def ravel(self) -> Array:
@@ -197,16 +244,22 @@ class AeroelasticMinimalStates:
 @make_pytree
 class AeroelasticDesignVariables(DesignVariables):
     def __init__(
-            self,
-            structure_dv: StructuralDesignVariables,
-            aero_dv: AeroDesignVariables,
+        self,
+        structure_dv: StructuralDesignVariables,
+        aero_dv: AeroDesignVariables,
     ):
         super().__init__()
         self.structure: StructuralDesignVariables = structure_dv
         self.aero: AeroDesignVariables = aero_dv
 
-        self.shapes: OrderedDict[str, Optional[
-            tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]] = self.get_shapes()
+        self.shapes: OrderedDict[
+            str,
+            Optional[
+                tuple[int, ...]
+                | ArrayListShape
+                | OrderedDict[str, tuple[int, ...] | ArrayListShape]
+            ],
+        ] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
     def get_vars(self) -> dict[str, Optional[Array]]:
@@ -216,7 +269,7 @@ class AeroelasticDesignVariables(DesignVariables):
         }
 
     def split_adjoint(
-            self, d_f_d_x: dict[str, Optional[Array | ArrayList]], f_shape: tuple[int, ...]
+        self, d_f_d_x: dict[str, Optional[Array | ArrayList]], f_shape: tuple[int, ...]
     ) -> AeroelasticDesignVariables:
         struct_dv = StructuralDesignVariables(
             **{k: v for k, v in d_f_d_x.items() if k in self.structure.get_vars()},
@@ -226,14 +279,12 @@ class AeroelasticDesignVariables(DesignVariables):
             **{k: v for k, v in d_f_d_x.items() if k in self.aero.get_vars()},
             f_shape=f_shape,
         )
-        return AeroelasticDesignVariables(
-            structure_dv=struct_dv, aero_dv=aero_dv
-        )
+        return AeroelasticDesignVariables(structure_dv=struct_dv, aero_dv=aero_dv)
 
     def premultiply_adj(self, adj: Array) -> AeroelasticDesignVariables:
         return AeroelasticDesignVariables(
-            structure_dv=self.structure.premult_adj(adj),
-            aero_dv=self.aero.premult_adj(adj)
+            structure_dv=self.structure.premultiply_adj(adj),
+            aero_dv=self.aero.premultiply_adj(adj),
         )
 
     def __iadd__(self, other: AeroelasticDesignVariables) -> AeroelasticDesignVariables:
@@ -242,7 +293,10 @@ class AeroelasticDesignVariables(DesignVariables):
         return self
 
     def plot(
-            self, case: StaticAeroelastic | DynamicAeroelastic, i_ts: Optional[int], directory: os.PathLike | str
+        self,
+        case: StaticAeroelastic | DynamicAeroelastic,
+        i_ts: Optional[int],
+        directory: os.PathLike | str,
     ) -> Sequence[Path]:
         paths = []
 
@@ -250,7 +304,8 @@ class AeroelasticDesignVariables(DesignVariables):
             struct_snapshot: StaticStructure | DynamicStructureSnapshot = case.structure
             aero_snapshot: AeroSnapshot = case.aero
         elif isinstance(case, DynamicAeroelastic):
-            if i_ts is None: raise ValueError("Time step index must be specified")
+            if i_ts is None:
+                raise ValueError("Time step index must be specified")
             struct_snapshot = case.structure[i_ts]
             aero_snapshot: AeroSnapshot = case.aero[i_ts]
         else:
@@ -258,14 +313,18 @@ class AeroelasticDesignVariables(DesignVariables):
 
         if self.structure is not None:
             paths.append(
-                self.structure.plot(case=struct_snapshot, directory=directory, n_interp=0)
+                self.structure.plot(
+                    case=struct_snapshot, directory=directory, n_interp=0
+                )
             )
         if self.aero is not None:
             rmat_nodal = ArrayList(
                 [struct_snapshot.hg[mp, :3, :3] for mp in case.aero.dof_mapping]
             )
             paths.extend(
-                self.aero.plot(aero_snapshot, directory=directory, rmat_nodal=rmat_nodal)
+                self.aero.plot(
+                    aero_snapshot, directory=directory, rmat_nodal=rmat_nodal
+                )
             )
         return paths
 

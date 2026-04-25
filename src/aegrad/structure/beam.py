@@ -373,7 +373,7 @@ class BaseBeamStructure:
         use_f_ext_dead: bool = True,
         use_f_aero: bool = True,
         use_f_grav: bool = True,
-        prescribed_dofs: Optional[Array] = None,
+        prescribed_dofs: tuple[int, ...] = (),
     ) -> StaticStructure:
         r"""
         Get the reference configuration of the structure.
@@ -515,7 +515,7 @@ class BaseBeamStructure:
         else:
             return f_ext_dead[idx] + f_ext_aero[idx]  # type: ignore
 
-    def _make_k_t(
+    def make_k_t(
         self,
         d: Array,
         p_d: Array,
@@ -524,6 +524,8 @@ class BaseBeamStructure:
         r"""
         Assemble tangent stiffness matrix as a function of the element relative configuration vectors
         :param d: Element relative configuration, [n_elem, 6]
+        :param p_d: P(d) operator, [n_elem, 6, 12]
+        :param eps: Element strains, [n_elem, 6]
         :return: Elementwise stiffness matrix entries, [n_elem, 12, 12]
         """
         # compute stiffness matrix entries
@@ -628,7 +630,7 @@ class BaseBeamStructure:
             .set(jnp.einsum("ijk,ikl->ijl", self.m_lumped[:, :, 3:], d_g_d_omega))
         )
 
-    def _make_k_t_full(
+    def make_k_t_full(
         self,
         d: Array,
         p_d: Array,
@@ -648,7 +650,7 @@ class BaseBeamStructure:
         :return: Tangent stiffness matrix with all contributions, [n_dof, n_dof].
         """
 
-        k_t = self.assemble_matrix_from_entries(self._make_k_t(d, p_d, eps))
+        k_t = self.assemble_matrix_from_entries(self.make_k_t(d, p_d, eps))
         if f_ext_dead is not None and self.optional_jacobians.d_f_ext_dead_d_n:
             k_t += block_diag(*self._make_k_t_dead(rmat, f_ext_dead))
 
@@ -1108,6 +1110,8 @@ class BaseBeamStructure:
             this_f_gyr = self.assemble_vector_from_entries(this_f_gyr).reshape(-1, 6)
 
             if self.use_lumped_mass:
+                if c_l_lumped is None:
+                    raise ValueError("c_l_lumped is None")
                 f_iner_lumped, f_gyr_lumped = self._make_f_iner_gyr_lumped(
                     c_l_lumped, v, v_dot
                 )  # type: ignore
@@ -1282,19 +1286,21 @@ class BaseBeamStructure:
         f_elem = self.make_f_elem(eps=eps)
         return StructureFullStates(v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem)
 
-    def make_prescribed_dofs_array(
+    def make_prescribed_dofs_tuple(
         self,
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
-    ) -> Array:
+    ) -> tuple[int, ...]:
         # degrees of freedom which are prescribed
-        if isinstance(prescribed_dofs, slice) or isinstance(prescribed_dofs, Sequence):
-            return jnp.arange(self.n_dof)[prescribed_dofs]
+        if isinstance(prescribed_dofs, slice):
+            return tuple(jnp.arange(self.n_dof)[prescribed_dofs].tolist())
+        elif isinstance(prescribed_dofs, Sequence):
+            return tuple(prescribed_dofs)
         elif isinstance(prescribed_dofs, int):
-            return jnp.array([prescribed_dofs])
+            return (prescribed_dofs,)
         elif isinstance(prescribed_dofs, Array):
-            return prescribed_dofs
+            return tuple(prescribed_dofs.tolist())
         elif prescribed_dofs is None:
-            return jnp.array([], dtype=int)
+            return ()
         else:
             raise TypeError(
                 "prescribed_dofs must be an int, slice, Sequence[int], or Array"
@@ -1336,9 +1342,11 @@ class BaseBeamStructure:
             raise ValueError("struct_relaxation_factor must be in the range (0, 1]")
 
         # degrees of freedom to solve for
-        prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
-        solve_dofs = get_solve_dofs(
-            n_dof=self.n_dof, prescribed_dofs=prescribed_dofs_arr
+        prescribed_dofs_: tuple[int, ...] = self.make_prescribed_dofs_tuple(
+            prescribed_dofs
+        )
+        solve_dofs: Array = jnp.array(
+            get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=prescribed_dofs_)
         )
 
         # process external forces for load stepping
@@ -1373,7 +1381,7 @@ class BaseBeamStructure:
             )
 
             # assemble tangent stiffness matrix, [n_solve_dof, n_solve_dof]
-            k_t_solve_n = self._make_k_t_full(
+            k_t_solve_n = self.make_k_t_full(
                 d_n,
                 p_d_n,
                 eps_n,
@@ -1496,7 +1504,7 @@ class BaseBeamStructure:
             f_ext_aero=f_ext_aero_local,
             f_grav=f_grav,
             f_res=f_res,
-            prescribed_dofs=prescribed_dofs_arr,
+            prescribed_dofs=prescribed_dofs_,
         )
 
     @overload
@@ -1506,7 +1514,7 @@ class BaseBeamStructure:
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         struct_relaxation_factor: float,
-        solve_dofs: Array,
+        solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
@@ -1525,7 +1533,7 @@ class BaseBeamStructure:
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         struct_relaxation_factor: float,
-        solve_dofs: Array,
+        solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
@@ -1543,7 +1551,7 @@ class BaseBeamStructure:
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         struct_relaxation_factor: float,
-        solve_dofs: Array,
+        solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
@@ -1577,6 +1585,8 @@ class BaseBeamStructure:
         f_ext_dead_alpha_steps = self._make_load_steps_f(
             f_ext_dead, load_step_weight, apply_alpha_weighting=True
         )
+
+        solve_dofs_arr: Array = jnp.array(solve_dofs)
 
         def _update(
             i_load_step: int,
@@ -1629,7 +1639,7 @@ class BaseBeamStructure:
                 i_load_step,
             )  # [n_node, 6]
 
-            k_t = self._make_k_t_full(
+            k_t = self.make_k_t_full(
                 d_n,
                 p_d_n,
                 eps_n,
@@ -1648,7 +1658,7 @@ class BaseBeamStructure:
 
             # residual forces, [n_solve_dofs]
             f_res_n_solve, f_abs_sum_n = self.make_f_res(
-                solve_dofs=solve_dofs,
+                solve_dofs=solve_dofs_arr,
                 p_d=p_d_n,
                 eps=eps_n,
                 hg=hg_update,
@@ -1672,24 +1682,24 @@ class BaseBeamStructure:
                 k_t=k_t,
                 t_n=t_n,
                 ti=self.time_integrator,
-            )[jnp.ix_(solve_dofs, solve_dofs)]
+            )[jnp.ix_(solve_dofs_arr, solve_dofs_arr)]
 
             # solve for configuration increment, [n_solve_dofs]
             d_n_np1 = (
                 jnp.linalg.solve(sys_mat, f_res_n_solve) * struct_relaxation_factor
             )
-            phi_np1 = phi_alpha.ravel().at[solve_dofs].add(d_n_np1).reshape(-1, 6)
+            phi_np1 = phi_alpha.ravel().at[solve_dofs_arr].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
             v_np1 = (
                 q_alpha.v.ravel()
-                .at[solve_dofs]
+                .at[solve_dofs_arr]
                 .add(self.time_integrator.gamma_prime * d_n_np1)
                 .reshape(-1, 6)
             )
             v_dot_np1 = (
                 q_alpha.v_dot.ravel()
-                .at[solve_dofs]
+                .at[solve_dofs_arr]
                 .add(self.time_integrator.beta_prime * d_n_np1)
                 .reshape(-1, 6)
             )
@@ -2029,10 +2039,10 @@ class BaseBeamStructure:
             # update the FSI convergence object
             # note that for convenience we use the alpha properties
             fsi_converge_status.update(
-                delta_disp=(phi_alpha_init - phi_alpha).ravel()[solve_dofs],
-                total_disp=phi_alpha.ravel()[solve_dofs],
-                delta_force=(f_aero_alpha - f_aero_alpha_prev).ravel()[solve_dofs],
-                total_force=f_aero_alpha.ravel()[solve_dofs],
+                delta_disp=(phi_alpha_init - phi_alpha).ravel()[solve_dofs_arr],
+                total_disp=phi_alpha.ravel()[solve_dofs_arr],
+                delta_force=(f_aero_alpha - f_aero_alpha_prev).ravel()[solve_dofs_arr],
+                total_force=f_aero_alpha.ravel()[solve_dofs_arr],
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
@@ -2204,7 +2214,7 @@ class BaseBeamStructure:
             raise ValueError("load_steps must be a positive integer")
 
         # degrees of freedom to solve for
-        prescribed_dofs_arr = self.make_prescribed_dofs_array(prescribed_dofs)
+        prescribed_dofs_arr = self.make_prescribed_dofs_tuple(prescribed_dofs)
         solve_dofs = get_solve_dofs(
             n_dof=self.n_dof, prescribed_dofs=prescribed_dofs_arr
         )

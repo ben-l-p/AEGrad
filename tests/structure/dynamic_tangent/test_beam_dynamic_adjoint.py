@@ -5,6 +5,7 @@ from jax import Array
 import jax
 
 from aegrad.structure import BeamStructure, StructureFullStates, StructuralDesignVariables
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 
 class TestBeamTranslationAdjoint:
@@ -80,7 +81,12 @@ class TestBeamTranslationAdjoint:
         # in reality, the initial acceleration in this case depends upon the design variables as it is a function of
         # the external forcing and the beam mass. We negate this, which causes a small discrepancy in the result
         # and as such needs a relaxed tolerance. TODO: fix
-        grads, adj = beam.dynamic_adjoint(structure=solution, objective=objective, p_q0_p_x=None)
+        grads, adj = beam.dynamic_adjoint(
+            structure=solution, objective=objective, p_q0_p_x=None,
+            grads_to_compute=StructuralGradsToCompute(
+                k_cs=True, m_cs=True, f_ext_follower=True, f_ext_dead=True,
+            ),
+        )
 
         f_follower_grad = cast(Array, grads.f_ext_follower)[0, :, 0, 0].sum()
         m_cs_grad = cast(Array, grads.m_cs)[0, :, 0, 0].sum()

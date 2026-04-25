@@ -14,7 +14,7 @@ type KernelFunction = Callable[[Array, Array], Array]
 
 
 def make_rectangular_grid(
-        m: int, n: int, chord: Array | float, ea: Array | float
+    m: int, n: int, chord: Array | float, ea: Array | float
 ) -> Array:
     r"""
     Create a rectangular grid of points in the yz-plane
@@ -69,13 +69,13 @@ def compute_nc(zetas: ArrayList) -> ArrayList:
 
 
 def calculate_steady_forcing(
-        zeta_bs: ArrayList,
-        zeta_dot_bs: Optional[ArrayList],
-        gamma_bs: ArrayList,
-        gamma_ws: ArrayList,
-        rho: Array,
-        v_func: Callable[[Array], Array],
-        v_inputs: Optional[ArrayList],
+    zeta_bs: ArrayList,
+    zeta_dot_bs: Optional[ArrayList],
+    gamma_bs: ArrayList,
+    gamma_ws: ArrayList,
+    rho: Array,
+    v_func: Callable[[Array], Array],
+    v_inputs: Optional[ArrayList],
 ) -> ArrayList:
     r"""
     Calculate steady aerodynamic forcing for all surfaces at specified time step
@@ -101,13 +101,14 @@ def calculate_steady_forcing(
         v_inputs_ = v_inputs
 
     for zeta_b, zeta_dot_b, gamma_b, gamma_w, v_input in zip(
-            zeta_bs, zeta_dot_bs_, gamma_bs, gamma_ws, v_inputs_
+        zeta_bs, zeta_dot_bs_, gamma_bs, gamma_ws, v_inputs_
     ):
         # compute midpoints
         mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
         mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
 
-        if zeta_dot_b is None: raise ValueError("zeta_dot_b is none")
+        if zeta_dot_b is None:
+            raise ValueError("zeta_dot_b is none")
 
         mp_dot_chordwise = neighbour_average(
             zeta_dot_b, axes=0
@@ -118,10 +119,10 @@ def calculate_steady_forcing(
 
         # relative flow velocities at midpoints
         v_rel_chordwise = (
-                v_func(mp_chordwise) - mp_dot_chordwise
+            v_func(mp_chordwise) - mp_dot_chordwise
         )  # [gamma_m, gamma_n+1, 3]
         v_rel_spanwise = (
-                v_func(mp_spanwise) - mp_dot_spanwise
+            v_func(mp_spanwise) - mp_dot_spanwise
         )  # [gamma_m+1, gamma_n, 3]
 
         # add any input_ velocities
@@ -164,14 +165,14 @@ def calculate_steady_forcing(
 
 
 def propagate_surf_wake(
-        gamma_b_n: Array,
-        gamma_w_n: Array,
-        zeta_b_np1: Array,
-        zeta_w_n: Array,
-        delta_w: Optional[Array],
-        v_func: Callable[[Array], Array],
-        dt: Array,
-        frozen_wake: bool,
+    gamma_b_n: Array,
+    gamma_w_n: Array,
+    zeta_b_np1: Array,
+    zeta_w_n: Array,
+    delta_w: Optional[Array],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: bool,
 ) -> tuple[Optional[Array], Array]:
     r"""
     Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
@@ -259,27 +260,27 @@ def propagate_surf_wake(
 
 
 def propagate_wake(
-        gamma_b_n: ArrayList,
-        gamma_w_n: ArrayList,
-        zeta_b_np1: ArrayList,
-        zeta_w_n: ArrayList,
-        delta_w: Sequence[Optional[Array]],
-        v_func: Callable[[Array], Array],
-        dt: Array,
-        frozen_wake: bool,
+    gamma_b_n: ArrayList,
+    gamma_w_n: ArrayList,
+    zeta_b_np1: ArrayList,
+    zeta_w_n: ArrayList,
+    delta_w: Sequence[Optional[Array]],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: bool,
 ) -> tuple[Optional[ArrayList], ArrayList]:
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
     culling the downstream data.
-    :param gamma_b_n: Bound circulation at time varphi, [n_surf][m, varphi]
-    :param gamma_w_n: Wake circulation at time varphi, [n_surf][m_star, varphi]
-    :param zeta_b_np1: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3]
-    :param zeta_w_n: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3]
-    :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform
-    :param v_func: Function that computes the velocity, [3] -> [3]
-    :param dt: Time step
-    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case
-    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n]
+    :param gamma_b_n: Bound circulation at time varphi, [n_surf][m, varphi].
+    :param gamma_w_n: Wake circulation at time varphi, [n_surf][m_star, varphi].
+    :param zeta_b_np1: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3].
+    :param zeta_w_n: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3].
+    :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform.
+    :param v_func: Function that computes the velocity, [3] -> [3].
+    :param dt: Time step length.
+    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
+    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n].
     """
 
     n_surf = len(gamma_b_n)
@@ -298,7 +299,8 @@ def propagate_wake(
             frozen_wake=frozen_wake,
         )
         if zeta_w_np1 is not None:
-            if surf_zeta_w is None: raise ValueError("surf_zeta_w is None")
+            if surf_zeta_w is None:
+                raise ValueError("surf_zeta_w is None")
             zeta_w_np1.append(surf_zeta_w)
         gamma_w_np1.append(surf_gamma_w)
     return zeta_w_np1, gamma_w_np1
@@ -327,7 +329,7 @@ def make_unit_epsilon(r: Array) -> Array:
     :param r: Vector to be normalised, [3]
     :return: Unit vector, [3]
     """
-    return r / jnp.sqrt(jnp.sum(r ** 2) + EPSILON ** 2)
+    return r / jnp.sqrt(jnp.sum(r**2) + EPSILON**2)
 
 
 @make_unit_epsilon.defjvp
@@ -337,7 +339,7 @@ def smooth_unit_vector_jvp(primals, tangents):
     """
     (r,) = primals
     (r_dot,) = tangents
-    r_norm2 = jnp.sum(r ** 2)
+    r_norm2 = jnp.sum(r**2)
     r_norm = jnp.sqrt(r_norm2)
 
     jvp = jax.lax.select(
@@ -345,11 +347,11 @@ def smooth_unit_vector_jvp(primals, tangents):
         r_dot / (r_norm + EPSILON)
         - jnp.outer(r, r)
         @ r_dot
-        / (jnp.sqrt(r_norm2 + EPSILON ** 2) * (r_norm + EPSILON) ** 2),
+        / (jnp.sqrt(r_norm2 + EPSILON**2) * (r_norm + EPSILON) ** 2),
         jnp.zeros(3),
     )
 
-    y = r / (jnp.sqrt(r_norm2 + EPSILON ** 2))
+    y = r / (jnp.sqrt(r_norm2 + EPSILON**2))
     return y, jvp
 
 
@@ -405,15 +407,15 @@ def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array
     diff = zeta - mirror_point[None, None, :]  # [zeta_m, zeta_n, 3]
     diff_n = jnp.einsum("ijk,k->ij", diff, mirror_normal)  # [zeta_m, zeta_n]
     return (
-            zeta - 2.0 * diff_n[:, :, None] * mirror_normal[None, None, :]
+        zeta - 2.0 * diff_n[:, :, None] * mirror_normal[None, None, :]
     )  # [zeta_m, zeta_n, 3]
 
 
 def project_forcing_to_beam(
-        f_total: ArrayList,
-        rmat: Array,
-        dof_mapping: ArrayList,
-        x0_aero: ArrayList,
+    f_total: ArrayList,
+    rmat: Array,
+    dof_mapping: ArrayList,
+    x0_aero: ArrayList,
 ) -> Array:
     r"""
     Project aerodynamic forcing at specified time step onto the beam grid. Returned forces are in the global frame.

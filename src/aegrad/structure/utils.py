@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 from jax import Array, numpy as jnp
 import jax
 
@@ -47,13 +47,13 @@ def _n_elem_per_node(connectivity: Array) -> Array:
 
 
 def _k_t_entry(
-        d: Array,
-        p_d: Array,
-        length: Array,
-        eps: Array,
-        k: Array,
-        ad_inv: Array,
-        include_geometric: bool = True,
+    d: Array,
+    p_d: Array,
+    length: Array,
+    eps: Array,
+    k: Array,
+    ad_inv: Array,
+    include_geometric: bool = True,
 ) -> Array:
     r"""
     Computes a stiffness matrix entry between two degrees of freedom. Formulation from Geometrically exact beam finite
@@ -83,11 +83,11 @@ def _k_t_entry(
 
 
 def _integrate_m_l(
-        m_cs: Array,
-        d: Array,
-        ad_inv: Array,
-        length: Array,
-        int_order: Literal[3, 4, 5],
+    m_cs: Array,
+    d: Array,
+    ad_inv: Array,
+    length: Array,
+    int_order: Literal[3, 4, 5],
 ) -> Array:
     r"""
     Approximates the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
@@ -115,14 +115,14 @@ def _integrate_m_l(
 
 
 def _integrate_c_t(
-        m_cs: Array,
-        v_ab: Array,
-        d: Array,
-        d_dot: Array,
-        ad_inv: Array,
-        length: Array,
-        int_order: Literal[1, 2, 3],
-        include_q_dot: bool,
+    m_cs: Array,
+    v_ab: Array,
+    d: Array,
+    d_dot: Array,
+    ad_inv: Array,
+    length: Array,
+    int_order: Literal[1, 2, 3],
+    include_q_dot: bool,
 ) -> Array:
     r"""
     Approximate the integral :math:`C_T = C^L - \int_L \check{(\mathbf{MQv}_{AB})}^{\top} \mathbf{Q} \ ds` where
@@ -141,7 +141,7 @@ def _integrate_c_t(
 
     if include_q_dot:
 
-        def _g_iner_ab_integr(s_l: Array, v: Array) -> Array:
+        def _g_iner_ab_integrand(s_l: Array, v: Array) -> Array:
             r"""
             Integrand for inertial forcing with zero acceleration
             """
@@ -149,7 +149,7 @@ def _integrate_c_t(
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot_, ad_inv)
             return q_mat.T @ (
-                    m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
+                m_cs @ q_dot_mat @ v - ha_to_ha_hat(q_mat @ v).T @ m_cs @ q_mat @ v
             )
 
         def _g_iner_ab(v: Array) -> Array:
@@ -157,19 +157,19 @@ def _integrate_c_t(
             Integrate along the beam to find the inertial loads at each end due to velocity.
             """
             return length * gauss_legendre(
-                lambda s_l_: _g_iner_ab_integr(s_l_, v),
+                lambda s_l_: _g_iner_ab_integrand(s_l_, v),
                 jnp.array((0.0, 1.0)),
                 int_order=int_order,
             )  # [12]
 
-        def _c_l_integr(s_l: Array) -> Array:
+        def _c_l_integrand(s_l: Array) -> Array:
             r"""
             Integrand for linear contribution to inertial forcing.
             """
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
             return q_mat.T @ (
-                    m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
             )
 
         # obtain the tangent stiffness as the Jacobian of the inertial forcing with respect to velocity, which includes
@@ -178,7 +178,7 @@ def _integrate_c_t(
 
         # obtain the linear contribution separately - these are combined when q_dot is omitted for simplicity
         c_l_ = length * gauss_legendre(
-            _c_l_integr,
+            _c_l_integrand,
             jnp.array((0.0, 1.0)),
             int_order=int_order,
         )  # [12, 12]
@@ -190,7 +190,7 @@ def _integrate_c_t(
             q_mat = q(s_l, d, ad_inv)
             q_dot_mat = q_dot(s_l, d, d_dot, ad_inv)
             c_l = q_mat.T @ (
-                    m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
+                m_cs @ q_dot_mat - ha_to_ha_hat(q_mat @ v_ab).T @ m_cs @ q_mat
             )
             c_t = c_l - q_mat.T @ ha_to_ha_check(m_cs @ q_mat @ v_ab).T @ q_mat
             return jnp.stack((c_l, c_t), axis=0)
@@ -221,14 +221,27 @@ def _make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
     return jnp.stack((c_l, c_t), axis=0)
 
 
-def get_solve_dofs(n_dof: int, prescribed_dofs: Array) -> Array:
+def get_solve_dofs(n_dof: int, prescribed_dofs: tuple[int, ...]) -> tuple[int, ...]:
     r"""
     Obtain the index of degrees of freedom to solve for, given the index of prescribed degrees of freedom.
     :param n_dof: Total number of degrees of freedom
     :param prescribed_dofs: Index of prescribed degrees of freedom
     :return: Index of degrees of freedom to solve for
     """
-    return jnp.setdiff1d(jnp.arange(n_dof), prescribed_dofs, size=n_dof - len(prescribed_dofs))
+    return tuple(sorted(list(set(range(n_dof)) - set(prescribed_dofs))))
+
+
+def input_dof_index_to_tuple(
+    input_dof_index: Optional[Array | tuple[int, ...]],
+) -> tuple[int, ...]:
+    if isinstance(input_dof_index, tuple):
+        return input_dof_index
+    elif isinstance(input_dof_index, Array):
+        return tuple(input_dof_index.tolist())
+    elif input_dof_index is None:
+        return ()
+    else:
+        raise TypeError("Invalid input dof index")
 
 
 def transform_nodal_vect(vect: Array, rmat: Array) -> Array:

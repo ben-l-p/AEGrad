@@ -22,19 +22,39 @@ def _dynamic_objective(states: AeroelasticFullStates, *_, **__) -> Array:
 
 def _build_wing(k_cs: Array, gust_amplitude: float | Array):
     wing = make_cantilever_wing(
-        m=2, m_star=3, c_ref=0.2, b_ref=1.0,
-        k_cs=k_cs, m_cs=m_cs_base, ea=0.25, n_nodes=5, u_inf=u_inf,
+        m=2,
+        m_star=3,
+        c_ref=0.2,
+        b_ref=1.0,
+        k_cs=k_cs,
+        m_cs=m_cs_base,
+        ea=0.25,
+        n_nodes=5,
+        u_inf=u_inf,
     )
     wing.aero.flowfield = OneMinusCosine(
-        u_inf=u_inf, rho=1.225, relative_motion=True,
-        gust_length=2.0, gust_amplitude=gust_amplitude,
+        u_inf=u_inf,
+        rho=1.225,
+        relative_motion=True,
+        gust_length=2.0,
+        gust_amplitude=gust_amplitude,
         gust_x0=jnp.array((-5.0, 0.0, 0.0)),
     )
-    conv = ConvergenceSettings(max_n_iter=100, rel_disp_tol=0.0, abs_disp_tol=0.0,
-                               rel_force_tol=0.0, abs_force_tol=0.0)
+    conv = ConvergenceSettings(
+        max_n_iter=100,
+        rel_disp_tol=0.0,
+        abs_disp_tol=0.0,
+        rel_force_tol=0.0,
+        abs_force_tol=0.0,
+    )
     wing.structure.struct_convergence_settings = conv
-    wing.fsi_convergence_settings = ConvergenceSettings(max_n_iter=40, rel_disp_tol=0.0, abs_disp_tol=0.0,
-                                                        rel_force_tol=0.0, abs_force_tol=0.0)
+    wing.fsi_convergence_settings = ConvergenceSettings(
+        max_n_iter=40,
+        rel_disp_tol=0.0,
+        abs_disp_tol=0.0,
+        rel_force_tol=0.0,
+        abs_force_tol=0.0,
+    )
     return wing
 
 
@@ -66,7 +86,9 @@ def _total_objective(wing, dynamic_sol) -> Array:
 class TestDynamicGustAdjoint:
     @classmethod
     def setup_class(cls):
-        cls.wing, cls.static_sol, cls.dynamic_sol = _run_primal(k_cs_base, gust_amplitude_base)
+        cls.wing, cls.static_sol, cls.dynamic_sol = _run_primal(
+            k_cs_base, gust_amplitude_base
+        )
         cls.baseline_obj = _total_objective(cls.wing, cls.dynamic_sol)
 
         # Forward static adjoint gives p_varphi/p_x (sensitivity of equilibrium states
@@ -90,8 +112,11 @@ class TestDynamicGustAdjoint:
         wing_plus = _build_wing(k_cs_base, gust_amplitude_base + eps)
         wing_minus = _build_wing(k_cs_base, gust_amplitude_base - eps)
 
-        fd_grad = (_total_objective(wing_plus, sol_plus) - _total_objective(wing_minus, sol_minus)) / (2 * eps)
-        adj_grad = self.dynamic_grad.aero.flowfield['gust_amplitude'].sum()
+        fd_grad = (
+            _total_objective(wing_plus, sol_plus)
+            - _total_objective(wing_minus, sol_minus)
+        ) / (2 * eps)
+        adj_grad = self.dynamic_grad.aero.flowfield["gust_amplitude"].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
             f"Gradient mismatch w.r.t. gust_amplitude: adjoint={adj_grad:.6f}, FD={fd_grad:.6f}"
@@ -104,6 +129,8 @@ class TestDynamicGustAdjoint:
         wing_plus, _, sol_plus = _run_primal(k_cs_plus, gust_amplitude_base)
 
         fd_grad = (_total_objective(wing_plus, sol_plus) - self.baseline_obj) / eps
+        if self.dynamic_grad.structure.k_cs is None:
+            raise ValueError("k_cs grad is None")
         adj_grad = self.dynamic_grad.structure.k_cs[:, :, 3, 3].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (

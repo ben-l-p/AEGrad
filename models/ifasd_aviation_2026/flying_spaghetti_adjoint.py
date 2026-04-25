@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import jax
 import jax.numpy as jnp
 from jax import Array
@@ -56,29 +55,33 @@ if __name__ == "__main__":
 
     base_struct, base_sol = make_sol(k_cs_eps=0.0, m_cs_eps=0.0)
 
-    plot_path = Path("../../temp/sketty/flying_spaghetti_2d")
+    plot_path = Path("./flying_spaghetti_outputs/")
     stride = 10
     base_sol.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep_, stride))
 
     # objective which refers to a single timestep
     def objective(
         states: StructureFullStates,
-        dv: StructuralDesignVariables,
+        _: StructuralDesignVariables,
         i_ts: Optional[int | Array],
     ) -> Array:
         return jax.lax.select(
             i_ts == n_tstep_ - 1, states.hg[-1, 0, 3], 0.0
         )  # tip coordinate
 
-    # obtain gradients via the adjoint method
-    grads, adj = base_struct.dynamic_adjoint(structure=base_sol, objective=objective)
+    grads, adj = base_struct.dynamic_adjoint(
+        structure=base_sol, objective=objective, approx_grads=False
+    )
     jax.block_until_ready(grads)
     jax.block_until_ready(adj)
+
+    if grads.m_cs is None:
+        raise ValueError("m_cs is None")
     ad_grad_m_cs = (
         grads.m_cs[0, 0, 0, 0] + grads.m_cs[0, 0, 1, 1] + grads.m_cs[0, 0, 2, 2]
     )
 
-    # obtain gradints via finite differences
+    # obtain gradients via finite differences
     pert_m_cs_obj = make_sol(k_cs_eps=0.0, m_cs_eps=1e-3)[1].hg[-1, -1, 0, 3]
     fd_grad_m_cs = (pert_m_cs_obj - base_sol.hg[-1, -1, 0, 3]) / 1e-3
 

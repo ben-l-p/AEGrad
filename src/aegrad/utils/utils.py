@@ -45,13 +45,15 @@ def check_type(obj: Any, type_: type) -> None:
     return
 
 
-def shallow_asdict(obj):
+def shallow_as_dict(obj):
     if not is_dataclass(obj):
         raise TypeError("object must be a dataclass")
     return {f.name: getattr(obj, f.name) for f in fields(obj)}
 
 
-def index_to_arr(index: Optional[int | Array | Sequence[int] | slice], n_entries: int) -> Array:
+def index_to_arr(
+    index: Optional[int | Array | Sequence[int] | slice], n_entries: int
+) -> Array:
     r"""
     Convert an input index to an Array index.
     :param index: Index to apply to a sequence

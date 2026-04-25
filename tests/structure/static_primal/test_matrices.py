@@ -28,31 +28,31 @@ class TestStiffness:
 
         du0 = jnp.zeros(6).at[0].set(l)
 
-        k_t = struct._make_k_t(
+        k_t = struct.make_k_t(
             du0[None, :], p(du0, jnp.eye(6))[None, :], jnp.zeros((1, 6))
         )
 
         du0t = vec_to_skew(du0[:3])
         k_t_exp = (
-                jnp.block(
+            jnp.block(
+                [
+                    [k_uu, -0.5 * k_uu @ du0t, -k_uu, -0.5 * k_uu @ du0t],
                     [
-                        [k_uu, -0.5 * k_uu @ du0t, -k_uu, -0.5 * k_uu @ du0t],
-                        [
-                            0.5 * du0t @ k_uu,
-                            k_ww - 0.25 * du0t @ k_uu @ du0t,
-                            -0.5 * du0t @ k_uu,
-                            -k_ww - 0.25 * du0t @ k_uu @ du0t,
-                        ],
-                        [-k_uu, 0.5 * k_uu @ du0t, k_uu, 0.5 * k_uu @ du0t],
-                        [
-                            0.5 * du0t @ k_uu,
-                            -k_ww - 0.25 * du0t @ k_uu @ du0t,
-                            -0.5 * du0t @ k_uu,
-                            k_ww - 0.25 * du0t @ k_uu @ du0t,
-                        ],
-                    ]
-                )
-                / l
+                        0.5 * du0t @ k_uu,
+                        k_ww - 0.25 * du0t @ k_uu @ du0t,
+                        -0.5 * du0t @ k_uu,
+                        -k_ww - 0.25 * du0t @ k_uu @ du0t,
+                    ],
+                    [-k_uu, 0.5 * k_uu @ du0t, k_uu, 0.5 * k_uu @ du0t],
+                    [
+                        0.5 * du0t @ k_uu,
+                        -k_ww - 0.25 * du0t @ k_uu @ du0t,
+                        -0.5 * du0t @ k_uu,
+                        k_ww - 0.25 * du0t @ k_uu @ du0t,
+                    ],
+                ]
+            )
+            / l
         )
 
         assert jnp.allclose(k_t, k_t_exp), (
