@@ -40,6 +40,7 @@ from aegrad.aero.utils import KernelFunction, biot_savart_epsilon
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.aic import compute_v_ind, compute_aic_solve
 from aegrad.aero.gradients.data_structures import AeroDesignVariables, AeroStates
+from aegrad.utils.print_utils import VerbosityLevel
 
 if TYPE_CHECKING:
     from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
@@ -279,9 +280,9 @@ class UVLM:
         self,
         dt: float | Array,
         flowfield: FlowField,
-        delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
         x0_aero: ArrayList | Sequence[Array] | Array,
         hg0: Array,
+        delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]] = None,
     ) -> None:
         r"""
         Set aerodynamic design variables for solution.
@@ -1016,7 +1017,11 @@ class UVLM:
                 horseshoe=False,
                 gamma_dot_relaxation=gamma_dot_relaxation,
             )
-            jax_print("UVLM timestep {i_ts_}", i_ts_=i_ts_)
+            jax_print(
+                "UVLM timestep {i_ts_}",
+                i_ts_=i_ts_,
+                verbose_level=VerbosityLevel.NORMAL,
+            )
             return case_
 
         case = fori_loop(
@@ -1075,50 +1080,27 @@ class UVLM:
             Path(directory).resolve(), plot_wake=plot_wake
         )
 
-    def timestep_residual(
+    def _base_solve_from_dv(
         self,
         hg_n: Array,
         hg_dot_n: Array,
         t_n: Array,
         free_wake: bool,
-        q_n: AeroStates,
         q_nm1: AeroStates,
         dv: AeroDesignVariables,
-        f_aero_beam_n: Array,
         gamma_dot_relaxation: float,
-    ) -> Array:
+    ) -> tuple:
         r"""
-        Compute the residual vector to the UVLM equations. These are given as:
-
-        :math:`\mathbf{r}_{\Gamma_b} = \hat{\boldsymbol{\mathcal{A}}}_{b, n}^{-1} \left[
-        \hat{\boldsymbol{\mathcal{A}}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\hat{\mathbf{v}}_{bc, n} -
-        \dot{\mathbf{c}}\right] + \boldsymbol{\Gamma}_{b, n}`
-
-        :math:`\mathbf{r}_{\Gamma_w} = \mathcal{W}_1(\mathbf{\Gamma}_{b, {n-1}}, \mathbf{\Gamma}_{w, {n-1}})
-        - \mathbf{\Gamma}_{w, n}`
-
-        :math:`\mathbf{r}_{\dot{\Gamma}_b} = \frac{g}{h} \left[\mathbf{\Gamma}_{b, n} - \mathbf{\Gamma}_{b, n-1}\right]
-        + (1-g) \dot{\mathbf{\Gamma}}_{b, n-1} - \dot{\mathbf{\Gamma}}_{b, n}`
-
-        :math:`\mathbf{r}_{\zeta_w} = \mathcal{W}_2(\boldsymbol{\zeta}_{b, n}, \boldsymbol{\zeta}_{w, n-1})
-        - \boldsymbol{\zeta}_{w, n}`
-
-        :math:`\mathbf{f}_{\text{aero}} = \mathcal{F}_{\text{aero}, n}(\mathbf{\Gamma}_{b, n}, \mathbf{\Gamma}_{w, n},
-        \dot{\mathbf{\Gamma}}_{b, n}, \boldsymbol{\zeta}_{b, n}, \dot{\boldsymbol{\zeta}}_{b, n},
-        \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
-
+        Perform base_solve from design variables and return intermediate quantities.
         :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
         :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
         :param t_n: Time at step n.
         :param free_wake: If True, compute the free wake.
-        :param q_n: Aero minimal states at timestep n.
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aero design variables.
-        :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the local frame.
-        :param gamma_dot_relaxation: Relaxation factor g for gamma_b_dot time integration, must match the forward solve.
-        :return: Residual vector.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :return: gamma_b_n, gamma_w_n, gamma_b_dot_n, zeta_w_n, f_aero_beam_local.
         """
-
         inner_case = self.case_from_dv(dv=dv)
 
         (
@@ -1158,17 +1140,263 @@ class UVLM:
             vect=f_aero_beam_global, rmat=jnp.swapaxes(hg_n[:, :3, :3], -2, -1)
         )
 
-        # evaluate residuals
-        gamma_b_res = (gamma_b_n - q_n.gamma_b).ravel()
-        gamma_w_res = (gamma_w_n - q_n.gamma_w).ravel()
-        gamma_b_dot_res = (gamma_b_dot_n - q_n.gamma_b_dot).ravel()
-        zeta_w_res = (zeta_w_n - q_n.zeta_w).ravel()
+        return gamma_b_n, gamma_w_n, gamma_b_dot_n, zeta_w_n, f_aero_beam_local
 
-        # compared in the local frame for compatibility with the structure
-        f_aero_res = (f_aero_beam_local - f_aero_beam_n).ravel()
+    def gamma_b_res_func(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        gamma_dot_relaxation: float,
+        gamma_b_state: ArrayList,
+    ) -> Array:
+        r"""
+        Bound circulation residual.
+
+        :math:`\left(\boldsymbol{\mathcal{A}}_{b, n} \cdot \mathbf{n}_n\right)^{-1} \left[\left(
+        \boldsymbol{\mathcal{A}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\mathbf{v}_{bc, n} - \dot{\mathbf{c}}\right)
+        \cdot \mathbf{n}_n\right] + \boldsymbol{\Gamma}_{b, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :param gamma_b_state: Bound circulation state at timestep n.
+        :return: Bound circulation residual.
+        """
+        gamma_b_n, _, _, _, _ = self._base_solve_from_dv(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
+        return (gamma_b_n - gamma_b_state).ravel()
+
+    def gamma_w_res_func(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        gamma_dot_relaxation: float,
+        gamma_w_state: ArrayList,
+    ) -> Array:
+        r"""
+        Wake circulation residual.
+
+        :math:`\boldsymbol{\mathcal{W}}_{\Gamma}(\mathbf{\Gamma}_{b, {n-1}}, \mathbf{\Gamma}_{w, {n-1}})
+        - \mathbf{\Gamma}_{w, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :param gamma_w_state: Wake circulation state at timestep n.
+        :return: Wake circulation residual.
+        """
+        _, gamma_w_n, _, _, _ = self._base_solve_from_dv(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
+        return (gamma_w_n - gamma_w_state).ravel()
+
+    def gamma_b_dot_res_func(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        gamma_dot_relaxation: float,
+        gamma_b_dot_state: ArrayList,
+    ) -> Array:
+        r"""
+        Bound circulation time derivative residual.
+
+        :math:`\frac{g}{h} \left[\mathbf{\Gamma}_{b, n} - \mathbf{\Gamma}_{b, n-1}\right] + (1-g)
+        \dot{\mathbf{\Gamma}}_{b, n-1} - \dot{\mathbf{\Gamma}}_{b, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :param gamma_b_dot_state: Bound circulation time derivative state at timestep n.
+        :return: Bound circulation time derivative residual.
+        """
+        _, _, gamma_b_dot_n, _, _ = self._base_solve_from_dv(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
+        return (gamma_b_dot_n - gamma_b_dot_state).ravel()
+
+    def zeta_w_res_func(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        gamma_dot_relaxation: float,
+        zeta_w_state: ArrayList,
+    ) -> Array:
+        r"""
+        Wake grid residual.
+
+        :math:`\boldsymbol{\mathcal{W}}_{\zeta}(\boldsymbol{\zeta}_{b, n}, \boldsymbol{\zeta}_{w, n-1})
+        - \boldsymbol{\zeta}_{w, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :param zeta_w_state: Wake grid state at timestep n.
+        :return: Wake grid residual.
+        """
+        _, _, _, zeta_w_n, _ = self._base_solve_from_dv(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
+        return (zeta_w_n - zeta_w_state).ravel()
+
+    def f_aero_res_func(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        gamma_dot_relaxation: float,
+        f_aero_beam_n: Array,
+    ) -> Array:
+        r"""
+        Aerodynamic forcing residual, compared in the local frame for compatibility with the structure.
+
+        :math:`\boldsymbol{\mathcal{F}}_{\text{aero}, n}(\mathbf{\Gamma}_{b, n}, \mathbf{\Gamma}_{w, n},
+        \dot{\mathbf{\Gamma}}_{b, n}, \boldsymbol{\zeta}_{b, n}, \dot{\boldsymbol{\zeta}}_{b, n},
+        \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
+        :param f_aero_beam_n: Aerodynamic forcing state at timestep n, in the local frame.
+        :return: Aerodynamic forcing residual.
+        """
+        _, _, _, _, f_aero_beam_local = self._base_solve_from_dv(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
+        return (f_aero_beam_local - f_aero_beam_n).ravel()
+
+    def timestep_residual(
+        self,
+        hg_n: Array,
+        hg_dot_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_n: AeroStates,
+        q_nm1: AeroStates,
+        dv: AeroDesignVariables,
+        f_aero_beam_n: Array,
+        gamma_dot_relaxation: float,
+    ) -> Array:
+        r"""
+        Compute the residual vector to the UVLM equations. These are given as:
+
+        :math:`\left(\boldsymbol{\mathcal{A}}_{b, n} \cdot \mathbf{n}_n\right)^{-1} \left[\left(
+        \boldsymbol{\mathcal{A}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\mathbf{v}_{bc, n} - \dot{\mathbf{c}}\right)
+        \cdot \mathbf{n}_n\right] + \boldsymbol{\Gamma}_{b, n}`
+
+        :math:`\boldsymbol{\mathcal{W}}_{\Gamma}(\mathbf{\Gamma}_{b, {n-1}}, \mathbf{\Gamma}_{w, {n-1}})
+        - \mathbf{\Gamma}_{w, n}`
+
+        :math:`\frac{g}{h} \left[\mathbf{\Gamma}_{b, n} - \mathbf{\Gamma}_{b, n-1}\right] + (1-g)
+        \dot{\mathbf{\Gamma}}_{b, n-1} - \dot{\mathbf{\Gamma}}_{b, n}`
+
+        :math:`\boldsymbol{\mathcal{W}}_{\zeta}(\boldsymbol{\zeta}_{b, n}, \boldsymbol{\zeta}_{w, n-1})
+        - \boldsymbol{\zeta}_{w, n}`
+
+        :math:`\boldsymbol{\mathcal{F}}_{\text{aero}, n}(\mathbf{\Gamma}_{b, n}, \mathbf{\Gamma}_{w, n},
+        \dot{\mathbf{\Gamma}}_{b, n}, \boldsymbol{\zeta}_{b, n}, \dot{\boldsymbol{\zeta}}_{b, n},
+        \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
+
+        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param t_n: Time at step n.
+        :param free_wake: If True, compute the free wake.
+        :param q_n: Aero minimal states at timestep n.
+        :param q_nm1: Aero minimal states at timestep n-1.
+        :param dv: Aero design variables.
+        :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the local frame.
+        :param gamma_dot_relaxation: Relaxation factor g for gamma_b_dot time integration, must match the forward solve.
+        :return: Residual vector.
+        """
+        solve_args = dict(
+            hg_n=hg_n,
+            hg_dot_n=hg_dot_n,
+            t_n=t_n,
+            free_wake=free_wake,
+            q_nm1=q_nm1,
+            dv=dv,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+        )
 
         return jnp.concatenate(
-            (gamma_b_res, gamma_w_res, gamma_b_dot_res, zeta_w_res, f_aero_res)
+            (
+                self.gamma_b_res_func(**solve_args, gamma_b_state=q_n.gamma_b),
+                self.gamma_w_res_func(**solve_args, gamma_w_state=q_n.gamma_w),
+                self.gamma_b_dot_res_func(
+                    **solve_args, gamma_b_dot_state=q_n.gamma_b_dot
+                ),
+                self.zeta_w_res_func(**solve_args, zeta_w_state=q_n.zeta_w),
+                self.f_aero_res_func(**solve_args, f_aero_beam_n=f_aero_beam_n),
+            )
         )
 
     @staticmethod

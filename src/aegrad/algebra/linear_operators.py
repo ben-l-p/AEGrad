@@ -7,6 +7,7 @@ from jax import Array, numpy as jnp, jacobian
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.utils.print_utils import warn, jax_print
 from aegrad.utils.utils import make_pytree
+from aegrad.utils.print_utils import VerbosityLevel
 
 
 @make_pytree
@@ -16,10 +17,10 @@ class LinearOperator:
     """
 
     def __init__(
-            self,
-            func: Optional[Callable[[Array], Array]],
-            shape: tuple[int, int],
-            mat: Optional[Array] = None,
+        self,
+        func: Optional[Callable[[Array], Array]],
+        shape: tuple[int, int],
+        mat: Optional[Array] = None,
     ):
         r"""
         :param func: Function which represents the linear operator, [varphi] -> [m]
@@ -62,6 +63,7 @@ class LinearOperator:
         :return: The result of applying the operator to the array, or the composed linear operator.
         """
         if isinstance(rhs, LinearOperator):
+
             def new_func(x: Array) -> Array:
                 return self.func(rhs.func(x))  # type: ignore
 
@@ -85,15 +87,13 @@ class LinearOperator:
         return self(rhs)
 
     @overload
-    def __add__(self, rhs: LinearOperator) -> LinearOperator:
-        ...
+    def __add__(self, rhs: LinearOperator) -> LinearOperator: ...
 
     @overload
-    def __add__(self, rhs: Array) -> Callable[[Array], Array]:
-        ...
+    def __add__(self, rhs: Array) -> Callable[[Array], Array]: ...
 
     def __add__(
-            self, rhs: Array | LinearOperator
+        self, rhs: Array | LinearOperator
     ) -> Callable[[Array], Array] | LinearOperator:
         # runtime dispatch for addition as well
         if isinstance(rhs, LinearOperator):
@@ -106,7 +106,9 @@ class LinearOperator:
                 if isinstance(rhs, LinearOperator):
                     return self.func(x) + rhs.func(x)
                 else:
-                    raise ValueError("Incompatible type for addition with LinearOperator.")
+                    raise ValueError(
+                        "Incompatible type for addition with LinearOperator."
+                    )
 
             if self._matrix is not None and rhs._matrix is not None:
                 new_mat = self._matrix + rhs._matrix
@@ -145,9 +147,9 @@ class BlockLinear:
     """
 
     def __init__(
-            self,
-            entries: Sequence[Sequence[LinearOperator | Array]],
-            mat: Optional[Array] = None,
+        self,
+        entries: Sequence[Sequence[LinearOperator | Array]],
+        mat: Optional[Array] = None,
     ):
         r"""
         Construct a BlockLinear operator from smaller linear operators or arrays.
@@ -259,12 +261,12 @@ class LinearSystem:
     """
 
     def __init__(
-            self,
-            a: LinearOperator,
-            b: LinearOperator,
-            c: LinearOperator,
-            d: LinearOperator,
-            removed_u_np1: bool = False,
+        self,
+        a: LinearOperator,
+        b: LinearOperator,
+        c: LinearOperator,
+        d: LinearOperator,
+        removed_u_np1: bool = False,
     ) -> None:
         r"""
         Initialise the LinearSystem with state-space linear operators.
@@ -305,7 +307,7 @@ class LinearSystem:
             self.removed_u_np1 = True
 
     def run(
-            self, u: Array, x0: Optional[Array] = None, use_matrix=False
+        self, u: Array, x0: Optional[Array] = None, use_matrix=False
     ) -> tuple[Array, Array]:
         r"""
         Run the linear system for a time history of input vector u.
@@ -331,7 +333,11 @@ class LinearSystem:
             :param x_: State history array being updated, [n_tstep, n_states]
             :return: Updated state history array, [n_tstep, n_states]
             """
-            jax_print("Linear UVLM state step {i_ts}", i_ts=i_ts)
+            jax_print(
+                "Linear UVLM state step {i_ts}",
+                i_ts=i_ts,
+                verbose_level=VerbosityLevel.NORMAL,
+            )
             this_u = u[i_ts - 1, ...] if self.removed_u_np1 else u[i_ts, ...]
             return x_.at[i_ts, ...].set(a @ x_[i_ts - 1, ...] + b @ this_u)
 

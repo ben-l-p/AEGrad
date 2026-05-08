@@ -42,7 +42,9 @@ class TestMirroredWing:
             mirror_normal=jnp.array((0.0, 1.0, 0.0)),
         )
 
-        uvlm_mirror.set_design_variables(dt, flowfield, None, x_grid, hg)
+        uvlm_mirror.set_design_variables(
+            dt=dt, flowfield=flowfield, x0_aero=x_grid, hg0=hg
+        )
         sol_mirror = uvlm_mirror.solve_static()
 
         # full wing
@@ -61,7 +63,9 @@ class TestMirroredWing:
             variable_wake_disc=False,
         )
 
-        uvlm_full.set_design_variables(dt, flowfield, None, x_grid, hg)
+        uvlm_full.set_design_variables(
+            dt=dt, flowfield=flowfield, x0_aero=x_grid, hg0=hg
+        )
         sol_full = uvlm_full.solve_static()
 
         # compare

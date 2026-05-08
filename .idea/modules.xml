@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/AEGrad.iml" filepath="$PROJECT_DIR$/.idea/AEGrad.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/aegrad.iml" filepath="$PROJECT_DIR$/.idea/aegrad.iml" />
     </modules>
   </component>
 </project>

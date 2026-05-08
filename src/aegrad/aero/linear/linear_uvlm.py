@@ -764,53 +764,73 @@ class LinearUVLM:
             u_np1: InputUnflattened, x_n: StateUnflattened
         ) -> tuple[Optional[ArrayList], ArrayList]:
             r"""
-            Propagate the linear wake from t=varphi to t=varphi+1.
+            Propagate the linear wake from t=varphi to t=varphi+1. Uses jax.jvp through the wake propagation
+            with blocked arc-length gradients so that the re-discretisation is treated as a linear operator.
             :param u_np1: Inputs at time=varphi+1
             :param x_n: States at time=varphi
             :return: Wake grid perturbations and wake circulation perturbations at time=varphi+1
             """
-            u_np1_tot = self.get_total_input(u_np1)
-            x_n_tot = self.get_total_state(x_n)
 
-            def _v_wake_prop(x: Array) -> Array:
-                # flow is from previous state
+            def _v_wake_prop_ref(x: Array) -> Array:
+                # flow at reference state (for prescribed/frozen wake)
                 return _v_flow(
                     x,
-                    x_n_tot.gamma_b if self.free_wake else None,
-                    x_n_tot.gamma_w if self.free_wake else None,
-                    x_n_tot.zeta_b if self.free_wake else None,
-                    x_n_tot.zeta_w if self.free_wake else None,
+                    self.reference.gamma_b if self.free_wake else None,
+                    self.reference.gamma_w if self.free_wake else None,
+                    self.reference.zeta_b if self.free_wake else None,
+                    self.reference.zeta_w if self.free_wake else None,
                 )
 
-            # use wake propagation routines from nonlinear case, as they should be equivalent
-            zeta_w_np1_tot, gamma_w_np1_tot = propagate_wake(
-                x_n_tot.gamma_b,
-                x_n_tot.gamma_w,
-                u_np1_tot.zeta_b if self.prescribed_wake else self.reference.zeta_b,
-                x_n_tot.zeta_w
-                if self.prescribed_wake and x_n_tot.zeta_w is not None
-                else self.reference.zeta_w,
-                self.delta_w,
-                _v_wake_prop,
-                self.dt,
-                not self.prescribed_wake,
+            def _wake_prop_func(
+                gamma_b: ArrayList,
+                gamma_w: ArrayList,
+                zeta_b: ArrayList,
+                zeta_w: ArrayList,
+            ) -> tuple[Optional[ArrayList], ArrayList]:
+                return propagate_wake(
+                    gamma_b,
+                    gamma_w,
+                    zeta_b,
+                    zeta_w,
+                    self.delta_w,
+                    _v_wake_prop_ref,
+                    self.dt,
+                    not self.prescribed_wake,
+                    linearise_redisc=True,
+                )
+
+            # reference primals
+            ref_zeta_b = self.reference.zeta_b
+            ref_zeta_w = self.reference.zeta_w
+
+            # tangent vectors (perturbations)
+            d_gamma_b = x_n.gamma_b
+            d_gamma_w = x_n.gamma_w
+            d_zeta_b = u_np1.zeta_b if self.prescribed_wake else ArrayList.zeros_like(ref_zeta_b)
+            d_zeta_w = (
+                x_n.zeta_w
+                if self.prescribed_wake and x_n.zeta_w is not None
+                else ArrayList.zeros_like(ref_zeta_w)
             )
 
-            # obtain the delta for the linear system
-            d_gamma_w_np1 = gamma_w_np1_tot - self.reference.gamma_w
-            d_zeta_w_np1 = (
-                (zeta_w_np1_tot - self.reference.zeta_w)
-                if self.prescribed_wake and zeta_w_np1_tot is not None
-                else None
+            # linearise via jvp with stopped arc-length gradients
+            _, (d_zeta_w_np1, d_gamma_w_np1) = jax.jvp(
+                _wake_prop_func,
+                (self.reference.gamma_b, self.reference.gamma_w, ref_zeta_b, ref_zeta_w),
+                (d_gamma_b, d_gamma_w, d_zeta_b, d_zeta_w),
             )
+
+            # discard zeta perturbation if not using prescribed wake
+            if not self.prescribed_wake:
+                d_zeta_w_np1 = None
 
             # add perturbations from input velocities
             # note that we here use the inputs at t=varphi+1 to convect the wake to t=varphi+1, as this best suits the linear
             # system structure. For the full nonlinear UVLM, we use the inputs at t=varphi, which can lead to a discrepancy.
             if self.prescribed_wake and self.wake_upwash:
-                if u_np1_tot.nu_w is None:
+                if u_np1.nu_w is None:
                     raise ValueError("Nu_w is None")
-                d_zeta_w_np1 += u_np1_tot.nu_w * self.dt
+                d_zeta_w_np1 += u_np1.nu_w * self.dt
 
             return d_zeta_w_np1, d_gamma_w_np1
 
@@ -894,7 +914,7 @@ class LinearUVLM:
 
         def d_solve_mat_d_zeta_b(d_zeta_b: ArrayList) -> Array:
             r"""
-            Obtain the jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot varphi]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
+            Obtain the Jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot varphi]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
             :param d_zeta_b: Perturbation in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :return: Perturbation in solve matrix, [n_c, n_c]
             """

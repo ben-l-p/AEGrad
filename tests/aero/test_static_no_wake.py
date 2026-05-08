@@ -33,10 +33,12 @@ class TestRotInvariance:
 
         cases = []
         for i_u_inf, u_inf in enumerate(
-                [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
+            [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
         ):
             flowfield = Constant(u_inf, 1.225, True)
-            uvlm.set_design_variables(1.0, flowfield, None, x_grid, hg)
+            uvlm.set_design_variables(
+                dt=1.0, flowfield=flowfield, x0_aero=x_grid, hg0=hg
+            )
             cases.append(uvlm.solve_static())
 
         if not jnp.allclose(cases[0].gamma_b[0], cases[1].gamma_b[0]):
@@ -45,18 +47,18 @@ class TestRotInvariance:
             )
 
         if not jnp.allclose(
-                f_tot := jnp.sum(cases[0].f_steady[0]),
-                0.0,
-                atol=1e-5,
-                rtol=1e-4,
+            f_tot := jnp.sum(cases[0].f_steady[0]),
+            0.0,
+            atol=1e-5,
+            rtol=1e-4,
         ):
             raise ValueError(f"Total force in flow is not zero: {f_tot}")
 
         if not jnp.allclose(
-                cases[0].f_steady[0],
-                jnp.transpose(cases[1].f_steady[0], (1, 0, 2))[..., (1, 0, 2)],
-                atol=1e-5,
-                rtol=1e-4,
+            cases[0].f_steady[0],
+            jnp.transpose(cases[1].f_steady[0], (1, 0, 2))[..., (1, 0, 2)],
+            atol=1e-5,
+            rtol=1e-4,
         ):
             raise ValueError(
                 "Steady force distribution is not equal in both flow directions in no-wake case."

@@ -4,10 +4,10 @@ from jax import Array, numpy as jnp
 from aegrad.utils.print_utils import set_verbosity
 from aegrad.structure import StructureFullStates
 from aegrad.utils.data_structures import ConvergenceSettings
-from algebra.so3 import log_so3
+from aegrad.algebra.so3 import log_so3
 from models.geradin_beam import geradin_beam
-from structure import BeamStructure, StaticStructure
-from utils.print_utils import VerbosityLevel
+from aegrad.structure import BeamStructure, StaticStructure
+from aegrad.utils.print_utils import VerbosityLevel
 
 if __name__ == "__main__":
     """

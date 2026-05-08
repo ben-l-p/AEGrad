@@ -33,9 +33,9 @@ class TestLinearAero:
 
     @classmethod
     def make_planar_wing(
-            cls,
-            flowfield: FlowField,
-            ea: float = 0.0,
+        cls,
+        flowfield: FlowField,
+        ea: float = 0.0,
     ) -> tuple[UVLM, AeroSnapshot, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
@@ -55,14 +55,14 @@ class TestLinearAero:
 
         # nonlinear case
         uvlm = UVLM([cls.disc], jnp.arange(0, cls.n + 1), kernel=biot_savart_cutoff)
-        uvlm.set_design_variables(cls.dt, flowfield, None, x_grid, hg)
+        uvlm.set_design_variables(cls.dt, flowfield, x_grid, hg)
         case = uvlm.solve_static()
 
         return uvlm, case, hg
 
     @classmethod
     def test_linear_operator_heaving_wing(
-            cls, plot: bool = False, use_matrix: bool = False
+        cls, plot: bool = False, use_matrix: bool = False
     ):
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
@@ -85,7 +85,9 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 3].set(z_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
+        dynamic_case = uvlm.solve_prescribed_dynamic(
+            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+        )
         if plot:
             dynamic_case.plot(Path("./test_outputs/heaving_test_nonlinear"))
 
@@ -125,7 +127,9 @@ class TestLinearAero:
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=5e-3
         ), "Wake circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
-            dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=1e-3
+            dynamic_case.zeta_w[0],
+            cast(ArrayList, linear_case.x_t_tot.zeta_w)[0],
+            atol=1e-3,
         ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=1e-1
@@ -142,7 +146,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing(
-            cls, plot: bool = False, use_matrix: bool = False
+        cls, plot: bool = False, use_matrix: bool = False
     ):
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
@@ -171,7 +175,9 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 0].set(-alpha_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
+        dynamic_case = uvlm.solve_prescribed_dynamic(
+            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+        )
         if plot:
             dynamic_case.plot(Path("./test_outputs/pitching_test_nonlinear"))
 
@@ -211,7 +217,9 @@ class TestLinearAero:
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=6e-2
         ), "Wake circulation does not match between nonlinear and linear cases."
         assert jnp.allclose(
-            dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=1e-3
+            dynamic_case.zeta_w[0],
+            cast(ArrayList, linear_case.x_t_tot.zeta_w)[0],
+            atol=1e-3,
         ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=3e-1
@@ -228,7 +236,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_pitching_wing_frozen_wake(
-            cls, plot: bool = False, use_matrix: bool = False
+        cls, plot: bool = False, use_matrix: bool = False
     ):
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
@@ -257,7 +265,9 @@ class TestLinearAero:
         hg_dot_t = hg_dot_t.at[:, :, 2, 0].set(-alpha_dot_t[:, None])
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
+        dynamic_case = uvlm.solve_prescribed_dynamic(
+            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+        )
         if plot:
             dynamic_case.plot(
                 Path("./test_outputs/pitching_test_nonlinear_frozen_wake")
@@ -315,7 +325,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_operator_cosine_gust(
-            cls, plot: bool = False, use_matrix: bool = False
+        cls, plot: bool = False, use_matrix: bool = False
     ):
 
         flowfield = OneMinusCosine(
@@ -333,7 +343,9 @@ class TestLinearAero:
         hg_dot_t = jnp.zeros_like(hg_t)
 
         # nonlinear case
-        dynamic_case = uvlm.solve_prescribed_dynamic(static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0)
+        dynamic_case = uvlm.solve_prescribed_dynamic(
+            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+        )
         if plot:
             dynamic_case.plot(Path("./test_outputs/gust_test_nonlinear"))
 
@@ -374,8 +386,11 @@ class TestLinearAero:
         assert jnp.allclose(
             dynamic_case.gamma_w[0], linear_case.x_t_tot.gamma_w[0], atol=3e-1
         ), "Wake circulation does not match between nonlinear and linear cases."
-        assert jnp.allclose(dynamic_case.zeta_w[0], cast(ArrayList, linear_case.x_t_tot.zeta_w)[0], atol=8e-2
-                            ), "Wake grid coordinates do not match between nonlinear and linear cases."
+        assert jnp.allclose(
+            dynamic_case.zeta_w[0],
+            cast(ArrayList, linear_case.x_t_tot.zeta_w)[0],
+            atol=8e-2,
+        ), "Wake grid coordinates do not match between nonlinear and linear cases."
         assert jnp.allclose(
             dynamic_case.f_steady[0], linear_case.y_t_tot.f_steady[0], atol=6e-1
         ), "Steady forces do not match between nonlinear and linear cases."

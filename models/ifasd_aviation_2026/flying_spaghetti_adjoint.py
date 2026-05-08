@@ -6,8 +6,8 @@ from typing import Optional
 
 from models.flying_spaghetti import flying_spaghetti
 
-from structure import StructureFullStates, StructuralDesignVariables
-from utils.data_structures import ConvergenceSettings
+from aegrad.structure import StructureFullStates, StructuralDesignVariables
+from aegrad.utils.data_structures import ConvergenceSettings
 
 jax.config.update("jax_enable_x64", True)
 
@@ -48,12 +48,28 @@ if __name__ == "__main__":
                 f_ext_follower=None,
                 f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
                 f_ext_aero=None,
-                spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
+                spectral_radius=1.0,  # will work with 1.0 (numerical damping is not essential)
                 prescribed_dofs=None,
             ),
         )
 
     base_struct, base_sol = make_sol(k_cs_eps=0.0, m_cs_eps=0.0)
+
+    i_ts_plot = jnp.linspace(0.0, n_tstep_ - 1, 6).astype(int).tolist()
+
+    # data for plot
+    xz_t = jnp.transpose(
+        base_sol.hg[i_ts_plot, :, :, 3][:, :, (0, 2)],
+        (1, 2, 0),
+    )
+    import numpy as np
+
+    np.savetxt(
+        "spaghetti_coords.dat",
+        xz_t.reshape(n_nodes_, -1),
+        comments="",
+        header="x0 x1 x2 x3 x4 x5 z0 z1 z2 z3 z4 z5",
+    )
 
     plot_path = Path("./flying_spaghetti_outputs/")
     stride = 10
@@ -85,5 +101,5 @@ if __name__ == "__main__":
     pert_m_cs_obj = make_sol(k_cs_eps=0.0, m_cs_eps=1e-3)[1].hg[-1, -1, 0, 3]
     fd_grad_m_cs = (pert_m_cs_obj - base_sol.hg[-1, -1, 0, 3]) / 1e-3
 
-    print(f"Adjoint grad_m_cs: {ad_grad_m_cs}")
-    print(f"Finite difference grad_m_cs: {fd_grad_m_cs}")
+    print(f"Adjoint grad_m_cs: {float(ad_grad_m_cs)}")
+    print(f"Finite difference grad_m_cs: {float(fd_grad_m_cs)}")

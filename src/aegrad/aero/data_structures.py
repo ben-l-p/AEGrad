@@ -14,7 +14,8 @@ from aegrad.aero.utils import (
     KernelFunction,
     compute_c,
     compute_nc,
-    calculate_steady_forcing, project_forcing_to_beam,
+    calculate_steady_forcing,
+    project_forcing_to_beam,
 )
 
 from aegrad.utils.print_utils import warn
@@ -47,29 +48,29 @@ class DynamicAeroCase:
     """
 
     def __init__(
-            self,
-            zeta_b: ArrayList,
-            zeta_b_dot: ArrayList,
-            zeta_w: Optional[ArrayList],
-            c: Optional[ArrayList],
-            nc: Optional[ArrayList],
-            gamma_b: ArrayList,
-            gamma_b_dot: Optional[ArrayList],
-            gamma_w: ArrayList,
-            f_steady: ArrayList,
-            f_unsteady: Optional[ArrayList],
-            kernels: Sequence[KernelFunction],
-            mirror_point: Optional[Array],
-            mirror_normal: Optional[Array],
-            flowfield: FlowField,
-            surf_b_names: Sequence[str],
-            surf_w_names: Sequence[str],
-            t: Array,
-            i_ts: int | Array,
-            dof_mapping: ArrayList,
-            static_horseshoe: bool,
-            free_wake: bool,
-            gamma_dot_relaxation: float,
+        self,
+        zeta_b: ArrayList,
+        zeta_b_dot: ArrayList,
+        zeta_w: Optional[ArrayList],
+        c: Optional[ArrayList],
+        nc: Optional[ArrayList],
+        gamma_b: ArrayList,
+        gamma_b_dot: Optional[ArrayList],
+        gamma_w: ArrayList,
+        f_steady: ArrayList,
+        f_unsteady: Optional[ArrayList],
+        kernels: Sequence[KernelFunction],
+        mirror_point: Optional[Array],
+        mirror_normal: Optional[Array],
+        flowfield: FlowField,
+        surf_b_names: Sequence[str],
+        surf_w_names: Sequence[str],
+        t: Array,
+        i_ts: int | Array,
+        dof_mapping: ArrayList,
+        static_horseshoe: bool,
+        free_wake: bool,
+        gamma_dot_relaxation: float,
     ) -> None:
         r"""
         Time series of multiple aerodynamic surfaces
@@ -131,7 +132,8 @@ class DynamicAeroCase:
 
     @property
     def zeta_w(self) -> ArrayList:
-        if self._zeta_w is None: raise ValueError('zeta_w is not set')
+        if self._zeta_w is None:
+            raise ValueError("zeta_w is not set")
         return self._zeta_w
 
     @zeta_w.setter
@@ -140,7 +142,8 @@ class DynamicAeroCase:
 
     @property
     def c(self) -> ArrayList:
-        if self._c is None: raise ValueError('c is not set')
+        if self._c is None:
+            raise ValueError("c is not set")
         return self._c
 
     @c.setter
@@ -149,7 +152,8 @@ class DynamicAeroCase:
 
     @property
     def nc(self) -> ArrayList:
-        if self._nc is None: raise ValueError('nc is not set')
+        if self._nc is None:
+            raise ValueError("nc is not set")
         return self._nc
 
     @nc.setter
@@ -166,7 +170,8 @@ class DynamicAeroCase:
 
     @property
     def gamma_b_dot(self) -> ArrayList:
-        if self._gamma_b_dot is None: raise ValueError('gamma_b_dot is not set')
+        if self._gamma_b_dot is None:
+            raise ValueError("gamma_b_dot is not set")
         return self._gamma_b_dot
 
     @gamma_b_dot.setter
@@ -191,7 +196,8 @@ class DynamicAeroCase:
 
     @property
     def f_unsteady(self) -> ArrayList:
-        if self._f_unsteady is None: raise ValueError('f_unsteady is not set')
+        if self._f_unsteady is None:
+            raise ValueError("f_unsteady is not set")
         return self._f_unsteady
 
     @f_unsteady.setter
@@ -217,10 +223,12 @@ class DynamicAeroCase:
     def get_states(self, i_ts: int | Array) -> AeroStates:
         # here we obtain the structural forcing externally, as it is saved in the beam data structures
         # note that the forcing is in the local frame
-        return AeroStates(gamma_b=self.gamma_b.index_all(i_ts, ...),
-                          gamma_w=self.gamma_w.index_all(i_ts, ...),
-                          gamma_b_dot=self.gamma_b_dot.index_all(i_ts, ...),
-                          zeta_w=self.zeta_w.index_all(i_ts, ...))
+        return AeroStates(
+            gamma_b=self.gamma_b.index_all(i_ts, ...),
+            gamma_w=self.gamma_w.index_all(i_ts, ...),
+            gamma_b_dot=self.gamma_b_dot.index_all(i_ts, ...),
+            zeta_w=self.zeta_w.index_all(i_ts, ...),
+        )
 
     def gamma_full(self, i_ts: int) -> ArrayList:
         r"""
@@ -274,9 +282,9 @@ class DynamicAeroCase:
         )
 
     def __setitem__(
-            self,
-            i_ts: int,
-            snapshot: DynamicAeroCase,
+        self,
+        i_ts: int,
+        snapshot: DynamicAeroCase,
     ) -> None:
         if snapshot.n_tstep != 1:
             raise ValueError(
@@ -297,7 +305,9 @@ class DynamicAeroCase:
 
             if self._zeta_w is not None and snapshot._zeta_w is not None:
                 self._zeta_w[i_surf] = (
-                    self._zeta_w[i_surf].at[i_ts, ...].set(snapshot._zeta_w[i_surf][0, ...])
+                    self._zeta_w[i_surf]
+                    .at[i_ts, ...]
+                    .set(snapshot._zeta_w[i_surf][0, ...])
                 )
             self._gamma_b[i_surf] = (
                 self._gamma_b[i_surf]
@@ -328,9 +338,11 @@ class DynamicAeroCase:
                 )
 
     def plot(
-            self, directory: os.PathLike, index: Optional[int | Sequence[int] | Array | slice] = None,
-            plot_bound: bool = True,
-            plot_wake: bool = True
+        self,
+        directory: os.PathLike,
+        index: Optional[int | Sequence[int] | Array | slice] = None,
+        plot_bound: bool = True,
+        plot_wake: bool = True,
     ) -> Sequence[Path]:
         r"""
         Plot all aerodynamic surfaces in the time series initial_snapshot to VTU files.
@@ -356,13 +368,25 @@ class DynamicAeroCase:
 
             if plot_bound:
                 bound_name = f"aero_dynamic_{self.surf_b_names[i_surf]}_ts"
-                pvd_paths.append(write_pvd(directory=directory, name=bound_name, filedirs=list(zip(*paths))[0],
-                                           times=list(self.t[index_])))
+                pvd_paths.append(
+                    write_pvd(
+                        directory=directory,
+                        name=bound_name,
+                        filedirs=list(zip(*paths))[0],
+                        times=list(self.t[index_]),
+                    )
+                )
 
             if plot_wake:
                 wake_name = f"aero_dynamic_{self.surf_w_names[i_surf]}_ts"
-                pvd_paths.append(write_pvd(directory=directory, name=wake_name, filedirs=list(zip(*paths))[-1],
-                                           times=list(self.t[index_])))
+                pvd_paths.append(
+                    write_pvd(
+                        directory=directory,
+                        name=wake_name,
+                        filedirs=list(zip(*paths))[-1],
+                        times=list(self.t[index_]),
+                    )
+                )
         return pvd_paths
 
     def get_c(self, i_ts: int) -> ArrayList:
@@ -371,7 +395,8 @@ class DynamicAeroCase:
         :param i_ts: Timestep index
         :return: List of collocation points, [n_surf][m, varphi, 3]
         """
-        if self._c is None: raise ValueError("No collocation points available")
+        if self._c is None:
+            raise ValueError("No collocation points available")
         return self._c.index_all(i_ts, ...)
 
     def compute_c(self, i_ts: int) -> None:
@@ -379,7 +404,8 @@ class DynamicAeroCase:
         Compute collocation points for all surfaces at specified time step and store in-place.
         :param i_ts: Timestep index
         """
-        if self._c is None: raise ValueError("No collocation points available")
+        if self._c is None:
+            raise ValueError("No collocation points available")
         c_list = compute_c(self._zeta_b.index_all(i_ts, ...))
         self.set_arraylist_at_ts("_c", c_list, i_ts)
 
@@ -389,7 +415,8 @@ class DynamicAeroCase:
         :param i_ts: Timestep index
         :return: List of varphi vectors, [n_surf][m, varphi, 3]
         """
-        if self._nc is None: raise ValueError("No normal vectors available")
+        if self._nc is None:
+            raise ValueError("No normal vectors available")
         return self._nc.index_all(i_ts, ...)
 
     def compute_nc(self, i_ts: int) -> None:
@@ -397,7 +424,8 @@ class DynamicAeroCase:
         Compute varphi vectors for all surfaces at specified time step and store in-place.
         :param i_ts: Timestep index
         """
-        if self._nc is None: raise ValueError("No normal vectors available")
+        if self._nc is None:
+            raise ValueError("No normal vectors available")
         nc_list = compute_nc(self._zeta_b.index_all(i_ts, ...))
         self.set_arraylist_at_ts("_nc", nc_list, i_ts)
 
@@ -433,15 +461,17 @@ class DynamicAeroCase:
             )
 
     def calculate_unsteady_forcing(
-            self,
-            i_ts: int,
+        self,
+        i_ts: int,
     ) -> None:
         r"""
         Calculate unsteady aerodynamic forcing for all surfaces at specified time step.
         :param i_ts: Timestep index
         """
-        if self._nc is None: raise ValueError("No normal vectors available")
-        if self._f_unsteady is None: raise ValueError("No unsteady forcing available")
+        if self._nc is None:
+            raise ValueError("No normal vectors available")
+        if self._f_unsteady is None:
+            raise ValueError("No unsteady forcing available")
         for i_surf in range(self.n_surf):
             val = self._calculate_surf_unsteady_forcing(
                 i_ts, i_surf, self._nc[i_surf][i_ts, ...], rho=self.flowfield.rho
@@ -449,11 +479,11 @@ class DynamicAeroCase:
             self._f_unsteady[i_surf] = self._f_unsteady[i_surf].at[i_ts, ...].set(val)
 
     def project_forcing_to_beam(
-            self,
-            i_ts: int,
-            rmat: Array,
-            x0_aero: ArrayList,
-            include_unsteady: bool,
+        self,
+        i_ts: int,
+        rmat: Array,
+        x0_aero: ArrayList,
+        include_unsteady: bool,
     ) -> Array:
         r"""
         Project aerodynamic forcing at specified time step onto the beam grid. Returned forces are in the global frame.
@@ -468,10 +498,12 @@ class DynamicAeroCase:
         if include_unsteady:
             f_total += self._f_unsteady.index_all(i_ts, ...)
 
-        return project_forcing_to_beam(f_total=f_total, rmat=rmat, x0_aero=x0_aero, dof_mapping=self.dof_mapping)
+        return project_forcing_to_beam(
+            f_total=f_total, rmat=rmat, x0_aero=x0_aero, dof_mapping=self.dof_mapping
+        )
 
     def _calculate_surf_unsteady_forcing(
-            self, i_ts: int, i_surf: int, nc: Array, rho: Array
+        self, i_ts: int, i_surf: int, nc: Array, rho: Array
     ) -> Array:
         r"""
         Calculate unsteady aerodynamic forcing for a single surfaces at specified time step.
@@ -480,7 +512,8 @@ class DynamicAeroCase:
         :param nc: Bound varphi vectors, [m, varphi, 3]
         :return: Unsteady aerodynamic forcing for surface at grid vertex, [zeta_m, zeta_n, 3]
         """
-        if self._gamma_b_dot is None: raise ValueError("No gamma_b_dot available")
+        if self._gamma_b_dot is None:
+            raise ValueError("No gamma_b_dot available")
 
         return split_to_vertex(
             rho * self._gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)
@@ -530,14 +563,20 @@ class DynamicAeroCase:
         return AeroSnapshot(
             zeta_b=self._zeta_b.index_all(i_ts, ...),
             zeta_b_dot=self._zeta_b_dot.index_all(i_ts, ...),
-            zeta_w=self._zeta_w.index_all(i_ts, ...) if self._zeta_w is not None else None,
+            zeta_w=self._zeta_w.index_all(i_ts, ...)
+            if self._zeta_w is not None
+            else None,
             c=self._c.index_all(i_ts, ...) if self._c is not None else None,
             nc=self._nc.index_all(i_ts, ...) if self._nc is not None else None,
             gamma_b=self._gamma_b.index_all(i_ts, ...),
-            gamma_b_dot=self._gamma_b_dot.index_all(i_ts, ...) if self._gamma_b_dot is not None else None,
+            gamma_b_dot=self._gamma_b_dot.index_all(i_ts, ...)
+            if self._gamma_b_dot is not None
+            else None,
             gamma_w=self._gamma_w.index_all(i_ts, ...),
             f_steady=self._f_steady.index_all(i_ts, ...),
-            f_unsteady=self._f_unsteady.index_all(i_ts, ...) if self._f_unsteady is not None else None,
+            f_unsteady=self._f_unsteady.index_all(i_ts, ...)
+            if self._f_unsteady is not None
+            else None,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             t=self._t[i_ts],
@@ -553,7 +592,9 @@ class DynamicAeroCase:
         )
 
     @classmethod
-    def initialise(cls, initial_snapshot: AeroSnapshot, n_tstep: int) -> DynamicAeroCase:
+    def initialise(
+        cls, initial_snapshot: AeroSnapshot, n_tstep: int
+    ) -> DynamicAeroCase:
         r"""
         Use a snapshot from a single timestep to create a solution object with many timesteps.
         :param initial_snapshot: Initial snapshot of the aerodynamic state.
@@ -610,29 +651,29 @@ class AeroSnapshot(DynamicAeroCase):
     """
 
     def __init__(
-            self,
-            zeta_b: ArrayList,
-            zeta_b_dot: ArrayList,
-            zeta_w: Optional[ArrayList],
-            c: Optional[ArrayList],
-            nc: Optional[ArrayList],
-            gamma_b: ArrayList,
-            gamma_b_dot: Optional[ArrayList],
-            gamma_w: ArrayList,
-            f_steady: ArrayList,
-            f_unsteady: Optional[ArrayList],
-            kernels: Sequence[KernelFunction],
-            mirror_point: Optional[Array],
-            mirror_normal: Optional[Array],
-            flowfield: FlowField,
-            surf_b_names: Sequence[str],
-            surf_w_names: Sequence[str],
-            t: float | Array,
-            i_ts: int,
-            dof_mapping: ArrayList,
-            static_horseshoe: bool,
-            free_wake: bool,
-            gamma_dot_relaxation: float,
+        self,
+        zeta_b: ArrayList,
+        zeta_b_dot: ArrayList,
+        zeta_w: Optional[ArrayList],
+        c: Optional[ArrayList],
+        nc: Optional[ArrayList],
+        gamma_b: ArrayList,
+        gamma_b_dot: Optional[ArrayList],
+        gamma_w: ArrayList,
+        f_steady: ArrayList,
+        f_unsteady: Optional[ArrayList],
+        kernels: Sequence[KernelFunction],
+        mirror_point: Optional[Array],
+        mirror_normal: Optional[Array],
+        flowfield: FlowField,
+        surf_b_names: Sequence[str],
+        surf_w_names: Sequence[str],
+        t: float | Array,
+        i_ts: int,
+        dof_mapping: ArrayList,
+        static_horseshoe: bool,
+        free_wake: bool,
+        gamma_dot_relaxation: float,
     ) -> None:
         r"""
         Create an AeroSnapshot by wrapping per-initial_snapshot arrays with a leading
@@ -663,7 +704,7 @@ class AeroSnapshot(DynamicAeroCase):
             dof_mapping=dof_mapping,
             static_horseshoe=static_horseshoe,
             free_wake=free_wake,
-            gamma_dot_relaxation=gamma_dot_relaxation
+            gamma_dot_relaxation=gamma_dot_relaxation,
         )
 
     @property
@@ -684,16 +725,19 @@ class AeroSnapshot(DynamicAeroCase):
 
     @property
     def zeta_w(self) -> ArrayList:
-        if self._zeta_w is None: raise ValueError("zeta_w is None")
+        if self._zeta_w is None:
+            raise ValueError("zeta_w is None")
         return self._zeta_w.index_all(0, ...)
 
     @zeta_w.setter
-    def zeta_w(self, value: ArrayList) -> None:
-        self._zeta_w = value.index_all(None, ...)
+    def zeta_w(self, value: Optional[ArrayList]) -> None:
+        if value is not None:
+            self._zeta_w = value.index_all(None, ...)
 
     @property
     def c(self) -> ArrayList:
-        if self._c is None: raise ValueError("c is None")
+        if self._c is None:
+            raise ValueError("c is None")
         return self._c.index_all(0, ...)
 
     @c.setter
@@ -703,7 +747,8 @@ class AeroSnapshot(DynamicAeroCase):
 
     @property
     def nc(self) -> ArrayList:
-        if self._nc is None: raise ValueError("nc is None")
+        if self._nc is None:
+            raise ValueError("nc is None")
         return self._nc.index_all(0, ...)
 
     @nc.setter
@@ -721,7 +766,8 @@ class AeroSnapshot(DynamicAeroCase):
 
     @property
     def gamma_b_dot(self) -> ArrayList:
-        if self._gamma_b_dot is None: raise ValueError("gamma_b_dot is None")
+        if self._gamma_b_dot is None:
+            raise ValueError("gamma_b_dot is None")
         return self._gamma_b_dot.index_all(0, ...)
 
     @gamma_b_dot.setter
@@ -746,7 +792,8 @@ class AeroSnapshot(DynamicAeroCase):
 
     @property
     def f_unsteady(self) -> ArrayList:
-        if self._f_unsteady is None: raise ValueError("f_unsteady is None")
+        if self._f_unsteady is None:
+            raise ValueError("f_unsteady is None")
         return self._f_unsteady.index_all(0, ...)
 
     @f_unsteady.setter
@@ -831,11 +878,11 @@ class AeroSnapshot(DynamicAeroCase):
         )
 
     def plot(
-            self,
-            directory: os.PathLike | str,
-            _=None,
-            plot_bound: bool = True,
-            plot_wake: bool = True,
+        self,
+        directory: os.PathLike | str,
+        _=None,
+        plot_bound: bool = True,
+        plot_wake: bool = True,
     ) -> Sequence[Path]:
         """
         Plot all aerodynamic surfaces in this single-time initial_snapshot to VTU files.
@@ -857,21 +904,21 @@ class AeroSurfaceSnapshot:
     """
 
     def __init__(
-            self,
-            zeta_b: Array,
-            zeta_b_dot: Array,
-            zeta_w: Array,
-            gamma_b: Array,
-            gamma_b_dot: Array,
-            gamma_w: Array,
-            f_steady: Array,
-            f_unsteady: Array,
-            surf_b_name: str,
-            surf_w_name: str,
-            i_ts: int,
-            t: Array,
-            static_horseshoe: bool,
-            dof_mapping: Array,
+        self,
+        zeta_b: Array,
+        zeta_b_dot: Array,
+        zeta_w: Array,
+        gamma_b: Array,
+        gamma_b_dot: Array,
+        gamma_w: Array,
+        f_steady: Array,
+        f_unsteady: Array,
+        surf_b_name: str,
+        surf_w_name: str,
+        i_ts: int,
+        t: Array,
+        static_horseshoe: bool,
+        dof_mapping: Array,
     ) -> None:
         r"""
         Snapshot of an aerodynamic surface at a single time step
@@ -903,10 +950,10 @@ class AeroSurfaceSnapshot:
         self.dof_mapping: Array = dof_mapping
 
     def plot(
-            self,
-            directory: str | os.PathLike,
-            plot_bound: bool = True,
-            plot_wake: bool = True,
+        self,
+        directory: str | os.PathLike,
+        plot_bound: bool = True,
+        plot_wake: bool = True,
     ) -> Sequence[Path]:
         r"""
         Plot aerodynamic surface in the initial_snapshot to VTU files.

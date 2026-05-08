@@ -68,7 +68,13 @@ class TestVarWakeDisc:
                 variable_wake_disc=variable_wake,
             )
 
-            uvlm.set_design_variables(dt, flowfield, delta_w_, x_grid, hg)
+            uvlm.set_design_variables(
+                dt=dt,
+                flowfield=flowfield,
+                x0_aero=x_grid,
+                hg0=hg,
+                delta_w=delta_w_,
+            )
 
             static_case = uvlm.solve_static()
 

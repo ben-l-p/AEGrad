@@ -138,19 +138,19 @@ class OutputUnflattened:
 
 class AeroLinearResult:
     def __init__(
-            self,
-            reference: AeroSnapshot,
-            u_t: InputUnflattened,
-            x_t: StateUnflattened,
-            y_t: OutputUnflattened,
-            u_t_tot: InputUnflattened,
-            x_t_tot: StateUnflattened,
-            y_t_tot: OutputUnflattened,
-            n_tstep: int,
-            n_surf: int,
-            t: Array,
-            surf_b_names: list[str],
-            surf_w_names: list[str],
+        self,
+        reference: AeroSnapshot,
+        u_t: InputUnflattened,
+        x_t: StateUnflattened,
+        y_t: OutputUnflattened,
+        u_t_tot: InputUnflattened,
+        x_t_tot: StateUnflattened,
+        y_t_tot: OutputUnflattened,
+        n_tstep: int,
+        n_surf: int,
+        t: Array,
+        surf_b_names: list[str],
+        surf_w_names: list[str],
     ) -> None:
         # system results, if simulated
         self.u_t: InputUnflattened = u_t
@@ -167,10 +167,10 @@ class AeroLinearResult:
         self.reference: AeroSnapshot = reference
 
     def plot(
-            self,
-            directory: str | os.PathLike,
-            index: Optional[slice | Sequence[int] | int | Array] = None,
-            plot_wake: bool = True,
+        self,
+        directory: str | os.PathLike,
+        index: Optional[slice | Sequence[int] | int | Array] = None,
+        plot_wake: bool = True,
     ) -> None:
         r"""
         Plot the aerodynamic grid at specified time steps.
@@ -230,10 +230,11 @@ class AeroLinearResult:
             if self.x_t_tot.gamma_b_dot is not None
             else None
         )
+        # put in the reference grid for the frozen wake case
         zeta_w_tot = (
             self.x_t_tot.zeta_w.index_all(i_ts, ...)
             if self.x_t_tot.zeta_w is not None
-            else None
+            else self.reference.zeta_w
         )
         f_unsteady_tot = (
             self.y_t_tot.f_unsteady.index_all(i_ts, ...)
