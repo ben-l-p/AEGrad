@@ -1350,6 +1350,8 @@ class LinearUVLM:
             gamma_w=self.reference.gamma_w,
             f_steady=self.reference.f_steady,
             f_unsteady=self.reference.f_unsteady,
+            cs_ang=self.reference.cs_ang,
+            cs_vel=self.reference.cs_vel,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,

@@ -396,14 +396,26 @@ class DesignVariables:
             elif isinstance(var, ArrayList):
                 return jnp.concatenate([_inner_ravel(subvar) for subvar in var])
             elif isinstance(var, dict):
-                return jnp.concatenate(
-                    [_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1
+                return (
+                    jnp.concatenate(
+                        [_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1
+                    )
+                    if var
+                    else None
                 )
             else:
                 raise ValueError("Invalid variable type in DesignVariables.")
 
         arr = jnp.concatenate(
-            [_inner_ravel(var) for var in self.get_vars().values() if var is not None],  # type: ignore
+            [
+                v
+                for v in [
+                    _inner_ravel(var)
+                    for var in self.get_vars().values()
+                    if var is not None
+                ]
+                if v is not None
+            ],  # type: ignore
             axis=1,
         )
         check_arr_shape(arr, (f_size, x_size), "Internal Jacobian")

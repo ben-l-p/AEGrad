@@ -24,9 +24,9 @@ class TestXBeamConstXRotVelocity:
         m_bar = 1.0
         j_bar = 1.0
 
-        a = m_bar * r_ext * omega ** 2
-        b = -3.0 * k_coeffs[0] - 2.0 * m_bar * r_ext ** 2 * omega ** 2
-        c = m_bar * r_ext ** 3 * omega ** 2
+        a = m_bar * r_ext * omega**2
+        b = -3.0 * k_coeffs[0] - 2.0 * m_bar * r_ext**2 * omega**2
+        c = m_bar * r_ext**3 * omega**2
 
         # solve to initialise beam with centrifugal deformation, such that there are no oscillations
         if cls.beam_direction_index != cls.v_direction_index:
@@ -47,7 +47,14 @@ class TestXBeamConstXRotVelocity:
 
         m_cs = block_diag(jnp.eye(3) * m_bar, jnp.eye(3) * j_bar)[None, :]
 
-        struct = BeamStructure(3, conn, cls.y_vect, None)
+        struct = BeamStructure(
+            3,
+            conn,
+            cls.y_vect,
+            None,
+            spectral_radius=1.0,
+            relaxation_factor=1.0,
+        )
         struct.set_design_variables(coords, jnp.diag(k_coeffs), m_cs)
 
         v_init = jnp.zeros((3, 6))
@@ -77,18 +84,16 @@ class TestXBeamConstXRotVelocity:
             f_ext_follower=None,
             f_ext_dead=None,
             f_ext_aero=None,
-            spectral_radius=1.0,
-            struct_relaxation_factor=1.0,
         )
 
         expected_theta = omega * jnp.arange(n_tstep) * dt
 
         if cls.beam_direction_index != cls.v_direction_index:
-            expected_f = m_node * r_ext * omega ** 2 * (2.0 / 3.0)
+            expected_f = m_node * r_ext * omega**2 * (2.0 / 3.0)
             x0_expected = jnp.zeros((n_tstep, 3))
 
             third_dir = (
-                    {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
+                {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
             ).pop()
             third_dir_sign = jnp.sum(
                 jnp.cross(

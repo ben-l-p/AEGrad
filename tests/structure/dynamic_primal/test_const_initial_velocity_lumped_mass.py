@@ -27,8 +27,13 @@ class TestConstLinXVelocityLumpedMass:
         n_tstep = 50
         dt = 0.001
 
-        struct = BeamStructure(num_nodes=1, connectivity=conn, y_vector=jnp.zeros((0, 3)),
-                               m_lumped_index=jnp.zeros((1,), dtype=int))
+        struct = BeamStructure(
+            num_nodes=1,
+            connectivity=conn,
+            y_vector=jnp.zeros((0, 3)),
+            m_lumped_index=jnp.zeros((1,), dtype=int),
+            spectral_radius=1.0,
+        )
         struct.set_design_variables(
             coords, jnp.zeros((0, 6, 6)), None, m_lump[None, ...]
         )
@@ -46,7 +51,6 @@ class TestConstLinXVelocityLumpedMass:
             f_ext_follower=None,
             f_ext_dead=None,
             f_ext_aero=None,
-            spectral_radius=1.0,
         )
 
         x_expected = v * jnp.arange(n_tstep) * dt

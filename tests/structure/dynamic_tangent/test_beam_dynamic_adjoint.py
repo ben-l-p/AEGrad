@@ -4,7 +4,11 @@ from jax import numpy as jnp
 from jax import Array
 import jax
 
-from aegrad.structure import BeamStructure, StructureFullStates, StructuralDesignVariables
+from aegrad.structure import (
+    BeamStructure,
+    StructureFullStates,
+    StructuralDesignVariables,
+)
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 
@@ -17,7 +21,10 @@ class TestBeamTranslationAdjoint:
 
         # use relatively strict convergence criteria
         beam = BeamStructure(
-            num_nodes=n_nodes, connectivity=conn, y_vector=y_vect[None, :]
+            num_nodes=n_nodes,
+            connectivity=conn,
+            y_vector=y_vect[None, :],
+            spectral_radius=1.0,
         )
 
         coords = jnp.zeros((n_nodes, 3)).at[:, 0].set(jnp.linspace(-0.5, 0.5, n_nodes))
@@ -25,11 +32,14 @@ class TestBeamTranslationAdjoint:
         k_cs = jnp.diag(jnp.array([1e3, 1e3, 1e3, 1e3, 1e3, 1e3]))
 
         beam.set_design_variables(
-            coords=coords, k_cs=k_cs[None, ...], m_cs=m_cs[None, ...], m_lumped=None
+            coords=coords,
+            k_cs=k_cs[None, ...],
+            m_cs=m_cs[None, ...],
+            m_lumped=None,
         )
 
         n_tstep = 1001
-        dt = 0.001  # results in t in [0, 1]
+        dt = 0.001  # results in t_n in [0, 1]
 
         f_mag = 2.0
 
@@ -48,7 +58,9 @@ class TestBeamTranslationAdjoint:
         ).reshape(n_nodes, 6)
         init_state.a = v_dot_init
         init_state.v_dot = v_dot_init
-        init_state.f_ext_follower = cast(Array, init_state.f_ext_follower).at[0, 0].set(f_mag)
+        init_state.f_ext_follower = (
+            cast(Array, init_state.f_ext_follower).at[0, 0].set(f_mag)
+        )
 
         solution = beam.dynamic_solve(
             init_state=init_state,
@@ -58,14 +70,15 @@ class TestBeamTranslationAdjoint:
             f_ext_dead=jnp.zeros_like(f_ext),
             f_ext_aero=None,
             prescribed_dofs=None,
-            spectral_radius=1.0,
         )
 
         # extract x coordinate
         x_t_out = solution.hg[:, :, 0, 3].sum(axis=1) / n_nodes
 
         def objective(
-                ss: StructureFullStates, _: StructuralDesignVariables, i_ts: int | Array | None
+            ss: StructureFullStates,
+            _: StructuralDesignVariables,
+            i_ts: int | Array | None,
         ) -> Array:
             return jax.lax.select(
                 i_ts == n_tstep - 1,
@@ -73,18 +86,23 @@ class TestBeamTranslationAdjoint:
                 jnp.zeros(()),
             )  # x coordinate of point
 
-        # should follow x = 0.5*(f/m)*t^2
+        # should follow x = 0.5*(f/m)*t_n^2
         t = jnp.arange(n_tstep, dtype=float) * dt
         expected_x_t = 0.5 * f_mag / m_cs[0, 0] * t * t
 
         # note that we omit here the influence of the design parameters on the initial state
         # in reality, the initial acceleration in this case depends upon the design variables as it is a function of
         # the external forcing and the beam mass. We negate this, which causes a small discrepancy in the result
-        # and as such needs a relaxed tolerance. TODO: fix
+        # and as such needs a relaxed tolerance.
         grads, adj = beam.dynamic_adjoint(
-            structure=solution, objective=objective, p_q0_p_x=None,
+            structure=solution,
+            objective=objective,
+            p_q0_p_x=None,
             grads_to_compute=StructuralGradsToCompute(
-                k_cs=True, m_cs=True, f_ext_follower=True, f_ext_dead=True,
+                k_cs=True,
+                m_cs=True,
+                f_ext_follower=True,
+                f_ext_dead=True,
             ),
         )
 

@@ -55,6 +55,8 @@ def _build_wing(k_cs: Array, gust_amplitude: float | Array):
         rel_force_tol=0.0,
         abs_force_tol=0.0,
     )
+    wing.structure.spectral_radius = 1.0
+    wing.aero.gamma_dot_relaxation = 0.7
     return wing
 
 
@@ -64,12 +66,8 @@ def _run_primal(k_cs: Array, gust_amplitude: float | Array):
     dynamic_sol = wing.dynamic_solve(
         init_case=static_sol,
         prescribed_dofs=jnp.arange(6),
-        spectral_radius=1.0,
-        gamma_dot_relaxation_factor=0.7,
-        free_wake=False,
         dt=dt,
         n_tstep=n_tstep,
-        include_unsteady_aero_force=True,
     )
     return wing, static_sol, dynamic_sol
 

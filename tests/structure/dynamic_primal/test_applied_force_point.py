@@ -33,10 +33,15 @@ class TestLinXForcePoint:
             connectivity=conn,
             y_vector=jnp.zeros((0, 3)),
             m_lumped_index=jnp.zeros((1,), dtype=int),
+            spectral_radius=1.0,
+            relaxation_factor=1.0,
         )
 
         struct.set_design_variables(
-            coords=coords, k_cs=jnp.zeros((0, 6, 6)), m_cs=None, m_lumped=m_lump[None, ...]
+            coords=coords,
+            k_cs=jnp.zeros((0, 6, 6)),
+            m_cs=None,
+            m_lumped=m_lump[None, ...],
         )
 
         v_dot_expected = cls.f / m_lump[cls.f_direction_index, cls.f_direction_index]
@@ -46,9 +51,11 @@ class TestLinXForcePoint:
             v_dot_expected
         )
         init_cond.a = init_cond.a.at[0, cls.f_direction_index].set(v_dot_expected)
-        init_cond.f_ext_follower = cast(Array, init_cond.f_ext_follower).at[
-            0, cls.f_direction_index
-        ].set(cls.f)
+        init_cond.f_ext_follower = (
+            cast(Array, init_cond.f_ext_follower)
+            .at[0, cls.f_direction_index]
+            .set(cls.f)
+        )
 
         output = struct.dynamic_solve(
             init_state=init_cond,
@@ -60,8 +67,6 @@ class TestLinXForcePoint:
             .set(cls.f),
             f_ext_dead=None,
             f_ext_aero=None,
-            spectral_radius=1.0,
-            struct_relaxation_factor=1.0,
         )
 
         v_expected = jnp.arange(n_tstep) * dt * v_dot_expected

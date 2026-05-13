@@ -251,6 +251,8 @@ class AeroLinearResult:
             gamma_w=gamma_w_tot,
             f_steady=f_steady_tot,
             f_unsteady=f_unsteady_tot,
+            cs_ang=dict(),
+            cs_vel=dict(),
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,

@@ -8,13 +8,17 @@ from aegrad.structure import BeamStructure
 
 
 def flying_spaghetti(
-    n_nodes: int, t: Array, use_gravity: bool = False
+    n_nodes: int,
+    t: Array,
+    use_gravity: bool = False,
+    spectral_radius: float = 0.9,
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
     Creates a flying spaghetti model structure.
     :param n_nodes: Number of nodes.
     :param t: Time array for dead force, [n_tstep]
     :param use_gravity: Whether to include gravity in the model.
+    :param spectral_radius: Spectral radius for time integrator.
     :return: Beam model, and dead force array corresponding to the passed time array for respective 2D and 3D cases.
     """
 
@@ -40,7 +44,9 @@ def flying_spaghetti(
 
     gravity = jnp.array((0.0, 0.0, -9.81)) if use_gravity else None
 
-    struct = BeamStructure(n_nodes, conn, y_vector, gravity)
+    struct = BeamStructure(
+        n_nodes, conn, y_vector, gravity, spectral_radius=spectral_radius
+    )
     struct.set_design_variables(coords, k_cs, m_cs)
 
     n_tstep = t.shape[0]
@@ -81,7 +87,10 @@ if __name__ == "__main__":
     # start one timestep behind to prevent issues with initial condition
     t_ = jnp.arange(n_tstep_) * dt_ - dt_
 
-    struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(n_nodes_, t_)
+    # will work with 1.0 (numerical damping is not essential)
+    struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(
+        n_nodes_, t_, spectral_radius=0.7
+    )
 
     solution = struct_.dynamic_solve(
         init_state=None,
@@ -90,7 +99,6 @@ if __name__ == "__main__":
         f_ext_follower=None,
         f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
         f_ext_aero=None,
-        spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
         prescribed_dofs=None,
     )
 

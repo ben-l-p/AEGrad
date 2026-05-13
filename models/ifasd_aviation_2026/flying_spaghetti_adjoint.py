@@ -25,7 +25,9 @@ if __name__ == "__main__":
     t_ = jnp.arange(n_tstep_) * dt_ - dt_
 
     def make_sol(k_cs_eps: float, m_cs_eps: float):
-        struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(n_nodes_, t_)
+        struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(
+            n_nodes_, t_, spectral_radius=0.7
+        )
         struct_.k_cs = struct_.k_cs.at[0, 4, 4].add(k_cs_eps)
         struct_.m_cs = struct_.m_cs.at[0, :3, :3].add(
             jnp.diag(jnp.array((m_cs_eps, m_cs_eps, m_cs_eps)))
@@ -48,7 +50,6 @@ if __name__ == "__main__":
                 f_ext_follower=None,
                 f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
                 f_ext_aero=None,
-                spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
                 prescribed_dofs=None,
             ),
         )

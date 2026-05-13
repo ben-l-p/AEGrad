@@ -53,7 +53,12 @@ if __name__ == "__main__":
     conn = jnp.zeros((n, 2), dtype=int)
     conn = conn.at[:, 0].set(jnp.arange(n))
     conn = conn.at[:, 1].set(jnp.arange(1, n + 1))
-    beam = BeamStructure(num_nodes=n + 1, connectivity=conn, y_vector=y_vector)
+    beam = BeamStructure(
+        num_nodes=n + 1,
+        connectivity=conn,
+        y_vector=y_vector,
+        spectral_radius=1.0,  # no numerical dissipation
+    )
 
     # aero non-design variables
     gd = GridDiscretization(m=m, n=n, m_star=m_star)
@@ -62,6 +67,7 @@ if __name__ == "__main__":
         dof_mapping=jnp.arange(n + 1),
         mirror_point=jnp.zeros(3),
         mirror_normal=jnp.array((0.0, 1.0, 0.0)),  # mirror plane in y
+        gamma_dot_relaxation=0.7,
     )
 
     wing = CoupledAeroelastic(beam, uvlm)
@@ -114,12 +120,8 @@ if __name__ == "__main__":
     dynamic_sol = wing.dynamic_solve(
         init_case=static_sol,
         prescribed_dofs=jnp.arange(6),
-        spectral_radius=1.0,  # no numerical dissipation
-        gamma_dot_relaxation_factor=0.7,
-        free_wake=False,
         dt=dt,
         n_tstep=n_tstep,
-        include_unsteady_aero_force=True,
     )
 
     # plot the dynamic solution

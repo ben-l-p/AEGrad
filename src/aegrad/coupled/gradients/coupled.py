@@ -249,9 +249,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         case: StaticAeroelastic,
         p_varphi_p_x: Array,
         solve_dofs: Array,
-        free_wake: bool = False,
         horseshoe: bool = False,
-        gamma_dot_relaxation: float = 0.7,
     ) -> AeroelasticDesignVariables:
         r"""
         Obtain the gradient of the initial minimal states for a dynamic aeroelastic system with respect to the design
@@ -260,9 +258,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param p_varphi_p_x: Jacobian of structural twists with respect to the design variables. This can be obtained
         from the static adjoint solver by using the forward mode, which results in this being the adjoint state.
         :param solve_dofs: Array of degree of freedom index which are solved for
-        :param free_wake: Use free wake.
         :param horseshoe: Use static_horseshoe wake.
-        :param gamma_dot_relaxation: Damping for gamma dot computation.
         :return: Gradients of AeroelasticMinimalStates with respect to the design variables.
         """
         dv = self.get_design_variables(case=case)
@@ -278,13 +274,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             c, nc, gamma_b, gamma_w, _, zeta_b, zeta_w, _, f_steady, _ = (
                 inner_case.aero.base_solve(
                     q_nm1=None,
-                    t=case.aero.t,
-                    hg=hg,
-                    hg_dot=None,
+                    t_n=case.aero.t,
+                    hg_n=hg,
+                    hg_dot_n=None,
                     static=True,
-                    free_wake=free_wake,
                     horseshoe=horseshoe,
-                    gamma_dot_relaxation=gamma_dot_relaxation,
+                    cs_ang_n=dv_.aero.cs_ang_t,
+                    cs_vel_n=dv_.aero.cs_vel_t,
                 )
             )
 
@@ -345,9 +341,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         q_n: AeroelasticMinimalStates,
         dv_: AeroelasticDesignVariables,
         solve_dofs: tuple[int, ...],
-        free_wake: bool,
-        use_unsteady: bool,
-        gamma_dot_relaxation: float,
         approx_grads: bool,
     ) -> tuple[Array, Array, StructuralDesignVariables, AeroelasticDesignVariables]:
 
@@ -361,19 +354,18 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             p_aero_res_p_q_struct_nm1,
             p_aero_res_p_q_struct_n,
         ) = self.aero.timestep_residual_jacobians(
+            i_ts=i_ts,
             varphi_nm1=q_nm1.structure.varphi,
             varphi_n=q_n.structure.varphi,
             v_n=q_n.structure.v,
             t_n=t,
-            free_wake=free_wake,
             q_n=q_n.aero,
             q_nm1=q_nm1.aero,
             dv=dv_,
             f_aero_beam_n=q_n.structure.f_ext_aero,
             struct_obj=self.structure,
-            gamma_dot_relaxation=gamma_dot_relaxation,
             approx_grads=approx_grads,
-            use_unsteady=use_unsteady,
+            use_unsteady=self.aero.include_unsteady_force,
             solve_dofs=solve_dofs,
         )
 
@@ -440,7 +432,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         objective: AeroelasticObjectiveFunction,
         p_varphi_p_x: Optional[Array] = None,
         save_adjoint: bool = False,
-        use_unsteady: bool = True,
         approx_grads: bool = True,
     ) -> tuple[AeroelasticDesignVariables, Optional[Array]]:
         r"""
@@ -449,7 +440,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param objective: Objective function that takes the system full states, design variables and timestep index, and returns an array
         :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found from the static solve.
         :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
-        :param use_unsteady: Whether to use unsteady aerodynamic forcing.
         :param approx_grads: Whether to use gradient approximation or not.
         :return: Gradient of sum of objective across timesteps with respect to design variables.
         """
@@ -469,14 +459,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         dv = self.get_design_variables(case=case)
 
-        if case.aero.free_wake is None:
-            raise ValueError("free_wake not defined")
-        free_wake: bool = case.aero.free_wake
-
-        if case.aero.gamma_dot_relaxation is None:
-            raise ValueError("gamma_dot_relaxation not defined")
-        gamma_dot_relaxation: float = case.aero.gamma_dot_relaxation
-
         if case.aero.static_horseshoe is None:
             raise ValueError("static_horseshoe not defined")
         static_horseshoe: bool = case.aero.static_horseshoe
@@ -491,6 +473,18 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         n_j = j_properties.size
 
         n_solve = len(solve_dofs)
+
+        j_eval = jnp.array(
+            [
+                objective(case.get_full_states(i_ts=i_ts), dv, i_ts)
+                for i_ts in range(n_tstep)
+            ]
+        ).reshape(n_tstep, n_j)
+
+        # the last time step where the objective was nonzero. This can be used to prevent redundant computations for
+        # computing sensitivities which only refer to a small number of time steps by not running the adjoint problem
+        # after the last time step which has a contribution.
+        last_active_i_ts = int(jnp.flatnonzero(jnp.any(j_eval, axis=-1))[-1])
 
         def time_loop(
             rev_i_ts_: int,
@@ -551,9 +545,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     q_n=q_n,
                     dv_=dv,
                     solve_dofs=solve_dofs,
-                    free_wake=free_wake,
-                    use_unsteady=use_unsteady,
-                    gamma_dot_relaxation=gamma_dot_relaxation,
                     approx_grads=approx_grads,
                 )
             )
@@ -615,6 +606,14 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     k: jnp.zeros((*j_shape, *v.shape))
                     for k, v in self.aero.flowfield.to_design_variables().items()
                 },
+                cs_ang_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in dv.aero.cs_ang_t.items()
+                },
+                cs_vel_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in dv.aero.cs_vel_t.items()
+                },
                 f_shape=j_shape,
             ),
         )
@@ -646,17 +645,19 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
 
         # pass through time steps backwards to obtain adjoints
-        carry = (
-            dv_grad_init,
-            jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
-            if save_adjoint
-            else jnp.zeros((n_j, n_adj_dof)),
-            jnp.zeros((n_adj_dof, n_adj_dof)),
-            case.get_minimal_states(i_ts=-1),
+        d_j_d_x, adj, p_r1_p_q0, _ = jax.lax.fori_loop(
+            lower=case.structure.n_tstep - 1 - last_active_i_ts,
+            upper=case.structure.n_tstep - 1,
+            body_fun=lambda i_ts, args: adjoint_step(i_ts, *args),
+            init_val=(
+                dv_grad_init,
+                jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
+                if save_adjoint
+                else jnp.zeros((n_j, n_adj_dof)),
+                jnp.zeros((n_adj_dof, n_adj_dof)),
+                case.get_minimal_states(i_ts=-1),
+            ),
         )
-        for rev_i_ts in range(case.structure.n_tstep - 1):
-            carry = adjoint_step(rev_i_ts, *carry)
-        d_j_d_x, adj, p_r1_p_q0, _ = carry
 
         # solve initial timestep adjoint, as there is no r0
         p_j0_p_q0: Array
@@ -688,7 +689,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             p_q0_p_x = self.compute_p_q0_p_x(
                 case=case[0].to_static(),
                 p_varphi_p_x=p_varphi_p_x,
-                free_wake=free_wake,
                 horseshoe=static_horseshoe,
                 solve_dofs=solve_dofs_arr,
             )

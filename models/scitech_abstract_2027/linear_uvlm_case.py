@@ -64,6 +64,7 @@ if __name__ == "__main__":
         grid_shapes=[disc],
         dof_mapping=jnp.arange(0, n + 1),
         kernel=biot_savart_cutoff,
+        gamma_dot_relaxation=1.0,
     )
     nonlinear_model.set_design_variables(
         dt=dt,
@@ -100,8 +101,6 @@ if __name__ == "__main__":
         init_case=static_case,
         hg_t=hg_t,
         hg_dot_t=hg_dot_t,
-        free_wake=False,
-        gamma_dot_relaxation=1.0,
     )
 
     # save nonlinear wing time history

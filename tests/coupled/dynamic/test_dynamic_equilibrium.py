@@ -27,6 +27,7 @@ class TestDynamicEquilibrium:
             n_nodes=n + 1,
             u_inf=u_inf,
         )
+        wing.structure.spectral_radius = 0.8
 
         # strict convergence
         conv_settings = ConvergenceSettings(
@@ -47,11 +48,8 @@ class TestDynamicEquilibrium:
         dynamic_sol = wing.dynamic_solve(
             init_case=static_sol,
             prescribed_dofs=jnp.arange(6),
-            spectral_radius=0.8,
-            free_wake=False,
             dt=dt,
             n_tstep=n_tstep,
-            include_unsteady_aero_force=True,
         )
 
         if plot:

@@ -33,6 +33,7 @@ class TestXGravityPointDrop:
             y_vector=jnp.zeros((0, 3)),
             gravity=jnp.zeros(3).at[cls.g_direction_index].set(cls.g),
             m_lumped_index=jnp.zeros((1,), dtype=int),
+            spectral_radius=1.0,
         )
         struct.set_design_variables(
             coords, jnp.zeros((0, 6, 6)), None, m_lump[None, ...]
@@ -49,7 +50,6 @@ class TestXGravityPointDrop:
             f_ext_follower=None,
             f_ext_dead=None,
             f_ext_aero=None,
-            spectral_radius=1.0,
         )
 
         expected_fg = jnp.zeros(6).at[cls.g_direction_index].set(m * cls.g)

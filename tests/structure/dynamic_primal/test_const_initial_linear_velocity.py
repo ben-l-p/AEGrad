@@ -25,7 +25,13 @@ class TestConstXVelocityXBeam:
         n_tstep = 500
         dt = 0.01
 
-        struct = BeamStructure(2, conn, cls.y_vect, None)
+        struct = BeamStructure(
+            2,
+            conn,
+            cls.y_vect,
+            None,
+            spectral_radius=1.0,
+        )
         struct.set_design_variables(coords, k_cs, m_cs)
 
         v_init = jnp.zeros((2, 6)).at[:, cls.v_direction_index].set(v_mag)
@@ -41,7 +47,6 @@ class TestConstXVelocityXBeam:
             f_ext_follower=None,
             f_ext_dead=None,
             f_ext_aero=None,
-            spectral_radius=1.0,
         )
         x_t = output.hg[:, 0, cls.v_direction_index, 3]  # [n_tstep]
 

@@ -16,10 +16,10 @@ class FlowField:
     """
 
     def __init__(
-            self,
-            u_inf: Array,
-            rho: float | Array,
-            relative_motion: bool,
+        self,
+        u_inf: Array,
+        rho: float | Array,
+        relative_motion: bool,
     ):
         r"""
         Initialise the flow field.
@@ -33,7 +33,7 @@ class FlowField:
         self.rho: Array = jnp.array(rho)
         self.u_inf_mag: Array = jnp.linalg.norm(u_inf)
         self.u_inf_dir: Array = u_inf / self.u_inf_mag
-        self.q_inf: Array = 0.5 * rho * self.u_inf_mag ** 2
+        self.q_inf: Array = 0.5 * rho * self.u_inf_mag**2
 
         # if False, the background flow is time-independent
         self.relative_motion: bool = relative_motion
@@ -75,7 +75,7 @@ class FlowField:
         Extract the design variables associated with this flow field.
         :return: Dictionary of design variables.
         """
-        return {'u_inf': self.u_inf, 'rho': self.rho}
+        return {"u_inf": self.u_inf, "rho": self.rho}
 
     def from_design_variables(self, design_variables: dict[str, Array]) -> FlowField:
         r"""
@@ -83,8 +83,7 @@ class FlowField:
         :param design_variables: Dictionary of design variables.
         :return: New FlowField object.
         """
-        return self.__class__(**design_variables,
-                              relative_motion=self.relative_motion)
+        return self.__class__(**design_variables, relative_motion=self.relative_motion)
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
@@ -136,15 +135,15 @@ class OneMinusCosine(FlowField):
     """
 
     def __init__(
-            self,
-            u_inf: Array,
-            rho: float | Array,
-            relative_motion: bool,
-            gust_length: float | Array,
-            gust_amplitude: float | Array,
-            gust_travel_direction: Optional[Array] = None,
-            gust_amplitude_direction: Array = jnp.array((0.0, 0.0, 1.0)),
-            gust_x0: Array = jnp.zeros(3),
+        self,
+        u_inf: Array,
+        rho: float | Array,
+        relative_motion: bool,
+        gust_length: float | Array,
+        gust_amplitude: float | Array,
+        gust_travel_direction: Optional[Array] = None,
+        gust_amplitude_direction: Array = jnp.array((0.0, 0.0, 1.0)),
+        gust_x0: Array = jnp.zeros(3),
     ):
         super().__init__(u_inf, rho, relative_motion)
 
@@ -165,7 +164,7 @@ class OneMinusCosine(FlowField):
         # lateral direction of the gust (direction in which the gust acts), default is in Z
         check_arr_shape(gust_amplitude_direction, (3,), "gust_amplitude")
         self.gust_amplitude_direction: Array = (
-                gust_amplitude_direction / jnp.linalg.norm(gust_amplitude_direction)
+            gust_amplitude_direction / jnp.linalg.norm(gust_amplitude_direction)
         )
 
         # base coordinate at the start of the gust at t=0
@@ -188,10 +187,10 @@ class OneMinusCosine(FlowField):
 
         def _one_minus_cos(x_: Array) -> Array:
             return (
-                    self.gust_amplitude_direction
-                    * self.gust_amplitude
-                    * 0.5
-                    * (1.0 - jnp.cos(jnp.pi * x_ / self.gust_length))
+                self.gust_amplitude_direction
+                * self.gust_amplitude
+                * 0.5
+                * (1.0 - jnp.cos(jnp.pi * x_ / self.gust_length))
             )
 
         u = jax.lax.select(
@@ -209,18 +208,28 @@ class OneMinusCosine(FlowField):
         Extract the design variables associated with this flow field.
         :return: Dictionary of design variables.
         """
-        return {'u_inf': self.u_inf, 'rho': self.rho, 'gust_amplitude': self.gust_amplitude,
-                'gust_length': self.gust_length}
+        return {
+            "u_inf": self.u_inf,
+            "rho": self.rho,
+            "gust_amplitude": self.gust_amplitude,
+            "gust_length": self.gust_length,
+        }
 
-    def from_design_variables(self, design_variables: dict[str, Array]) -> OneMinusCosine:
+    def from_design_variables(
+        self, design_variables: dict[str, Array]
+    ) -> OneMinusCosine:
         r"""
         Create a new flow field from a design variables. This allows for design derivatives.
         :param design_variables: Dictionary of design variables.
         :return: New FlowField object.
         """
-        return OneMinusCosine(**design_variables,
-                              relative_motion=self.relative_motion, gust_travel_direction=self.gust_travel_direction,
-                              gust_amplitude_direction=self.gust_amplitude_direction, gust_x0=self.gust_x0)
+        return OneMinusCosine(
+            **design_variables,
+            relative_motion=self.relative_motion,
+            gust_travel_direction=self.gust_travel_direction,
+            gust_amplitude_direction=self.gust_amplitude_direction,
+            gust_x0=self.gust_x0,
+        )
 
     @staticmethod
     def _static_names() -> Sequence[str]:

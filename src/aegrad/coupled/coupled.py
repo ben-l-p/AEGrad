@@ -53,6 +53,7 @@ class BaseCoupledAeroelastic:
         flowfield: FlowField,
         delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
         x0_aero: ArrayList | Sequence[Array] | Array,
+        reference_cs_angles: dict[str, Array] | None = None,
         *,
         remove_checks: bool = False,
     ):
@@ -69,6 +70,7 @@ class BaseCoupledAeroelastic:
             delta_w=delta_w,
             x0_aero=x0_aero,
             hg0=self.structure.hg0,
+            reference_cs_angles=reference_cs_angles,
         )
 
     def case_from_dv(self, dv: AeroelasticDesignVariables) -> BaseCoupledAeroelastic:
@@ -78,13 +80,16 @@ class BaseCoupledAeroelastic:
         )
 
     def get_design_variables(
-        self, case: StaticAeroelastic | DynamicAeroelastic
+        self,
+        case: StaticAeroelastic | DynamicAeroelastic,
     ) -> AeroelasticDesignVariables:
         return AeroelasticDesignVariables(
             structure_dv=self.structure.get_design_variables(
                 struct_case=case.structure
             ),
-            aero_dv=self.aero.get_design_variables(),
+            aero_dv=self.aero.get_design_variables(
+                cs_ang_t=case.aero.cs_ang, cs_vel_t=case.aero.cs_vel
+            ),
         )
 
     def reference_configuration(
@@ -219,11 +224,8 @@ class BaseCoupledAeroelastic:
         f_ext_dead: Optional[Array] = None,
         t_init: float = 0.0,
         load_steps: int = 1,
-        struct_relaxation_factor: float = 1.0,
-        gamma_dot_relaxation_factor: float = 0.7,
-        spectral_radius: float = 0.9,
-        free_wake: bool = False,
-        include_unsteady_aero_force: bool = True,
+        cs_ang_t: Optional[dict[str, Array]] = None,
+        cs_vel_t: Optional[dict[str, Array]] = None,
     ) -> DynamicAeroelastic:
 
         warn_if_32_bit()
@@ -239,7 +241,7 @@ class BaseCoupledAeroelastic:
         t = jnp.arange(n_tstep) * dt + t_init
 
         self.structure.time_integrator = TimeIntegrator(
-            spectral_radius=spectral_radius, dt=dt
+            spectral_radius=self.structure.spectral_radius, dt=dt
         )
 
         # initialise aeroelastic case object
@@ -291,10 +293,6 @@ class BaseCoupledAeroelastic:
         else:
             raise NotImplementedError
 
-        # set other aero arguments
-        case.aero.gamma_dot_relaxation_factor = gamma_dot_relaxation_factor
-        case.aero.free_wake = free_wake
-
         fsi_converge_status: ConvergenceStatus = ConvergenceStatus(
             self.fsi_convergence_settings
         )
@@ -306,7 +304,6 @@ class BaseCoupledAeroelastic:
                 self.structure.struct_convergence_settings
             ),
             t=t,
-            struct_relaxation_factor=struct_relaxation_factor,
             solve_dofs=solve_dofs,
             load_steps=load_steps,
             f_ext_follower=f_ext_follower,
@@ -314,9 +311,8 @@ class BaseCoupledAeroelastic:
             aero_obj=self.aero,
             aero_case=case.aero,
             fsi_convergence_status=fsi_converge_status,
-            free_wake=free_wake,
-            include_unsteady_aero_force=include_unsteady_aero_force,
-            gamma_dot_relaxation_factor=gamma_dot_relaxation_factor,
+            cs_ang_t=cs_ang_t if cs_ang_t is not None else dict(),
+            cs_vel_t=cs_vel_t if cs_vel_t is not None else dict(),
         )
 
         fsi_converge_status.print_footer(dynamic=True)

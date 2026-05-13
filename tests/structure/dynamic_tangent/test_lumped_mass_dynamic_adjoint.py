@@ -16,8 +16,13 @@ class TestLumpedMassTranslationAdjoint:
         conn = jnp.zeros((0, 2), dtype=int)
         y_vect = jnp.zeros((0, 3))
 
-        beam = BeamStructure(num_nodes=n_nodes, connectivity=conn, y_vector=y_vect,
-                             m_lumped_index=jnp.zeros((1,), dtype=int))
+        beam = BeamStructure(
+            num_nodes=n_nodes,
+            connectivity=conn,
+            y_vector=y_vect,
+            m_lumped_index=jnp.zeros((1,), dtype=int),
+            spectral_radius=1.0,
+        )
 
         coords = jnp.array(((0.0, 0.0, 0.0),))
         m_l = jnp.diag(jnp.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))[None, :]
@@ -40,7 +45,9 @@ class TestLumpedMassTranslationAdjoint:
         init_state = beam.reference_configuration(use_f_ext_follower=True).to_dynamic()
         init_state.a = init_state.a.at[0, 0].set(f_mag / m_l[0, 0, 0])
         init_state.v_dot = init_state.v_dot.at[0, 0].set(f_mag / m_l[0, 0, 0])
-        assert init_state.f_ext_follower is not None, "Initial state has no f_ext_follower"
+        assert init_state.f_ext_follower is not None, (
+            "Initial state has no f_ext_follower"
+        )
         init_state.f_ext_follower = init_state.f_ext_follower.at[0, 0].set(f_mag)
 
         solution = beam.dynamic_solve(
@@ -51,14 +58,15 @@ class TestLumpedMassTranslationAdjoint:
             f_ext_dead=jnp.zeros_like(f_ext),
             f_ext_aero=None,
             prescribed_dofs=None,
-            spectral_radius=1.0,
         )
 
         # extract x coordinate
         x_t_out = solution.hg[:, 0, 0, 3]
 
         def objective(
-                ss: StructureFullStates, _: StructuralDesignVariables, i_ts: Optional[int | Array]
+            ss: StructureFullStates,
+            _: StructuralDesignVariables,
+            i_ts: Optional[int | Array],
         ) -> Array:
             return jax.lax.select(
                 i_ts == n_tstep - 1,
@@ -71,9 +79,15 @@ class TestLumpedMassTranslationAdjoint:
         expected_x_t = 0.5 * f_mag / m_l[0, 0, 0] * t * t
 
         grads, adj = beam.dynamic_adjoint(
-            structure=solution, objective=objective, approx_grads=False,
+            structure=solution,
+            objective=objective,
+            approx_grads=False,
             grads_to_compute=StructuralGradsToCompute(
-                k_cs=True, m_cs=True, m_lumped=True, f_ext_follower=True, f_ext_dead=True,
+                k_cs=True,
+                m_cs=True,
+                m_lumped=True,
+                f_ext_follower=True,
+                f_ext_dead=True,
             ),
         )
 

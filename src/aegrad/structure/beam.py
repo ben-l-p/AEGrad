@@ -66,6 +66,8 @@ class BaseBeamStructure:
         m_lumped_index: Optional[Array] = None,
         gravity: Optional[Array] = None,
         optional_jacobians: Optional[OptionalJacobians] = None,
+        relaxation_factor: float = 1.0,
+        spectral_radius: float = 0.9,
         struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(
             max_n_iter=25,
             rel_disp_tol=1e-6,
@@ -176,6 +178,8 @@ class BaseBeamStructure:
         self.struct_convergence_settings: ConvergenceSettings = (
             struct_convergence_settings
         )
+        self.relaxation_factor: float = relaxation_factor
+        self.spectral_radius: float = spectral_radius
 
         self._time_integrator: Optional[TimeIntegrator] = None
 
@@ -1513,7 +1517,6 @@ class BaseBeamStructure:
         struct_case: DynamicStructure,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
-        struct_relaxation_factor: float,
         solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
@@ -1521,9 +1524,8 @@ class BaseBeamStructure:
         aero_obj: None,
         aero_case: None,
         fsi_convergence_status: None,
-        free_wake: None,
-        include_unsteady_aero_force: None,
-        gamma_dot_relaxation_factor: None,
+        cs_ang_t: dict[str, Array],
+        cs_vel_t: dict[str, Array],
     ) -> DynamicStructure: ...
 
     @overload
@@ -1532,7 +1534,6 @@ class BaseBeamStructure:
         struct_case: DynamicStructure,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
-        struct_relaxation_factor: float,
         solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
@@ -1540,9 +1541,8 @@ class BaseBeamStructure:
         aero_obj: UVLM,
         aero_case: DynamicAeroCase,
         fsi_convergence_status: ConvergenceStatus,
-        free_wake: bool,
-        include_unsteady_aero_force: bool,
-        gamma_dot_relaxation_factor: float,
+        cs_ang_t: dict[str, Array],
+        cs_vel_t: dict[str, Array],
     ) -> DynamicAeroelastic: ...
 
     def base_dynamic_solve(
@@ -1550,7 +1550,6 @@ class BaseBeamStructure:
         struct_case: DynamicStructure,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
-        struct_relaxation_factor: float,
         solve_dofs: tuple[int, ...],
         load_steps: int,
         f_ext_dead: Optional[Array],
@@ -1558,9 +1557,8 @@ class BaseBeamStructure:
         aero_obj: Optional[UVLM],
         aero_case: Optional[DynamicAeroCase],
         fsi_convergence_status: Optional[ConvergenceStatus],
-        free_wake: Optional[bool],
-        include_unsteady_aero_force: Optional[bool],
-        gamma_dot_relaxation_factor: Optional[float],
+        cs_ang_t: dict[str, Array],
+        cs_vel_t: dict[str, Array],
     ) -> DynamicStructure | DynamicAeroelastic:
         r"""
         Generic dynamic solver. Both the structural dynamic solve, and aeroelastic dynamic solve, are formed as wrappers
@@ -1568,7 +1566,7 @@ class BaseBeamStructure:
         :return:
         """
 
-        if not (0.0 < struct_relaxation_factor <= 1.0):
+        if not (0.0 < self.relaxation_factor <= 1.0):
             raise ValueError("Relaxation factor must be in range (0, 1]")
 
         n_tstep = len(t)
@@ -1591,7 +1589,7 @@ class BaseBeamStructure:
         def _update(
             i_load_step: int,
             i_ts: int,
-            struct_converge_status_: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             hg_n: Array,
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
@@ -1609,7 +1607,7 @@ class BaseBeamStructure:
             Solution update for a single iteration of the nonlinear solver at a given time step and load step.
             :param i_load_step: Load step index.
             :param i_ts: Time step index.
-            :param struct_converge_status_: ConvergenceStatus object for the current iteration, used to track
+            :param struct_convergence_status_: ConvergenceStatus object for the current iteration, used to track
             convergence and print messages.
             :param hg_n: Transformation matrices at iteration varphi, [n_nodes, 4, 4].
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
@@ -1685,9 +1683,7 @@ class BaseBeamStructure:
             )[jnp.ix_(solve_dofs_arr, solve_dofs_arr)]
 
             # solve for configuration increment, [n_solve_dofs]
-            d_n_np1 = (
-                jnp.linalg.solve(sys_mat, f_res_n_solve) * struct_relaxation_factor
-            )
+            d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * self.relaxation_factor
             phi_np1 = phi_alpha.ravel().at[solve_dofs_arr].add(d_n_np1).reshape(-1, 6)
 
             # update configuration, velocities and accelerations
@@ -1705,7 +1701,7 @@ class BaseBeamStructure:
             )
 
             # update convergence status
-            struct_converge_status_.update(
+            struct_convergence_status_.update(
                 delta_disp=d_n_np1,
                 total_disp=phi_np1,
                 delta_force=f_res_n_solve,
@@ -1713,7 +1709,7 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                struct_converge_status_.print_struct_message(t[i_ts], i_load_step)
+                struct_convergence_status_.print_struct_message(t[i_ts], i_load_step)
 
             q_alpha_update = StructureMinimalStates(
                 varphi=None, v=v_np1, v_dot=v_dot_np1, a=q_alpha.a
@@ -1722,7 +1718,7 @@ class BaseBeamStructure:
             return (
                 i_load_step,
                 i_ts,
-                struct_converge_status_,
+                struct_convergence_status_,
                 hg_n,
                 phi_np1,
                 q_alpha_update,
@@ -1733,7 +1729,7 @@ class BaseBeamStructure:
         def time_step_loop(
             i_ts: int,
             struct_sol: DynamicStructure,
-            struct_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             aero_sol: None,
             fsi_convergence_status_: None,
         ) -> tuple[DynamicStructure, ConvergenceStatus, None, None]: ...
@@ -1742,7 +1738,7 @@ class BaseBeamStructure:
         def time_step_loop(
             i_ts: int,
             struct_sol: DynamicStructure,
-            struct_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             aero_sol: DynamicAeroCase,
             fsi_convergence_status_: ConvergenceStatus,
         ) -> tuple[
@@ -1752,22 +1748,28 @@ class BaseBeamStructure:
         def time_step_loop(
             i_ts: int,
             struct_sol: DynamicStructure,
-            struct_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             aero_sol: Optional[DynamicAeroCase],
             fsi_convergence_status_: Optional[ConvergenceStatus],
+            cs_ang_t_: dict[str, Array],
+            cs_vel_t_: dict[str, Array],
         ) -> tuple[
             DynamicStructure,
             ConvergenceStatus,
             Optional[DynamicAeroCase],
             Optional[ConvergenceStatus],
+            dict[str, Array],
+            dict[str, Array],
         ]:
             r"""
             Performs analysis on a single time step, including load stepping
             :param i_ts: Index of time step to solve
             :param struct_sol: Solution object, with results up to time step i_ts-1.
-            :param struct_converge_status: Convergence status object.
+            :param struct_convergence_status_: Convergence status object.
             :param aero_sol: Aero solution object, with results up to time step i_ts-1, if aero is included.
             :param fsi_convergence_status_: Convergence status object.
+            :param cs_ang_t_: Control surface angle time history, {name, [n_tstep]}.
+            :param cs_vel_t_: Control surface velocity time history, {name, [n_tstep]}.
             :return: Solution object with results up to time step i_ts.
             """
 
@@ -1811,14 +1813,20 @@ class BaseBeamStructure:
                     axis=-1,
                 )
 
+                # get control surface angles and velocities
+                cs_ang_n = {k: v[i_ts] for k, v in cs_ang_t_.items()}
+                cs_vel_n = {k: v[i_ts] for k, v in cs_vel_t_.items()}
+
                 (
                     _,
                     struct_sol,
                     aero_sol,
-                    struct_converge_status,
+                    struct_convergence_status_,
                     fsi_convergence_status_,
                     phi_alpha,
                     q_alpha,
+                    _,
+                    _,
                     _,
                     _,
                 ) = jax.lax.while_loop(
@@ -1828,29 +1836,33 @@ class BaseBeamStructure:
                         i_ts,
                         struct_sol,
                         aero_sol,
-                        struct_converge_status,
+                        struct_convergence_status_,
                         fsi_convergence_status_,
                         phi_alpha_init,
                         q_alpha_init,
                         f_aero_nm1,  # this value is for the previous timesteps force, and is propagated unaltered
                         f_aero_nm1,  # first guess for forcing at alpha is to use value from i_ts=n-1
+                        cs_ang_n,
+                        cs_vel_n,
                     ),
                 )
 
             else:
                 # solve pure structural problem
-                _, struct_converge_status, hg, phi_alpha, q_alpha, _ = load_step_loop(
-                    i_ts=i_ts,
-                    struct_converge_status=struct_converge_status,
-                    hg_alpha=struct_sol.hg[i_ts - 1, ...],
-                    phi_alpha=phi_alpha_init,
-                    q_alpha=q_alpha_init,
-                    f_ext_aero_steps=None,
+                _, struct_convergence_status_, hg, phi_alpha, q_alpha, _ = (
+                    load_step_loop(
+                        i_ts=i_ts,
+                        struct_convergence_status_=struct_convergence_status_,
+                        hg_alpha=struct_sol.hg[i_ts - 1, ...],
+                        phi_alpha=phi_alpha_init,
+                        q_alpha=q_alpha_init,
+                        f_ext_aero_steps=None,
+                    )
                 )
 
             # print message where we only require one message per timestep
             if VERBOSITY_LEVEL.value == VerbosityLevel.NORMAL.value:
-                struct_converge_status.print_struct_message(
+                struct_convergence_status_.print_struct_message(
                     t=struct_sol.t[i_ts], i_load_step=load_steps - 1
                 )
                 if include_aero and fsi_convergence_status_ is not None:
@@ -1878,8 +1890,6 @@ class BaseBeamStructure:
                     aero_sol is None
                     or aero_obj is None
                     or fsi_convergence_status_ is None
-                    or free_wake is None
-                    or include_unsteady_aero_force is None
                 ):
                     raise ValueError("Missing aero arguments")
 
@@ -1887,7 +1897,7 @@ class BaseBeamStructure:
                     i_ts=i_ts,
                     rmat=hg_n[:, :3, :3],
                     x0_aero=aero_obj.x0_b,
-                    include_unsteady=include_unsteady_aero_force,
+                    include_unsteady=aero_obj.include_unsteady_force,
                 )
 
             else:
@@ -1951,18 +1961,27 @@ class BaseBeamStructure:
             )
             struct_sol.f_res = struct_sol.f_res.at[i_ts, ...].set(f_res)
 
-            return struct_sol, struct_converge_status, aero_sol, fsi_convergence_status_
+            return (
+                struct_sol,
+                struct_convergence_status_,
+                aero_sol,
+                fsi_convergence_status_,
+                cs_ang_t_,
+                cs_vel_t_,
+            )
 
         def fsi_convergence_loop(
             i_ts: int,
             struct_sol: DynamicStructure,
             aero_sol: DynamicAeroCase,
-            struct_converge_status: ConvergenceStatus,
-            fsi_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
+            fsi_convergence_status_: ConvergenceStatus,
             phi_alpha_init: Array,
             q_alpha_init: StructureMinimalStates,
             f_aero_nm1: Array,
             f_aero_alpha_prev: Array,
+            cs_ang_n: dict[str, Array],
+            cs_vel_n: dict[str, Array],
         ) -> tuple[
             int,
             DynamicStructure,
@@ -1973,6 +1992,8 @@ class BaseBeamStructure:
             StructureMinimalStates,
             Array,
             Array,
+            dict[str, Array],
+            dict[str, Array],
         ]:
 
             # obtain coordinates at timestep (not alpha)
@@ -1986,13 +2007,7 @@ class BaseBeamStructure:
             hg_n = self.update_hg(hg=struct_sol.hg[i_ts - 1, ...], phi=phi_n)
             hg_dot = self.make_hg_dot(hg=hg_n, v=v_n)
 
-            if (
-                aero_obj is None
-                or free_wake is None
-                or struct_sol.f_ext_aero is None
-                or include_unsteady_aero_force is None
-                or gamma_dot_relaxation_factor is None
-            ):
+            if aero_obj is None or struct_sol.f_ext_aero is None:
                 raise ValueError("Missing aero parameters")
 
             # evaluate aerodynamic forcing on beam
@@ -2002,16 +2017,16 @@ class BaseBeamStructure:
                 hg=hg_n,
                 hg_dot=hg_dot,
                 static=False,
-                free_wake=free_wake,
                 horseshoe=False,
-                gamma_dot_relaxation=gamma_dot_relaxation_factor,
+                cs_ang_n=cs_ang_n,
+                cs_vel_n=cs_vel_n,
             )
 
             f_aero_n = aero_sol.project_forcing_to_beam(
                 i_ts=i_ts,
                 rmat=hg_n[:, :3, :3],
                 x0_aero=aero_obj.x0_b,
-                include_unsteady=include_unsteady_aero_force,
+                include_unsteady=aero_obj.include_unsteady_force,
             )
 
             # aerodynamic force at alpha point, subsequently divided into load steps
@@ -2024,21 +2039,23 @@ class BaseBeamStructure:
             )
 
             # reset convergence status
-            struct_converge_status.reset_status()
+            struct_convergence_status_.reset_status()
 
             # solve structural problem for given aero load
-            _, struct_converge_status, hg_out, phi_alpha, q_alpha, _ = load_step_loop(
-                i_ts,
-                struct_converge_status,
-                struct_sol.hg[i_ts - 1, ...],
-                phi_alpha_init,
-                q_alpha_init,
-                f_aero_alpha_steps,
+            _, struct_convergence_status_, hg_out, phi_alpha, q_alpha, _ = (
+                load_step_loop(
+                    i_ts,
+                    struct_convergence_status_,
+                    struct_sol.hg[i_ts - 1, ...],
+                    phi_alpha_init,
+                    q_alpha_init,
+                    f_aero_alpha_steps,
+                )
             )
 
             # update the FSI convergence object
             # note that for convenience we use the alpha properties
-            fsi_converge_status.update(
+            fsi_convergence_status_.update(
                 delta_disp=(phi_alpha_init - phi_alpha).ravel()[solve_dofs_arr],
                 total_disp=phi_alpha.ravel()[solve_dofs_arr],
                 delta_force=(f_aero_alpha - f_aero_alpha_prev).ravel()[solve_dofs_arr],
@@ -2046,24 +2063,26 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                fsi_converge_status.print_fsi_message(t=t[i_ts])
+                fsi_convergence_status_.print_fsi_message(t=t[i_ts])
 
             return (
                 i_ts,
                 struct_sol,
                 aero_sol,
-                struct_converge_status,
-                fsi_converge_status,
+                struct_convergence_status_,
+                fsi_convergence_status_,
                 phi_alpha,
                 q_alpha,
                 f_aero_nm1,
                 f_aero_alpha,
+                cs_ang_n,
+                cs_vel_n,
             )
 
         def struct_convergence_loop(
             i_load_step: int,
             i_ts: int,
-            struct_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             hg_alpha: Array,
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
@@ -2080,7 +2099,7 @@ class BaseBeamStructure:
             Convergence loop within each load step of a time step.
             :param i_load_step: Load step index.
             :param i_ts: Time step index.
-            :param struct_converge_status: ConvergenceStatus object to update with convergence information during load
+            :param struct_convergence_status_: ConvergenceStatus object to update with convergence information during load
             stepping.
             :param hg_alpha: Node transformations at the beginning of the load step, [n_nodes, 4, 4].
             :param phi_alpha: Node configuration increments in algebra space, [n_nodes, 6].
@@ -2090,16 +2109,16 @@ class BaseBeamStructure:
             optional aerodynamic forcing.
             """
 
-            struct_converge_status.reset_status()
+            struct_convergence_status_.reset_status()
 
-            _, _, struct_converge_status, hg_solve, phi_alpha, q_alpha, _ = (
+            _, _, struct_convergence_status_, hg_solve, phi_alpha, q_alpha, _ = (
                 jax.lax.while_loop(
                     lambda args_: ~args_[2].get_status(),
                     lambda args_: _update(*args_),
                     (
                         i_load_step,
                         i_ts,
-                        struct_converge_status,
+                        struct_convergence_status_,
                         hg_alpha,
                         phi_alpha,
                         q_alpha,
@@ -2109,11 +2128,11 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                struct_converge_status.print_struct_message(t[i_ts], i_load_step)
+                struct_convergence_status_.print_struct_message(t[i_ts], i_load_step)
 
             return (
                 i_ts,
-                struct_converge_status,
+                struct_convergence_status_,
                 hg_solve,
                 phi_alpha,
                 q_alpha,
@@ -2122,7 +2141,7 @@ class BaseBeamStructure:
 
         def load_step_loop(
             i_ts: int,
-            struct_converge_status: ConvergenceStatus,
+            struct_convergence_status_: ConvergenceStatus,
             hg_alpha: Array,
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
@@ -2138,7 +2157,7 @@ class BaseBeamStructure:
             r"""
             Performs load stepping iterations for a given time step
             :param i_ts: Timestep index for which to perform load stepping
-            :param struct_converge_status: ConvergenceStatus object to update with load stepping convergence information
+            :param struct_convergence_status_: ConvergenceStatus object to update with load stepping convergence information
             :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4]
             :param phi_alpha: Nodal updates to the configuration in the algebra space, [n_nodes, 6]
             :param q_alpha: Minimal states at intermediate alpha step
@@ -2151,7 +2170,7 @@ class BaseBeamStructure:
                 lambda i_load_step, args: struct_convergence_loop(i_load_step, *args),
                 (
                     i_ts,
-                    struct_converge_status,
+                    struct_convergence_status_,
                     hg_alpha,
                     phi_alpha,
                     q_alpha,
@@ -2159,11 +2178,18 @@ class BaseBeamStructure:
                 ),
             )
 
-        struct_case, _, aero_case, _ = jax.lax.fori_loop(
+        struct_case, _, aero_case, _, _, _ = jax.lax.fori_loop(
             1,
             n_tstep,
             lambda i_ts, args: time_step_loop(i_ts, *args),
-            (struct_case, struct_convergence_status, aero_case, fsi_convergence_status),
+            (
+                struct_case,
+                struct_convergence_status,
+                aero_case,
+                fsi_convergence_status,
+                cs_ang_t,
+                cs_vel_t,
+            ),
         )
 
         if include_aero:
@@ -2188,8 +2214,6 @@ class BaseBeamStructure:
         f_ext_aero: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         load_steps: int = 1,
-        struct_relaxation_factor: float = 1.0,
-        spectral_radius: float = 0.9,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
@@ -2202,8 +2226,6 @@ class BaseBeamStructure:
         :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces.
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
-        :param struct_relaxation_factor: Relaxation factor for Newton-Raphson iterations, in the range (0, 1].
-        :param spectral_radius: Spectral radius for the time integrator, in the range [0, 1].
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
 
@@ -2243,7 +2265,9 @@ class BaseBeamStructure:
 
         # time integration parameters
         dt: Array = jnp.array(dt)
-        self.time_integrator = TimeIntegrator(spectral_radius=spectral_radius, dt=dt)
+        self.time_integrator = TimeIntegrator(
+            spectral_radius=self.spectral_radius, dt=dt
+        )
 
         def evaluate_initial_equilibrium(
             init_state__: DynamicStructureSnapshot,
@@ -2334,18 +2358,16 @@ class BaseBeamStructure:
         )
 
         return self.base_dynamic_solve(
-            dynamic_struct,
-            converge_status,
-            t,
-            struct_relaxation_factor,
-            solve_dofs,
-            load_steps,
-            f_ext_dead,
-            f_ext_follower,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            struct_case=dynamic_struct,
+            struct_convergence_status=converge_status,
+            t=t,
+            solve_dofs=solve_dofs,
+            load_steps=load_steps,
+            f_ext_dead=f_ext_dead,
+            f_ext_follower=f_ext_follower,
+            aero_obj=None,
+            aero_case=None,
+            fsi_convergence_status=None,
+            cs_ang_t=dict(),
+            cs_vel_t=dict(),
         )

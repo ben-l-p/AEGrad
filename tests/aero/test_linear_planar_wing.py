@@ -54,7 +54,12 @@ class TestLinearAero:
         hg = hg.at[:, :3, 3].set(beam_coords)
 
         # nonlinear case
-        uvlm = UVLM([cls.disc], jnp.arange(0, cls.n + 1), kernel=biot_savart_cutoff)
+        uvlm = UVLM(
+            [cls.disc],
+            jnp.arange(0, cls.n + 1),
+            kernel=biot_savart_cutoff,
+            gamma_dot_relaxation=1.0,
+        )
         uvlm.set_design_variables(cls.dt, flowfield, x_grid, hg)
         case = uvlm.solve_static()
 
@@ -86,7 +91,7 @@ class TestLinearAero:
 
         # nonlinear case
         dynamic_case = uvlm.solve_prescribed_dynamic(
-            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+            init_case=static_case, hg_t=hg_t, hg_dot_t=hg_dot_t
         )
         if plot:
             dynamic_case.plot(Path("./test_outputs/heaving_test_nonlinear"))
@@ -176,7 +181,7 @@ class TestLinearAero:
 
         # nonlinear case
         dynamic_case = uvlm.solve_prescribed_dynamic(
-            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+            init_case=static_case, hg_t=hg_t, hg_dot_t=hg_dot_t
         )
         if plot:
             dynamic_case.plot(Path("./test_outputs/pitching_test_nonlinear"))
@@ -266,7 +271,7 @@ class TestLinearAero:
 
         # nonlinear case
         dynamic_case = uvlm.solve_prescribed_dynamic(
-            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+            init_case=static_case, hg_t=hg_t, hg_dot_t=hg_dot_t
         )
         if plot:
             dynamic_case.plot(
@@ -344,7 +349,7 @@ class TestLinearAero:
 
         # nonlinear case
         dynamic_case = uvlm.solve_prescribed_dynamic(
-            static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+            init_case=static_case, hg_t=hg_t, hg_dot_t=hg_dot_t
         )
         if plot:
             dynamic_case.plot(Path("./test_outputs/gust_test_nonlinear"))

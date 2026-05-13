@@ -88,11 +88,15 @@ class AeroDesignVariables(DesignVariables):
         self,
         x0_aero: ArrayList,
         flowfield: dict[str, Array],
+        cs_ang_t: dict[str, Array],
+        cs_vel_t: dict[str, Array],
         f_shape: tuple[int, ...],
     ):
         super().__init__()
         self.x0_aero: ArrayList = x0_aero
         self.flowfield: dict[str, Array] = flowfield
+        self.cs_ang_t: dict[str, Array] = cs_ang_t
+        self.cs_vel_t: dict[str, Array] = cs_vel_t
 
         self.f_shape: tuple[int, ...] = f_shape
         self.f_size: int = reduce(mul, f_shape, 1)
@@ -110,7 +114,23 @@ class AeroDesignVariables(DesignVariables):
         )
         for k in self.flowfield.keys():
             self.flowfield[k] += other.flowfield[k]
+        for k in self.cs_ang_t.keys():
+            self.cs_ang_t[k] += other.cs_ang_t[k]
+            self.cs_vel_t[k] += other.cs_vel_t[k]
         return self
+
+    def get_cs_n(self, i_ts: int) -> tuple[dict[str, Array], dict[str, Array]]:
+        r"""
+        Obtain the angles and velocities for all control surfaces at the current timestep.
+        :param i_ts: Timestep index.
+        :return: Dictionary of {name: value} pairs for control angles and velocities.
+        """
+
+        # get control surface deflections from design variables
+        cs_ang_n = {k: v[i_ts, ...] for k, v in self.cs_ang_t}
+        cs_vel_n = {k: v[i_ts, ...] for k, v in self.cs_vel_t}
+
+        return cs_ang_n, cs_vel_n
 
     def premultiply_adj(self, adj: Array) -> AeroDesignVariables:
         return AeroDesignVariables(
@@ -124,6 +144,12 @@ class AeroDesignVariables(DesignVariables):
                 k: jnp.einsum("ij,j...->i...", adj, v)
                 for k, v in self.flowfield.items()
             },
+            cs_ang_t={
+                k: jnp.einsum("ij,j...->i...", adj, v) for k, v in self.cs_ang_t.items()
+            },
+            cs_vel_t={
+                k: jnp.einsum("ij,j...->i...", adj, v) for k, v in self.cs_vel_t.items()
+            },
             f_shape=(adj.shape[1],),
         )
 
@@ -131,6 +157,8 @@ class AeroDesignVariables(DesignVariables):
         return {
             "x0_aero": self.x0_aero,
             "flowfield": self.flowfield,
+            "cs_ang_t": self.cs_ang_t,
+            "cs_vel_t": self.cs_vel_t,
         }
 
     def plot(
@@ -177,7 +205,7 @@ class AeroDesignVariables(DesignVariables):
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "x0_aero", "flowfield"
+        return "x0_aero", "flowfield", "cs_ang_t", "cs_vel_t"
 
     @staticmethod
     def _static_names() -> Sequence[str]:

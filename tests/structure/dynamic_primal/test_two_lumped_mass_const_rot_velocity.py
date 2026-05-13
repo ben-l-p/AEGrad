@@ -27,10 +27,10 @@ class TestTwoXLumpedMassConstXRotVelocity:
         # solve to initialise beam with centrifugal deformation, such that there are no oscillations
         if cls.beam_direction_index != cls.v_direction_index:
             dx = (
-                    m_lumped
-                    * r_ext ** 2
-                    * omega ** 2
-                    / (k_coeffs[0] + m_lumped * r_ext * omega ** 2)
+                m_lumped
+                * r_ext**2
+                * omega**2
+                / (k_coeffs[0] + m_lumped * r_ext * omega**2)
             )
         else:
             dx = 0.0
@@ -43,10 +43,18 @@ class TestTwoXLumpedMassConstXRotVelocity:
         )
         conn = jnp.array([[0, 1]])
 
-        m_mat_lumped = jnp.broadcast_to(block_diag(jnp.eye(3) * m_lumped, jnp.eye(3) * j_lumped)[None, :], (2, 6, 6))
+        m_mat_lumped = jnp.broadcast_to(
+            block_diag(jnp.eye(3) * m_lumped, jnp.eye(3) * j_lumped)[None, :], (2, 6, 6)
+        )
 
-        struct = BeamStructure(num_nodes=2, connectivity=conn, y_vector=cls.y_vect,
-                               m_lumped_index=jnp.array((0, 1), dtype=int))
+        struct = BeamStructure(
+            num_nodes=2,
+            connectivity=conn,
+            y_vector=cls.y_vect,
+            m_lumped_index=jnp.array((0, 1), dtype=int),
+            spectral_radius=1.0,
+            relaxation_factor=1.0,
+        )
         struct.set_design_variables(
             coords, jnp.diag(k_coeffs), None, m_lumped=m_mat_lumped
         )
@@ -80,18 +88,16 @@ class TestTwoXLumpedMassConstXRotVelocity:
             f_ext_aero=None,
             f_ext_dead=None,
             f_ext_follower=None,
-            spectral_radius=1.0,
-            struct_relaxation_factor=1.0,
         )
 
         expected_theta = omega * jnp.arange(n_tstep) * dt
 
         if cls.beam_direction_index != cls.v_direction_index:
-            expected_f = m_lumped * r_ext * omega ** 2
+            expected_f = m_lumped * r_ext * omega**2
             x0_expected = jnp.zeros((n_tstep, 3))
 
             third_dir = (
-                    {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
+                {0, 1, 2} - {cls.beam_direction_index, cls.v_direction_index}
             ).pop()
             third_dir_sign = jnp.sum(
                 jnp.cross(

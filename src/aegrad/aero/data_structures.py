@@ -59,6 +59,8 @@ class DynamicAeroCase:
         gamma_w: ArrayList,
         f_steady: ArrayList,
         f_unsteady: Optional[ArrayList],
+        cs_ang: dict[str, Array],
+        cs_vel: dict[str, Array],
         kernels: Sequence[KernelFunction],
         mirror_point: Optional[Array],
         mirror_normal: Optional[Array],
@@ -95,6 +97,8 @@ class DynamicAeroCase:
         self.gamma_w: ArrayList = gamma_w
         self.f_steady: ArrayList = f_steady
         self.f_unsteady: Optional[ArrayList] = f_unsteady
+        self.cs_ang: dict[str, Array] = cs_ang
+        self.cs_vel: dict[str, Array] = cs_vel
         self.t: Array = t
         self.i_ts: Array | int = i_ts
 
@@ -205,6 +209,22 @@ class DynamicAeroCase:
         self._f_unsteady = f_unsteady_list
 
     @property
+    def cs_ang(self) -> dict[str, Array]:
+        return self._cs_ang
+
+    @cs_ang.setter
+    def cs_ang(self, value: dict[str, Array]) -> None:
+        self._cs_ang = value
+
+    @property
+    def cs_vel(self) -> dict[str, Array]:
+        return self._cs_vel
+
+    @cs_vel.setter
+    def cs_vel(self, value: dict[str, Array]) -> None:
+        self._cs_vel = value
+
+    @property
     def t(self) -> Array:
         return self._t
 
@@ -273,6 +293,8 @@ class DynamicAeroCase:
             gamma_w=self.gamma_w[i_surf][i_ts, ...],
             f_steady=self.f_steady[i_surf][i_ts, ...],
             f_unsteady=self.f_unsteady[i_surf][i_ts, ...],
+            cs_ang={k: v[i_ts, ...] for k, v in self.cs_ang.items()},
+            cs_vel={k: v[i_ts, ...] for k, v in self.cs_vel.items()},
             surf_b_name=self.surf_b_names[i_surf],
             surf_w_name=self.surf_w_names[i_surf],
             i_ts=i_ts,
@@ -577,6 +599,8 @@ class DynamicAeroCase:
             f_unsteady=self._f_unsteady.index_all(i_ts, ...)
             if self._f_unsteady is not None
             else None,
+            cs_ang={k: v[i_ts, ...] for k, v in self.cs_ang.items()},
+            cs_vel={k: v[i_ts, ...] for k, v in self.cs_vel.items()},
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             t=self._t[i_ts],
@@ -634,6 +658,8 @@ class DynamicAeroCase:
             "_gamma_w",
             "_f_steady",
             "_f_unsteady",
+            "_cs_ang",
+            "_cs_vel",
             "_t",
         )
 
@@ -662,6 +688,8 @@ class AeroSnapshot(DynamicAeroCase):
         gamma_w: ArrayList,
         f_steady: ArrayList,
         f_unsteady: Optional[ArrayList],
+        cs_ang: dict[str, Array],
+        cs_vel: dict[str, Array],
         kernels: Sequence[KernelFunction],
         mirror_point: Optional[Array],
         mirror_normal: Optional[Array],
@@ -693,6 +721,8 @@ class AeroSnapshot(DynamicAeroCase):
             gamma_w=gamma_w,
             f_steady=f_steady,
             f_unsteady=f_unsteady,
+            cs_ang=cs_ang,
+            cs_vel=cs_vel,
             kernels=kernels,
             mirror_point=mirror_point,
             mirror_normal=mirror_normal,
@@ -801,6 +831,22 @@ class AeroSnapshot(DynamicAeroCase):
         self._f_unsteady = value.index_all(None, ...)
 
     @property
+    def cs_ang(self) -> dict[str, Array]:
+        return {k: v[0] for k, v in self._cs_ang.items()}
+
+    @cs_ang.setter
+    def cs_ang(self, value: dict[str, Array]) -> None:
+        self._cs_ang = {k: v[None, ...] for k, v in value}
+
+    @property
+    def cs_vel(self) -> dict[str, Array]:
+        return {k: v[0] for k, v in self._cs_vel.items()}
+
+    @cs_vel.setter
+    def cs_vel(self, value: dict[str, Array]) -> None:
+        self._cs_vel = {k: v[None, ...] for k, v in value}
+
+    @property
     def t(self) -> Array:
         return self._t[0]
 
@@ -841,6 +887,8 @@ class AeroSnapshot(DynamicAeroCase):
             gamma_w=_expand_to_dyn(self.gamma_w),
             f_steady=_expand_to_dyn(self.f_steady),
             f_unsteady=_expand_to_dyn(self.f_unsteady),
+            cs_ang={k: jnp.full(n_tstep, v) for k, v in self.cs_ang.items()},
+            cs_vel={k: jnp.full(n_tstep, v) for k, v in self.cs_vel.items()},
             kernels=self.kernels,
             mirror_point=self.mirror_point,
             mirror_normal=self.mirror_normal,
@@ -869,6 +917,8 @@ class AeroSnapshot(DynamicAeroCase):
             gamma_w=self.gamma_w[i_surf],
             f_steady=self.f_steady[i_surf],
             f_unsteady=self.f_unsteady[i_surf],
+            cs_ang=self.cs_ang,
+            cs_vel=self.cs_vel,
             surf_b_name=self.surf_b_names[i_surf],
             surf_w_name=self.surf_w_names[i_surf],
             i_ts=self.i_ts,
@@ -913,6 +963,8 @@ class AeroSurfaceSnapshot:
         gamma_w: Array,
         f_steady: Array,
         f_unsteady: Array,
+        cs_ang: dict[str, Array],
+        cs_vel: dict[str, Array],
         surf_b_name: str,
         surf_w_name: str,
         i_ts: int,
@@ -942,6 +994,8 @@ class AeroSurfaceSnapshot:
         self.gamma_w: Array = gamma_w
         self.f_steady: Array = f_steady
         self.f_unsteady: Array = f_unsteady
+        self.cs_ang: dict[str, Array] = cs_ang
+        self.cs_vel: dict[str, Array] = cs_vel
         self.surf_b_name: str = surf_b_name
         self.surf_w_name: str = surf_w_name
         self.i_ts: int = i_ts

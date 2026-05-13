@@ -66,6 +66,7 @@ class TestVarWakeDisc:
                 grid_shapes=[disc],
                 dof_mapping=jnp.arange(0, n + 1),
                 variable_wake_disc=variable_wake,
+                gamma_dot_relaxation=1.0,
             )
 
             uvlm.set_design_variables(
@@ -79,7 +80,7 @@ class TestVarWakeDisc:
             static_case = uvlm.solve_static()
 
             dynamic_case = uvlm.solve_prescribed_dynamic(
-                static_case, hg_t, hg_dot_t, False, gamma_dot_relaxation=1.0
+                init_case=static_case, hg_t=hg_t, hg_dot_t=hg_dot_t
             )
             gamma_b.append(dynamic_case.gamma_b[0])
 
