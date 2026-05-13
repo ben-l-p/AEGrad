@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: aegrad
+Version: 0.1.0
+Summary: Solver for obtaining design variable sensitivites of UVLM/nonlinear beam aeroelastic simulations.
+Author: Ben Preston
+Requires-Python: ==3.12.*
+Requires-Dist: jax>=0.9.2
+Requires-Dist: numpy>=2.4.4
+Requires-Dist: pytest>=9.0.3
+Requires-Dist: ruff>=0.15.10
+Requires-Dist: tensorboard>=2.20.0
+Requires-Dist: vtk>=9.6.1
+Requires-Dist: xprof>=2.22.2
+Requires-Dist: pytest>=9.0.3

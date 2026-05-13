@@ -12,20 +12,8 @@ from jax import Array
 from aegrad.utils.utils import make_pytree
 
 
-def optional_add(*arrs: Optional[Array]) -> Optional[Array]:
-    r"""
-    Routine to add arrays where some may be None
-    :param arrs: Sequence of optional arrays
-    :return: Sum of arrays, or None if no passed arrays
-    """
-    if len(arrs) == 0 or all([arr is None for arr in arrs]):
-        return None
-    else:
-        return sum([arr for arr in arrs if arr is not None])  # type: ignore
-
-
 def check_arr_shape(
-        arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
+    arr: Array, expected_shape: tuple[Optional[int], ...], name: Optional[str]
 ) -> None:
     """Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.
     :param arr: Input array to check.
@@ -226,17 +214,24 @@ class ArrayList(UserList[Array]):
         :param arr_list_shapes: ArrayListShape containing the shapes of the arrays to unravel into.
         :return: ArrayList containing the unravelled arrays.
         """
+
+        if vect.size != sum(arr_list_shapes.sizes):
+            raise ValueError(
+                f"Input vector must have the same number of elements as arr_list_shapes. Vector has "
+                f"{vect.size} elements, but shape requires {sum(arr_list_shapes.sizes)}."
+            )
+
         arrs = []
         idx = 0
         for shape in arr_list_shapes.shapes:
             size = math.prod(shape)
-            arrs.append(vect[idx: idx + size].reshape(shape))
+            arrs.append(vect[idx : idx + size].reshape(shape))
             idx += size
         return cls(arrs)
 
     def index_all(
-            self,
-            *idx: Optional[EllipsisType | int | slice | Array],
+        self,
+        *idx: Optional[EllipsisType | int | slice | Array],
     ) -> ArrayList:
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(varphi).
@@ -373,8 +368,9 @@ def _(arrs: ArrayList, axes: int | Sequence[int]) -> ArrayList:
     return ArrayList([split_to_vertex(arr, axes) for arr in arrs])
 
 
-def vect_to_arrs(vect: Array, shapes: OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]]) -> OrderedDict[
-    str, Optional[Array | ArrayList]]:
+def vect_to_arrs(
+    vect: Array, shapes: OrderedDict[str, Optional[tuple[int, ...] | ArrayListShape]]
+) -> OrderedDict[str, Optional[Array | ArrayList]]:
     r"""
     Reconstruct a dictionary with a combination of key-Array and key-ArrayList pairs. The shapes of the arrays and array
     lists are specified in the shapes argument, which is an ordered dictionary mapping
@@ -389,14 +385,58 @@ def vect_to_arrs(vect: Array, shapes: OrderedDict[str, Optional[tuple[int, ...] 
     for name, shape in shapes.items():
         if isinstance(shape, tuple):
             sz = reduce(mul, shape, 1)
-            out_vals[name] = vect[cnt:cnt + sz].reshape(shape)
+            out_vals[name] = vect[cnt : cnt + sz].reshape(shape)
             cnt += sz
         elif isinstance(shape, ArrayListShape):
             sz = shape.total_size()
-            out_vals[name] = ArrayList.from_vector(vect=vect[cnt:cnt + sz], arr_list_shapes=shape)
+            out_vals[name] = ArrayList.from_vector(
+                vect=vect[cnt : cnt + sz], arr_list_shapes=shape
+            )
             cnt += sz
         elif shape is None:
             out_vals[name] = None
         else:
             raise TypeError("Shape must be a tuple or an ArrayListShape.")
     return out_vals
+
+
+def construct_named_block_jacobian(
+    entries: tuple[dict, ...],
+    keys: tuple[str, ...],
+    widths: Sequence[int],
+    heights: Sequence[int],
+) -> Array:
+    r"""
+    Assemble a block Jacobian matrix from named partial derivatives.
+    :param entries: One dict per residual, mapping variable names to Jacobians.
+    :param keys: Variable names that define the column blocks.
+    :param widths: Widths of the blocks.
+    :param heights: Heights of the blocks.
+    :return: Dense 2-D Jacobian assembled from the blocks.
+    """
+    n_block_rows = len(entries)
+    n_block_cols = len(keys)
+
+    if len(entries) != len(heights):
+        raise ValueError(
+            f"Height dimensions do not match. Has {len(entries)} entries versus {len(heights)} heights."
+        )
+    if len(keys) != len(widths):
+        raise ValueError(
+            f"Width dimensions do not match. Has {len(keys)} keys versus {len(widths)} widths."
+        )
+
+    # Build grid of 2-D blocks, substituting absent entries for zero blocks.
+    grid: list[list[Array]] = []
+    for i in range(n_block_rows):
+        block_height = heights[i]
+        row = []
+        for j in range(n_block_cols):
+            block_width = widths[j]
+
+            if keys[j] in entries[i].keys():
+                row.append(entries[i][keys[j]])
+            else:
+                row.append(jnp.zeros((block_height, block_width)))
+        grid.append(row)
+    return jnp.block(grid)

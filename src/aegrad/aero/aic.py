@@ -10,11 +10,11 @@ from aegrad.utils.constants import AIC_BATCH_SIZE
 
 
 def compute_aic_grid(
-        c: Array,
-        n: Optional[Array],
-        zeta: Array,
-        kernel: KernelFunction,
-        batch_size: Optional[int] = AIC_BATCH_SIZE,
+    c: Array,
+    n: Optional[Array],
+    zeta: Array,
+    kernel: KernelFunction,
+    batch_size: Optional[int] = AIC_BATCH_SIZE,
 ):
     """
     Compute the aerodynamic influence coefficient (AIC) across grids of points.
@@ -42,27 +42,34 @@ def compute_aic_grid(
     if not c_m or not c_n or not m_panels or not n_panels:
         return jnp.zeros((c_m, c_n, m_panels, n_panels))
 
-    @jax.checkpoint
     def row(args: tuple) -> Array:
         ci, ni = args
-        m_influence = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)  # [m*(varphi+1), 3]
-        m_influence_ni = jnp.dot(m_influence, ni).reshape(m_panels, n_panels + 1)  # [m, varphi+1]
-        n_influence = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)  # [(m+1)*varphi, 3]
-        n_influence_ni = jnp.dot(n_influence, ni).reshape(m_panels + 1, n_panels)  # [m+1, varphi]
-        return -jnp.diff(m_influence_ni, axis=1) + jnp.diff(n_influence_ni, axis=0)  # [m, varphi]
+        m_influence = vmap(kernel, (None, 0), 0)(ci, m_vect_flat)
+        m_influence_ni = jnp.dot(m_influence, ni).reshape(
+            m_panels, n_panels + 1
+        )  # [m, varphi+1]
+        n_influence = vmap(kernel, (None, 0), 0)(ci, n_vect_flat)
+        n_influence_ni = jnp.dot(n_influence, ni).reshape(
+            m_panels + 1, n_panels
+        )  # [m+1, varphi]
+        return -jnp.diff(m_influence_ni, axis=1) + jnp.diff(
+            n_influence_ni, axis=0
+        )  # [m, varphi]
 
     return jax.lax.map(
-        row, (c.reshape(-1, 3), n.reshape(-1, 3) if n is not None else None), batch_size=batch_size
+        row,
+        (c.reshape(-1, 3), n.reshape(-1, 3) if n is not None else None),
+        batch_size=batch_size,
     ).reshape(c_m, c_n, m_panels, n_panels)
 
 
 def compute_aic_sys(
-        zetas: ArrayList,
-        cs: ArrayList,
-        ns: ArrayList,
-        kernels: Sequence[KernelFunction],
-        mirror_point: Optional[Array] = None,
-        mirror_normal: Optional[Array] = None,
+    zetas: ArrayList,
+    cs: ArrayList,
+    ns: ArrayList,
+    kernels: Sequence[KernelFunction],
+    mirror_point: Optional[Array] = None,
+    mirror_normal: Optional[Array] = None,
 ) -> list[list[Array]]:
     """
     Compute the AIC matrix for a system of elements. Returns a list of AIC matrices, one for each element.
@@ -122,14 +129,14 @@ def assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
 
 
 def compute_aic_solve(
-        cs: ArrayList,
-        ns: ArrayList,
-        zetas_b: ArrayList,
-        zetas_w: Optional[ArrayList],
-        kernels_b: Sequence[KernelFunction],
-        kernels_w: Optional[Sequence[KernelFunction]],
-        mirror_point: Optional[Array],
-        mirror_normal: Optional[Array],
+    cs: ArrayList,
+    ns: ArrayList,
+    zetas_b: ArrayList,
+    zetas_w: Optional[ArrayList],
+    kernels_b: Sequence[KernelFunction],
+    kernels_w: Optional[Sequence[KernelFunction]],
+    mirror_point: Optional[Array],
+    mirror_normal: Optional[Array],
 ) -> Array:
     aic_b_mats = compute_aic_sys(
         cs=cs,
@@ -141,7 +148,8 @@ def compute_aic_solve(
     )
 
     if zetas_w is not None:
-        if kernels_w is None: raise ValueError("kernels_w must not be None")
+        if kernels_w is None:
+            raise ValueError("kernels_w must not be None")
         aic_w_mats = compute_aic_sys(
             cs=cs,
             ns=ns,
@@ -157,7 +165,7 @@ def compute_aic_solve(
 
 
 def add_wake_influence(
-        aic_bs: list[list[Array]], aic_ws: list[list[Array]]
+    aic_bs: list[list[Array]], aic_ws: list[list[Array]]
 ) -> list[list[Array]]:
     r"""
     Lump the wake influence onto the last column of the bound AIC matrices.
@@ -174,11 +182,11 @@ def add_wake_influence(
 
 
 def v_ind_vmap(
-        c: Array,
-        zeta: Array,
-        gamma: Array,
-        kernel: KernelFunction,
-        batch_size: Optional[int] = AIC_BATCH_SIZE,
+    c: Array,
+    zeta: Array,
+    gamma: Array,
+    kernel: KernelFunction,
+    batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> Array:
     """
     Compute einsum("ijklm,kl->ijm", aic_vmap(c, zeta, kernel), gamma) without
@@ -196,7 +204,7 @@ def v_ind_vmap(
     zeta_flat = zeta.reshape(-1, 2, 3)
     gamma_flat = gamma.ravel()  # [zeta_m * zeta_n]
 
-    @jax.checkpoint
+    # @jax.checkpoint
     def row(ci: Array) -> Array:
         influence = vmap(kernel, (None, 0), 0)(ci, zeta_flat)  # [zeta_m * zeta_n, 3]
         return jnp.einsum("lm,l->m", influence, gamma_flat)  # [3]
@@ -206,13 +214,13 @@ def v_ind_vmap(
 
 
 def compute_v_ind[T: Array | ArrayList](
-        cs: T,
-        zetas: ArrayList,
-        gammas: ArrayList,
-        kernels: Sequence[KernelFunction],
-        mirror_point: Optional[Array],
-        mirror_normal: Optional[Array],
-        batch_size: Optional[int] = AIC_BATCH_SIZE,
+    cs: T,
+    zetas: ArrayList,
+    gammas: ArrayList,
+    kernels: Sequence[KernelFunction],
+    mirror_point: Optional[Array],
+    mirror_normal: Optional[Array],
+    batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> T:
     """
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)

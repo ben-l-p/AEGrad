@@ -35,10 +35,10 @@ class ConvergenceStatus:
 
         # make sure settings allow for loop to be broken
         if (
-                convergence_settings.rel_disp_tol is None
-                and convergence_settings.abs_disp_tol is None
-                and convergence_settings.rel_force_tol is None
-                and convergence_settings.abs_force_tol is None
+            convergence_settings.rel_disp_tol is None
+            and convergence_settings.abs_disp_tol is None
+            and convergence_settings.rel_force_tol is None
+            and convergence_settings.abs_force_tol is None
         ):
             if convergence_settings.max_n_iter is None:
                 raise ValueError(
@@ -71,11 +71,11 @@ class ConvergenceStatus:
         self.has_nan: Array = jnp.zeros((), dtype=bool)
 
     def update(
-            self,
-            delta_disp: Optional[Array],
-            total_disp: Optional[Array],
-            delta_force: Optional[Array],
-            total_force: Optional[Array],
+        self,
+        delta_disp: Optional[Array],
+        total_disp: Optional[Array],
+        delta_force: Optional[Array],
+        total_force: Optional[Array],
     ) -> None:
         r"""
         :param delta_disp: Difference in displacement vector between current and previous iteration.
@@ -89,19 +89,22 @@ class ConvergenceStatus:
 
         # check absolute displacement convergence
         if delta_disp is not None:
-            self.abs_disp_val = self.abs_disp_val.at[...].set(jnp.linalg.norm(delta_disp))
+            self.abs_disp_val = self.abs_disp_val.at[...].set(
+                jnp.linalg.norm(delta_disp)
+            )
 
             # NaNs are checked for with displacement magnitude
             self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
 
         if self.convergence_settings.abs_disp_tol is not None:
             self.converged_abs_disp = (
-                    self.abs_disp_val < self.convergence_settings.abs_disp_tol
+                self.abs_disp_val < self.convergence_settings.abs_disp_tol
             )
 
         # check relative displacement convergence:
         if self.convergence_settings.rel_disp_tol is not None:
-            if total_disp is None: raise ValueError("total_disp cannot be None")
+            if total_disp is None:
+                raise ValueError("total_disp cannot be None")
             max_total_elem = jnp.linalg.norm(total_disp)
             self.rel_disp_val = self.rel_disp_val.at[...].set(
                 self.abs_disp_val / max_total_elem
@@ -113,17 +116,19 @@ class ConvergenceStatus:
 
         # check absolute force convergence
         if self.convergence_settings.abs_force_tol is not None:
-            if delta_force is None: raise ValueError("delta_force cannot be None")
+            if delta_force is None:
+                raise ValueError("delta_force cannot be None")
             self.abs_force_val = self.abs_force_val.at[...].set(
                 jnp.linalg.norm(delta_force)
             )
             self.converged_abs_force = (
-                    self.abs_force_val < self.convergence_settings.abs_force_tol
+                self.abs_force_val < self.convergence_settings.abs_force_tol
             )
 
         # check relative force convergence:
         if self.convergence_settings.rel_force_tol is not None:
-            if total_force is None: raise ValueError("total_force cannot be None")
+            if total_force is None:
+                raise ValueError("total_force cannot be None")
             max_total_elem = jnp.abs(total_force).max()
             self.rel_force_val = self.rel_force_val.at[...].set(
                 self.abs_force_val / max_total_elem
@@ -136,10 +141,10 @@ class ConvergenceStatus:
         # find convergence status of numerics (excluding failure modes such as max iterations or nans)
         self.converged = self.converged.at[...].set(
             (
-                    self.converged_rel_disp
-                    | self.converged_abs_disp
-                    | self.converged_rel_force
-                    | self.converged_abs_force
+                self.converged_rel_disp
+                | self.converged_abs_disp
+                | self.converged_rel_force
+                | self.converged_abs_force
             )
             & (self.i_iter > 0)
         )
@@ -240,23 +245,34 @@ class ConvergenceStatus:
         if dynamic:
             jax_print(
                 "\n+--------------------------------------- Dynamic Solve ---------------------------------------+",
-                verbose_level=VerbosityLevel.NORMAL)
-            jax_print("|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
-                      verbose_level=VerbosityLevel.NORMAL)
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+            jax_print(
+                "|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
         else:
-            jax_print("\n+--------------------------------- Static Solve ----------------------------------+",
-                      verbose_level=VerbosityLevel.NORMAL)
-            jax_print("|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
-                      verbose_level=VerbosityLevel.NORMAL)
+            jax_print(
+                "\n+--------------------------------- Static Solve ----------------------------------+",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+            jax_print(
+                "|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
 
     @staticmethod
     def print_footer(dynamic: bool) -> None:
         if dynamic:
-            jax_print("+---------------------------------------------------------------------------------------------+",
-                      verbose_level=VerbosityLevel.NORMAL)
+            jax_print(
+                "+---------------------------------------------------------------------------------------------+",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
         else:
-            jax_print("+---------------------------------------------------------------------------------+",
-                      verbose_level=VerbosityLevel.NORMAL)
+            jax_print(
+                "+---------------------------------------------------------------------------------+",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -295,11 +311,23 @@ class DesignVariables:
         # should only be used in child classes
         return ()
 
-    def get_shapes(self) -> OrderedDict[
-        str, Optional[tuple[int, ...] | ArrayListShape | OrderedDict[str, tuple[int, ...] | ArrayListShape]]]:
+    def get_shapes(
+        self,
+    ) -> OrderedDict[
+        str,
+        Optional[
+            tuple[int, ...]
+            | ArrayListShape
+            | OrderedDict[str, tuple[int, ...] | ArrayListShape]
+        ],
+    ]:
         def _elem_shape(
-                elem: Optional[Array | ArrayList | dict[str, Array | ArrayList]],
-        ) -> Optional[tuple[int, ...] | ArrayListShape | dict[str, tuple[int, ...] | ArrayListShape]]:
+            elem: Optional[Array | ArrayList | dict[str, Array | ArrayList]],
+        ) -> Optional[
+            tuple[int, ...]
+            | ArrayListShape
+            | dict[str, tuple[int, ...] | ArrayListShape]
+        ]:
             if elem is None:
                 return None
             elif isinstance(elem, dict):
@@ -316,7 +344,11 @@ class DesignVariables:
 
         return out_dict
 
-    def make_index_mapping(self) -> tuple[OrderedDict[str, Optional[Array | ArrayList | OrderedDict[str, Array]]], int]:
+    def make_index_mapping(
+        self,
+    ) -> tuple[
+        OrderedDict[str, Optional[Array | ArrayList | OrderedDict[str, Array]]], int
+    ]:
         mapping = OrderedDict()
         cnt = 0
         for name, shape in self.shapes.items():
@@ -349,14 +381,14 @@ class DesignVariables:
 
     def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
         @overload
-        def _inner_ravel(var: None) -> None:
-            ...
+        def _inner_ravel(var: None) -> None: ...
 
         @overload
-        def _inner_ravel(var: Array | ArrayList) -> Array:
-            ...
+        def _inner_ravel(var: Array | ArrayList) -> Array: ...
 
-        def _inner_ravel(var: Optional[Array | ArrayList | OrderedDict[str, Array | ArrayList]]) -> Optional[Array]:
+        def _inner_ravel(
+            var: Optional[Array | ArrayList | OrderedDict[str, Array | ArrayList]],
+        ) -> Optional[Array]:
             if var is None:
                 return None
             elif isinstance(var, Array):
@@ -364,7 +396,9 @@ class DesignVariables:
             elif isinstance(var, ArrayList):
                 return jnp.concatenate([_inner_ravel(subvar) for subvar in var])
             elif isinstance(var, dict):
-                return jnp.concatenate([_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1)
+                return jnp.concatenate(
+                    [_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1
+                )
             else:
                 raise ValueError("Invalid variable type in DesignVariables.")
 
@@ -384,7 +418,7 @@ class DesignVariables:
         return self.ravel().reshape(*args)
 
     def from_adjoint(
-            self, f_shape: tuple[int, ...], df_dx: Array
+        self, f_shape: tuple[int, ...], df_dx: Array
     ) -> OrderedDict[str, Array | ArrayList]:
         out_dict = OrderedDict()
         for name in self.shapes.keys():
@@ -414,6 +448,43 @@ class DesignVariables:
             else:
                 out_dict[name] = None
         return out_dict
+
+    @classmethod
+    def concatenate[T: DesignVariables](cls, *dvs: T) -> T:
+        dict_dvs = [dvs.get_vars() for dvs in dvs]
+
+        f_shape = 0
+        out_dict = {}
+        for key in dict_dvs[0].keys():
+            if all([dict_dv[key] is None for dict_dv in dict_dvs]):
+                out_dict[key] = None
+            elif all([isinstance(dict_dv[key], Array) for dict_dv in dict_dvs]):
+                out_dict[key] = jnp.concatenate(
+                    [dict_dv[key] for dict_dv in dict_dvs],  # type: ignore
+                    axis=0,
+                )
+                f_shape = out_dict[key].shape[0]
+            elif all([isinstance(dict_dv[key], ArrayList) for dict_dv in dict_dvs]):
+                out_dict[key] = ArrayList(
+                    [
+                        jnp.concatenate(
+                            [dict_dv[key][i_arr] for dict_dv in dict_dvs],  # type: ignore
+                            axis=0,
+                        )
+                        for i_arr in range(len(dict_dvs[0][key]))  # type: ignore
+                    ]
+                )
+                f_shape = out_dict[key][0].shape[0]
+            elif all([isinstance(dict_dv[key], dict) for dict_dv in dict_dvs]):
+                out_dict[key] = dict()
+                for subkey in dict_dvs[0][key].keys():  # type: ignore
+                    out_dict[key][subkey] = jnp.concatenate(
+                        [dict_dv[key][subkey] for dict_dv in dict_dvs]  # type: ignore
+                    )
+                    f_shape = out_dict[key][subkey].shape[0]
+            else:
+                raise ValueError("Invalid shape type in DesignVariables.")
+        return type(dvs[0])(**out_dict, f_shape=(f_shape,))  # type: ignore
 
     @staticmethod
     def _static_names() -> Sequence[str]:

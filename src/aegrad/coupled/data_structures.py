@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import overload, Optional, TYPE_CHECKING, Sequence, OrderedDict
@@ -291,6 +292,24 @@ class AeroelasticDesignVariables(DesignVariables):
         self.structure += other.structure
         self.aero += other.aero
         return self
+
+    def add_structure_dv(self, other: StructuralDesignVariables) -> AeroelasticDesignVariables:
+        structure_dv = deepcopy(self.structure)
+        structure_dv += other
+        return AeroelasticDesignVariables(
+            structure_dv=structure_dv,
+            aero_dv=self.aero,
+        )
+
+    @classmethod
+    def concatenate(
+        cls, *dvs: AeroelasticDesignVariables
+    ) -> AeroelasticDesignVariables:
+        aero_dvs = AeroDesignVariables.concatenate(*[dv.aero for dv in dvs])
+        structure_dv = StructuralDesignVariables.concatenate(
+            *[dv.structure for dv in dvs]
+        )
+        return AeroelasticDesignVariables(aero_dv=aero_dvs, structure_dv=structure_dv)
 
     def plot(
         self,

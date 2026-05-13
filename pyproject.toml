@@ -9,10 +9,7 @@ dependencies = [
     "numpy>=2.4.4",
     "pytest>=9.0.3",
     "ruff>=0.15.10",
-    "tensorboard>=2.20.0",
     "vtk>=9.6.1",
-    "xprof>=2.22.2",
-    "pytest>=9.0.3",
 ]
 
 [tool.pytest.ini_options]

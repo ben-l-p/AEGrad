@@ -48,7 +48,7 @@ if __name__ == "__main__":
                 f_ext_follower=None,
                 f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
                 f_ext_aero=None,
-                spectral_radius=1.0,  # will work with 1.0 (numerical damping is not essential)
+                spectral_radius=0.7,  # will work with 1.0 (numerical damping is not essential)
                 prescribed_dofs=None,
             ),
         )

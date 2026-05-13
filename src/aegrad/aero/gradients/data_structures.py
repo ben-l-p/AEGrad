@@ -128,7 +128,10 @@ class AeroDesignVariables(DesignVariables):
         )
 
     def get_vars(self) -> dict[str, Array | ArrayList | dict[str, Array]]:
-        return {"x0_aero": self.x0_aero, "flowfield": self.flowfield}
+        return {
+            "x0_aero": self.x0_aero,
+            "flowfield": self.flowfield,
+        }
 
     def plot(
         self,

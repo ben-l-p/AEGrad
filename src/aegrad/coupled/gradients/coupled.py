@@ -337,18 +337,119 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         p_q0_p_x += indirect_term
         return p_q0_p_x
 
+    def timestep_residual_jacobians(
+        self,
+        i_ts: int,
+        t: Array,
+        q_nm1: AeroelasticMinimalStates,
+        q_n: AeroelasticMinimalStates,
+        dv_: AeroelasticDesignVariables,
+        solve_dofs: tuple[int, ...],
+        free_wake: bool,
+        use_unsteady: bool,
+        gamma_dot_relaxation: float,
+        approx_grads: bool,
+    ) -> tuple[Array, Array, StructuralDesignVariables, AeroelasticDesignVariables]:
+
+        if q_n.structure.f_ext_aero is None or q_nm1.structure.f_ext_aero is None:
+            raise ValueError("Missing aerodynamic forcing states")
+
+        (
+            p_aero_res_p_q_aero_nm1,
+            p_aero_res_p_q_aero_n,
+            p_aero_res_d_dv,
+            p_aero_res_p_q_struct_nm1,
+            p_aero_res_p_q_struct_n,
+        ) = self.aero.timestep_residual_jacobians(
+            varphi_nm1=q_nm1.structure.varphi,
+            varphi_n=q_n.structure.varphi,
+            v_n=q_n.structure.v,
+            t_n=t,
+            free_wake=free_wake,
+            q_n=q_n.aero,
+            q_nm1=q_nm1.aero,
+            dv=dv_,
+            f_aero_beam_n=q_n.structure.f_ext_aero,
+            struct_obj=self.structure,
+            gamma_dot_relaxation=gamma_dot_relaxation,
+            approx_grads=approx_grads,
+            use_unsteady=use_unsteady,
+            solve_dofs=solve_dofs,
+        )
+
+        n_aero_dof, n_struct_dof = p_aero_res_p_q_struct_nm1.shape
+
+        (
+            p_struct_res_p_q_struct_nm1,
+            p_struct_res_p_q_struct_n,
+            p_v_dot_res_p_struct_dv,
+            p_v_dot_res_p_f_ext_nm1,
+            p_v_dot_res_p_f_ext_n,
+        ) = self.structure.timestep_residual_jacobians(
+            i_ts=i_ts,
+            q_nm1=q_nm1.structure,
+            q_n=q_n.structure,
+            f_ext_aero_n=q_n.structure.f_ext_aero,
+            f_ext_aero_nm1=q_nm1.structure.f_ext_aero,
+            dv=dv_.structure,
+            solve_dofs=solve_dofs,
+            approx_grads=approx_grads,
+        )
+
+        # reduce aero-to-struct Jacobian columns to solve_dofs
+        n_solve = len(solve_dofs)
+        n_struct_res = p_struct_res_p_q_struct_nm1.shape[0]
+        solve_dofs_arr = jnp.array(solve_dofs)
+        struct_col_ix = jnp.concatenate(
+            [solve_dofs_arr + i * self.structure.n_dof for i in range(4)]
+        )
+        p_aero_res_p_q_struct_nm1 = p_aero_res_p_q_struct_nm1[:, struct_col_ix]
+        p_aero_res_p_q_struct_n = p_aero_res_p_q_struct_n[:, struct_col_ix]
+
+        # create struct-to-aero cross-coupling (only v_dot residual depends on f_ext_aero)
+        # f_aero block is n_solve-wide (last n_solve cols of aero state), so slice Jacobian to solve_dofs cols
+        p_struct_res_p_q_aero_nm1 = jnp.zeros((n_struct_res, n_aero_dof))
+        p_struct_res_p_q_aero_nm1 = p_struct_res_p_q_aero_nm1.at[
+            jnp.arange(n_solve) + 2 * n_solve, -n_solve:
+        ].set(p_v_dot_res_p_f_ext_nm1[:, solve_dofs_arr])
+
+        p_struct_res_p_q_aero_n = jnp.zeros((n_struct_res, n_aero_dof))
+        p_struct_res_p_q_aero_n = p_struct_res_p_q_aero_n.at[
+            jnp.arange(n_solve) + 2 * n_solve, -n_solve:
+        ].set(p_v_dot_res_p_f_ext_n[:, solve_dofs_arr])
+
+        p_res_p_q_nm1 = jnp.block(
+            [
+                [p_struct_res_p_q_struct_nm1, p_struct_res_p_q_aero_nm1],
+                [p_aero_res_p_q_struct_nm1, p_aero_res_p_q_aero_nm1],
+            ]
+        )
+
+        p_res_p_q_n = jnp.block(
+            [
+                [p_struct_res_p_q_struct_n, p_struct_res_p_q_aero_n],
+                [p_aero_res_p_q_struct_n, p_aero_res_p_q_aero_n],
+            ]
+        )
+
+        return p_res_p_q_nm1, p_res_p_q_n, p_v_dot_res_p_struct_dv, p_aero_res_d_dv
+
     def dynamic_adjoint(
         self,
         case: DynamicAeroelastic,
         objective: AeroelasticObjectiveFunction,
         p_varphi_p_x: Optional[Array] = None,
+        save_adjoint: bool = False,
+        use_unsteady: bool = True,
         approx_grads: bool = True,
-    ) -> tuple[AeroelasticDesignVariables, Array]:
+    ) -> tuple[AeroelasticDesignVariables, Optional[Array]]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
         :param case: Dynamic aeroelastic case
         :param objective: Objective function that takes the system full states, design variables and timestep index, and returns an array
         :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found from the static solve.
+        :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
+        :param use_unsteady: Whether to use unsteady aerodynamic forcing.
         :param approx_grads: Whether to use gradient approximation or not.
         :return: Gradient of sum of objective across timesteps with respect to design variables.
         """
@@ -380,48 +481,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             raise ValueError("static_horseshoe not defined")
         static_horseshoe: bool = case.aero.static_horseshoe
 
-        def timestep_residual(
-            i_ts: int,
-            t: Array,
-            q_nm1: AeroelasticMinimalStates,
-            q_n: AeroelasticMinimalStates,
-            dv_: AeroelasticDesignVariables,
-        ) -> Array:
-            inner_case = self.case_from_dv(dv=dv_)
-
-            # compute structural residual
-            r_struct: Array = inner_case.structure.timestep_residual(
-                i_ts=i_ts,
-                q_nm1=q_nm1.structure,
-                q_n=q_n.structure,
-                dv_=dv_.structure,
-                solve_dofs=solve_dofs,
-                approx_grads=approx_grads,
-            )
-
-            # obtain node coordinates and coordinate velocities
-            hg_n = inner_case.structure.calculate_hg_from_varphi(
-                varphi=q_n.structure.varphi
-            )
-            hg_dot_n = inner_case.structure.make_hg_dot(hg=hg_n, v=q_n.structure.v)
-
-            if q_n.structure.f_ext_aero is None:
-                raise ValueError("f_ext_aero not defined")
-
-            # compute aero residual
-            r_aero: Array = inner_case.aero.timestep_residual(
-                hg_n=hg_n,
-                hg_dot_n=hg_dot_n,
-                t_n=t,
-                q_nm1=q_nm1.aero,
-                q_n=q_n.aero,
-                free_wake=free_wake,
-                dv=dv_.aero,
-                gamma_dot_relaxation=gamma_dot_relaxation,
-                f_aero_beam_n=q_n.structure.f_ext_aero,
-            )
-            return jnp.concatenate((r_struct, r_aero))
-
         full_states_init = case.get_full_states(i_ts=0)
         minimal_states_init = case.get_minimal_states(i_ts=0)
 
@@ -431,35 +490,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         j_shape = j_properties.shape
         n_j = j_properties.size
 
-        def p_r_n(
-            i_ts: int,
-            t: Array,
-            q_nm1: AeroelasticMinimalStates,
-            q_n: AeroelasticMinimalStates,
-            dv_: AeroelasticDesignVariables,
-        ) -> tuple[Array, Array, AeroelasticDesignVariables]:
-            def inner(
-                q_nm1_free: Array, q_n_free: Array, dv__: AeroelasticDesignVariables
-            ) -> Array:
-                q_nm1_ = AeroelasticMinimalStates.from_vector(
-                    vect=q_nm1.ravel().at[free_state_ix].set(q_nm1_free),
-                    n_dof=self.structure.n_dof,
-                    aero_shapes=minimal_states_init.aero.shapes(),
-                )
-                q_n_ = AeroelasticMinimalStates.from_vector(
-                    vect=q_n.ravel().at[free_state_ix].set(q_n_free),
-                    n_dof=self.structure.n_dof,
-                    aero_shapes=minimal_states_init.aero.shapes(),
-                )
-                return timestep_residual(
-                    i_ts=i_ts, t=t, q_nm1=q_nm1_, q_n=q_n_, dv_=dv__
-                ).ravel()
-
-            return jax.jacrev(inner, argnums=(0, 1, 2))(
-                q_nm1.ravel()[free_state_ix],
-                q_n.ravel()[free_state_ix],
-                dv_,
-            )
+        n_solve = len(solve_dofs)
 
         def time_loop(
             rev_i_ts_: int,
@@ -511,21 +542,35 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 argnums=(0, 1),
             )(q_n.ravel()[free_state_ix], dv)
 
-            # find gradients of residual function
-            p_r_n_p_q_nm1, p_r_n_p_q_n, p_r_n_p_dv = p_r_n(
-                i_ts=i_ts, t=t_n, q_n=q_n, q_nm1=q_nm1, dv_=dv
+            # find gradients of residual function using hand-assembled block Jacobians
+            p_res_p_q_nm1, p_res_p_q_n, p_v_dot_res_p_struct_dv, p_aero_res_d_dv = (
+                self.timestep_residual_jacobians(
+                    i_ts=i_ts,
+                    t=t_n,
+                    q_nm1=q_nm1,
+                    q_n=q_n,
+                    dv_=dv,
+                    solve_dofs=solve_dofs,
+                    free_wake=free_wake,
+                    use_unsteady=use_unsteady,
+                    gamma_dot_relaxation=gamma_dot_relaxation,
+                    approx_grads=approx_grads,
+                )
             )
 
             # solve for adjoint at current timestep
             b: Array = -(
-                p_j_n_p_q_n.reshape(n_j, -1) + adj_[i_ts + 1, ...] @ p_r_np1_p_q_n
+                p_j_n_p_q_n.reshape(n_j, -1)
+                + (adj_[i_ts + 1, ...] if save_adjoint else adj_) @ p_r_np1_p_q_n
             ).T
-            adj_ = adj_.at[i_ts, ...].set(
-                jnp.linalg.solve(
-                    p_r_n_p_q_n.T,
-                    b,
-                ).T
-            )
+
+            adj_n = jnp.linalg.solve(
+                p_res_p_q_n.T,
+                b,
+            ).T
+
+            if save_adjoint:
+                adj_ = adj_.at[i_ts, ...].set(adj_n)
 
             jax_print(
                 "Solved adjoint for timestep {i_ts}",
@@ -533,15 +578,16 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 verbose_level=VerbosityLevel.NORMAL,
             )
 
-            # accumulate design derivative with adj_.T @ p_s_p_x
-            # do not add anything for timestep 0 as the Jacobians refer to ts = -1
-            # handle this with another routine, and use zero adjoint states
-            d_j_d_x_ += p_r_n_p_dv.premultiply_adj(adj_[i_ts, ...])
+            # accumulate design derivative: adj^T @ dR/dx
+            d_j_d_x_ += p_aero_res_d_dv.premultiply_adj(adj_n[:, 4 * n_solve :])
+            d_j_d_x_.structure += p_v_dot_res_p_struct_dv.premultiply_adj(
+                adj_n[:, 2 * n_solve : 3 * n_solve]
+            )
 
             # add on direct contribution from objective
             d_j_d_x_ += p_j_n_p_x
 
-            return d_j_d_x_, adj_, p_r_n_p_q_nm1, q_nm1
+            return d_j_d_x_, adj_ if save_adjoint else adj_n, p_res_p_q_nm1, q_nm1
 
         dv_grad_init = AeroelasticDesignVariables(
             structure_dv=StructuralDesignVariables(
@@ -577,11 +623,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         n_aero_states: int = minimal_states_init.aero.n_states
         free_state_ix: Array = jnp.concatenate(
             [solve_dofs_arr + i * n_dof for i in range(4)]
-            + [jnp.arange(4 * n_dof, 5 * n_dof + n_aero_states)]
+            + [jnp.arange(5 * n_dof, 5 * n_dof + n_aero_states)]
+            + [solve_dofs_arr + 4 * n_dof]
         )
-        n_adj_dof = (
-            4 * (n_dof - len(case.structure.prescribed_dofs)) + n_dof + n_aero_states
-        )
+        n_adj_dof = 4 * n_solve + n_aero_states + n_solve
 
         # compile function
         @jax.jit
@@ -603,7 +648,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # pass through time steps backwards to obtain adjoints
         carry = (
             dv_grad_init,
-            jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof)),
+            jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
+            if save_adjoint
+            else jnp.zeros((n_j, n_adj_dof)),
             jnp.zeros((n_adj_dof, n_adj_dof)),
             case.get_minimal_states(i_ts=-1),
         )
@@ -650,7 +697,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             if case.structure.n_tstep > 1:
                 # add on Jacobian of residual at i_ts=1 with respect to states at i_ts=0
                 p_j0_p_q0_full = p_j0_p_q0_full.at[:, free_state_ix].set(
-                    adj[1, :, :] @ p_r1_p_q0
+                    (adj[1, :, :] if save_adjoint else adj) @ p_r1_p_q0
                 )
 
             # add zero terms for prescribed dofs
@@ -658,6 +705,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             d_j_d_x += p_q0_p_x.premultiply_adj(p_j0_p_q0_full)
 
         # restore original shape of j, and cut off zeros for past-end timestep and initial timestep which are always 0
-        adj = adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[1:-1]
+        adj = (
+            adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[1:-1]
+            if save_adjoint
+            else None
+        )
 
         return d_j_d_x, adj

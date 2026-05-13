@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence, Optional, Callable
+from typing import Sequence, Optional, Callable, overload, Literal
 
 import jax
 from jax import numpy as jnp, Array
@@ -235,9 +235,7 @@ def propagate_surf_wake(
             s_zeta_w = jax.lax.stop_gradient(s_zeta_w)
 
         # consider gamma to be at midpoints of zeta
-        s_gamma_w = neighbour_average(
-            s_zeta_w, axes=(0, 1)
-        )  # [gamma_w_m + 1, gamma_w_n]
+        s_gamma_w = neighbour_average(s_zeta_w, axes=(0, 1))
 
         # vertex coordinates along desired discretised streamline, [m_star + 1]
         s_zeta_w_redisc = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
@@ -265,11 +263,39 @@ def propagate_surf_wake(
         return zeta_w_np1, gamma_w_np1
 
 
+@overload
 def propagate_wake(
-    gamma_b_n: ArrayList,
-    gamma_w_n: ArrayList,
-    zeta_b_np1: ArrayList,
-    zeta_w_n: ArrayList,
+    gamma_b_nm1: ArrayList,
+    gamma_w_nm1: ArrayList,
+    zeta_b_n: ArrayList,
+    zeta_w_nm1: ArrayList,
+    delta_w: Sequence[Optional[Array]],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: Literal[True],
+    linearise_redisc: bool,
+) -> tuple[None, ArrayList]: ...
+
+
+@overload
+def propagate_wake(
+    gamma_b_nm1: ArrayList,
+    gamma_w_nm1: ArrayList,
+    zeta_b_n: ArrayList,
+    zeta_w_nm1: ArrayList,
+    delta_w: Sequence[Optional[Array]],
+    v_func: Callable[[Array], Array],
+    dt: Array,
+    frozen_wake: Literal[False],
+    linearise_redisc: bool,
+) -> tuple[ArrayList, ArrayList]: ...
+
+
+def propagate_wake(
+    gamma_b_nm1: ArrayList,
+    gamma_w_nm1: ArrayList,
+    zeta_b_n: ArrayList,
+    zeta_w_nm1: ArrayList,
     delta_w: Sequence[Optional[Array]],
     v_func: Callable[[Array], Array],
     dt: Array,
@@ -279,10 +305,10 @@ def propagate_wake(
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
     culling the downstream data.
-    :param gamma_b_n: Bound circulation at time varphi, [n_surf][m, varphi].
-    :param gamma_w_n: Wake circulation at time varphi, [n_surf][m_star, varphi].
-    :param zeta_b_np1: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3].
-    :param zeta_w_n: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3].
+    :param gamma_b_nm1: Bound circulation at time varphi, [n_surf][m, varphi].
+    :param gamma_w_nm1: Wake circulation at time varphi, [n_surf][m_star, varphi].
+    :param zeta_b_n: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3].
+    :param zeta_w_nm1: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3].
     :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform.
     :param v_func: Function that computes the velocity, [3] -> [3].
     :param dt: Time step length.
@@ -292,16 +318,16 @@ def propagate_wake(
     :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n].
     """
 
-    n_surf = len(gamma_b_n)
+    n_surf = len(gamma_b_nm1)
     zeta_w_np1: Optional[ArrayList] = ArrayList([]) if not frozen_wake else None
     gamma_w_np1 = ArrayList([])
 
     for i_surf in range(n_surf):
         surf_zeta_w, surf_gamma_w = propagate_surf_wake(
-            gamma_b_n=gamma_b_n[i_surf],
-            gamma_w_n=gamma_w_n[i_surf],
-            zeta_b_np1=zeta_b_np1[i_surf],
-            zeta_w_n=zeta_w_n[i_surf],
+            gamma_b_n=gamma_b_nm1[i_surf],
+            gamma_w_n=gamma_w_nm1[i_surf],
+            zeta_b_np1=zeta_b_n[i_surf],
+            zeta_w_n=zeta_w_nm1[i_surf],
             delta_w=delta_w[i_surf],
             v_func=v_func,
             dt=dt,

@@ -787,7 +787,7 @@ class LinearUVLM:
                 zeta_b: ArrayList,
                 zeta_w: ArrayList,
             ) -> tuple[Optional[ArrayList], ArrayList]:
-                return propagate_wake(
+                return propagate_wake(  # type: ignore
                     gamma_b,
                     gamma_w,
                     zeta_b,
@@ -806,7 +806,11 @@ class LinearUVLM:
             # tangent vectors (perturbations)
             d_gamma_b = x_n.gamma_b
             d_gamma_w = x_n.gamma_w
-            d_zeta_b = u_np1.zeta_b if self.prescribed_wake else ArrayList.zeros_like(ref_zeta_b)
+            d_zeta_b = (
+                u_np1.zeta_b
+                if self.prescribed_wake
+                else ArrayList.zeros_like(ref_zeta_b)
+            )
             d_zeta_w = (
                 x_n.zeta_w
                 if self.prescribed_wake and x_n.zeta_w is not None
@@ -816,7 +820,12 @@ class LinearUVLM:
             # linearise via jvp with stopped arc-length gradients
             _, (d_zeta_w_np1, d_gamma_w_np1) = jax.jvp(
                 _wake_prop_func,
-                (self.reference.gamma_b, self.reference.gamma_w, ref_zeta_b, ref_zeta_w),
+                (
+                    self.reference.gamma_b,
+                    self.reference.gamma_w,
+                    ref_zeta_b,
+                    ref_zeta_w,
+                ),
                 (d_gamma_b, d_gamma_w, d_zeta_b, d_zeta_w),
             )
 

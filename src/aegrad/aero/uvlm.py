@@ -41,6 +41,9 @@ from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.aic import compute_v_ind, compute_aic_solve
 from aegrad.aero.gradients.data_structures import AeroDesignVariables, AeroStates
 from aegrad.utils.print_utils import VerbosityLevel
+from aegrad.coupled.data_structures import AeroelasticDesignVariables
+from aegrad.structure import BeamStructure
+from aegrad.algebra.array_utils import construct_named_block_jacobian, ArrayListShape
 
 if TYPE_CHECKING:
     from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
@@ -292,7 +295,9 @@ class UVLM:
         will use a uniform discretisation, as in the canonical UVLM.
         :param x0_aero: Aerodynamic local grid coordinates, [n_surf][zeta_m, zeta_n, 3]
         :param hg0: Beam reference global grid coordinates, [zeta_n, 4, 4]
+        dictionary input for deflections, and returns an ArrayList of the local deflected grid.
         """
+
         if isinstance(delta_w, Array):
             delta_w_seq: Sequence[Optional[Array]] = [delta_w]
         elif delta_w is None:
@@ -639,6 +644,7 @@ class UVLM:
             if q_nm1 is None:
                 raise ValueError("q_nm1 needs to be specified for dynamic solve")
 
+            # TODO: replace zeta_b_n with zeta_b_nm1
             zeta_full = ArrayList([*zeta_b_n, *q_nm1.zeta_w])
             gamma_full = ArrayList([*q_nm1.gamma_b, *q_nm1.gamma_w])
 
@@ -657,14 +663,15 @@ class UVLM:
 
             # propagate wake
             zeta_w_n, gamma_w_n = propagate_wake(
-                q_nm1.gamma_b,
-                q_nm1.gamma_w,
-                zeta_b_n,
-                q_nm1.zeta_w,
-                self.delta_w,
-                v_wake_prop,
-                self.dt,
+                gamma_b_nm1=q_nm1.gamma_b,
+                gamma_w_nm1=q_nm1.gamma_w,
+                zeta_b_n=zeta_b_n,
+                zeta_w_nm1=q_nm1.zeta_w,
+                delta_w=self.delta_w,
+                v_func=v_wake_prop,
+                dt=self.dt,
                 frozen_wake=False,
+                linearise_redisc=False,
             )
 
         aic_solve = compute_aic_solve(
@@ -681,11 +688,11 @@ class UVLM:
         v_bc_n = self.flowfield.surf_vmap_call(xs=c_n, t=t)  # [n_surf][m, varphi, 3]
 
         if not static:
-            # strucural component
+            # structural component
             v_bc_n -= c_dot_n
 
             if zeta_w_n is None or gamma_w_n is None:
-                raise ValueError("zeta_w_n and gamma_w_n are None")
+                raise ValueError("zeta_w_nm1 and gamma_w_nm1 are None")
 
             # find wake component
             v_bc_n += compute_v_ind(
@@ -748,9 +755,9 @@ class UVLM:
             )
 
         if gamma_w_n is None:
-            raise ValueError("gamma_w_n is None")
+            raise ValueError("gamma_w_nm1 is None")
         if zeta_w_n is None:
-            raise ValueError("zeta_w_n is None")
+            raise ValueError("zeta_w_nm1 is None")
 
         # Steady forces: total velocity (background + all-surface induced) minus grid velocity.
         # Use zeros for grid velocity in the static case (fixed grid).
@@ -1099,7 +1106,7 @@ class UVLM:
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aero design variables.
         :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :return: gamma_b_n, gamma_w_n, gamma_b_dot_n, zeta_w_n, f_aero_beam_local.
+        :return: gamma_b_nm1, gamma_w_nm1, gamma_b_dot_n, zeta_w_nm1, f_aero_beam_local.
         """
         inner_case = self.case_from_dv(dv=dv)
 
@@ -1144,14 +1151,14 @@ class UVLM:
 
     def gamma_b_res_func(
         self,
-        hg_n: Array,
-        hg_dot_n: Array,
+        varphi_n_vec: Array,
+        v_n_vec: Array,
         t_n: Array,
-        free_wake: bool,
-        q_nm1: AeroStates,
-        dv: AeroDesignVariables,
-        gamma_dot_relaxation: float,
-        gamma_b_state: ArrayList,
+        gamma_b_n_vec: Array,
+        gamma_w_n_vec: Array,
+        zeta_w_n_vec: Array,
+        dv: AeroelasticDesignVariables,
+        struct_obj: BeamStructure,
     ) -> Array:
         r"""
         Bound circulation residual.
@@ -1160,75 +1167,207 @@ class UVLM:
         \boldsymbol{\mathcal{A}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\mathbf{v}_{bc, n} - \dot{\mathbf{c}}\right)
         \cdot \mathbf{n}_n\right] + \boldsymbol{\Gamma}_{b, n}`
 
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param varphi_n_vec: varphi vector at timestep n.
+        :param v_n_vec: Beam velocity vector at timestep n.
         :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
-        :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
-        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :param gamma_b_state: Bound circulation state at timestep n.
+        :param gamma_b_n_vec: Bound circulation vector at timestep n.
+        :param gamma_w_n_vec: Wake circulation vector at timestep n.
+        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param dv: Aeroelastic design variables.
+        :param struct_obj: Beam structure.
         :return: Bound circulation residual.
         """
-        gamma_b_n, _, _, _, _ = self._base_solve_from_dv(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
-            t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
-            dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
-        )
-        return (gamma_b_n - gamma_b_state).ravel()
 
-    def gamma_w_res_func(
+        varphi_n = varphi_n_vec.reshape(-1, 6)
+        v_n = v_n_vec.reshape(-1, 6)
+        gamma_b_n = ArrayList.from_vector(
+            vect=gamma_b_n_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
+        )
+        gamma_w_n = ArrayList.from_vector(
+            vect=gamma_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star, gd.n) for gd in self.grid_disc]
+            ),
+        )
+        zeta_w_n = ArrayList.from_vector(
+            vect=zeta_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
+            ),
+        )
+
+        inner_struct = struct_obj.case_from_dv(dv=dv.structure)
+        hg_n = inner_struct.calculate_hg_from_varphi(varphi=varphi_n)
+        hg_dot_n = inner_struct.make_hg_dot(hg=hg_n, v=v_n)
+
+        inner_case = self.case_from_dv(dv=dv.aero)
+
+        zeta_b_n = inner_case._hg_to_zeta(hg=hg_n)
+
+        c_n = compute_c(zetas=zeta_b_n)
+        nc_n = compute_nc(zetas=zeta_b_n)
+
+        zeta_b_dot_n = inner_case._hg_dot_to_zeta_dot(hg_dot=hg_dot_n)
+
+        c_dot_n = ArrayList(
+            [neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot_n]
+        )
+
+        aic_solve = compute_aic_solve(
+            cs=c_n,
+            ns=nc_n,
+            zetas_b=zeta_b_n,
+            zetas_w=None,
+            kernels_b=inner_case.kernels_b,
+            kernels_w=None,
+            mirror_normal=inner_case.mirror_normal,
+            mirror_point=inner_case.mirror_point,
+        )
+
+        v_bc_n = inner_case.flowfield.surf_vmap_call(
+            xs=c_n, t=t_n
+        )  # [n_surf][m, varphi, 3]
+
+        # structural component
+        v_bc_n -= c_dot_n
+
+        # find wake component
+        v_bc_n += compute_v_ind(
+            cs=c_n,
+            zetas=zeta_w_n,
+            gammas=gamma_w_n,
+            kernels=inner_case.kernels_w,
+            mirror_normal=inner_case.mirror_normal,
+            mirror_point=inner_case.mirror_point,
+        )
+
+        v_bc_n = ArrayList.einsum("ijk,ijk->ij", v_bc_n, nc_n)  # [c_tot]
+
+        gamma_b_vec_n = jnp.linalg.solve(aic_solve, -v_bc_n.ravel())
+
+        # assemble back to surface ArrayList
+        gamma_b_nm1_update = ArrayList([])
+        for i_surf in range(inner_case.n_surf):
+            gamma_b_nm1_update.append(
+                gamma_b_vec_n[inner_case.gamma_b_slice[i_surf]].reshape(
+                    inner_case.grid_disc[i_surf].m, inner_case.grid_disc[i_surf].n
+                )
+            )
+
+        return (gamma_b_nm1_update - gamma_b_n).ravel()
+
+    def wake_prop_res_func(
         self,
-        hg_n: Array,
-        hg_dot_n: Array,
+        varphi_nm1_vec: Array,
+        varphi_n_vec: Array,
         t_n: Array,
         free_wake: bool,
-        q_nm1: AeroStates,
-        dv: AeroDesignVariables,
-        gamma_dot_relaxation: float,
-        gamma_w_state: ArrayList,
-    ) -> Array:
+        gamma_b_nm1_vec: Array,
+        gamma_w_nm1_vec: Array,
+        gamma_w_n_vec: Array,
+        zeta_w_nm1_vec: Array,
+        zeta_w_n_vec: Array,
+        dv: AeroelasticDesignVariables,
+        struct_obj: BeamStructure,
+    ) -> tuple[Array, Array]:
         r"""
-        Wake circulation residual.
+        Wake propagation residual for both grid coordinates and circulation strengths.
 
-        :math:`\boldsymbol{\mathcal{W}}_{\Gamma}(\mathbf{\Gamma}_{b, {n-1}}, \mathbf{\Gamma}_{w, {n-1}})
-        - \mathbf{\Gamma}_{w, n}`
-
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
-        :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
-        :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
-        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :param gamma_w_state: Wake circulation state at timestep n.
-        :return: Wake circulation residual.
+        :param varphi_nm1_vec: Beam minimal coordinates vector at timestep n-1.
+        :param varphi_n_vec: Beam maximal coordinates vector at timestep n.
+        :param t_n: Time at timestep n.
+        :param free_wake: Whether to use a free wake formulation.
+        :param gamma_b_nm1_vec: Bound circulation vector at timestep n-1.
+        :param gamma_w_nm1_vec: Wake circulation vector at timestep n-1.
+        :param gamma_w_n_vec: Wake circulation vector at timestep n.
+        :param zeta_w_nm1_vec: Wake grid vector at timestep n-1.
+        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param dv: Aeroelastic design variables.
+        :param struct_obj: Beam structure.
+        :return: Wake grid and circulation residuals.
         """
-        _, gamma_w_n, _, _, _ = self._base_solve_from_dv(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
-            t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
-            dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
+
+        varphi_nm1 = varphi_nm1_vec.reshape(-1, 6)
+        varphi_n = varphi_n_vec.reshape(-1, 6)
+
+        gamma_b_nm1 = ArrayList.from_vector(
+            vect=gamma_b_nm1_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
-        return (gamma_w_n - gamma_w_state).ravel()
+
+        gamma_w_nm1 = ArrayList.from_vector(
+            vect=gamma_w_nm1_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star, gd.n) for gd in self.grid_disc]
+            ),
+        )
+
+        gamma_w_n = ArrayList.from_vector(
+            vect=gamma_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star, gd.n) for gd in self.grid_disc]
+            ),
+        )
+        zeta_w_nm1 = ArrayList.from_vector(
+            vect=zeta_w_nm1_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
+            ),
+        )
+
+        zeta_w_n = ArrayList.from_vector(
+            vect=zeta_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
+            ),
+        )
+
+        inner_struct = struct_obj.case_from_dv(dv=dv.structure)
+        hg_nm1 = inner_struct.calculate_hg_from_varphi(varphi=varphi_nm1)
+        hg_n = inner_struct.calculate_hg_from_varphi(varphi=varphi_n)
+
+        inner_case = self.case_from_dv(dv=dv.aero)
+        zeta_b_nm1 = inner_case._hg_to_zeta(hg=hg_nm1)
+        zeta_b_n = inner_case._hg_to_zeta(hg=hg_n)
+
+        def v_wake_prop(x_: Array) -> Array:
+            v = inner_case.flowfield.vmap_call(x=x_, t=t_n)
+            if free_wake:
+                v += compute_v_ind(
+                    cs=x_,
+                    zetas=ArrayList([*zeta_b_nm1, *zeta_w_nm1]),
+                    gammas=ArrayList([*gamma_b_nm1, *gamma_w_nm1]),
+                    kernels=[*inner_case.kernels_b, *inner_case.kernels_w],
+                    mirror_normal=inner_case.mirror_normal,
+                    mirror_point=inner_case.mirror_point,
+                )
+            return v
+
+        zeta_w_nm1_update, gamma_w_nm1_update = propagate_wake(
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_w_nm1=gamma_w_nm1,
+            zeta_b_n=zeta_b_n,
+            zeta_w_nm1=zeta_w_nm1,
+            delta_w=inner_case.delta_w,
+            v_func=v_wake_prop,
+            dt=inner_case.dt,
+            frozen_wake=False,
+            linearise_redisc=False,
+        )
+
+        return (zeta_w_nm1_update - zeta_w_n).ravel(), (
+            gamma_w_nm1_update - gamma_w_n
+        ).ravel()
 
     def gamma_b_dot_res_func(
         self,
-        hg_n: Array,
-        hg_dot_n: Array,
-        t_n: Array,
-        free_wake: bool,
-        q_nm1: AeroStates,
-        dv: AeroDesignVariables,
+        gamma_b_nm1_vec: Array,
+        gamma_b_n_vec: Array,
+        gamma_b_dot_nm1_vec: Array,
+        gamma_b_dot_n_vec: Array,
         gamma_dot_relaxation: float,
-        gamma_b_dot_state: ArrayList,
+        _: AeroelasticDesignVariables,
     ) -> Array:
         r"""
         Bound circulation time derivative residual.
@@ -1236,75 +1375,57 @@ class UVLM:
         :math:`\frac{g}{h} \left[\mathbf{\Gamma}_{b, n} - \mathbf{\Gamma}_{b, n-1}\right] + (1-g)
         \dot{\mathbf{\Gamma}}_{b, n-1} - \dot{\mathbf{\Gamma}}_{b, n}`
 
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
-        :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
-        :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
+        :param gamma_b_nm1_vec: Bound circulation vector at timestep n-1.
+        :param gamma_b_n_vec: Bound circulation vector at timestep n.
+        :param gamma_b_dot_nm1_vec: Bound circulation time derivative vector at timestep n-1.
+        :param gamma_b_dot_n_vec: Bound circulation time derivative vector at timestep n.
         :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :param gamma_b_dot_state: Bound circulation time derivative state at timestep n.
+        :param _: Design variables. Whilst this function does not depend upon it, including it simplified obtaining
+        the residual design gradient.
         :return: Bound circulation time derivative residual.
         """
-        _, _, gamma_b_dot_n, _, _ = self._base_solve_from_dv(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
-            t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
-            dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
+
+        gamma_b_nm1 = ArrayList.from_vector(
+            vect=gamma_b_nm1_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
-        return (gamma_b_dot_n - gamma_b_dot_state).ravel()
 
-    def zeta_w_res_func(
-        self,
-        hg_n: Array,
-        hg_dot_n: Array,
-        t_n: Array,
-        free_wake: bool,
-        q_nm1: AeroStates,
-        dv: AeroDesignVariables,
-        gamma_dot_relaxation: float,
-        zeta_w_state: ArrayList,
-    ) -> Array:
-        r"""
-        Wake grid residual.
-
-        :math:`\boldsymbol{\mathcal{W}}_{\zeta}(\boldsymbol{\zeta}_{b, n}, \boldsymbol{\zeta}_{w, n-1})
-        - \boldsymbol{\zeta}_{w, n}`
-
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
-        :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
-        :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
-        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :param zeta_w_state: Wake grid state at timestep n.
-        :return: Wake grid residual.
-        """
-        _, _, _, zeta_w_n, _ = self._base_solve_from_dv(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
-            t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
-            dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
+        gamma_b_n = ArrayList.from_vector(
+            vect=gamma_b_n_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
-        return (zeta_w_n - zeta_w_state).ravel()
+
+        gamma_b_dot_nm1 = ArrayList.from_vector(
+            vect=gamma_b_dot_nm1_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
+        )
+
+        gamma_b_dot_n = ArrayList.from_vector(
+            vect=gamma_b_dot_n_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
+        )
+
+        return (
+            gamma_dot_relaxation / self.dt * (gamma_b_n - gamma_b_nm1)
+            + (1.0 - gamma_dot_relaxation) * gamma_b_dot_nm1
+            - gamma_b_dot_n
+        ).ravel()
 
     def f_aero_res_func(
         self,
-        hg_n: Array,
-        hg_dot_n: Array,
+        varphi_n_vec: Array,
+        v_n_vec: Array,
         t_n: Array,
-        free_wake: bool,
-        q_nm1: AeroStates,
-        dv: AeroDesignVariables,
-        gamma_dot_relaxation: float,
-        f_aero_beam_n: Array,
+        gamma_b_n_vec: Array,
+        gamma_w_n_vec: Array,
+        gamma_b_dot_n_vec: Array,
+        zeta_w_n_vec: Array,
+        dv: AeroelasticDesignVariables,
+        struct_obj: BeamStructure,
+        f_aero_beam_n_vec: Array,
+        include_unsteady: bool,
+        block_grid_gradients: bool,
+        solve_dofs: tuple[int, ...],
     ) -> Array:
         r"""
         Aerodynamic forcing residual, compared in the local frame for compatibility with the structure.
@@ -1313,38 +1434,135 @@ class UVLM:
         \dot{\mathbf{\Gamma}}_{b, n}, \boldsymbol{\zeta}_{b, n}, \dot{\boldsymbol{\zeta}}_{b, n},
         \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
 
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
-        :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
-        :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
-        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration.
-        :param f_aero_beam_n: Aerodynamic forcing state at timestep n, in the local frame.
-        :return: Aerodynamic forcing residual.
+        :param varphi_n_vec: Beam minimal coordinates vector at timestep n.
+        :param v_n_vec: Beam velocity vector at timestep n.
+        :param t_n: Time at timestep n.
+        :param gamma_b_n_vec: Bound circulation vector at timestep n.
+        :param gamma_w_n_vec: Wake circulation vector at timestep n.
+        :param gamma_b_dot_n_vec: Bound circulation vector time derivative at timestep n.
+        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param dv: Aeroelastic design variables.
+        :param struct_obj: Beam structure.
+        :param f_aero_beam_n_vec: Local aerodynamic forcing projected onto beam.
+        :param include_unsteady: Whether to include unsteady aerodynamic forces.
+        :param block_grid_gradients: If true, blocks the gradient path for the dependency of the steady aerodynamic
+        forcing on the bound grid.
+        :param solve_dofs: Index of forces to keep for solution.
         """
-        _, _, _, _, f_aero_beam_local = self._base_solve_from_dv(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
-            t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
-            dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
+
+        varphi_n = varphi_n_vec.reshape(-1, 6)
+        v_n = v_n_vec.reshape(-1, 6)
+
+        gamma_b_n = ArrayList.from_vector(
+            vect=gamma_b_n_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
-        return (f_aero_beam_local - f_aero_beam_n).ravel()
+
+        gamma_w_n = ArrayList.from_vector(
+            vect=gamma_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star, gd.n) for gd in self.grid_disc]
+            ),
+        )
+
+        gamma_b_dot_n = ArrayList.from_vector(
+            vect=gamma_b_dot_n_vec,
+            arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
+        )
+
+        zeta_w_n = ArrayList.from_vector(
+            vect=zeta_w_n_vec,
+            arr_list_shapes=ArrayListShape(
+                [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
+            ),
+        )
+
+        f_aero_beam_n = f_aero_beam_n_vec.reshape(-1, 6)
+
+        inner_struct = struct_obj.case_from_dv(dv=dv.structure)
+        hg_n = inner_struct.calculate_hg_from_varphi(varphi=varphi_n)
+        hg_dot_n = inner_struct.make_hg_dot(hg=hg_n, v=v_n)
+
+        inner_case = self.case_from_dv(dv=dv.aero)
+
+        # create grid
+        zeta_b_n = inner_case._hg_to_zeta(hg=hg_n)
+        if block_grid_gradients:
+            zeta_b_n = jax.lax.stop_gradient(zeta_b_n)
+            zeta_w_n = jax.lax.stop_gradient(zeta_w_n)
+
+        zeta_b_dot_n = inner_case._hg_dot_to_zeta_dot(hg_dot=hg_dot_n)
+        nc_n = compute_nc(zetas=zeta_b_n)
+
+        def v_total_func(x_: Array) -> Array:
+            return inner_case.flowfield.vmap_call(x=x_, t=t_n) + compute_v_ind(
+                cs=x_,
+                zetas=ArrayList([*zeta_b_n, *zeta_w_n]),
+                gammas=ArrayList([*gamma_b_n, *gamma_w_n]),
+                kernels=[*inner_case.kernels_b, *inner_case.kernels_w],
+                mirror_normal=inner_case.mirror_normal,
+                mirror_point=inner_case.mirror_point,
+            )
+
+        f_steady = calculate_steady_forcing(
+            zeta_bs=zeta_b_n,
+            zeta_dot_bs=zeta_b_dot_n,
+            gamma_bs=gamma_b_n,
+            gamma_ws=gamma_w_n,
+            rho=inner_case.flowfield.rho,
+            v_func=v_total_func,
+            v_inputs=None,
+        )
+
+        if include_unsteady:
+            f_unsteady: Optional[ArrayList] = (
+                ArrayList(
+                    [
+                        split_to_vertex(
+                            inner_case.flowfield.rho
+                            * gamma_b_dot_n[i_surf][..., None]
+                            * nc_n[i_surf],
+                            (0, 1),
+                        )
+                        for i_surf in range(inner_case.n_surf)
+                    ]
+                )
+                if include_unsteady
+                else None
+            )
+            f_tot = f_steady + f_unsteady
+        else:
+            f_tot = f_steady
+
+        # project forcing to beam (global frame)
+        f_tot_beam_global = project_forcing_to_beam(
+            f_total=f_tot,
+            rmat=hg_n[:, :3, :3],
+            dof_mapping=inner_case.dof_mapping,
+            x0_aero=inner_case.x0_b,
+        )
+
+        # transform to local frame to match f_aero_beam_n
+        f_tot_beam_local = transform_nodal_vect(
+            vect=f_tot_beam_global, rmat=jnp.swapaxes(hg_n[:, :3, :3], -2, -1)
+        )
+
+        return (f_tot_beam_local - f_aero_beam_n).ravel()[jnp.array(solve_dofs)]
 
     def timestep_residual(
         self,
-        hg_n: Array,
-        hg_dot_n: Array,
+        varphi_nm1: Array,
+        varphi_n: Array,
+        v_n: Array,
         t_n: Array,
         free_wake: bool,
         q_n: AeroStates,
         q_nm1: AeroStates,
-        dv: AeroDesignVariables,
+        dv: AeroelasticDesignVariables,
         f_aero_beam_n: Array,
+        struct_obj: BeamStructure,
         gamma_dot_relaxation: float,
+        approx_grads: bool,
     ) -> Array:
         r"""
         Compute the residual vector to the UVLM equations. These are given as:
@@ -1366,37 +1584,316 @@ class UVLM:
         \dot{\mathbf{\Gamma}}_{b, n}, \boldsymbol{\zeta}_{b, n}, \dot{\boldsymbol{\zeta}}_{b, n},
         \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
 
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param varphi_nm1: Beam minimal coordinates at timestep n-1, [n_nodes, 6].
+        :param varphi_n: Beam maximal coordinates at timestep n, [n_nodes, 6].
+        :param v_n: Beam velocity at timestep n, [n_nodes, 6].
         :param t_n: Time at step n.
         :param free_wake: If True, compute the free wake.
         :param q_n: Aero minimal states at timestep n.
         :param q_nm1: Aero minimal states at timestep n-1.
-        :param dv: Aero design variables.
+        :param dv: Aeroelastic design variables.
         :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the local frame.
+        :param struct_obj: Beam structure.
         :param gamma_dot_relaxation: Relaxation factor g for gamma_b_dot time integration, must match the forward solve.
+        :param approx_grads: If true, eliminate grid gradients from the aerodynamic force residual.
         :return: Residual vector.
         """
-        solve_args = dict(
-            hg_n=hg_n,
-            hg_dot_n=hg_dot_n,
+
+        zeta_w_res, gamma_w_res = self.wake_prop_res_func(
+            varphi_n_vec=varphi_n.ravel(),
+            varphi_nm1_vec=varphi_nm1.ravel(),
             t_n=t_n,
-            free_wake=free_wake,
-            q_nm1=q_nm1,
             dv=dv,
-            gamma_dot_relaxation=gamma_dot_relaxation,
+            free_wake=free_wake,
+            gamma_b_nm1_vec=q_nm1.gamma_b.ravel(),
+            gamma_w_nm1_vec=q_nm1.gamma_w.ravel(),
+            gamma_w_n_vec=q_n.gamma_w.ravel(),
+            zeta_w_nm1_vec=q_nm1.zeta_w.ravel(),
+            zeta_w_n_vec=q_n.zeta_w.ravel(),
+            struct_obj=struct_obj,
         )
 
         return jnp.concatenate(
             (
-                self.gamma_b_res_func(**solve_args, gamma_b_state=q_n.gamma_b),
-                self.gamma_w_res_func(**solve_args, gamma_w_state=q_n.gamma_w),
-                self.gamma_b_dot_res_func(
-                    **solve_args, gamma_b_dot_state=q_n.gamma_b_dot
+                self.gamma_b_res_func(
+                    varphi_n_vec=varphi_n.ravel(),
+                    v_n_vec=v_n.ravel(),
+                    t_n=t_n,
+                    dv=dv,
+                    gamma_b_n_vec=q_n.gamma_b.ravel(),
+                    gamma_w_n_vec=q_n.gamma_w.ravel(),
+                    zeta_w_n_vec=q_n.zeta_w.ravel(),
+                    struct_obj=struct_obj,
                 ),
-                self.zeta_w_res_func(**solve_args, zeta_w_state=q_n.zeta_w),
-                self.f_aero_res_func(**solve_args, f_aero_beam_n=f_aero_beam_n),
+                gamma_w_res,
+                self.gamma_b_dot_res_func(
+                    gamma_b_nm1_vec=q_nm1.gamma_b.ravel(),
+                    gamma_b_n_vec=q_n.gamma_b.ravel(),
+                    gamma_b_dot_nm1_vec=q_nm1.gamma_b_dot.ravel(),
+                    gamma_b_dot_n_vec=q_n.gamma_b_dot.ravel(),
+                    gamma_dot_relaxation=gamma_dot_relaxation,
+                    _=dv,
+                ),
+                zeta_w_res,
+                self.f_aero_res_func(
+                    varphi_n_vec=varphi_n.ravel(),
+                    v_n_vec=v_n.ravel(),
+                    t_n=t_n,
+                    dv=dv,
+                    gamma_b_n_vec=q_n.gamma_b.ravel(),
+                    gamma_w_n_vec=q_n.gamma_w.ravel(),
+                    gamma_b_dot_n_vec=q_n.gamma_b_dot.ravel(),
+                    zeta_w_n_vec=q_n.zeta_w.ravel(),
+                    f_aero_beam_n_vec=f_aero_beam_n.ravel(),
+                    struct_obj=struct_obj,
+                    block_grid_gradients=approx_grads,
+                    include_unsteady=True,
+                    solve_dofs=tuple(range(struct_obj.n_dof)),
+                ),
             )
+        )
+
+    @jax.jit(static_argnums=(5, 8, 10, 11, 12, 13, 14))
+    def timestep_residual_jacobians(
+        self,
+        varphi_nm1: Array,
+        varphi_n: Array,
+        v_n: Array,
+        t_n: Array,
+        free_wake: bool,
+        q_n: AeroStates,
+        q_nm1: AeroStates,
+        dv: AeroelasticDesignVariables,
+        f_aero_beam_n: Array,
+        struct_obj: BeamStructure,
+        gamma_dot_relaxation: float,
+        approx_grads: bool,
+        use_unsteady: bool,
+        solve_dofs: tuple[int, ...],
+    ) -> tuple[Array, Array, AeroelasticDesignVariables, Array, Array]:
+        r"""
+        Compute the Jacobians of the aerodynamic problem.
+        :param varphi_nm1: Minimal structural coordinates at timestep n-1, [n_nodes, 6].
+        :param varphi_n: Minimal structural coordinates at timestep n, [n_nodes, 6].
+        :param v_n: Structural velocity at timestep n, [n_nodes, 6].
+        :param t_n: Time at timestep n.
+        :param free_wake: If true, use a free wake formulation.
+        :param q_n: Aerodynamic minimal states at timestep n.
+        :param q_nm1: Aerodynamic minimal states at timestep n-1.
+        :param dv: Aeroelastic design variables.
+        :param f_aero_beam_n: Aerodynamic forcing in local frame of reference at timestep n, [n_nodes, 6].
+        :param struct_obj: Structural object.
+        :param gamma_dot_relaxation: Relaxation factor for gamma_b_dot time integration, must match the forward solve.
+        :param approx_grads: If true, eliminate grid gradients from force computation.
+        :param use_unsteady: If true, include unsteady aerodynamic forces.
+        :param solve_dofs: Degrees of freedom to solve for. This removes non-active forcing entries.
+        :return: Gradients of aerodynamic residual with respect to previous states, current states, and design
+        variables. Additionally, includes Jacobians of the aerodynamic residual with respect to the structural
+        displacement and velocity.
+        """
+
+        varphi_nm1 = varphi_nm1.ravel()
+        varphi_n = varphi_n.ravel()
+        v_n = v_n.ravel()
+        gamma_b_nm1 = q_nm1.gamma_b.ravel()
+        gamma_b_n = q_n.gamma_b.ravel()
+        gamma_w_nm1 = q_nm1.gamma_w.ravel()
+        gamma_w_n = q_n.gamma_w.ravel()
+        gamma_b_dot_nm1 = q_nm1.gamma_b_dot.ravel()
+        gamma_b_dot_n = q_n.gamma_b_dot.ravel()
+        zeta_w_nm1 = q_nm1.zeta_w.ravel()
+        zeta_w_n = q_n.zeta_w.ravel()
+
+        d_gamma_b = dict()
+        (
+            d_gamma_b["varphi_n"],
+            d_gamma_b["v_n"],
+            d_gamma_b["gamma_b_n"],
+            d_gamma_b["gamma_w_n"],
+            d_gamma_b["zeta_w_n"],
+            d_gamma_b["dv"],
+        ) = jax.jacrev(self.gamma_b_res_func, argnums=(0, 1, 3, 4, 5, 6))(
+            varphi_n,
+            v_n,
+            t_n,
+            gamma_b_n,
+            gamma_w_n,
+            zeta_w_n,
+            dv,
+            struct_obj,
+        )
+
+        d_gamma_w = dict()
+        (
+            d_gamma_w["varphi_nm1"],
+            d_gamma_w["varphi_n"],
+            d_gamma_w["gamma_b_nm1"],
+            d_gamma_w["gamma_w_nm1"],
+            d_gamma_w["gamma_w_n"],
+            d_gamma_w["zeta_w_nm1"],
+            d_gamma_w["zeta_w_n"],
+            d_gamma_w["dv"],
+        ) = jax.jacrev(
+            lambda *args: self.wake_prop_res_func(*args)[1],
+            argnums=(0, 1, 4, 5, 6, 7, 8, 9),
+        )(
+            varphi_nm1,
+            varphi_n,
+            t_n,
+            free_wake,
+            gamma_b_nm1,
+            gamma_w_nm1,
+            gamma_w_n,
+            zeta_w_nm1,
+            zeta_w_n,
+            dv,
+            struct_obj,
+        )
+
+        d_zeta_w = dict()
+        (
+            d_zeta_w["varphi_nm1"],
+            d_zeta_w["varphi_n"],
+            d_zeta_w["gamma_b_nm1"],
+            d_zeta_w["gamma_w_nm1"],
+            d_zeta_w["gamma_w_n"],
+            d_zeta_w["zeta_w_nm1"],
+            d_zeta_w["zeta_w_n"],
+            d_zeta_w["dv"],
+        ) = jax.jacrev(
+            lambda *args: self.wake_prop_res_func(*args)[0],
+            argnums=(0, 1, 4, 5, 6, 7, 8, 9),
+        )(
+            varphi_nm1,
+            varphi_n,
+            t_n,
+            free_wake,
+            gamma_b_nm1,
+            gamma_w_nm1,
+            gamma_w_n,
+            zeta_w_nm1,
+            zeta_w_n,
+            dv,
+            struct_obj,
+        )
+
+        d_gamma_b_dot = dict()
+        (
+            d_gamma_b_dot["gamma_b_nm1"],
+            d_gamma_b_dot["gamma_b_n"],
+            d_gamma_b_dot["gamma_b_dot_nm1"],
+            d_gamma_b_dot["gamma_b_dot_n"],
+            d_gamma_b_dot["dv"],
+        ) = jax.jacrev(self.gamma_b_dot_res_func, argnums=(0, 1, 2, 3, 5))(
+            gamma_b_nm1,
+            gamma_b_n,
+            gamma_b_dot_nm1,
+            gamma_b_dot_n,
+            gamma_dot_relaxation,
+            dv,
+        )
+
+        d_f_aero = dict()
+        (
+            d_f_aero["varphi_n"],
+            d_f_aero["v_n"],
+            d_f_aero["gamma_b_n"],
+            d_f_aero["gamma_w_n"],
+            d_f_aero["gamma_b_dot_n"],
+            d_f_aero["zeta_w_n"],
+            d_f_aero["dv"],
+            d_f_aero["f_aero_beam_n"],
+        ) = jax.jacrev(self.f_aero_res_func, argnums=(0, 1, 3, 4, 5, 6, 7, 9))(
+            varphi_n,
+            v_n,
+            t_n,
+            gamma_b_n,
+            gamma_w_n,
+            gamma_b_dot_n,
+            zeta_w_n,
+            dv,
+            struct_obj,
+            f_aero_beam_n.ravel(),
+            include_unsteady=use_unsteady,
+            block_grid_gradients=approx_grads,
+            solve_dofs=solve_dofs,
+        )
+        # slice f_aero Jacobian to solve_dofs columns (input is full n_dof, state is n_solve)
+        d_f_aero["f_aero_beam_n"] = d_f_aero["f_aero_beam_n"][:, jnp.array(solve_dofs)]
+
+        # Jacobians block widths and heights
+        n_solve_dof = len(solve_dofs)
+        aero_sizes = (
+            gamma_b_n.size,
+            gamma_w_n.size,
+            gamma_b_n.size,
+            zeta_w_n.size,
+            n_solve_dof,
+        )
+
+        struct_sizes = (
+            struct_obj.n_dof,
+            struct_obj.n_dof,
+            struct_obj.n_dof,
+            struct_obj.n_dof,
+        )
+
+        d_aero_res_d_q_nm1 = construct_named_block_jacobian(
+            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            keys=(
+                "gamma_b_nm1",
+                "gamma_w_nm1",
+                "gamma_b_dot_nm1",
+                "zeta_w_nm1",
+                "f_aero_beam_nm1",
+            ),
+            widths=aero_sizes,
+            heights=aero_sizes,
+        )
+
+        d_aero_res_d_q_n = construct_named_block_jacobian(
+            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            keys=(
+                "gamma_b_n",
+                "gamma_w_n",
+                "gamma_b_dot_n",
+                "zeta_w_n",
+                "f_aero_beam_n",
+            ),
+            widths=aero_sizes,
+            heights=aero_sizes,
+        )
+
+        # residual of aero problem w.r.t. structural states
+        d_struct_res_d_q_nm1 = construct_named_block_jacobian(
+            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            keys=("varphi_nm1", "v_nm1", "v_dot_nm1", "a_nm1"),
+            widths=struct_sizes,
+            heights=aero_sizes,
+        )
+
+        d_struct_res_d_q_n = construct_named_block_jacobian(
+            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            keys=("varphi_n", "v_n", "v_dot_n", "a_n"),
+            widths=struct_sizes,
+            heights=aero_sizes,
+        )
+
+        # handle design gradients
+        d_res_d_dv = AeroelasticDesignVariables.concatenate(
+            d_gamma_b["dv"],
+            d_gamma_w["dv"],
+            d_gamma_b_dot["dv"],
+            d_zeta_w["dv"],
+            d_f_aero["dv"],
+        )
+
+        return (
+            d_aero_res_d_q_nm1,
+            d_aero_res_d_q_n,
+            d_res_d_dv,
+            d_struct_res_d_q_nm1,
+            d_struct_res_d_q_n,
         )
 
     @staticmethod
@@ -1408,8 +1905,8 @@ class UVLM:
         return (
             "n_surf",
             "grid_disc",
-            "n_bound_panels_tot",
-            "n_wake_panels_tot",
+            "n_bound_panels",
+            "n_wake_panels",
             "n_panels_tot",
             "gamma_b_slice",
             "gamma_w_slice",
@@ -1435,4 +1932,6 @@ class UVLM:
             "_dt",
             "_flowfield",
             "_delta_w",
+            "mirror_point",
+            "mirror_normal",
         )

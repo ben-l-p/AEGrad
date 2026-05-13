@@ -13,10 +13,15 @@ CLAUDE.md
 # python files
 *.pyc
 
-# pycharm files
+# IDE/package manager files
+uv.lock
+.venv
 .idea/
 
+# Mac files
+.DS_Store
+
 # testing files
-test_output/
 tests/test_outputs/
-temp/case.py
+tmp/
+plan.md

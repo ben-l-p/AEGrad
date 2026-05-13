@@ -84,7 +84,10 @@ class TestDynamicEquilibriumAdjoint:
         )
 
         dynamic_grad, dynamic_adj = wing.dynamic_adjoint(
-            case=dynamic_sol, objective=dynamic_objective, p_varphi_p_x=-static_adj
+            case=dynamic_sol,
+            objective=dynamic_objective,
+            p_varphi_p_x=-static_adj,
+            approx_grads=False,
         )
 
         assert jnp.allclose(

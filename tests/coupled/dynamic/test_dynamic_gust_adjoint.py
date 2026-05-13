@@ -102,6 +102,7 @@ class TestDynamicGustAdjoint:
             case=cls.dynamic_sol,
             objective=_dynamic_objective,
             p_varphi_p_x=-static_adj,
+            approx_grads=False,
         )
 
     def test_gust_amplitude_gradient(self):

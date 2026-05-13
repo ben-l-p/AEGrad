@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TYPE_CHECKING
 
 import jax
 from jax import Array, vmap
@@ -7,7 +7,6 @@ from jax import numpy as jnp
 
 from aegrad.algebra.se3 import hg_to_d
 from aegrad.algebra.array_utils import ArrayList
-from aegrad.aero.uvlm import UVLM
 from aegrad.aero.flowfields import FlowField
 from aegrad.structure import BeamStructure
 from aegrad.aero.data_structures import DynamicAeroCase
@@ -22,6 +21,9 @@ from aegrad.utils.print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_L
 from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
+
+if TYPE_CHECKING:
+    from aegrad.aero.uvlm import UVLM
 
 
 class BaseCoupledAeroelastic:
@@ -270,7 +272,7 @@ class BaseCoupledAeroelastic:
 
         elif isinstance(init_case, StaticAeroelastic | DynamicAeroelasticSnapshot):
             case = DynamicAeroelastic.initialise(
-                initial_snapshot=init_case,
+                initial_snapshot=init_case,  # type: ignore
                 t=t,
                 use_f_ext_follower=f_ext_follower is not None,
                 use_f_ext_dead=f_ext_dead is not None,
