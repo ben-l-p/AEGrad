@@ -127,8 +127,8 @@ class AeroDesignVariables(DesignVariables):
         """
 
         # get control surface deflections from design variables
-        cs_ang_n = {k: v[i_ts, ...] for k, v in self.cs_ang_t}
-        cs_vel_n = {k: v[i_ts, ...] for k, v in self.cs_vel_t}
+        cs_ang_n = {k: v[i_ts, ...] for k, v in self.cs_ang_t.items()}
+        cs_vel_n = {k: v[i_ts, ...] for k, v in self.cs_vel_t.items()}
 
         return cs_ang_n, cs_vel_n
 

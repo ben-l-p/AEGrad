@@ -599,8 +599,8 @@ class DynamicAeroCase:
             f_unsteady=self._f_unsteady.index_all(i_ts, ...)
             if self._f_unsteady is not None
             else None,
-            cs_ang={k: v[i_ts, ...] for k, v in self.cs_ang.items()},
-            cs_vel={k: v[i_ts, ...] for k, v in self.cs_vel.items()},
+            cs_ang={k: jnp.atleast_1d(v)[i_ts, ...] for k, v in self.cs_ang.items()},
+            cs_vel={k: jnp.atleast_1d(v)[i_ts, ...] for k, v in self.cs_vel.items()},
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             t=self._t[i_ts],
@@ -836,7 +836,7 @@ class AeroSnapshot(DynamicAeroCase):
 
     @cs_ang.setter
     def cs_ang(self, value: dict[str, Array]) -> None:
-        self._cs_ang = {k: v[None, ...] for k, v in value}
+        self._cs_ang = {k: v[None, ...] for k, v in value.items()}
 
     @property
     def cs_vel(self) -> dict[str, Array]:
@@ -844,7 +844,7 @@ class AeroSnapshot(DynamicAeroCase):
 
     @cs_vel.setter
     def cs_vel(self, value: dict[str, Array]) -> None:
-        self._cs_vel = {k: v[None, ...] for k, v in value}
+        self._cs_vel = {k: v[None, ...] for k, v in value.items()}
 
     @property
     def t(self) -> Array:

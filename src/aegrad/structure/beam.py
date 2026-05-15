@@ -1317,7 +1317,6 @@ class BaseBeamStructure:
         f_ext_aero: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         load_steps: int = 1,
-        struct_relaxation_factor: float = 1.0,
     ) -> StaticStructure:
         r"""
         Perform static solve of the structure under external loads.
@@ -1326,7 +1325,6 @@ class BaseBeamStructure:
         :param f_ext_aero: External forces array of aerodynamic loads [n_node, 6].
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
-        :param struct_relaxation_factor: Relaxation factor for updates, in range (0, 1].
         :return: StaticStructure dataclass containing results of the static analysis.
         """
 
@@ -1342,7 +1340,7 @@ class BaseBeamStructure:
         if f_ext_dead is not None:
             check_arr_shape(f_ext_dead, (self.n_nodes, 6), "f_ext_dead")
 
-        if not (0.0 < struct_relaxation_factor <= 1.0):
+        if not (0.0 < self.relaxation_factor <= 1.0):
             raise ValueError("struct_relaxation_factor must be in the range (0, 1]")
 
         # degrees of freedom to solve for
@@ -1414,7 +1412,7 @@ class BaseBeamStructure:
 
             # solve for configuration increment, [n_solve_dofs]
             d_varphi_np1 = (
-                jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * struct_relaxation_factor
+                jnp.linalg.solve(k_t_solve_n, f_res_solve_n) * self.relaxation_factor
             )
 
             # update configuration, [n_nodes, 4, 4]

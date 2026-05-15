@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, TYPE_CHECKING, Callable
+from typing import Optional, TYPE_CHECKING, Protocol
 import os
 from pathlib import Path
 from functools import singledispatchmethod
@@ -49,7 +49,9 @@ if TYPE_CHECKING:
     from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
 from aegrad.utils.print_utils import warn, jax_print
 
-type AeroGridFunction = Callable[[ArrayList, dict[str, Array]], ArrayList]
+
+class AeroGridFunction(Protocol):
+    def __call__(self, x0: ArrayList, **kwargs: Array) -> ArrayList: ...
 
 
 @make_pytree
@@ -186,10 +188,14 @@ class UVLM:
         self.surf_b_names: list[str] = [f"surf_{i}_bound" for i in range(self.n_surf)]
         self.surf_w_names: list[str] = [f"surf_{i}_wake" for i in range(self.n_surf)]
 
+        def grid_func_inner(x0: ArrayList, **kwargs: Array) -> ArrayList:
+            if grid_func is not None:
+                return grid_func(x0, **kwargs)
+            else:
+                return x0
+
         # control surface variables
-        self.grid_func: AeroGridFunction = (
-            grid_func if grid_func is not None else lambda x0, _: x0
-        )
+        self.grid_func: AeroGridFunction = grid_func_inner
 
         self.cs_ang0: dict[str, Array] = dict()
         self.cs_vel0: dict[str, Array] = dict()
@@ -421,7 +427,7 @@ class UVLM:
         """
 
         zeta_b0_cs = self.grid_func(
-            self.x0_b, cs_ang_n
+            self.x0_b, **cs_ang_n
         )  # get local aerodynamic grid for control surface deflections.
 
         zetas = ArrayList([])
@@ -451,12 +457,24 @@ class UVLM:
         :return: Full aerodynamic global grid velocities for each surface, [n_surf][zeta_m, zeta_n, 3]
         """
         zeta_b0_cs = self.grid_func(
-            self.x0_b, cs_ang_n
+            self.x0_b, **cs_ang_n
         )  # deflected local aerodynamic grid
+
+        # as this is where the control velocities are used, they are checked here
+        for key in set(cs_ang_n.keys()) | set(cs_vel_n.keys()):
+            if key not in cs_vel_n or key not in cs_ang_n:
+                raise ValueError(
+                    f"Missing pair of control angles and velocities for control surface key '{key}'"
+                )
+
+            if cs_vel_n[key].shape != cs_vel_n[key].shape:
+                raise ValueError(
+                    f"Mismatched shape for control surface angles {cs_vel_n[key].shape} and velocities {cs_vel_n[key].shape}"
+                )
 
         _, zeta_b0_dot_cs = jax.jvp(
             lambda angs: self.grid_func(
-                self.x0_b, angs
+                self.x0_b, **angs
             ),  # local grid velocities due to control surface
             primals=(cs_ang_n,),
             tangents=(cs_vel_n,),
@@ -1051,7 +1069,10 @@ class UVLM:
             gamma_dot_relaxation=0.7,
             free_wake=False,
             cs_ang_t=cs_ang if cs_ang is not None else self.cs_ang0,
-            cs_vel_t=dict(),
+            cs_vel_t={
+                k: jnp.zeros_like(v)
+                for k, v in (cs_ang if cs_ang is not None else self.cs_ang0).items()
+            },
         )
         case.t = case.t.at[0].set(t)
 
@@ -1665,13 +1686,11 @@ class UVLM:
         varphi_n: Array,
         v_n: Array,
         t_n: Array,
-        free_wake: bool,
         q_n: AeroStates,
         q_nm1: AeroStates,
         dv: AeroelasticDesignVariables,
         f_aero_beam_n: Array,
         struct_obj: BeamStructure,
-        gamma_dot_relaxation: float,
         approx_grads: bool,
     ) -> Array:
         r"""
@@ -1699,13 +1718,11 @@ class UVLM:
         :param varphi_n: Beam maximal coordinates at timestep n, [n_nodes, 6].
         :param v_n: Beam velocity at timestep n, [n_nodes, 6].
         :param t_n: Time at step n.
-        :param free_wake: If True, compute the free wake.
         :param q_n: Aero minimal states at timestep n.
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aeroelastic design variables.
         :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the local frame.
         :param struct_obj: Beam structure.
-        :param gamma_dot_relaxation: Relaxation factor g for gamma_b_dot time integration, must match the forward solve.
         :param approx_grads: If true, eliminate grid gradients from the aerodynamic force residual.
         :return: Residual vector.
         """
@@ -1764,7 +1781,7 @@ class UVLM:
             )
         )
 
-    @jax.jit(static_argnums=(8, 10, 11, 12, 13))
+    @jax.jit(static_argnums=(8, 10, 11, 12))
     def timestep_residual_jacobians(
         self,
         i_ts: int,
@@ -1778,7 +1795,6 @@ class UVLM:
         f_aero_beam_n: Array,
         struct_obj: BeamStructure,
         approx_grads: bool,
-        use_unsteady: bool,
         solve_dofs: tuple[int, ...],
     ) -> tuple[Array, Array, AeroelasticDesignVariables, Array, Array]:
         r"""
@@ -1794,7 +1810,6 @@ class UVLM:
         :param f_aero_beam_n: Aerodynamic forcing in local frame of reference at timestep n, [n_nodes, 6].
         :param struct_obj: Structural object.
         :param approx_grads: If true, eliminate grid gradients from force computation.
-        :param use_unsteady: If true, include unsteady aerodynamic forces.
         :param solve_dofs: Degrees of freedom to solve for. This removes non-active forcing entries.
         :return: Gradients of aerodynamic residual with respect to previous states, current states, and design
         variables. Additionally, includes Jacobians of the aerodynamic residual with respect to the structural

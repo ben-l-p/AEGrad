@@ -21,6 +21,7 @@ from aegrad.utils.print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_L
 from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
+from aegrad.aero.utils import cs_ang_to_cs_vel
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -129,7 +130,6 @@ class BaseCoupledAeroelastic:
         f_ext_dead: Optional[Array] = None,
         t: float | Array = 0.0,
         load_steps: int = 1,
-        relaxation_factor: float = 1.0,
         horseshoe: bool = False,
     ) -> StaticAeroelastic:
 
@@ -157,7 +157,6 @@ class BaseCoupledAeroelastic:
                 f_ext_aero=f_aero_n,
                 prescribed_dofs=prescribed_dofs,
                 load_steps=load_steps,
-                struct_relaxation_factor=relaxation_factor,
             )
 
             delta_n = vmap(hg_to_d)(
@@ -181,7 +180,10 @@ class BaseCoupledAeroelastic:
             )
 
             aero_case_np1 = self.aero.solve_static(
-                t=t, hg=struct_case_np1.hg, horseshoe=horseshoe
+                t=t,
+                hg=struct_case_np1.hg,
+                horseshoe=horseshoe,
+                cs_ang=self.aero.cs_ang0,
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
@@ -229,6 +231,23 @@ class BaseCoupledAeroelastic:
     ) -> DynamicAeroelastic:
 
         warn_if_32_bit()
+
+        # check control inputs
+        if cs_ang_t is not None:
+            for key in cs_ang_t.keys():
+                if cs_ang_t[key].shape[0] != n_tstep:
+                    raise ValueError(
+                        f"Inconsistent number of time steps for control surface input cs_ang_t['{key}']"
+                    )
+
+                if cs_vel_t is not None and key not in cs_vel_t.keys():
+                    raise ValueError(
+                        f"Missing control velocity for control surface input cs_vel_t['{key}']"
+                    )
+
+        # if control velocities are not input, we obtain them from finite differences
+        if cs_vel_t is None and cs_ang_t is not None:
+            cs_vel_t = cs_ang_to_cs_vel(cs_ang_t=cs_ang_t, dt=dt)
 
         # degrees of freedom to constrain or solve for
         prescribed_dofs: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(

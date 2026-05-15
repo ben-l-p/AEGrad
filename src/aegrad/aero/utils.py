@@ -9,6 +9,9 @@ from jax.lax import cond
 from aegrad.algebra.array_utils import neighbour_average, ArrayList
 from aegrad.algebra.array_utils import split_to_vertex
 from aegrad.utils.constants import EPSILON, R_CUTOFF
+from aegrad.algebra.base import finite_difference
+from aegrad.algebra.so3 import exp_so3
+from aegrad.utils.utils import index_to_arr
 
 type KernelFunction = Callable[[Array, Array], Array]
 
@@ -27,6 +30,51 @@ def make_rectangular_grid(
 
     grid = jnp.zeros((m + 1, n + 1, 3))
     return grid.at[..., 0].set((jnp.linspace(0.0, chord, m + 1) - ea * chord)[:, None])
+
+
+def add_control_surface(
+    grid: Array,
+    angle: Array,
+    m_slice: Array | Sequence[int] | slice,
+    n_slice: Array | Sequence[int] | slice,
+    hinge_axis: Array = jnp.array((0.0, 1.0, 0.0)),
+) -> Array:
+    r"""
+    Add a control surface to a panel grid.
+    :param grid: Grid without deflection of this surface, [m+1, n+1, 3].
+    :param angle: Angle in radians through which the control surface will be deflected.
+    :param m_slice: Slice of chordwise strips to include in the control surface.
+    :param n_slice: Slice of spanwise strips to include in the control surface.
+    :param hinge_axis: Axis of the hinge surface in the local frame, [3].
+    :return: Deflected aerodynamic grid, [m+1, n+1, 3].
+    """
+
+    m_slice_arr: Array = index_to_arr(index=m_slice, n_entries=grid.shape[0])
+    n_slice_arr: Array = index_to_arr(index=n_slice, n_entries=grid.shape[1])
+
+    # grid for deflected surfaces
+    grid_out = grid
+
+    def inner_func(i_strip: Array) -> Array:
+        hinge_point = grid[m_slice_arr[0], i_strip, :]  # [3]
+
+        crv = hinge_axis * angle  # cartesian rotation vector for surface, [3].
+        rmat = exp_so3(crv)  # rotation matrix for rotating surface
+
+        # transform coordinates to rotate control surface
+        return (
+            jnp.einsum(
+                "ij,hj->hi",
+                rmat,
+                (grid[m_slice_arr, i_strip, :] - hinge_point[None, :]),
+            )
+            + hinge_point[None, :]
+        )
+
+    # update grid
+    return grid_out.at[jnp.ix_(m_slice_arr, n_slice_arr, jnp.arange(3))].set(
+        vmap(inner_func, in_axes=0, out_axes=1)(jnp.arange(n_slice_arr.size))
+    )
 
 
 def compute_surf_c(zeta: Array) -> Array:
@@ -479,3 +527,36 @@ def project_forcing_to_beam(
             jnp.cross(r_x0, f_total[i_surf]).sum(axis=0)
         )  # moment is r x_target f summed along strip [zeta_n, 3]
     return result
+
+
+def cs_ang_to_cs_vel(cs_ang_t: dict[str, Array], dt: float | Array) -> dict[str, Array]:
+    r"""
+    Approximate control surfaces velocities from the time series of their angles using finite differences.
+    :param cs_ang_t: Time history of control surface angle, {name, [n_tstep, ...]}.
+    :param dt: Time step length.
+    :return: Control surface velocity, {name, [n_tstep, ...]}.
+    """
+    cs_vel_t = dict()
+    for k, v in cs_ang_t.items():
+        n_tstep = v.shape[0]
+        cs_vel_t[k] = vmap(
+            lambda i_ts: finite_difference(
+                i_=i_ts, data=v, delta=jnp.array(dt), axis=0
+            ),
+            in_axes=0,
+            out_axes=0,
+        )(jnp.arange(n_tstep))
+    return cs_vel_t
+
+
+def cs_vel_to_cs_ang(cs_vel_t: dict[str, Array], dt: float | Array) -> dict[str, Array]:
+    r"""
+    Approximate control surfaces angles from the time series of their velocities using finite differences.
+    :param cs_vel_t: Time history of control surface velocity, {name, [n_tstep, ...]}.
+    :param dt: Time step length.
+    :return: Control surface angle, {name, [n_tstep, ...]}.
+    """
+    cs_ang_t = dict()
+    for k, v in cs_vel_t.items():
+        cs_ang_t[k] = jnp.cumsum(v, axis=0) * dt
+    return cs_ang_t

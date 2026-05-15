@@ -279,8 +279,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     hg_dot_n=None,
                     static=True,
                     horseshoe=horseshoe,
-                    cs_ang_n=dv_.aero.cs_ang_t,
-                    cs_vel_n=dv_.aero.cs_vel_t,
+                    cs_ang_n={
+                        k: jnp.atleast_1d(v)[0] for k, v in dv_.aero.cs_ang_t.items()
+                    },
+                    cs_vel_n={
+                        k: jnp.atleast_1d(v)[0] for k, v in dv_.aero.cs_vel_t.items()
+                    },
                 )
             )
 
@@ -365,7 +369,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             f_aero_beam_n=q_n.structure.f_ext_aero,
             struct_obj=self.structure,
             approx_grads=approx_grads,
-            use_unsteady=self.aero.include_unsteady_force,
             solve_dofs=solve_dofs,
         )
 
@@ -684,7 +687,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # add initial direct sensitivity
         d_j_d_x += p_j0_p_x
 
-        # include initial state sensitivity
+        # include initial state sensitivityFIx t
         if p_varphi_p_x is not None:
             p_q0_p_x = self.compute_p_q0_p_x(
                 case=case[0].to_static(),
