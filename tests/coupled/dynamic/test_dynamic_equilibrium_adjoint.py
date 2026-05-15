@@ -71,7 +71,6 @@ class TestDynamicEquilibriumAdjoint:
         dynamic_sol = wing.dynamic_solve(
             init_case=static_sol,
             prescribed_dofs=jnp.arange(6),
-            dt=dt,
             n_tstep=n_tstep,
         )
 

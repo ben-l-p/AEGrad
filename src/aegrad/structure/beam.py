@@ -1959,6 +1959,18 @@ class BaseBeamStructure:
             )
             struct_sol.f_res = struct_sol.f_res.at[i_ts, ...].set(f_res)
 
+            if include_aero and aero_sol is not None:
+                cs_ang_n = {k: v[i_ts] for k, v in cs_ang_t_.items()}
+                cs_vel_n = {k: v[i_ts] for k, v in cs_vel_t_.items()}
+                aero_sol.cs_ang = {
+                    k: v.at[i_ts].set(cs_ang_n[k])
+                    for k, v in aero_sol.cs_ang.items()
+                }
+                aero_sol.cs_vel = {
+                    k: v.at[i_ts].set(cs_vel_n[k])
+                    for k, v in aero_sol.cs_vel.items()
+                }
+
             return (
                 struct_sol,
                 struct_convergence_status_,

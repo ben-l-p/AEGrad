@@ -66,7 +66,6 @@ def _run_primal(k_cs: Array, gust_amplitude: float | Array):
     dynamic_sol = wing.dynamic_solve(
         init_case=static_sol,
         prescribed_dofs=jnp.arange(6),
-        dt=dt,
         n_tstep=n_tstep,
     )
     return wing, static_sol, dynamic_sol

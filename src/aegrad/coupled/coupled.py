@@ -220,7 +220,6 @@ class BaseCoupledAeroelastic:
             StaticAeroelastic | DynamicAeroelastic | DynamicAeroelasticSnapshot
         ],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
-        dt: Array | float,
         n_tstep: int,
         f_ext_follower: Optional[Array] = None,
         f_ext_dead: Optional[Array] = None,
@@ -247,7 +246,7 @@ class BaseCoupledAeroelastic:
 
         # if control velocities are not input, we obtain them from finite differences
         if cs_vel_t is None and cs_ang_t is not None:
-            cs_vel_t = cs_ang_to_cs_vel(cs_ang_t=cs_ang_t, dt=dt)
+            cs_vel_t = cs_ang_to_cs_vel(cs_ang_t=cs_ang_t, dt=self.aero.dt)
 
         # degrees of freedom to constrain or solve for
         prescribed_dofs: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
@@ -257,10 +256,10 @@ class BaseCoupledAeroelastic:
             n_dof=self.structure.n_dof, prescribed_dofs=prescribed_dofs
         )
 
-        t = jnp.arange(n_tstep) * dt + t_init
+        t = jnp.arange(n_tstep) * self.aero.dt + t_init
 
         self.structure.time_integrator = TimeIntegrator(
-            spectral_radius=self.structure.spectral_radius, dt=dt
+            spectral_radius=self.structure.spectral_radius, dt=self.aero.dt
         )
 
         # initialise aeroelastic case object

@@ -55,8 +55,8 @@ def add_control_surface(
     # grid for deflected surfaces
     grid_out = grid
 
-    def inner_func(i_strip: Array) -> Array:
-        hinge_point = grid[m_slice_arr[0], i_strip, :]  # [3]
+    def inner_func(n_idx: Array) -> Array:
+        hinge_point = grid[m_slice_arr[0], n_idx, :]  # [3]
 
         crv = hinge_axis * angle  # cartesian rotation vector for surface, [3].
         rmat = exp_so3(crv)  # rotation matrix for rotating surface
@@ -66,14 +66,14 @@ def add_control_surface(
             jnp.einsum(
                 "ij,hj->hi",
                 rmat,
-                (grid[m_slice_arr, i_strip, :] - hinge_point[None, :]),
+                (grid[m_slice_arr, n_idx, :] - hinge_point[None, :]),
             )
             + hinge_point[None, :]
         )
 
     # update grid
     return grid_out.at[jnp.ix_(m_slice_arr, n_slice_arr, jnp.arange(3))].set(
-        vmap(inner_func, in_axes=0, out_axes=1)(jnp.arange(n_slice_arr.size))
+        vmap(inner_func, in_axes=0, out_axes=1)(n_slice_arr)
     )
 
 
