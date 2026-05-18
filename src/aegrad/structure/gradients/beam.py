@@ -697,7 +697,7 @@ class BeamStructure(BaseBeamStructure):
 
         return cast(Array, p_j_n_p_q_n), cast(StructuralDesignVariables, p_j_n_p_x)
 
-    @jax.jit(static_argnums=(0, 6, 7, 8, 9, 10, 11, 12, 13))
+    @jax.jit(static_argnums=(0, 6, 7, 8, 10, 11, 12, 13))
     def adjoint_time_loop(
         self,
         rev_i_ts: int,

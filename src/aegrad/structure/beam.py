@@ -7,6 +7,7 @@ from jax import numpy as jnp
 from jax import Array, vmap
 import jax
 from jax.scipy.linalg import block_diag
+from jax.scipy.spatial.transform import Rotation
 
 from aegrad.aero.data_structures import DynamicAeroCase
 from aegrad.utils.utils import check_type
@@ -119,15 +120,19 @@ class BaseBeamStructure:
         if y_vector.shape == (1, 3):
             y_vector = jnp.broadcast_to(y_vector, (self.n_elem, 3))
 
+        # y vectors in reference unoriented configuration, and placeholder for oriented equivalent.
         check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
-        self.y_vector: Array = y_vector
-        self.use_lumped_mass: bool = m_lumped_index is not None
+        self.y_vector_reference: Array = y_vector
+        self.y_vector: Array = jnp.zeros_like(y_vector)
+
         # initialise design variables with default values
-        self.x0: Array = jnp.zeros((num_nodes, 3))
+        self.x0_reference: Array = jnp.zeros((num_nodes, 3))  # unoriented
+        self.x0: Array = jnp.zeros((num_nodes, 3))  # oriented
 
         self._m_cs: Optional[Array] = None
         self._k_cs: Optional[Array] = None
         self._m_lumped: Optional[Array] = None
+        self.use_lumped_mass: bool = m_lumped_index is not None
 
         # initialise auxiliary arrays
         self.o0: Array = jnp.zeros((self.n_elem, 3, 3))
@@ -135,7 +140,8 @@ class BaseBeamStructure:
         self.d0: Array = jnp.zeros((self.n_elem, 6))
 
         # initialise undeformed algebra and group
-        self.hg0: Array = jnp.zeros((self.n_nodes, 4, 4))
+        self.hg0_reference: Array = jnp.zeros((self.n_nodes, 4, 4))  # unoriented
+        self.hg0: Array = jnp.zeros((self.n_nodes, 4, 4))  # oriented
 
         # grads inverse action for the reference rotations
         self.ad_inv_o0: Array = jnp.zeros((self.n_elem, 6, 6))
@@ -194,6 +200,10 @@ class BaseBeamStructure:
         self.thrust_reference: dict[str, Array] = {
             k: jnp.atleast_1d(1) for k in self.thrust_nodes.keys()
         }
+
+        # set the reference orientation, which can be overwritten later.
+        self.orientation_euler: Array = jnp.zeros(3)
+        self.orientation: Array = jnp.eye(3)
 
         # other settings
         self.use_m_cs: bool = False
@@ -261,23 +271,41 @@ class BaseBeamStructure:
         k_cs: Array,
         m_cs: Optional[Array],
         m_lumped: Optional[Array] = None,
+        orientation_euler: Optional[Array] = None,
         thrust_reference: Optional[dict[str, Array | float]] = None,
         *,
         remove_checks: bool = False,
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities.
-        :param coords: Node coordinates, [n_nodes, 3].
+        :param coords: Node coordinates in the reference configuration, [n_nodes, 3].
         :param k_cs: Cross-section stiffness matrices, [n_entry, 6, 6] or [6, 6].
         :param m_cs: Cross-section mass matrices, [n_entry, 6, 6] or [6, 6].
         :param m_lumped: Lumped mass matrices at nodes, [n_entry, 6, 6].
+        :param orientation_euler: Euler angles in radians which to rotate the reference configuration by, [3]. This rotation
+        is performed about the origin, and will default to the identity is no Array is passed. These are rotated in
+        z-y-x order.
         :param thrust_reference: Reference thrust magnitude, {keys, [1]}.
         :param remove_checks: Flag to ignore input checks, used when function is JIT compiled.
         """
 
+        # orientation
+        if orientation_euler is not None:
+            check_arr_shape(orientation_euler, (3,), "orientation_euler")
+            self.orientation_euler = orientation_euler
+            self.orientation = Rotation.from_euler(
+                seq="zyx", angles=orientation_euler
+            ).as_matrix()
+
+            # rotate the y vectors
+            self.y_vector = self.y_vector.at[...].set(
+                jnp.einsum("jk,ik->ij", self.orientation, self.y_vector_reference)
+            )
+
         # coordinates
         check_arr_shape(coords, (self.n_nodes, 3), "coords")
-        self.x0 = self.x0.at[...].set(coords)
+        self.x0_reference = coords
+        self.x0 = self.x0.at[...].set(jnp.einsum("jk,ik->ij", self.orientation, coords))
 
         # populate arrays
         if k_cs.ndim == 2:
@@ -343,13 +371,16 @@ class BaseBeamStructure:
             self.m_lumped = m_lumped
 
         # obtain initial orientation and length
-        x_elem = jnp.take(self.x0, self.connectivity, axis=0)  # [n_elem, 2, 3]
+        x_elem = jnp.take(
+            self.x0_reference, self.connectivity, axis=0
+        )  # [n_elem, 2, 3]
         dx = x_elem[:, 1, :] - x_elem[:, 0, :]  # [n_elem, 3]
 
         # ensure out-of-plane vector and beam vector are not collinear
         if not remove_checks:
             if jnp.any(
-                jnp.linalg.norm(jnp.cross(dx, self.y_vector, 1, 1), axis=-1) < 1e-6
+                jnp.linalg.norm(jnp.cross(dx, self.y_vector_reference, 1, 1), axis=-1)
+                < 1e-6
             ):
                 raise ValueError(
                     "y_vector is collinear with beam element direction for at least one element. "
@@ -360,7 +391,9 @@ class BaseBeamStructure:
         self.d0 = self.d0.at[:, 0].set(self.l0)
 
         dx_unit = dx / self.l0[:, None]  # unit vector in beam direction, [n_elem, 3]
-        dz = jnp.cross(dx_unit, self.y_vector, axis=-1)  # vector in plane[n_elem, 3]
+        dz = jnp.cross(
+            dx_unit, self.y_vector_reference, axis=-1
+        )  # vector in plane[n_elem, 3]
         dz_unit = dz / jnp.linalg.norm(dz, axis=-1)[:, None]  # [n_elem, 3]
 
         dy_unit = jnp.cross(dz_unit, dx_unit)
@@ -373,10 +406,18 @@ class BaseBeamStructure:
             vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
         )
 
-        self.hg0 = jnp.broadcast_to(
-            jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
+        # set unoriented initial coordinates
+        self.hg0_reference = self.hg0_reference.at[...].set(
+            jnp.broadcast_to(jnp.eye(4)[None, ...], (self.n_nodes, 4, 4))
+        )  # [n_nodes, 4, 4]
+        self.hg0_reference = self.hg0.at[:, :3, 3].set(self.x0_reference)
+
+        # set oriented initial coordinates
+        self.hg0 = self.hg0.at[:, :3, :3].set(
+            jnp.broadcast_to(self.orientation[None, ...], (self.n_nodes, 3, 3))
         )  # [n_nodes, 4, 4]
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
+        self.hg0 = self.hg0.at[:, 3, 3].set(1.0)
 
     def get_design_variables(
         self,

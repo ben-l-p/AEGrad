@@ -55,6 +55,7 @@ class BaseCoupledAeroelastic:
         flowfield: FlowField,
         delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
         x0_aero: ArrayList | Sequence[Array] | Array,
+        orientation_euler: Optional[Array] = None,
         reference_cs_angles: Optional[dict[str, Array]] = None,
         *,
         remove_checks: bool = False,
@@ -64,6 +65,7 @@ class BaseCoupledAeroelastic:
             k_cs=k_cs,
             m_cs=m_cs,
             m_lumped=m_lumped,
+            orientation_euler=orientation_euler,
             remove_checks=remove_checks,
         )
         self.aero.set_design_variables(

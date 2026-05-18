@@ -2,6 +2,7 @@
 
 ![Tests](https://github.com/ben-l-p/AEGrad/actions/workflows/python_package.yml/badge.svg)
 [![cov](https://ben-l-p.github.io/AEGrad/badges/coverage.svg)](https://github.com/ben-l-p/AEGrad/actions)
+![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/ben-l-p/AEGrad/main/pyproject.toml)
 
 AEGrad is a differentiable nonlinear aeroelastic analysis framework which couples a nonlinear structural model with
 unsteady vortex lattice method (UVLM) aerodynamics. This allows for a range of structural, aerodynamic and coupled
