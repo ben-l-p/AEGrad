@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from _operator import mul
-from functools import reduce
 import os
+from math import prod
 from pathlib import Path
 from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict
 
@@ -99,7 +98,7 @@ class AeroDesignVariables(DesignVariables):
         self.cs_vel_t: dict[str, Array] = cs_vel_t
 
         self.f_shape: tuple[int, ...] = f_shape
-        self.f_size: int = reduce(mul, f_shape, 1)
+        self.f_size: int = prod(f_shape)
 
         self.shapes: dict[
             str,

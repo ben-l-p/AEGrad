@@ -188,6 +188,7 @@ def v_ind_vmap(
     kernel: KernelFunction,
     batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> Array:
+    # noinspection SpellCheckingInspection
     """
     Compute einsum("ijklm,kl->ijm", aic_vmap(c, zeta, kernel), gamma) without
     materialising the full AIC. Contracts with gamma inside each lax.map step so
@@ -222,6 +223,7 @@ def compute_v_ind[T: Array | ArrayList](
     mirror_normal: Optional[Array],
     batch_size: Optional[int] = AIC_BATCH_SIZE,
 ) -> T:
+    # noinspection SpellCheckingInspection
     """
     Compute einsum("ijklm,kl->ijm", compute_aic_grid(c, None, zeta, kernel), gamma)
     without materialising the full [c_m, c_n, m, varphi, 3] AIC.

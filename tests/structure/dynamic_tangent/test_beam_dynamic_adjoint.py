@@ -90,8 +90,8 @@ class TestBeamTranslationAdjoint:
         t = jnp.arange(n_tstep, dtype=float) * dt
         expected_x_t = 0.5 * f_mag / m_cs[0, 0] * t * t
 
-        # note that we omit here the influence of the design parameters on the initial state
-        # in reality, the initial acceleration in this case depends upon the design variables as it is a function of
+        # Note that we omit here the influence of the design parameters on the initial state.
+        # In reality, the initial acceleration in this case depends upon the design variables as it is a function of
         # the external forcing and the beam mass. We negate this, which causes a small discrepancy in the result
         # and as such needs a relaxed tolerance.
         grads, adj = beam.dynamic_adjoint(

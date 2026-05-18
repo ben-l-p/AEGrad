@@ -6,7 +6,7 @@ from jax import Array, vmap
 from jax import numpy as jnp
 
 from aegrad.algebra.se3 import hg_to_d
-from aegrad.algebra.array_utils import ArrayList
+from aegrad.algebra.array_utils import ArrayList, check_arr_shape
 from aegrad.aero.flowfields import FlowField
 from aegrad.structure import BeamStructure
 from aegrad.aero.data_structures import DynamicAeroCase
@@ -22,6 +22,7 @@ from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
 from aegrad.aero.utils import cs_ang_to_cs_vel
+
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -54,7 +55,7 @@ class BaseCoupledAeroelastic:
         flowfield: FlowField,
         delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
         x0_aero: ArrayList | Sequence[Array] | Array,
-        reference_cs_angles: dict[str, Array] | None = None,
+        reference_cs_angles: Optional[dict[str, Array]] = None,
         *,
         remove_checks: bool = False,
     ):
@@ -86,7 +87,7 @@ class BaseCoupledAeroelastic:
     ) -> AeroelasticDesignVariables:
         return AeroelasticDesignVariables(
             structure_dv=self.structure.get_design_variables(
-                struct_case=case.structure
+                struct_case=case.structure, thrust_t=case.structure.thrust
             ),
             aero_dv=self.aero.get_design_variables(
                 cs_ang_t=case.aero.cs_ang, cs_vel_t=case.aero.cs_vel
@@ -225,6 +226,7 @@ class BaseCoupledAeroelastic:
         f_ext_dead: Optional[Array] = None,
         t_init: float = 0.0,
         load_steps: int = 1,
+        thrust_t: Optional[dict[str, Array]] = None,
         cs_ang_t: Optional[dict[str, Array]] = None,
         cs_vel_t: Optional[dict[str, Array]] = None,
     ) -> DynamicAeroelastic:
@@ -247,6 +249,21 @@ class BaseCoupledAeroelastic:
         # if control velocities are not input, we obtain them from finite differences
         if cs_vel_t is None and cs_ang_t is not None:
             cs_vel_t = cs_ang_to_cs_vel(cs_ang_t=cs_ang_t, dt=self.aero.dt)
+
+        # check thrust
+        if thrust_t is not None:
+            if thrust_t.keys() != self.structure.thrust_direction.keys():
+                raise ValueError("Mismatch in keys for thrust")
+
+            for k, v in thrust_t.items():
+                check_arr_shape(v, (n_tstep,), name=f"thrust_t['{k}']")
+
+            thrust_t_: dict[str, Array] = {}
+        else:
+            thrust_t_ = {
+                k: jnp.full(v, n_tstep)
+                for k, v in self.structure.thrust_reference.items()
+            }
 
         # degrees of freedom to constrain or solve for
         prescribed_dofs: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
@@ -329,6 +346,7 @@ class BaseCoupledAeroelastic:
             aero_obj=self.aero,
             aero_case=case.aero,
             fsi_convergence_status=fsi_converge_status,
+            thrust_t=thrust_t_,
             cs_ang_t=cs_ang_t if cs_ang_t is not None else dict(),
             cs_vel_t=cs_vel_t if cs_vel_t is not None else dict(),
         )

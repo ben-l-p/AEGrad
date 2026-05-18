@@ -1,7 +1,7 @@
 from __future__ import annotations
+
+from math import prod
 from typing import Sequence, TYPE_CHECKING, Optional
-from functools import reduce
-from operator import mul
 from enum import Enum
 
 from jax import Array, jit, vmap
@@ -190,7 +190,7 @@ class LinearUVLM:
                     raise ValueError("Entry.shapes is None")
                 slices: list[slice] = []
                 for shape in entry.shapes:
-                    size: int = reduce(mul, shape)
+                    size: int = prod(shape)
                     slices.append(slice(cnt, cnt + size))
                     cnt += size
                 out_dict[entry.name] = _LinearComponent(True, slices, entry.shapes)
@@ -648,7 +648,7 @@ class LinearUVLM:
         """
         return OutputUnflattened(**self._get_zero(shallow_as_dict(self.output_slices)))
 
-    def _unflatten_subvec(self, vec: Array, component: _LinearComponent) -> ArrayList:
+    def _unflatten_sub_vec(self, vec: Array, component: _LinearComponent) -> ArrayList:
         r"""
         Obtain an ArrayList of arrays from a subvector based on the provided component.
         :param vec: Total vector, [n_elements]
@@ -660,7 +660,7 @@ class LinearUVLM:
         if component.shapes is None:
             raise ValueError("Invalid shape for unflattened object")
         for i_surf in range(self.reference.n_surf):
-            size = reduce(mul, component.shapes[i_surf])
+            size = prod(component.shapes[i_surf])
             arrs.append(vec[cnt : cnt + size].reshape(component.shapes[i_surf]))
         return arrs
 
@@ -701,7 +701,7 @@ class LinearUVLM:
             Boundary condition velocity at collocation points.
             :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
             :param zeta_ws: Wake vertex positions at time=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3.
+            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3].
             :param zeta_bs_dot: Wake vertex velocities at time=varphi+1, [n_surf][zetas_m, zeta_n, 3].
             :return: Boundary condition velocity at collocation points, [m_tot * n_tot].
             """
@@ -796,7 +796,7 @@ class LinearUVLM:
                     _v_wake_prop_ref,
                     self.dt,
                     not self.prescribed_wake,
-                    linearise_redisc=True,
+                    linearise_variable_wake=True,
                 )
 
             # reference primals
@@ -955,7 +955,7 @@ class LinearUVLM:
             else:
                 d_zeta_b_np1 = None
 
-            # use wake routines to get new wake circulation, factoring in variable discretization
+            # use wake routines to get new wake circulation, factoring in variable discretisation
             d_zeta_w_np1, d_gamma_w_np1 = _propagate_linear_wake(
                 self.get_zero_input(), x_n
             )
@@ -969,7 +969,7 @@ class LinearUVLM:
                 d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1)
 
             # resulting bound circulation perturbation
-            d_gamma_b_np1 = self._unflatten_subvec(
+            d_gamma_b_np1 = self._unflatten_sub_vec(
                 -solve_mat0 @ d_v_bc, self.state_slices.gamma_b
             )
 
@@ -1041,7 +1041,7 @@ class LinearUVLM:
             d_gamma_b_np1_vec -= d_e @ v_bc0
 
             # perturbations in solve matrix
-            d_gamma_b_np1 = self._unflatten_subvec(
+            d_gamma_b_np1 = self._unflatten_sub_vec(
                 d_gamma_b_np1_vec, self.state_slices.gamma_b
             )
 

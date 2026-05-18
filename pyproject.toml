@@ -5,10 +5,11 @@ description = "Solver for obtaining design variable sensitivites of UVLM/nonline
 authors = [{ name = "Ben Preston" }]
 requires-python = "==3.12.*"
 dependencies = [
-    "jax>=0.9.2",
-    "numpy>=2.4.4",
+    "jax==0.10.0",
+    "numpy==2.4.5",
     "pytest>=9.0.3",
-    "ruff>=0.15.10",
+    "pytest-cov==7.1.0",
+    "ruff==0.15.13",
     "vtk>=9.6.1",
 ]
 
@@ -18,3 +19,24 @@ pythonpath = ["src", "."]
 testpaths = ["./tests"]
 python_files = ["test*.py"]
 addopts = "-q --tb=short"
+
+[tool.coverage.run]
+source = ["aegrad"]
+omit = ["models/*"]
+branch = true
+parallel = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

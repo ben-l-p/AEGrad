@@ -4,6 +4,7 @@ from jax import Array, vmap
 from jax import numpy as jnp
 
 
+# noinspection SpellCheckingInspection
 def gauss_lobatto(
     f: Callable[[Array], Array],
     bounds: Array,

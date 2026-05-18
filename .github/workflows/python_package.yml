@@ -1,6 +1,9 @@
-name: Install package and run tests
+name: Run tests and coverage
 
 on: [ push ]
+
+permissions:
+  contents: write
 
 jobs:
   build-linux:
@@ -13,8 +16,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Install the project
+      - name: Install
         run: uv sync --all-extras --dev && uv pip install -e .
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Run tests and coverage
+        run: uv run pytest --cov --cov-report json
+
+      - name: Update coverage badge
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: we-cli/coverage-badge-action@main

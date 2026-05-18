@@ -1,5 +1,8 @@
 # AEGrad - Differentiable Nonlinear Aeroelastic Analysis
 
+![Tests](https://github.com/ben-l-p/AEGrad/actions/workflows/python_package.yml/badge.svg)
+[![cov](https://ben-l-p.github.io/AEGrad/badges/coverage.svg)](https://github.com/ben-l-p/AEGrad/actions)
+
 AEGrad is a differentiable nonlinear aeroelastic analysis framework which couples a nonlinear structural model with
 unsteady vortex lattice method (UVLM) aerodynamics. This allows for a range of structural, aerodynamic and coupled
 analyses, with gradients available using the adjoint method. The full codebase is implemented in JAX, which allows for

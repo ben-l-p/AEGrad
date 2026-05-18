@@ -17,7 +17,7 @@ class TestLinXForcePoint:
     f: float = 34.15
 
     @classmethod
-    def test_force_point_mass(cls):
+    def test_force_point_mass(cls, use_thrust: bool = False) -> None:
         coords = jnp.zeros((1, 3))
         conn = jnp.zeros((0, 2), dtype=int)
 
@@ -35,6 +35,12 @@ class TestLinXForcePoint:
             m_lumped_index=jnp.zeros((1,), dtype=int),
             spectral_radius=1.0,
             relaxation_factor=1.0,
+            thrust_nodes={"thrust": 0} if use_thrust else None,
+            thrust_direction={
+                "thrust": jnp.zeros((3,)).at[cls.f_direction_index].set(1.0)
+            }
+            if use_thrust
+            else None,
         )
 
         struct.set_design_variables(
@@ -42,6 +48,7 @@ class TestLinXForcePoint:
             k_cs=jnp.zeros((0, 6, 6)),
             m_cs=None,
             m_lumped=m_lump[None, ...],
+            thrust_reference={"thrust": cls.f} if use_thrust else None,
         )
 
         v_dot_expected = cls.f / m_lump[cls.f_direction_index, cls.f_direction_index]
@@ -52,9 +59,13 @@ class TestLinXForcePoint:
         )
         init_cond.a = init_cond.a.at[0, cls.f_direction_index].set(v_dot_expected)
         init_cond.f_ext_follower = (
-            cast(Array, init_cond.f_ext_follower)
-            .at[0, cls.f_direction_index]
-            .set(cls.f)
+            (
+                cast(Array, init_cond.f_ext_follower)
+                .at[0, cls.f_direction_index]
+                .set(cls.f)
+            )
+            if not use_thrust
+            else None
         )
 
         output = struct.dynamic_solve(
@@ -64,7 +75,9 @@ class TestLinXForcePoint:
             prescribed_dofs=None,
             f_ext_follower=jnp.zeros((n_tstep, 1, 6))
             .at[:, 0, cls.f_direction_index]
-            .set(cls.f),
+            .set(cls.f)
+            if not use_thrust
+            else None,
             f_ext_dead=None,
             f_ext_aero=None,
         )
@@ -90,6 +103,12 @@ class TestLinXForcePoint:
         assert jnp.allclose(v_dot_expected, v_dot_measured), (
             "Accelerations do not match expected values"
         )
+
+    @classmethod
+    def test_thrust_point_mass(cls) -> None:
+        if cls.f_direction_index >= 3:
+            return  # skip cases which would result in a rotational thrust
+        cls.test_force_point_mass(use_thrust=True)
 
 
 class TestLinYForcePoint(TestLinXForcePoint):

@@ -15,7 +15,6 @@ class TestDynamicEquilibrium:
         m_star = 20
         c_ref = 1.0
         u_inf = jnp.array((10.0, 0.0, 1.5))
-        u_inf_mag = jnp.linalg.norm(u_inf)
         k_cs = jnp.diag(jnp.array((1e6, 1e6, 1e6, 1e3, 1e3, 1e3)))
 
         wing = make_cantilever_wing(
@@ -40,7 +39,6 @@ class TestDynamicEquilibrium:
         wing.structure.struct_convergence_settings = conv_settings
         wing.fsi_convergence_settings = conv_settings
 
-        dt = c_ref / (m * u_inf_mag)
         n_tstep = 100
 
         static_sol = wing.static_solve(prescribed_dofs=jnp.arange(6))

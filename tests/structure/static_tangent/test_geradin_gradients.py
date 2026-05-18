@@ -40,7 +40,7 @@ class TestGeradinBeamGradients:
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
-        grads_adj = cls.struct.static_adjoint(
+        grads_adj, adj = cls.struct.static_adjoint(
             structure=result, objective=cls._objective
         )
 
@@ -69,7 +69,7 @@ class TestGeradinBeamGradients:
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
-        grads_adj = cls.struct.static_adjoint(
+        grads_adj, adj = cls.struct.static_adjoint(
             structure=result, objective=cls._objective
         )
 

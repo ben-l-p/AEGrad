@@ -14,6 +14,7 @@ from aero.utils import add_control_surface
 from algebra.array_utils import ArrayList
 
 
+# noinspection SpellCheckingInspection
 def make_patil_wing(
     sigma: float = 1.0,
     n_nodes: int = 49,
@@ -23,7 +24,7 @@ def make_patil_wing(
     rho=0.088,
 ) -> CoupledAeroelastic:
     r"""
-    Create the wing from “Nonlinear Aeroelasticity and Flight Dynamics of High-Altitude Long-Endurance Aircraft",
+    Create the wing from “Nonlinear Aeroelasticity and Flight Dynamics of High-Altitude Long-Endurance Aircraft”,
     Patil, M. J., Hodges, D. H., and Cesnik, C. E. S. This wing is used for comparison with "Optimal Rolling Maneuvers
     with Very Flexible Wings", Salvatore Maraniello and Rafael Palacios.
     """
@@ -90,7 +91,7 @@ def make_patil_wing(
     uvlm = UVLM(
         grid_shapes=[gd],
         dof_mapping=jnp.arange(n_nodes),
-        grid_func=aero_grid_func,
+        grid_func=aero_grid_func,  # type: ignore
     )
 
     wing = CoupledAeroelastic(beam, uvlm)

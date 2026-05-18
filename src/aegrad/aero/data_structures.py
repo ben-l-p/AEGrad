@@ -394,7 +394,7 @@ class DynamicAeroCase:
                     write_pvd(
                         directory=directory,
                         name=bound_name,
-                        filedirs=list(zip(*paths))[0],
+                        file_dirs=list(zip(*paths))[0],
                         times=list(self.t[index_]),
                     )
                 )
@@ -405,7 +405,7 @@ class DynamicAeroCase:
                     write_pvd(
                         directory=directory,
                         name=wake_name,
-                        filedirs=list(zip(*paths))[-1],
+                        file_dirs=list(zip(*paths))[-1],
                         times=list(self.t[index_]),
                     )
                 )

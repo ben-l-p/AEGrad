@@ -89,10 +89,10 @@ if __name__ == "__main__":
         k_cs=k_cs,
         m_cs=m_cs,
         m_lumped=None,
-        dt=dt,
         flowfield=flowfield,
         delta_w=delta_w,
         x0_aero=grid,
+        dt=dt,
     )
 
     # set tolerance to zero, rather than none, to prevent error messages

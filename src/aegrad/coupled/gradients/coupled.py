@@ -38,6 +38,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         dv: AeroelasticDesignVariables,
         varphi: Array,
+        thrust: dict[str, Array],
         i_ts: int,
         t: Array,
         use_horseshoe: bool,
@@ -62,11 +63,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             m_lumped=dv.structure.m_lumped
             if dv.structure.m_lumped is not None
             else None,
-            dt=self.aero.dt,
             flowfield=self.aero.flowfield.from_design_variables(
                 design_variables=dv.aero.flowfield
             ),
             delta_w=self.aero.delta_w,
+            dt=self.aero.dt,
             x0_aero=dv.aero.x0_aero,
             remove_checks=True,
         )
@@ -118,6 +119,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             hg=hg,
             f_ext_follower_n=dv.structure.f_ext_follower,
             f_ext_dead_n=f_dead_total,
+            thrust_n=thrust,
             dynamic=False,
             m_t=m_t,
             c_l=None,
@@ -192,8 +194,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         p_f_p_varphi, p_f_p_x = jax.jacrev(
             lambda flat_varphi, dv_: objective(
                 self._aeroelastic_states_res_from_dv_varphi(
-                    dv_,
-                    flat_varphi.reshape(self.structure.n_nodes, 6),
+                    dv=dv_,
+                    varphi=flat_varphi.reshape(self.structure.n_nodes, 6),
+                    thrust=case.structure.thrust,
                     t=case.aero.t,
                     i_ts=0,
                     use_horseshoe=static_horseshoe,
@@ -207,8 +210,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # gradient of residual w.r.t. minimal states and design variables (used by linear solves)
         p_res_p_varphi, p_res_p_x = jax.jacrev(
             lambda flat_varphi, dv_: self._aeroelastic_states_res_from_dv_varphi(
-                dv_,
-                flat_varphi.reshape(self.structure.n_nodes, 6),
+                dv=dv_,
+                varphi=flat_varphi.reshape(self.structure.n_nodes, 6),
+                thrust=case.structure.thrust,
                 t=case.aero.t,
                 i_ts=0,
                 use_horseshoe=static_horseshoe,
@@ -344,6 +348,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         q_nm1: AeroelasticMinimalStates,
         q_n: AeroelasticMinimalStates,
         dv_: AeroelasticDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> tuple[Array, Array, StructuralDesignVariables, AeroelasticDesignVariables]:
@@ -386,6 +391,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             q_n=q_n.structure,
             f_ext_aero_n=q_n.structure.f_ext_aero,
             f_ext_aero_nm1=q_nm1.structure.f_ext_aero,
+            thrust_t=thrust_t,
             dv=dv_.structure,
             solve_dofs=solve_dofs,
             approx_grads=approx_grads,
@@ -547,6 +553,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     q_nm1=q_nm1,
                     q_n=q_n,
                     dv_=dv,
+                    thrust_t=case.structure.thrust,
                     solve_dofs=solve_dofs,
                     approx_grads=approx_grads,
                 )
@@ -599,6 +606,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 )
                 if case.structure.f_ext_follower is not None
                 else None,
+                thrust_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in case.structure.thrust.items()
+                },
                 f_shape=j_shape,
             ),
             aero_dv=AeroDesignVariables(

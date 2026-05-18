@@ -61,12 +61,14 @@ class BeamStructure(BaseBeamStructure):
         self,
         dv: StructuralDesignVariables,
         varphi: Array,
+        thrust: dict[str, Array],
     ) -> tuple[StructureFullStates, Array]:
         r"""
         Obtain useful states and forcing residual from design variables and a minimal configuration vector.
         :param dv: Design variables.
         :param varphi: Twist coordinates which map from the reference configuration to the current as
-        :math:`\mathbf{H} = \mathbf{H}_0 \mathrm{exp} (\varphi)`
+        :math:`\mathbf{H} = \mathbf{H}_0 \mathrm{exp} (\varphi)`.
+        :param thrust: Thrust. This is only needed when thrust is not included as a design variable. {keys, [1]}.
         :return: Structural states and forcing residual.
         """
 
@@ -98,6 +100,7 @@ class BeamStructure(BaseBeamStructure):
             hg=hg,
             f_ext_follower_n=dv.f_ext_follower,
             f_ext_dead_n=dv.f_ext_dead,
+            thrust_n=dv.thrust_t if dv.thrust_t is not None else thrust,
             dynamic=False,
             m_t=m_t,
             c_l=None,
@@ -115,14 +118,16 @@ class BeamStructure(BaseBeamStructure):
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
-    ) -> StructuralDesignVariables:
+        forward_adjoint: bool = False,
+    ) -> tuple[StructuralDesignVariables, Array]:
         r"""
         Computes the static grads of the structure, which is used to compute gradients of the loss with respect to
         the structure's parameters.
         :param structure: StaticStructure containing the current state of the structure.
         :param objective: Objective function that takes the structure and design variables and returns an array
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
-        :return: Gradient of objective function output with respect to design variables.
+        :param forward_adjoint: Flag on which to use of the forward or reverse adjoint.
+        :return: Gradient of objective function output with respect to design variables, and adjoint states.
         """
 
         solve_dofs = jnp.array(
@@ -149,6 +154,7 @@ class BeamStructure(BaseBeamStructure):
             m_lumped=self.m_lumped if self.use_lumped_mass else None,
             f_ext_follower=structure.f_ext_follower,
             f_ext_dead=f_ext_dead_global,
+            thrust_t=structure.thrust,
             f_shape=(),
         )
 
@@ -163,25 +169,24 @@ class BeamStructure(BaseBeamStructure):
         n_u_full = self.n_dof
 
         # gradient of objective w.r.t. minimal states
-        p_f_p_n = jax.jacrev(
-            lambda varphi_: objective(
-                self._structural_states_res_from_dv_varphi(dv, varphi_)[0], dv, None
-            )
-        )(structure.varphi).reshape(n_f, n_u_full)[:, solve_dofs]  # [n_f, n_u]
-
-        # gradient of objective w.r.t. design variables
-        p_f_p_x = (jax.jacrev if n_f < n_x else jax.jacfwd)(
-            lambda dv_: objective(
-                self._structural_states_res_from_dv_varphi(dv_, structure.varphi)[0],
+        p_f_p_n, p_f_p_x = jax.jacrev(
+            lambda varphi_, dv_: objective(
+                self._structural_states_res_from_dv_varphi(
+                    dv=dv_, varphi=varphi_, thrust=structure.thrust
+                )[0],
                 dv_,
                 None,
-            )
-        )(dv).ravel_jacobian(n_f, n_x)  # [n_f, n_x]
+            ),
+            argnums=(0, 1),
+        )(structure.varphi, dv)
 
-        # gradient of residual w.r.t. minimal states via AD (exact)
+        p_f_p_n = p_f_p_n.reshape(n_f, n_u_full)[:, solve_dofs]  # [n_f, n_u]
+        p_f_p_x = p_f_p_x.ravel_jacobian(n_f, n_x)  # [n_f, n_x]
+
+        # gradient of residual w.r.t. design variables and minimal states
         p_res_p_x, p_res_p_varphi = (jax.jacfwd if n_u > n_x else jax.jacrev)(
             lambda dv_, varphi_: self._structural_states_res_from_dv_varphi(
-                dv=dv_, varphi=varphi_
+                dv=dv_, varphi=varphi_, thrust=structure.thrust
             )[1],
             argnums=(0, 1),
         )(dv, structure.varphi)
@@ -191,20 +196,20 @@ class BeamStructure(BaseBeamStructure):
             jnp.ix_(solve_dofs, solve_dofs)
         ]  # [n_u, n_u]
 
-        if n_f > n_x:
+        if forward_adjoint:
             # forward mode
-            d_n_d_x = jnp.linalg.solve(p_res_p_varphi, p_res_p_x).reshape(
+            adj = jnp.linalg.solve(p_res_p_varphi, p_res_p_x).reshape(
                 self.n_nodes, 6, n_x
             )  # [n_u, n_x]
-            rhs = jnp.einsum("ij,ijk->k", p_f_p_n, d_n_d_x)  # [n_f, n_x]
+            rhs = jnp.einsum("ij,ijk->k", p_f_p_n, adj)  # [n_f, n_x]
         else:
             # reverse mode
-            d_f_d_res = jnp.linalg.solve(p_res_p_varphi.T, p_f_p_n.T).T  # [n_f, n_u]
-            rhs = d_f_d_res @ p_res_p_x  # [n_f, n_x]
+            adj = jnp.linalg.solve(p_res_p_varphi.T, p_f_p_n.T).T  # [n_f, n_u]
+            rhs = adj @ p_res_p_x  # [n_f, n_x]
 
         return StructuralDesignVariables(
             **dv.from_adjoint(f_shape, p_f_p_x - rhs), f_shape=f_shape
-        )
+        ), adj
 
     def varphi_res_func(
         self,
@@ -284,6 +289,7 @@ class BeamStructure(BaseBeamStructure):
         dv: StructuralDesignVariables,
         f_ext_aero_nm1: Optional[Array],
         f_ext_aero_n: Optional[Array],
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> Array:
@@ -343,6 +349,19 @@ class BeamStructure(BaseBeamStructure):
         else:
             f_aero_alpha = None
 
+        if dv.thrust_t is not None:
+            thrust_t_: dict[str, Array] = dv.thrust_t
+        else:
+            # if not included as a design variable, use the input value
+            thrust_t_ = thrust_t
+
+        thrust_alpha: dict[str, Array] = {
+            k: inner_case.time_integrator.calculate_f_alpha(
+                f_nm1=v[i_ts - 1], f_n=v[i_ts, ...]
+            )
+            for k, v in thrust_t_.items()
+        }
+
         # find system properties at alpha
         (
             d_alpha,
@@ -360,6 +379,7 @@ class BeamStructure(BaseBeamStructure):
             f_ext_follower=f_ext_follower_alpha,
             f_ext_dead=f_ext_dead_alpha,
             f_ext_aero=None,  # this is None here, as we already have the aero force in the local frame
+            thrust=thrust_alpha,
             v=v_alpha,
             v_dot=v_dot_alpha,
             approx_gradients=approx_grads,
@@ -405,6 +425,7 @@ class BeamStructure(BaseBeamStructure):
         q_nm1: StructureMinimalStates,
         q_n: StructureMinimalStates,
         dv_: StructuralDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> Array:
@@ -414,6 +435,7 @@ class BeamStructure(BaseBeamStructure):
         :param q_nm1: Previous minimal state.
         :param q_n: Current minimal state.
         :param dv_: Design variables.
+        :param thrust_t: Thrust time history, {key, [n_tstep]}.
         :param solve_dofs: Solve degrees of freedom.
         :param approx_grads: If true, block gradients from some parts of the solution.
         :return: Residual vector, [4 * n_solve_dof].
@@ -446,6 +468,7 @@ class BeamStructure(BaseBeamStructure):
                     approx_grads=approx_grads,
                     f_ext_aero_nm1=q_nm1.f_ext_aero,
                     f_ext_aero_n=q_n.f_ext_aero,
+                    thrust_t=thrust_t,
                     dv=dv_,
                     solve_dofs=solve_dofs,
                 ),
@@ -469,6 +492,7 @@ class BeamStructure(BaseBeamStructure):
         f_ext_aero_nm1: Array,
         f_ext_aero_n: Array,
         dv: StructuralDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> tuple[Array, Array, StructuralDesignVariables, Array, Array]: ...
@@ -482,11 +506,12 @@ class BeamStructure(BaseBeamStructure):
         f_ext_aero_nm1: None,
         f_ext_aero_n: None,
         dv: StructuralDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> tuple[Array, Array, StructuralDesignVariables, None, None]: ...
 
-    @jax.jit(static_argnums=(0, 6, 7, 8))
+    @jax.jit(static_argnums=(0, 6, 8, 9))
     def timestep_residual_jacobians(
         self,
         i_ts: int,
@@ -495,6 +520,7 @@ class BeamStructure(BaseBeamStructure):
         f_ext_aero_nm1: Optional[Array],
         f_ext_aero_n: Optional[Array],
         dv: StructuralDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
     ) -> tuple[
@@ -508,6 +534,7 @@ class BeamStructure(BaseBeamStructure):
         :param f_ext_aero_nm1: Optional aerodynamic forcing for previous time step, [n_nodes, 6].
         :param f_ext_aero_n: Optional aerodynamic forcing for current time step, [n_nodes, 6].
         :param dv: Design variables.
+        :param thrust_t: Thrust time history, {key, [n_tstep]}.
         :param solve_dofs: Index of degrees of freedom to solve for.
         :param approx_grads: If True, remove some gradient terms which are generally small.
         :return: Jacobians with respect to previous state and current state.
@@ -565,6 +592,7 @@ class BeamStructure(BaseBeamStructure):
             dv,
             f_ext_aero_nm1.ravel() if compute_f_aero_grads else None,  # type: ignore
             f_ext_aero_n.ravel() if compute_f_aero_grads else None,  # type: ignore
+            thrust_t,
             solve_dofs,
             approx_grads,
         )
@@ -669,7 +697,7 @@ class BeamStructure(BaseBeamStructure):
 
         return cast(Array, p_j_n_p_q_n), cast(StructuralDesignVariables, p_j_n_p_x)
 
-    @jax.jit(static_argnums=(0, 7, 9, 10, 11, 12))
+    @jax.jit(static_argnums=(0, 6, 7, 8, 9, 10, 11, 12, 13))
     def adjoint_time_loop(
         self,
         rev_i_ts: int,
@@ -680,6 +708,7 @@ class BeamStructure(BaseBeamStructure):
         structure: DynamicStructure,
         objective: StructuralObjectiveFunction,
         dv: StructuralDesignVariables,
+        thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
         save_adjoint: bool,
@@ -696,6 +725,7 @@ class BeamStructure(BaseBeamStructure):
         :param structure: Dynamic structure solution.
         :param objective: Objective function.
         :param dv: Structure design variables.
+        :param thrust_t: Thrust time history, {key, [n_tstep]}.
         :param solve_dofs: Tuple of dof index to solve.
         :param approx_grads: Whether to approximate the gradient or not.
         :param save_adjoint: Whether to save the full adjoint time history.
@@ -729,6 +759,7 @@ class BeamStructure(BaseBeamStructure):
                 approx_grads=approx_grads,
                 f_ext_aero_nm1=None,
                 f_ext_aero_n=None,
+                thrust_t=thrust_t,
             )
         )
 
@@ -790,7 +821,7 @@ class BeamStructure(BaseBeamStructure):
         :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
         """
 
-        dv = self.get_design_variables(struct_case=structure)
+        dv = self.get_design_variables(struct_case=structure, thrust_t=structure.thrust)
 
         # remove gradients we don't need
         if not grads_to_compute.x0:
@@ -839,6 +870,9 @@ class BeamStructure(BaseBeamStructure):
             f_ext_follower=jnp.zeros((*j_shape, *structure.f_ext_follower.shape))
             if structure.f_ext_follower is not None and dv.f_ext_follower is not None
             else None,
+            thrust_t={
+                k: jnp.zeros((*j_shape, *v.shape)) for k, v in structure.thrust.items()
+            },
             f_shape=(),
         )
 
@@ -864,6 +898,7 @@ class BeamStructure(BaseBeamStructure):
                 structure=structure,
                 objective=objective,
                 dv=dv,
+                thrust_t=structure.thrust,
                 solve_dofs=solve_dofs,
                 approx_grads=approx_grads,
                 save_adjoint=save_adjoint,

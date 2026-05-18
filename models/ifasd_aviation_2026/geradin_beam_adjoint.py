@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     # solve adjoint system
     base_result = _solve(struct, f_ext)
-    grads_adj = struct.static_adjoint(structure=base_result, objective=_objective)
+    grads_adj, adj = struct.static_adjoint(structure=base_result, objective=_objective)
     obj_base = _objective(base_result.get_full_states())
 
     print("Primal solution")
@@ -60,8 +60,7 @@ if __name__ == "__main__":
     f_pert = f_ext.at[-1, 2].add(f_eps)
     f_pert_obj = _objective(_solve(struct, f_pert).get_full_states())
 
-    if grads_adj.f_ext_dead is None:
-        raise ValueError("f_ext_dead is None")
+    assert grads_adj.f_ext_dead is not None
     f_fd_grad = (f_pert_obj - obj_base) / f_eps
     print("\nTip forcing gradient")
     print(f"Adjoint: {grads_adj.f_ext_dead[-1, 2]}")

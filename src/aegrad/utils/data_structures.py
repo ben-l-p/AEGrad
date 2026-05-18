@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from _operator import mul
 from dataclasses import dataclass
-from functools import reduce
+from math import prod
 from typing import Optional, Sequence, overload, OrderedDict
 
 import numpy as np
@@ -354,13 +353,13 @@ class DesignVariables:
         for name, shape in self.shapes.items():
             if shape is not None:
                 if isinstance(shape, tuple):
-                    var_size = reduce(mul, shape, 1)
+                    var_size = prod(shape)
                     mapping[name] = np.arange(cnt, cnt + var_size).reshape(shape)
                     cnt += var_size
                 elif isinstance(shape, ArrayListShape):
                     sub_mappings = []
                     for i_arr in range(shape.n_arrays):
-                        var_size = reduce(mul, shape.shapes[i_arr], 1)
+                        var_size = prod(shape.shapes[i_arr])
                         sub_mappings.append(
                             np.arange(cnt, cnt + var_size).reshape(shape.shapes[i_arr])
                         )
@@ -369,7 +368,7 @@ class DesignVariables:
                 elif isinstance(shape, OrderedDict):
                     sub_mappings = OrderedDict()
                     for k, v in shape.items():
-                        var_size = reduce(mul, v, 1)
+                        var_size = prod(v)
                         sub_mappings[k] = np.arange(cnt, cnt + var_size).reshape(v)
                         cnt += var_size
                     mapping[name] = sub_mappings
@@ -394,7 +393,7 @@ class DesignVariables:
             elif isinstance(var, Array):
                 return var.reshape(f_size, -1)
             elif isinstance(var, ArrayList):
-                return jnp.concatenate([_inner_ravel(subvar) for subvar in var])
+                return jnp.concatenate([_inner_ravel(sub_var) for sub_var in var])
             elif isinstance(var, dict):
                 return (
                     jnp.concatenate(

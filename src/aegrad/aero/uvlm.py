@@ -763,7 +763,7 @@ class UVLM:
                 v_func=v_wake_prop,
                 dt=self.dt,
                 frozen_wake=False,
-                linearise_redisc=False,
+                linearise_variable_wake=False,
             )
 
         aic_solve = compute_aic_solve(
@@ -906,12 +906,13 @@ class UVLM:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves. The solution
         is updated in-place in the case object.
-        :param case: Solution object
-        :param i_ts: Timestep index to solve for
-        :param hg: Beam global grid coordinates, [zeta_n, 4, 4]
-        :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4]
-        :param static: If true, perform a static solve
-        :param horseshoe: If true, replace the wake with a static_horseshoe wake in static solve which extends a fixed distance.
+        :param case: Solution object.
+        :param i_ts: Timestep index to solve for.
+        :param hg: Beam global grid coordinates, [zeta_n, 4, 4].
+        :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4].
+        :param static: If true, perform a static solve.
+        :param horseshoe: If true, replace the wake with a static_horseshoe wake in static solve which extends a fixed
+        distance.
         :param cs_ang_n: Control surface angle at timestep n, {name, []}.
         :param cs_vel_n: Control surface velocity at timestep n, {name, []}.
         """
@@ -1481,7 +1482,7 @@ class UVLM:
             v_func=v_wake_prop,
             dt=inner_case.dt,
             frozen_wake=False,
-            linearise_redisc=False,
+            linearise_variable_wake=False,
         )
 
         return (zeta_w_nm1_update - zeta_w_n).ravel(), (

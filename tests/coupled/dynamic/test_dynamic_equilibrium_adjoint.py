@@ -20,7 +20,6 @@ class TestDynamicEquilibriumAdjoint:
         c_ref = 0.2
         b_ref = 1.0
         u_inf = jnp.array((10.0, 0.0, 0.1))
-        u_inf_mag = jnp.linalg.norm(u_inf)
         k_cs = jnp.diag(jnp.array((1e2, 1e2, 1.0, 1.0, 1.0, 1.0)))
 
         wing = make_cantilever_wing(
@@ -34,7 +33,6 @@ class TestDynamicEquilibriumAdjoint:
             u_inf=u_inf,
         )
 
-        dt = c_ref / (m * u_inf_mag)
         n_tstep = 100
 
         def static_objective(states: AeroelasticFullStates, *_, **__) -> Array:

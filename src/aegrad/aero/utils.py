@@ -221,7 +221,7 @@ def propagate_surf_wake(
     v_func: Callable[[Array], Array],
     dt: Array,
     frozen_wake: bool,
-    linearise_redisc: bool = False,
+    linearise_variable_wake: bool = False,
 ) -> tuple[Optional[Array], Array]:
     r"""
     Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
@@ -234,7 +234,7 @@ def propagate_surf_wake(
     :param v_func: Function that computes the velocity, [3] -> [3].
     :param dt: Time step length.
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
-    :param linearise_redisc: If true, block gradients through the arc-length computation so that
+    :param linearise_variable_wake: If true, block gradients through the arc-length computation so that
         the re-discretisation is treated as a linear operator when differentiated with jax.jvp.
     :return: New wake grid and circulation, [zeta_star_m, zeta_n, 3], [zeta_m_star, zeta_n].
     """
@@ -279,17 +279,17 @@ def propagate_surf_wake(
             axis=0,
         )  # distance along each wake filament for each point [zeta_w_m + 1, zeta_n]
 
-        if linearise_redisc:
+        if linearise_variable_wake:
             s_zeta_w = jax.lax.stop_gradient(s_zeta_w)
 
         # consider gamma to be at midpoints of zeta
         s_gamma_w = neighbour_average(s_zeta_w, axes=(0, 1))
 
         # vertex coordinates along desired discretised streamline, [m_star + 1]
-        s_zeta_w_redisc = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
+        s_zeta_w_discretisation = jnp.concatenate((jnp.zeros(1), jnp.cumsum(delta_w)))
 
         # midpoint coordinates along desired discretised streamline, [m_star]
-        s_gamma_w_redisc = neighbour_average(s_zeta_w_redisc, axes=(0,))
+        s_gamma_w_discretisation = neighbour_average(s_zeta_w_discretisation, axes=(0,))
 
         # re-discretise coordinates onto desired grid
         zeta_w_np1 = vmap(
@@ -297,12 +297,12 @@ def propagate_surf_wake(
             in_axes=(None, None, 1),
             out_axes=2,
         )(
-            s_zeta_w_redisc, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0))
+            s_zeta_w_discretisation, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0))
         )  # [zeta_w_m, zeta_n, 3]
 
         # re-discretise gamma onto desired grid
         gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(
-            s_gamma_w_redisc, s_gamma_w.T, gamma_w_np1.T
+            s_gamma_w_discretisation, s_gamma_w.T, gamma_w_np1.T
         )  # [zeta_w_m, zeta_n, 3]
 
     if frozen_wake:
@@ -321,7 +321,7 @@ def propagate_wake(
     v_func: Callable[[Array], Array],
     dt: Array,
     frozen_wake: Literal[True],
-    linearise_redisc: bool,
+    linearise_variable_wake: bool,
 ) -> tuple[None, ArrayList]: ...
 
 
@@ -335,7 +335,7 @@ def propagate_wake(
     v_func: Callable[[Array], Array],
     dt: Array,
     frozen_wake: Literal[False],
-    linearise_redisc: bool,
+    linearise_variable_wake: bool,
 ) -> tuple[ArrayList, ArrayList]: ...
 
 
@@ -348,7 +348,7 @@ def propagate_wake(
     v_func: Callable[[Array], Array],
     dt: Array,
     frozen_wake: bool,
-    linearise_redisc: bool = False,
+    linearise_variable_wake: bool = False,
 ) -> tuple[Optional[ArrayList], ArrayList]:
     r"""
     Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
@@ -361,7 +361,7 @@ def propagate_wake(
     :param v_func: Function that computes the velocity, [3] -> [3].
     :param dt: Time step length.
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
-    :param linearise_redisc: If true, block gradients through the arc-length computation so that
+    :param linearise_variable_wake: If true, block gradients through the arc-length computation so that
         the re-discretisation is treated as a linear operator when differentiated with jax.jvp.
     :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n].
     """
@@ -380,7 +380,7 @@ def propagate_wake(
             v_func=v_func,
             dt=dt,
             frozen_wake=frozen_wake,
-            linearise_redisc=linearise_redisc,
+            linearise_variable_wake=linearise_variable_wake,
         )
         if zeta_w_np1 is not None:
             if surf_zeta_w is None:

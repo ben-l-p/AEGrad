@@ -65,6 +65,8 @@ class BaseBeamStructure:
         m_cs_index: Optional[Array] = None,
         m_lumped_index: Optional[Array] = None,
         gravity: Optional[Array] = None,
+        thrust_nodes: Optional[dict[str, int]] = None,
+        thrust_direction: Optional[dict[str, Array]] = None,
         optional_jacobians: Optional[OptionalJacobians] = None,
         relaxation_factor: float = 1.0,
         spectral_radius: float = 0.9,
@@ -167,6 +169,32 @@ class BaseBeamStructure:
             check_arr_dtype(m_lumped_index, int, "m_lumped_index")
         self.m_lumped_index: Optional[Array] = m_lumped_index
 
+        # add thrust
+        self.thrust_nodes: dict[str, int] = dict()
+        self.thrust_direction: dict[str, Array] = dict()
+        if thrust_nodes is not None and thrust_direction is not None:
+            if thrust_nodes.keys() != thrust_direction.keys():
+                raise ValueError(
+                    f"Mismatch in keys of thrust_nodes ({thrust_nodes.keys()}) and thrust_direction ({thrust_direction.keys()}))."
+                )
+
+            for k, v in thrust_direction.items():
+                check_arr_shape(v, (3,), f"thrust_direction[{k}]")
+
+            self.thrust_nodes = thrust_nodes
+            self.thrust_direction = {
+                k: v / jnp.linalg.norm(v) for k, v in thrust_direction.items()
+            }  # make unit vectors
+        elif thrust_nodes is not None or thrust_direction is not None:
+            warn(
+                "One of thrust_nodes or thrust_direction has not been passed. Running with no thrust nodes."
+            )
+
+        # set the reference thrust to be zero, which can be overwritten later
+        self.thrust_reference: dict[str, Array] = {
+            k: jnp.atleast_1d(1) for k in self.thrust_nodes.keys()
+        }
+
         # other settings
         self.use_m_cs: bool = False
 
@@ -233,6 +261,7 @@ class BaseBeamStructure:
         k_cs: Array,
         m_cs: Optional[Array],
         m_lumped: Optional[Array] = None,
+        thrust_reference: Optional[dict[str, Array | float]] = None,
         *,
         remove_checks: bool = False,
     ) -> None:
@@ -242,6 +271,7 @@ class BaseBeamStructure:
         :param k_cs: Cross-section stiffness matrices, [n_entry, 6, 6] or [6, 6].
         :param m_cs: Cross-section mass matrices, [n_entry, 6, 6] or [6, 6].
         :param m_lumped: Lumped mass matrices at nodes, [n_entry, 6, 6].
+        :param thrust_reference: Reference thrust magnitude, {keys, [1]}.
         :param remove_checks: Flag to ignore input checks, used when function is JIT compiled.
         """
 
@@ -288,6 +318,15 @@ class BaseBeamStructure:
             )
 
         self.m_cs = m_cs_
+
+        # thrust
+        if thrust_reference is not None:
+            self.thrust_reference = {
+                k: jnp.atleast_1d(v) for k, v in thrust_reference.items()
+            }
+
+            for k, v in self.thrust_reference.items():
+                check_arr_shape(v, (1,), f"thrust_reference[{k}]")
 
         if m_lumped is not None:
             if not remove_checks:
@@ -340,12 +379,15 @@ class BaseBeamStructure:
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
 
     def get_design_variables(
-        self, struct_case: StaticStructure | DynamicStructure
+        self,
+        struct_case: StaticStructure | DynamicStructure,
+        thrust_t: dict[str, Array],
     ) -> StructuralDesignVariables:
         r"""
         Obtain the design variables for the structural problem. As the external forcing is defined for each solve, the
         chosen forcing is required as input.
         :param struct_case: Structural case
+        :param thrust_t: Thrust time history, {keys, [n_tstep]}.
         :return: StructuralDesignVariables dataclass containing design variables
         """
 
@@ -368,6 +410,7 @@ class BaseBeamStructure:
             m_lumped=self._m_lumped,
             f_ext_dead=f_ext_dead_global,
             f_ext_follower=struct_case.f_ext_follower,
+            thrust_t=thrust_t,
             f_shape=(),
         )
 
@@ -397,6 +440,9 @@ class BaseBeamStructure:
             f_int=jnp.zeros((self.n_nodes, 6)),
             f_elem=jnp.zeros((self.n_elem, 6)),
             f_res=jnp.zeros((self.n_nodes, 6)),
+            thrust=self.thrust_reference,
+            thrust_direction=self.thrust_direction,
+            thrust_nodes=self.thrust_nodes,
             local=True,
             prescribed_dofs=prescribed_dofs,
         )
@@ -910,6 +956,20 @@ class BaseBeamStructure:
         )  # [n_lumped, 6]
         return f_iner, f_gyr
 
+    def add_thrust_force(self, force: Array, thrust: dict[str, Array]) -> Array:
+        r"""
+        Add thrust acting at nodes onto full system forcing.
+        :param force: Input forcing, [n_node, 6].
+        :param thrust: Input thrust at the current step, {key}[1].
+        :return: Updated forcing, [n_node, 6].
+        """
+
+        for k, v in thrust.items():
+            node = self.thrust_nodes[k]
+            direction = self.thrust_direction[k]
+            force = force.at[node, :3].add(v * direction)
+        return force
+
     def make_eps(self, d: Array) -> Array:
         r"""
         Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from
@@ -983,6 +1043,7 @@ class BaseBeamStructure:
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_ext_aero: Optional[Array],
+        thrust: dict[str, Array],
         v: Array,
         v_dot: Array,
         approx_gradients: bool = False,
@@ -1006,6 +1067,7 @@ class BaseBeamStructure:
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_ext_aero: Optional[Array],
+        thrust: dict[str, Array],
         v: None,
         v_dot: None,
         approx_gradients: bool = False,
@@ -1028,8 +1090,9 @@ class BaseBeamStructure:
         f_ext_follower: Optional[Array],
         f_ext_dead: Optional[Array],
         f_ext_aero: Optional[Array],
-        v,
-        v_dot,
+        thrust: dict[str, Array],
+        v: Optional[Array],
+        v_dot: Optional[Array],
         approx_gradients: bool = False,
     ) -> tuple[
         Array,
@@ -1049,6 +1112,7 @@ class BaseBeamStructure:
         :param f_ext_follower: External follower forces in local reference, [n_node, 6].
         :param f_ext_dead: External dead forces in global reference, [n_node, 6].
         :param f_ext_aero: External aero forces in global reference, [n_node, 6].
+        :param thrust: Thrust forces at current step, {keys}[1].
         :param v: Nodal velocities in global frame, [n_node, 6].
         :param v_dot: Nodal accelerations in global frame, [n_node, 6].
         :param approx_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
@@ -1070,13 +1134,17 @@ class BaseBeamStructure:
             m_t = None
 
         if dynamic:
+            assert v is not None
+
             d_dot = self._make_d_dot(p_d, v)
             c_l = self._make_c_t(prop_grad(d), prop_grad(d_dot), v)[0]
             c_l_lumped = self._make_c_t_lumped(v)[0] if self.use_lumped_mass else None
         else:
             d_dot, c_l, c_l_lumped = None, None, None
 
-        this_f_res = jnp.zeros((self.n_nodes, 6))
+        this_f_res = self.add_thrust_force(
+            force=jnp.zeros((self.n_nodes, 6)), thrust=thrust
+        )
 
         if f_ext_dead is not None:
             this_f_ext_dead = self.make_f_dead_ext(f_ext_dead, hg[:, :3, :3])
@@ -1114,8 +1182,7 @@ class BaseBeamStructure:
             this_f_gyr = self.assemble_vector_from_entries(this_f_gyr).reshape(-1, 6)
 
             if self.use_lumped_mass:
-                if c_l_lumped is None:
-                    raise ValueError("c_l_lumped is None")
+                assert v is not None and v_dot is not None and c_l_lumped is not None
                 f_iner_lumped, f_gyr_lumped = self._make_f_iner_gyr_lumped(
                     c_l_lumped, v, v_dot
                 )  # type: ignore
@@ -1151,6 +1218,7 @@ class BaseBeamStructure:
         hg: Array,
         f_ext_follower_n: Optional[Array],
         f_ext_dead_n: Optional[Array],
+        thrust_n: dict[str, Array],
         dynamic: Literal[True],
         m_t: Array,
         c_l: Array,
@@ -1168,6 +1236,7 @@ class BaseBeamStructure:
         hg: Array,
         f_ext_follower_n: Optional[Array],
         f_ext_dead_n: Optional[Array],
+        thrust_n: dict[str, Array],
         dynamic: Literal[False],
         m_t: Optional[Array],
         c_l: None,
@@ -1184,6 +1253,7 @@ class BaseBeamStructure:
         hg: Array,
         f_ext_follower_n: Optional[Array],
         f_ext_dead_n: Optional[Array],
+        thrust_n: dict[str, Array],
         dynamic: bool,
         m_t,
         c_l,
@@ -1201,6 +1271,7 @@ class BaseBeamStructure:
         :param hg: Nodal homogeneous transformation matrices, [n_nodes, 4, 4].
         :param f_ext_follower_n: Nodal follower forces, [n_nodes, 6].
         :param f_ext_dead_n: Nodal dead forces, [n_nodes, 6].
+        :param thrust_n: Thrust magnitude, {keys, [1]}.
         :param dynamic: Flag for whether to compute dynamic entries.
         :param m_t: Disassembled system mass matrix, [n_elem, 12, 12].
         :param c_l: Dissembled system gyroscopic matrix, [n_elem, 12, 12].
@@ -1226,6 +1297,7 @@ class BaseBeamStructure:
         f_res_vect = self.assemble_vector_from_entries(f_res)
         f_abs_sum_vect = self.assemble_vector_from_entries(f_abs_sum)
 
+        # add external forcing contributions
         if f_ext_follower_n is not None:
             f_res_vect += f_ext_follower_n.reshape(self.n_dof).ravel()
             f_abs_sum_vect += jnp.abs(f_ext_follower_n.reshape(self.n_dof).ravel())
@@ -1233,6 +1305,12 @@ class BaseBeamStructure:
             f_dead = self.make_f_dead_ext(f_ext_dead_n, hg[:, :3, :3]).ravel()
             f_res_vect += f_dead
             f_abs_sum_vect += jnp.abs(f_dead)
+
+        f_thrust = self.add_thrust_force(
+            force=jnp.zeros((self.n_nodes, 6)), thrust=thrust_n
+        ).ravel()
+        f_res_vect += f_thrust
+        f_abs_sum_vect += jnp.abs(f_thrust)
 
         if self.use_lumped_mass:
             if dynamic:
@@ -1394,20 +1472,21 @@ class BaseBeamStructure:
 
             # compute residual forces, [n_solve_dofs]
             f_res_solve_n, f_abs_sum_n = self.make_f_res(
-                solve_dofs,
-                p_d_n,
-                eps_n,
-                hg_n,
-                f_ext_follower_steps[i_load_step, ...]
+                solve_dofs=solve_dofs,
+                p_d=p_d_n,
+                eps=eps_n,
+                hg=hg_n,
+                f_ext_follower_n=f_ext_follower_steps[i_load_step, ...]
                 if f_ext_follower_steps is not None
                 else None,
-                total_f_ext_dead_step,
-                False,
-                m_t,
-                None,
-                None,
-                None,
-                None,
+                f_ext_dead_n=total_f_ext_dead_step,
+                thrust_n=self.thrust_reference,  # use reference thrust in static case
+                dynamic=False,
+                m_t=m_t,
+                c_l=None,
+                c_l_lumped=None,
+                v=None,
+                v_dot=None,
             )
 
             # solve for configuration increment, [n_solve_dofs]
@@ -1450,7 +1529,7 @@ class BaseBeamStructure:
             Convergence loop
             :param i_load_step:
             :param hg_init:
-            :return:
+            :return: Converged coordinates, [n_nodes, 4, 4].
             """
             _, convergence_status, hg_solve = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
@@ -1485,6 +1564,7 @@ class BaseBeamStructure:
                 f_ext_dead=f_ext_dead,
                 f_ext_follower=f_ext_follower,
                 f_ext_aero=f_ext_aero,
+                thrust=self.thrust_reference,
                 v=None,
                 v_dot=None,
             )
@@ -1506,6 +1586,9 @@ class BaseBeamStructure:
             f_ext_aero=f_ext_aero_local,
             f_grav=f_grav,
             f_res=f_res,
+            thrust=self.thrust_reference,
+            thrust_nodes=self.thrust_nodes,
+            thrust_direction=self.thrust_direction,
             prescribed_dofs=prescribed_dofs_,
         )
 
@@ -1519,11 +1602,12 @@ class BaseBeamStructure:
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
+        thrust_t: dict[str, Array],
         aero_obj: None,
         aero_case: None,
         fsi_convergence_status: None,
-        cs_ang_t: dict[str, Array],
-        cs_vel_t: dict[str, Array],
+        cs_ang_t: None,
+        cs_vel_t: None,
     ) -> DynamicStructure: ...
 
     @overload
@@ -1536,6 +1620,7 @@ class BaseBeamStructure:
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
+        thrust_t: dict[str, Array],
         aero_obj: UVLM,
         aero_case: DynamicAeroCase,
         fsi_convergence_status: ConvergenceStatus,
@@ -1552,11 +1637,12 @@ class BaseBeamStructure:
         load_steps: int,
         f_ext_dead: Optional[Array],
         f_ext_follower: Optional[Array],
+        thrust_t: dict[str, Array],
         aero_obj: Optional[UVLM],
         aero_case: Optional[DynamicAeroCase],
         fsi_convergence_status: Optional[ConvergenceStatus],
-        cs_ang_t: dict[str, Array],
-        cs_vel_t: dict[str, Array],
+        cs_ang_t: Optional[dict[str, Array]],
+        cs_vel_t: Optional[dict[str, Array]],
     ) -> DynamicStructure | DynamicAeroelastic:
         r"""
         Generic dynamic solver. Both the structural dynamic solve, and aeroelastic dynamic solve, are formed as wrappers
@@ -1592,6 +1678,7 @@ class BaseBeamStructure:
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
             f_ext_aero_alpha_steps: Optional[Array],
+            thrust_alpha: dict[str, Array],
         ) -> tuple[
             int,
             int,
@@ -1600,6 +1687,7 @@ class BaseBeamStructure:
             Array,
             StructureMinimalStates,
             Optional[Array],
+            dict[str, Array],
         ]:
             r"""
             Solution update for a single iteration of the nonlinear solver at a given time step and load step.
@@ -1608,6 +1696,9 @@ class BaseBeamStructure:
             :param struct_convergence_status_: ConvergenceStatus object for the current iteration, used to track
             convergence and print messages.
             :param hg_n: Transformation matrices at iteration varphi, [n_nodes, 4, 4].
+            :param phi_alpha: Timestep increment to the alpha step, [n_nodes, 6].
+            :param f_ext_aero_alpha_steps: Load steps for the external aerodynamic forcing, [n_steps, n_nodes, 6].
+            :param thrust_alpha: Thrust magnitude at the alpha step, {keys, [1]}.
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration varphi+1.
             """
@@ -1628,11 +1719,11 @@ class BaseBeamStructure:
             )  # [n_elem, 12, 12], [n_elem, 12, 12]
 
             total_f_ext_dead = self.make_f_ext_dead_tot(
-                f_ext_dead_alpha_steps[:, i_ts, :, :]
+                f_ext_dead=f_ext_dead_alpha_steps[:, i_ts, :, :]
                 if f_ext_dead_alpha_steps is not None
                 else None,
-                f_ext_aero_alpha_steps,
-                i_load_step,
+                f_ext_aero=f_ext_aero_alpha_steps,
+                i_load_step=i_load_step,
             )  # [n_node, 6]
 
             k_t = self.make_k_t_full(
@@ -1662,6 +1753,7 @@ class BaseBeamStructure:
                 if f_ext_follower_alpha_steps is not None
                 else None,
                 f_ext_dead_n=total_f_ext_dead,
+                thrust_n=thrust_alpha,
                 dynamic=True,
                 m_t=m_t,
                 c_l=c_l,
@@ -1721,6 +1813,7 @@ class BaseBeamStructure:
                 phi_np1,
                 q_alpha_update,
                 f_ext_aero_alpha_steps,
+                thrust_alpha,
             )
 
         @overload
@@ -1730,7 +1823,18 @@ class BaseBeamStructure:
             struct_convergence_status_: ConvergenceStatus,
             aero_sol: None,
             fsi_convergence_status_: None,
-        ) -> tuple[DynamicStructure, ConvergenceStatus, None, None]: ...
+            thrust_t_: dict[str, Array],
+            cs_ang_t_: None,
+            cs_vel_t_: None,
+        ) -> tuple[
+            DynamicStructure,
+            ConvergenceStatus,
+            None,
+            None,
+            dict[str, Array],
+            None,
+            None,
+        ]: ...
 
         @overload
         def time_step_loop(
@@ -1739,8 +1843,17 @@ class BaseBeamStructure:
             struct_convergence_status_: ConvergenceStatus,
             aero_sol: DynamicAeroCase,
             fsi_convergence_status_: ConvergenceStatus,
+            thrust_t_: dict[str, Array],
+            cs_ang_t_: dict[str, Array],
+            cs_vel_t_: dict[str, Array],
         ) -> tuple[
-            DynamicStructure, ConvergenceStatus, DynamicAeroCase, ConvergenceStatus
+            DynamicStructure,
+            ConvergenceStatus,
+            DynamicAeroCase,
+            ConvergenceStatus,
+            dict[str, Array],
+            dict[str, Array],
+            dict[str, Array],
         ]: ...
 
         def time_step_loop(
@@ -1749,15 +1862,17 @@ class BaseBeamStructure:
             struct_convergence_status_: ConvergenceStatus,
             aero_sol: Optional[DynamicAeroCase],
             fsi_convergence_status_: Optional[ConvergenceStatus],
-            cs_ang_t_: dict[str, Array],
-            cs_vel_t_: dict[str, Array],
+            thrust_t_: dict[str, Array],
+            cs_ang_t_: Optional[dict[str, Array]],
+            cs_vel_t_: Optional[dict[str, Array]],
         ) -> tuple[
             DynamicStructure,
             ConvergenceStatus,
             Optional[DynamicAeroCase],
             Optional[ConvergenceStatus],
             dict[str, Array],
-            dict[str, Array],
+            Optional[dict[str, Array]],
+            Optional[dict[str, Array]],
         ]:
             r"""
             Performs analysis on a single time step, including load stepping
@@ -1766,6 +1881,7 @@ class BaseBeamStructure:
             :param struct_convergence_status_: Convergence status object.
             :param aero_sol: Aero solution object, with results up to time step i_ts-1, if aero is included.
             :param fsi_convergence_status_: Convergence status object.
+            :param thrust_t_: Thrust magnitude time history, {name, [n_tstep]}.
             :param cs_ang_t_: Control surface angle time history, {name, [n_tstep]}.
             :param cs_vel_t_: Control surface velocity time history, {name, [n_tstep]}.
             :return: Solution object with results up to time step i_ts.
@@ -1783,13 +1899,23 @@ class BaseBeamStructure:
 
             q_alpha_init.varphi = None  # this value is not used during the loop
 
+            # thrust force
+            thrust_alpha: dict[str, Array] = {
+                k: self.time_integrator.calculate_f_alpha(
+                    f_nm1=v[i_ts - 1], f_n=v[i_ts]
+                )
+                for k, v in thrust_t_.items()
+            }
+            thrust_n: dict[str, Array] = {k: v[i_ts] for k, v in thrust_t_.items()}
+
             if include_aero:
-                if (
-                    aero_sol is None
-                    or fsi_convergence_status_ is None
-                    or struct_sol.f_ext_aero is None
-                ):
-                    raise ValueError("Missing aero arguments")
+                assert (
+                    aero_sol is not None
+                    and fsi_convergence_status_ is not None
+                    and struct_sol.f_ext_aero is not None
+                    and cs_ang_t_ is not None
+                    and cs_vel_t_ is not None
+                )
 
                 fsi_convergence_status_.reset_status()
 
@@ -1823,10 +1949,7 @@ class BaseBeamStructure:
                     fsi_convergence_status_,
                     phi_alpha,
                     q_alpha,
-                    _,
-                    _,
-                    _,
-                    _,
+                    *_,
                 ) = jax.lax.while_loop(
                     lambda args_: ~cast(ConvergenceStatus, args_[4]).get_status(),
                     lambda args_: fsi_convergence_loop(*args_),
@@ -1840,6 +1963,7 @@ class BaseBeamStructure:
                         q_alpha_init,
                         f_aero_nm1,  # this value is for the previous timesteps force, and is propagated unaltered
                         f_aero_nm1,  # first guess for forcing at alpha is to use value from i_ts=n-1
+                        thrust_alpha,
                         cs_ang_n,
                         cs_vel_n,
                     ),
@@ -1847,7 +1971,7 @@ class BaseBeamStructure:
 
             else:
                 # solve pure structural problem
-                _, struct_convergence_status_, hg, phi_alpha, q_alpha, _ = (
+                _, struct_convergence_status_, hg, phi_alpha, q_alpha, *_ = (
                     load_step_loop(
                         i_ts=i_ts,
                         struct_convergence_status_=struct_convergence_status_,
@@ -1855,6 +1979,7 @@ class BaseBeamStructure:
                         phi_alpha=phi_alpha_init,
                         q_alpha=q_alpha_init,
                         f_ext_aero_steps=None,
+                        thrust_alpha=thrust_alpha,
                     )
                 )
 
@@ -1918,6 +2043,7 @@ class BaseBeamStructure:
                 f_ext_follower=f_ext_follower[i_ts, ...]
                 if f_ext_follower is not None
                 else None,
+                thrust=thrust_n,
                 f_ext_aero=f_ext_aero,
                 v=q_n.v,
                 v_dot=q_n.v_dot,
@@ -1960,15 +2086,14 @@ class BaseBeamStructure:
             struct_sol.f_res = struct_sol.f_res.at[i_ts, ...].set(f_res)
 
             if include_aero and aero_sol is not None:
+                assert cs_ang_t_ is not None and cs_vel_t_ is not None
                 cs_ang_n = {k: v[i_ts] for k, v in cs_ang_t_.items()}
                 cs_vel_n = {k: v[i_ts] for k, v in cs_vel_t_.items()}
                 aero_sol.cs_ang = {
-                    k: v.at[i_ts].set(cs_ang_n[k])
-                    for k, v in aero_sol.cs_ang.items()
+                    k: v.at[i_ts].set(cs_ang_n[k]) for k, v in aero_sol.cs_ang.items()
                 }
                 aero_sol.cs_vel = {
-                    k: v.at[i_ts].set(cs_vel_n[k])
-                    for k, v in aero_sol.cs_vel.items()
+                    k: v.at[i_ts].set(cs_vel_n[k]) for k, v in aero_sol.cs_vel.items()
                 }
 
             return (
@@ -1976,6 +2101,7 @@ class BaseBeamStructure:
                 struct_convergence_status_,
                 aero_sol,
                 fsi_convergence_status_,
+                thrust_t_,
                 cs_ang_t_,
                 cs_vel_t_,
             )
@@ -1990,6 +2116,7 @@ class BaseBeamStructure:
             q_alpha_init: StructureMinimalStates,
             f_aero_nm1: Array,
             f_aero_alpha_prev: Array,
+            thrust_alpha: dict[str, Array],
             cs_ang_n: dict[str, Array],
             cs_vel_n: dict[str, Array],
         ) -> tuple[
@@ -2002,6 +2129,7 @@ class BaseBeamStructure:
             StructureMinimalStates,
             Array,
             Array,
+            dict[str, Array],
             dict[str, Array],
             dict[str, Array],
         ]:
@@ -2052,7 +2180,7 @@ class BaseBeamStructure:
             struct_convergence_status_.reset_status()
 
             # solve structural problem for given aero load
-            _, struct_convergence_status_, hg_out, phi_alpha, q_alpha, _ = (
+            _, struct_convergence_status_, hg_out, phi_alpha, q_alpha, *_ = (
                 load_step_loop(
                     i_ts,
                     struct_convergence_status_,
@@ -2060,6 +2188,7 @@ class BaseBeamStructure:
                     phi_alpha_init,
                     q_alpha_init,
                     f_aero_alpha_steps,
+                    thrust_alpha,
                 )
             )
 
@@ -2085,6 +2214,7 @@ class BaseBeamStructure:
                 q_alpha,
                 f_aero_nm1,
                 f_aero_alpha,
+                thrust_alpha,
                 cs_ang_n,
                 cs_vel_n,
             )
@@ -2097,6 +2227,7 @@ class BaseBeamStructure:
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
             f_ext_aero_steps: Optional[Array],
+            thrust_alpha: dict[str, Array],
         ) -> tuple[
             int,
             ConvergenceStatus,
@@ -2104,6 +2235,7 @@ class BaseBeamStructure:
             Array,
             StructureMinimalStates,
             Optional[Array],
+            dict[str, Array],
         ]:
             r"""
             Convergence loop within each load step of a time step.
@@ -2115,13 +2247,14 @@ class BaseBeamStructure:
             :param phi_alpha: Node configuration increments in algebra space, [n_nodes, 6].
             :param q_alpha: Minimal states at intermediate alpha step.
             :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6].
+            :param thrust_alpha: Thrust at the alpha step, {keys}[1].
             :return: Time step index, convergence status, and updated configuration, velocities, accelerations, and
             optional aerodynamic forcing.
             """
 
             struct_convergence_status_.reset_status()
 
-            _, _, struct_convergence_status_, hg_solve, phi_alpha, q_alpha, _ = (
+            _, _, struct_convergence_status_, hg_solve, phi_alpha, q_alpha, _, _ = (
                 jax.lax.while_loop(
                     lambda args_: ~args_[2].get_status(),
                     lambda args_: _update(*args_),
@@ -2133,6 +2266,7 @@ class BaseBeamStructure:
                         phi_alpha,
                         q_alpha,
                         f_ext_aero_steps,
+                        thrust_alpha,
                     ),
                 )
             )
@@ -2147,6 +2281,7 @@ class BaseBeamStructure:
                 phi_alpha,
                 q_alpha,
                 f_ext_aero_steps,
+                thrust_alpha,
             )
 
         def load_step_loop(
@@ -2156,6 +2291,7 @@ class BaseBeamStructure:
             phi_alpha: Array,
             q_alpha: StructureMinimalStates,
             f_ext_aero_steps: Optional[Array],
+            thrust_alpha: dict[str, Array],
         ) -> tuple[
             int,
             ConvergenceStatus,
@@ -2165,13 +2301,14 @@ class BaseBeamStructure:
             Optional[Array],
         ]:
             r"""
-            Performs load stepping iterations for a given time step
-            :param i_ts: Timestep index for which to perform load stepping
-            :param struct_convergence_status_: ConvergenceStatus object to update with load stepping convergence information
-            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4]
-            :param phi_alpha: Nodal updates to the configuration in the algebra space, [n_nodes, 6]
-            :param q_alpha: Minimal states at intermediate alpha step
-            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6]
+            Performs load stepping iterations for a given time step. Load stepping is not performed for thrust.
+            :param i_ts: Timestep index for which to perform load stepping.
+            :param struct_convergence_status_: ConvergenceStatus object to update with load stepping convergence information.
+            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, [n_nodes, 4, 4].
+            :param phi_alpha: Nodal updates to the configuration in the algebra space, [n_nodes, 6].
+            :param q_alpha: Minimal states at intermediate alpha step.
+            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps [n_steps, n_nodes, 6].
+            :param thrust_alpha: Thrust at the alpha step, {keys, [1]}.
             :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
             """
             return jax.lax.fori_loop(
@@ -2185,10 +2322,11 @@ class BaseBeamStructure:
                     phi_alpha,
                     q_alpha,
                     f_ext_aero_steps,
+                    thrust_alpha,
                 ),
             )
 
-        struct_case, _, aero_case, _, _, _ = jax.lax.fori_loop(
+        struct_case, _, aero_case, *_ = jax.lax.fori_loop(
             1,
             n_tstep,
             lambda i_ts, args: time_step_loop(i_ts, *args),
@@ -2197,6 +2335,7 @@ class BaseBeamStructure:
                 struct_convergence_status,
                 aero_case,
                 fsi_convergence_status,
+                thrust_t,
                 cs_ang_t,
                 cs_vel_t,
             ),
@@ -2217,24 +2356,26 @@ class BaseBeamStructure:
     def dynamic_solve(
         self,
         init_state: Optional[DynamicStructureSnapshot | StaticStructure],
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
         n_tstep: int,
         dt: Array | float,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
-        prescribed_dofs: Sequence[int] | Array | slice | int | None,
+        f_ext_follower: Optional[Array] = None,
+        f_ext_dead: Optional[Array] = None,
+        f_ext_aero: Optional[Array] = None,
+        thrust_t: Optional[dict[str, Array]] = None,
         load_steps: int = 1,
     ) -> DynamicStructure:
         r"""
         Perform dynamic solve of the structure under external loads
         :param init_state: Initial state of the structure, either as a DynamicStructureSnapshot or StaticStructure. If
         None, the reference configuration is used with zero velocities.
+        :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param n_tstep: Number of time steps to simulate.
         :param dt: Time step length.
         :param f_ext_follower: Following external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external follower forces.
         :param f_ext_dead: Dead external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external dead forces.
         :param f_ext_aero: Aerodynamic external forces array, [n_tstep, n_node, 6], [n_node, 6] or None for zero external aerodynamic forces.
-        :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
+        :param thrust_t: Thrust time history, {keys, [n_tstep]}. If none, this will use the reference value.
         :param load_steps: Number of load steps to apply the external loads over.
         :return: DynamicStructure dataclass containing results of the dynamic analysis.
         """
@@ -2244,6 +2385,13 @@ class BaseBeamStructure:
 
         if load_steps <= 0:
             raise ValueError("load_steps must be a positive integer")
+
+        # set thrust if not provided
+        thrust_t_: dict[str, Array] = (
+            thrust_t
+            if thrust_t is not None
+            else {k: jnp.full(n_tstep, v) for k, v in self.thrust_reference.items()}
+        )
 
         # degrees of freedom to solve for
         prescribed_dofs_arr = self.make_prescribed_dofs_tuple(prescribed_dofs)
@@ -2295,6 +2443,7 @@ class BaseBeamStructure:
                     dynamic=True,
                     f_ext_dead=init_state__.f_ext_dead,
                     f_ext_aero=init_state__.f_ext_aero,
+                    thrust=init_state__.thrust,
                     f_ext_follower=init_state__.f_ext_follower,
                     v=init_state__.v,
                     v_dot=init_state__.v_dot,
@@ -2328,6 +2477,9 @@ class BaseBeamStructure:
                 f_elem=f_elem,
                 f_iner_gyr=f_iner + f_gyr,  # type: ignore
                 f_res=f_res,
+                thrust=init_state__.thrust,
+                thrust_nodes=self.thrust_nodes,
+                thrust_direction=self.thrust_direction,
                 t=init_state__.t,
                 i_ts=init_state__.i_ts,
                 prescribed_dofs=prescribed_dofs_arr,
@@ -2378,6 +2530,7 @@ class BaseBeamStructure:
             aero_obj=None,
             aero_case=None,
             fsi_convergence_status=None,
-            cs_ang_t=dict(),
-            cs_vel_t=dict(),
+            thrust_t=thrust_t_,
+            cs_ang_t=None,
+            cs_vel_t=None,
         )

@@ -1,9 +1,9 @@
 from __future__ import annotations
 import math
-from operator import mul
+from math import prod
 from typing import Optional, Sequence, OrderedDict
 from collections import UserList
-from functools import singledispatch, reduce
+from functools import singledispatch
 from types import EllipsisType
 
 from jax import numpy as jnp
@@ -304,7 +304,7 @@ class ArrayListShape:
     def __init__(self, shapes: Sequence[tuple[int, ...]]) -> None:
         self.shapes: Sequence[tuple[int, ...]] = shapes
         self.n_arrays: int = len(self.shapes)
-        self.sizes: Sequence[int] = [reduce(mul, shape, 1) for shape in self.shapes]
+        self.sizes: Sequence[int] = [prod(shape) for shape in self.shapes]
 
     def __iter__(self):
         return iter(self.shapes)
@@ -384,7 +384,7 @@ def vect_to_arrs(
 
     for name, shape in shapes.items():
         if isinstance(shape, tuple):
-            sz = reduce(mul, shape, 1)
+            sz = prod(shape)
             out_vals[name] = vect[cnt : cnt + sz].reshape(shape)
             cnt += sz
         elif isinstance(shape, ArrayListShape):
