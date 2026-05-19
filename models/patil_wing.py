@@ -112,7 +112,7 @@ def make_patil_wing(
         flowfield=flowfield,
         delta_w=None,
         x0_aero=grid,
-        reference_cs_angles={
+        cs_angles_reference={
             "left_aileron": jnp.zeros(()),
             "right_aileron": jnp.zeros(()),
         },

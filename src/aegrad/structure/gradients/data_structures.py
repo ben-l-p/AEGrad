@@ -29,11 +29,13 @@ class StructureFullStates:
     hg: Array
     eps: Array
     f_elem: Array
+    f_res: Array  # residual forcing at nodes, added as it is used for trim
 
 
-@dataclass
+@dataclass(frozen=True)
 class StructuralGradsToCompute:
     x0: bool = False
+    orientation_euler: bool = False
     k_cs: bool = True
     m_cs: bool = True
     m_lumped: bool = False
@@ -47,6 +49,7 @@ class StructuralDesignVariables(DesignVariables):
     def __init__(
         self,
         x0: Optional[Array],
+        orientation_euler: Optional[Array],
         k_cs: Optional[Array],
         m_cs: Optional[Array],
         m_lumped: Optional[Array],
@@ -57,6 +60,7 @@ class StructuralDesignVariables(DesignVariables):
     ):
         super().__init__()
         self.x0: Optional[Array] = x0
+        self.orientation_euler: Optional[Array] = orientation_euler
         self.k_cs: Optional[Array] = k_cs
         self.m_cs: Optional[Array] = m_cs
         self.m_lumped: Optional[Array] = m_lumped
@@ -80,6 +84,9 @@ class StructuralDesignVariables(DesignVariables):
         if self.x0 is not None:
             assert other.x0 is not None
             self.x0 += other.x0
+        if self.orientation_euler is not None:
+            assert other.orientation_euler is not None
+            self.orientation_euler += other.orientation_euler
         if self.k_cs is not None:
             assert other.k_cs is not None
             self.k_cs += other.k_cs
@@ -105,6 +112,9 @@ class StructuralDesignVariables(DesignVariables):
         return StructuralDesignVariables(
             x0=jnp.einsum("ij,j...->i...", adj, self.x0)
             if self.x0 is not None
+            else None,
+            orientation_euler=jnp.einsum("ij,j...->i...", adj, self.orientation_euler)
+            if self.orientation_euler is not None
             else None,
             k_cs=jnp.einsum("ij,j...->i...", adj, self.k_cs)
             if self.k_cs is not None
@@ -132,6 +142,9 @@ class StructuralDesignVariables(DesignVariables):
     def zeros_like(self) -> StructuralDesignVariables:
         return StructuralDesignVariables(
             x0=jnp.zeros_like(self.x0) if self.x0 is not None else None,
+            orientation_euler=jnp.zeros_like(self.orientation_euler)
+            if self.orientation_euler is not None
+            else None,
             k_cs=jnp.zeros_like(self.k_cs) if self.k_cs is not None else None,
             m_cs=jnp.zeros_like(self.m_cs) if self.m_cs is not None else None,
             m_lumped=jnp.zeros_like(self.m_lumped)
@@ -219,6 +232,7 @@ class StructuralDesignVariables(DesignVariables):
     def get_vars(self) -> dict[str, Optional[Array] | Optional[dict[str, Array]]]:
         return {
             "x0": self.x0,
+            "orientation_euler": self.orientation_euler,
             "k_cs": self.k_cs,
             "m_cs": self.m_cs,
             "m_lumped": self.m_lumped,
@@ -231,6 +245,7 @@ class StructuralDesignVariables(DesignVariables):
     def _dynamic_names() -> Sequence[str]:
         return (
             "x0",
+            "orientation_euler",
             "k_cs",
             "m_cs",
             "m_lumped",

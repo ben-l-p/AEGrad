@@ -8,6 +8,9 @@ from aegrad.coupled.data_structures import (
     AeroelasticDesignVariables,
 )
 from aegrad.utils.data_structures import ConvergenceSettings
+from aegrad.aero.gradients.data_structures import AeroGradsToCompute
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 from models.cantilever_wing import make_cantilever_wing
 
@@ -75,8 +78,16 @@ class TestDynamicEquilibriumAdjoint:
         if plot:
             dynamic_sol.plot(directory="./test_outputs/dynamic_coupled_adjoint")
 
+        grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(
+            structure=StructuralGradsToCompute(m_cs=True, k_cs=True),
+            aero=AeroGradsToCompute(flowfield=True),
+        )
+
         static_grad, static_adj = wing.static_adjoint(
-            case=static_sol, objective=static_objective, forward_adjoint=True
+            case=static_sol,
+            objective=static_objective,
+            forward_adjoint=True,
+            grads_to_compute=grads_to_compute,
         )
 
         dynamic_grad, dynamic_adj = wing.dynamic_adjoint(
@@ -84,6 +95,16 @@ class TestDynamicEquilibriumAdjoint:
             objective=dynamic_objective,
             p_varphi_p_x=-static_adj,
             approx_grads=False,
+            grads_to_compute=grads_to_compute,
+        )
+
+        assert (
+            dynamic_grad.aero.flowfield is not None
+            and static_grad.aero.flowfield is not None
+            and dynamic_grad.aero.flowfield is not None
+            and dynamic_grad.structure.m_cs is not None
+            and dynamic_grad.structure.k_cs is not None
+            and static_grad.structure.k_cs is not None
         )
 
         assert jnp.allclose(
@@ -94,16 +115,10 @@ class TestDynamicEquilibriumAdjoint:
             dynamic_grad.aero.flowfield["rho"], static_grad.aero.flowfield["rho"]
         ), "Mismatch in rho gradient"
 
-        if dynamic_grad.structure.m_cs is None:
-            raise ValueError("Missing mass gradient")
         assert jnp.allclose(dynamic_grad.structure.m_cs, 0.0, atol=1e-6), (
             "Nonzero mass gradient"
         )
 
-        if dynamic_grad.structure.k_cs is None:
-            raise ValueError("Missing dynamic stiffness gradient")
-        if static_grad.structure.k_cs is None:
-            raise ValueError("Missing static stiffness gradient")
         assert jnp.allclose(dynamic_grad.structure.k_cs, static_grad.structure.k_cs), (
             "Mismatch in stiffness gradient"
         )

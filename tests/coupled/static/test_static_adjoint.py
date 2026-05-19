@@ -6,7 +6,11 @@ from aegrad.coupled.data_structures import (
     AeroelasticDesignVariables,
 )
 from aegrad.utils.data_structures import ConvergenceSettings
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
+from aegrad.aero.gradients.data_structures import AeroGradsToCompute
 from models import cantilever_wing
+
 
 # Small discretisation so tests run quickly
 n_nodes = 6
@@ -49,14 +53,25 @@ def _solve(u_inf: Array, k_cs: Array):
 class TestForwardStaticAeroelasticAdjoint:
     forward_mode: bool = True
 
+    grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(
+        structure=StructuralGradsToCompute(k_cs=True),
+        aero=AeroGradsToCompute(flowfield=True),
+    )
+
     @classmethod
     def setup_class(cls):
         cls.wing, cls.sol = _solve(u_inf=u_inf_base, k_cs=k_cs_base)
         cls.grad: AeroelasticDesignVariables = cls.wing.static_adjoint(
-            case=cls.sol, objective=_objective, forward_adjoint=cls.forward_mode
+            case=cls.sol,
+            objective=_objective,
+            forward_adjoint=cls.forward_mode,
+            grads_to_compute=cls.grads_to_compute,
         )[0]
         cls.objective_val: Array = _objective(
-            cls.sol.get_full_states(), cls.wing.get_design_variables(case=cls.sol)
+            cls.sol.get_full_states(),
+            cls.wing.get_design_variables(
+                case=cls.sol, grads_to_compute=cls.grads_to_compute
+            ),
         )
 
     @classmethod
@@ -67,10 +82,15 @@ class TestForwardStaticAeroelasticAdjoint:
         new_wing, new_sol = _solve(u_inf=u_inf_base.at[0].add(eps), k_cs=k_cs_base)
 
         new_obj = _objective(
-            new_sol.get_full_states(), new_wing.get_design_variables(case=new_sol)
+            new_sol.get_full_states(),
+            new_wing.get_design_variables(
+                case=new_sol, grads_to_compute=cls.grads_to_compute
+            ),
         )
 
         fd_grad = (new_obj - cls.objective_val) / eps
+
+        assert cls.grad.aero.flowfield is not None
         adj_grad = cls.grad.aero.flowfield["u_inf"][0]
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
@@ -85,7 +105,10 @@ class TestForwardStaticAeroelasticAdjoint:
         new_wing, new_sol = _solve(u_inf=u_inf_base, k_cs=k_cs_base.at[3, 3].add(eps))
 
         new_obj = _objective(
-            new_sol.get_full_states(), new_wing.get_design_variables(case=new_sol)
+            new_sol.get_full_states(),
+            new_wing.get_design_variables(
+                case=new_sol, grads_to_compute=AeroelasticGradsToCompute()
+            ),
         )
 
         fd_grad = (new_obj - cls.objective_val) / eps

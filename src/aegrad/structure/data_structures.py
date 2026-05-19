@@ -135,7 +135,12 @@ class StaticStructure:
 
     def get_full_states(self) -> StructureFullStates:
         return StructureFullStates(
-            v=None, v_dot=None, hg=self.hg, eps=self.eps, f_elem=self.f_elem
+            v=None,
+            v_dot=None,
+            hg=self.hg,
+            eps=self.eps,
+            f_elem=self.f_elem,
+            f_res=self.f_res,
         )
 
     def _transform(self, rmat: Array) -> None:
@@ -622,6 +627,7 @@ class DynamicStructure:
             hg=self.hg[i_ts, ...],
             eps=self.eps[i_ts, ...],
             f_elem=self.f_elem[i_ts, ...],
+            f_res=self.f_res[i_ts, ...],
         )
 
     @classmethod

@@ -48,21 +48,66 @@ class BeamStructure(BaseBeamStructure):
         return inner_case
 
     def minimal_states_to_full_states(
-        self, q: StructureMinimalStates, dv: Optional[StructuralDesignVariables] = None
+        self,
+        i_ts: int,
+        q: StructureMinimalStates,
+        dv: StructuralDesignVariables,
+        dv_full: StructuralDesignVariables,
     ) -> StructureFullStates:
-        struct = self.case_from_dv(dv) if dv is not None else self
+        r"""
+        Obtain the full set of states from the minimal states and the design variables.
+        :param i_ts: Index of the time step.
+        :param q: Minimal dynamic structure states.
+        :param dv: Design variables, where entries for gradients which aren't needed are set to None.
+        :param dv_full: Design variables, without omissions. These values are fallen back to when an entry in ``dv`` is
+        none, to give an equivalent with zero gradient.
+        :return: Full set of structural states used inside objective function.
+        """
+        struct = self.case_from_dv(dv)
         hg = struct.calculate_hg_from_varphi(q.varphi)
         d = struct.make_d(hg=hg)
+        p_d = struct.make_p_d(d=d)
         eps = struct.make_eps(d=d)
         f_elem = struct.make_f_elem(eps=eps)
-        return StructureFullStates(v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem)
+
+        assert dv_full.thrust_t is not None
+        f_res = struct.make_f_res(
+            solve_dofs=None,
+            p_d=p_d,
+            eps=eps,
+            hg=hg,
+            f_ext_follower_n=dv.f_ext_follower[i_ts, ...]
+            if dv.f_ext_follower is not None
+            else dv_full.f_ext_follower[i_ts, ...]
+            if dv_full.f_ext_follower is not None
+            else None,
+            f_ext_dead_n=dv.f_ext_dead[i_ts, ...]
+            if dv.f_ext_dead is not None
+            else dv_full.f_ext_dead[i_ts, ...]
+            if dv_full.f_ext_dead is not None
+            else None,
+            thrust_n={k: v[i_ts] for k, v in dv.thrust_t.items()}
+            if dv.thrust_t is not None
+            else {k: v[i_ts] for k, v in dv_full.thrust_t.items()},
+            dynamic=True,
+            m_t=self.make_m_t(d=d),
+            c_l=self._make_c_t(d=d, d_dot=self._make_d_dot(p_d=p_d, v=q.v), v=q.v)[0],
+            c_l_lumped=self._make_c_t_lumped(v=q.v)[0]
+            if self.use_lumped_mass
+            else None,
+            v=q.v,
+            v_dot=q.v_dot,
+        )[0]
+        return StructureFullStates(
+            v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem, f_res=f_res
+        )
 
     def _structural_states_res_from_dv_varphi(
         self,
         dv: StructuralDesignVariables,
         varphi: Array,
         thrust: dict[str, Array],
-    ) -> tuple[StructureFullStates, Array]:
+    ) -> StructureFullStates:
         r"""
         Obtain useful states and forcing residual from design variables and a minimal configuration vector.
         :param dv: Design variables.
@@ -85,14 +130,6 @@ class BeamStructure(BaseBeamStructure):
         else:
             m_t = None
 
-        ss = StructureFullStates(
-            hg=hg,
-            eps=eps,
-            f_elem=f_elem,
-            v=None,
-            v_dot=None,
-        )
-
         f_res = inner_case.make_f_res(
             solve_dofs=None,
             p_d=p_d,
@@ -109,7 +146,14 @@ class BeamStructure(BaseBeamStructure):
             v_dot=None,
         )[0]
 
-        return ss, f_res
+        return StructureFullStates(
+            hg=hg,
+            eps=eps,
+            f_elem=f_elem,
+            f_res=f_res,
+            v=None,
+            v_dot=None,
+        )
 
     def static_adjoint(
         self,
@@ -149,6 +193,7 @@ class BeamStructure(BaseBeamStructure):
         # make design variables for current state of structure
         dv = StructuralDesignVariables(
             x0=self.x0,
+            orientation_euler=self.orientation_euler,
             k_cs=self.k_cs,
             m_cs=self.m_cs if self.use_m_cs else None,
             m_lumped=self.m_lumped if self.use_lumped_mass else None,
@@ -173,7 +218,7 @@ class BeamStructure(BaseBeamStructure):
             lambda varphi_, dv_: objective(
                 self._structural_states_res_from_dv_varphi(
                     dv=dv_, varphi=varphi_, thrust=structure.thrust
-                )[0],
+                ),
                 dv_,
                 None,
             ),
@@ -185,9 +230,11 @@ class BeamStructure(BaseBeamStructure):
 
         # gradient of residual w.r.t. design variables and minimal states
         p_res_p_x, p_res_p_varphi = (jax.jacfwd if n_u > n_x else jax.jacrev)(
-            lambda dv_, varphi_: self._structural_states_res_from_dv_varphi(
-                dv=dv_, varphi=varphi_, thrust=structure.thrust
-            )[1],
+            lambda dv_, varphi_: (
+                self._structural_states_res_from_dv_varphi(
+                    dv=dv_, varphi=varphi_, thrust=structure.thrust
+                ).f_res
+            ),
             argnums=(0, 1),
         )(dv, structure.varphi)
 
@@ -653,33 +700,38 @@ class BeamStructure(BaseBeamStructure):
             p_v_dot_p_f_ext_n,
         )
 
-    @jax.jit(static_argnums=(0, 2, 3))
     def j_from_q_x(
         self,
         q_n_mat: Array,
         dv: StructuralDesignVariables,
+        dv_full: StructuralDesignVariables,
         objective: StructuralObjectiveFunction,
         i_ts: int,
     ) -> Array:
         r"""
         Obtain the objective as a function of the minimal states and design variables.
         :param q_n_mat: Matrix representation of the minimal states.
-        :param dv: Design variables.
+        :param dv: Design variables, with unwanted entries replaced with None.
+        :param dv_full: Design variables which are defined for all entries.
         :param objective: Objective function.
         :param i_ts: Time step index.
         :return: Objective value.
         """
         full_states = self.minimal_states_to_full_states(
-            q=StructureMinimalStates.from_mat(q_n_mat), dv=dv
+            i_ts=i_ts,
+            q=StructureMinimalStates.from_mat(q_n_mat),
+            dv=dv,
+            dv_full=dv_full,
         )
         return jnp.atleast_1d(objective(full_states, dv, i_ts))
 
-    @jax.jit(static_argnums=(0, 1, 3))
+    @jax.jit(static_argnums=(0, 1, 3, 4))
     def p_j(
         self,
         objective: StructuralObjectiveFunction,
         i_ts: int,
         dv: StructuralDesignVariables,
+        dv_full: StructuralDesignVariables,
         q_n: StructureMinimalStates,
     ) -> tuple[Array, StructuralDesignVariables]:
         r"""
@@ -687,17 +739,21 @@ class BeamStructure(BaseBeamStructure):
         :param objective: Objective function.
         :param i_ts: Time step index.
         :param dv: Design variables.
+        :param dv_full: Design variables which are defined for all entries.
         :param q_n: Current minimal states.
         :return: Jacobian with respect to minimal states and design variables.
         """
 
-        p_j_n_p_q_n, p_j_n_p_x = jax.jacrev(self.j_from_q_x, argnums=(0, 1))(
-            q_n.to_mat(), dv, objective, i_ts
-        )
+        def _j(q_n_mat: Array, dv_: StructuralDesignVariables) -> Array:
+            return self.j_from_q_x(
+                q_n_mat=q_n_mat, dv=dv_, dv_full=dv_full, objective=objective, i_ts=i_ts
+            )
+
+        p_j_n_p_q_n, p_j_n_p_x = jax.jacrev(_j, argnums=(0, 1))(q_n.to_mat(), dv)
 
         return cast(Array, p_j_n_p_q_n), cast(StructuralDesignVariables, p_j_n_p_x)
 
-    @jax.jit(static_argnums=(0, 6, 7, 8, 10, 11, 12, 13))
+    @jax.jit(static_argnums=(0, 6, 7, 8, 9, 11, 12, 13, 14))
     def adjoint_time_loop(
         self,
         rev_i_ts: int,
@@ -708,6 +764,7 @@ class BeamStructure(BaseBeamStructure):
         structure: DynamicStructure,
         objective: StructuralObjectiveFunction,
         dv: StructuralDesignVariables,
+        dv_full: StructuralDesignVariables,
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
@@ -725,6 +782,7 @@ class BeamStructure(BaseBeamStructure):
         :param structure: Dynamic structure solution.
         :param objective: Objective function.
         :param dv: Structure design variables.
+        :param dv_full: Structure design variables which are defined for all entries.
         :param thrust_t: Thrust time history, {key, [n_tstep]}.
         :param solve_dofs: Tuple of dof index to solve.
         :param approx_grads: Whether to approximate the gradient or not.
@@ -745,7 +803,7 @@ class BeamStructure(BaseBeamStructure):
         # gradient of objective at current timestep with respect to current minimal states and design variables
         # for i_ts=0, these will not be useful
         p_j_n_p_q_n, p_j_n_p_x = self.p_j(
-            objective=objective, i_ts=i_ts, dv=dv, q_n=q_n
+            objective=objective, i_ts=i_ts, dv=dv, dv_full=dv_full, q_n=q_n
         )
 
         # find gradients of residual function (state Jacobians only)
@@ -821,21 +879,15 @@ class BeamStructure(BaseBeamStructure):
         :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
         """
 
-        dv = self.get_design_variables(struct_case=structure, thrust_t=structure.thrust)
+        dv = self.get_design_variables(
+            struct_case=structure,
+            thrust_t=structure.thrust,
+            grads_to_compute=grads_to_compute,
+        )
 
-        # remove gradients we don't need
-        if not grads_to_compute.x0:
-            dv.x0 = None
-        if not grads_to_compute.k_cs:
-            dv.k_cs = None
-        if not grads_to_compute.m_cs:
-            dv.m_cs = None
-        if not grads_to_compute.m_lumped:
-            dv.m_lumped = None
-        if not grads_to_compute.f_ext_follower:
-            dv.f_ext_follower = None
-        if not grads_to_compute.f_ext_dead:
-            dv.f_ext_dead = None
+        dv_full = self.get_design_variables(
+            struct_case=structure, thrust_t=structure.thrust, grads_to_compute=None
+        )
 
         struct_states_init = structure.get_full_states(i_ts=0)
 
@@ -855,6 +907,9 @@ class BeamStructure(BaseBeamStructure):
 
         dv_grad_init = StructuralDesignVariables(
             x0=jnp.zeros((*j_shape, *self.x0.shape)) if dv.x0 is not None else None,
+            orientation_euler=jnp.zeros((*j_shape, 3))
+            if dv.orientation_euler is not None
+            else None,
             k_cs=jnp.zeros((*j_shape, *self.k_cs.shape))
             if dv.k_cs is not None
             else None,
@@ -872,7 +927,9 @@ class BeamStructure(BaseBeamStructure):
             else None,
             thrust_t={
                 k: jnp.zeros((*j_shape, *v.shape)) for k, v in structure.thrust.items()
-            },
+            }
+            if dv.thrust_t is not None
+            else None,
             f_shape=(),
         )
 
@@ -898,6 +955,7 @@ class BeamStructure(BaseBeamStructure):
                 structure=structure,
                 objective=objective,
                 dv=dv,
+                dv_full=dv_full,
                 thrust_t=structure.thrust,
                 solve_dofs=solve_dofs,
                 approx_grads=approx_grads,
@@ -922,7 +980,11 @@ class BeamStructure(BaseBeamStructure):
 
         # solve initial timestep adjoint, as there is no r0
         p_j0_p_q0, p_j0_p_x = self.p_j(
-            objective=objective, i_ts=0, dv=dv, q_n=structure.get_minimal_states(0)
+            objective=objective,
+            i_ts=0,
+            dv=dv,
+            dv_full=dv_full,
+            q_n=structure.get_minimal_states(0),
         )
 
         adj0 = (

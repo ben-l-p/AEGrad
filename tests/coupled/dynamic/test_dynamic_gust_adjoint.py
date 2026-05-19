@@ -4,8 +4,14 @@ from jax import Array
 from aegrad.aero.flowfields import OneMinusCosine
 from aegrad.coupled.data_structures import AeroelasticFullStates
 from aegrad.utils.data_structures import ConvergenceSettings
+from aegrad.coupled import CoupledAeroelastic
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
+from aegrad.aero.gradients.data_structures import AeroGradsToCompute
+from aegrad.coupled import DynamicAeroelastic
 
 from models.cantilever_wing import make_cantilever_wing
+
 
 # Discretisation parameters shared across all tests
 u_inf = jnp.array((10.0, 0.0, 0.1))
@@ -71,9 +77,11 @@ def _run_primal(k_cs: Array, gust_amplitude: float | Array):
     return wing, static_sol, dynamic_sol
 
 
-def _total_objective(wing, dynamic_sol) -> Array:
+def _total_objective(
+    wing: CoupledAeroelastic, dynamic_sol: DynamicAeroelastic
+) -> Array:
     """Sum the per-timestep objective over the full trajectory."""
-    dv = wing.get_design_variables(case=dynamic_sol)
+    dv = wing.get_design_variables(case=dynamic_sol, grads_to_compute=None)
     total = jnp.array(0.0)
     for i in range(n_tstep):
         total += _dynamic_objective(dynamic_sol.get_full_states(i_ts=i), dv, i)
@@ -91,8 +99,16 @@ class TestDynamicGustAdjoint:
         # Forward static adjoint gives p_varphi/p_x (sensitivity of equilibrium states
         # to design variables), needed to propagate initial condition sensitivity for
         # parameters like k_cs that affect the static equilibrium.
+        grads_to_compute = AeroelasticGradsToCompute(
+            structure=StructuralGradsToCompute(k_cs=True),
+            aero=AeroGradsToCompute(flowfield=True),
+        )
+
         _, static_adj = cls.wing.static_adjoint(
-            case=cls.static_sol, objective=_dynamic_objective, forward_adjoint=True
+            case=cls.static_sol,
+            objective=_dynamic_objective,
+            forward_adjoint=True,
+            grads_to_compute=grads_to_compute,
         )
 
         cls.dynamic_grad, _ = cls.wing.dynamic_adjoint(
@@ -100,6 +116,7 @@ class TestDynamicGustAdjoint:
             objective=_dynamic_objective,
             p_varphi_p_x=-static_adj,
             approx_grads=False,
+            grads_to_compute=grads_to_compute,
         )
 
     def test_gust_amplitude_gradient(self):
@@ -113,7 +130,10 @@ class TestDynamicGustAdjoint:
         fd_grad = (
             _total_objective(wing_plus, sol_plus)
             - _total_objective(wing_minus, sol_minus)
-        ) / (2 * eps)
+        ) / (2.0 * eps)
+
+        assert self.dynamic_grad.aero.flowfield is not None
+
         adj_grad = self.dynamic_grad.aero.flowfield["gust_amplitude"].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Optional, Sequence, TYPE_CHECKING
 
 import jax
@@ -22,7 +23,7 @@ from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
 from aegrad.aero.utils import cs_ang_to_cs_vel
-
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -55,8 +56,9 @@ class BaseCoupledAeroelastic:
         flowfield: FlowField,
         delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]],
         x0_aero: ArrayList | Sequence[Array] | Array,
+        thrust_reference: Optional[dict[str, Array]] = None,
         orientation_euler: Optional[Array] = None,
-        reference_cs_angles: Optional[dict[str, Array]] = None,
+        cs_angles_reference: Optional[dict[str, Array]] = None,
         *,
         remove_checks: bool = False,
     ):
@@ -65,6 +67,7 @@ class BaseCoupledAeroelastic:
             k_cs=k_cs,
             m_cs=m_cs,
             m_lumped=m_lumped,
+            thrust_reference=thrust_reference,
             orientation_euler=orientation_euler,
             remove_checks=remove_checks,
         )
@@ -74,7 +77,7 @@ class BaseCoupledAeroelastic:
             delta_w=delta_w,
             x0_aero=x0_aero,
             hg0=self.structure.hg0,
-            reference_cs_angles=reference_cs_angles,
+            reference_cs_angles=cs_angles_reference,
         )
 
     def case_from_dv(self, dv: AeroelasticDesignVariables) -> BaseCoupledAeroelastic:
@@ -86,13 +89,29 @@ class BaseCoupledAeroelastic:
     def get_design_variables(
         self,
         case: StaticAeroelastic | DynamicAeroelastic,
+        grads_to_compute: Optional[AeroelasticGradsToCompute],
     ) -> AeroelasticDesignVariables:
+        r"""
+        Obtain the design variables describing the wing.
+        :param case:
+        :param grads_to_compute: Data structure which describes which design variables should be obtained. If none, all
+        variables are obtained.
+        :return: AeroelasticDesignVariables object.
+        """
         return AeroelasticDesignVariables(
             structure_dv=self.structure.get_design_variables(
-                struct_case=case.structure, thrust_t=case.structure.thrust
+                struct_case=case.structure,
+                thrust_t=case.structure.thrust,
+                grads_to_compute=grads_to_compute.structure
+                if grads_to_compute is not None
+                else None,
             ),
             aero_dv=self.aero.get_design_variables(
-                cs_ang_t=case.aero.cs_ang, cs_vel_t=case.aero.cs_vel
+                cs_ang_t=case.aero.cs_ang,
+                cs_vel_t=case.aero.cs_vel,
+                grads_to_compute=grads_to_compute.aero
+                if grads_to_compute is not None
+                else None,
             ),
         )
 

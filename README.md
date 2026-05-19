@@ -18,7 +18,7 @@ pip install .
 ```
 
 An extensive test suite is included to verify the correctness of the code. This verified the numerics, and takes
-approximately 15 minutes to run on an M2 MacBook Air. Tests can be run using pytest.
+approximately 17 minutes to run on an M2 MacBook Air. Tests can be run using pytest.
 
 ```bash
 uv run pytest

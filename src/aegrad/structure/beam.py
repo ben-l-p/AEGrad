@@ -43,9 +43,9 @@ from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.algebra.se3 import t_se3
 from aegrad.structure.gradients.data_structures import (
     StructuralDesignVariables,
-    StructureFullStates,
 )
 from aegrad.structure.data_structures import StructureMinimalStates
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 if TYPE_CHECKING:
     from aegrad.coupled.data_structures import DynamicAeroelastic
@@ -423,12 +423,15 @@ class BaseBeamStructure:
         self,
         struct_case: StaticStructure | DynamicStructure,
         thrust_t: dict[str, Array],
+        grads_to_compute: Optional[StructuralGradsToCompute],
     ) -> StructuralDesignVariables:
         r"""
         Obtain the design variables for the structural problem. As the external forcing is defined for each solve, the
         chosen forcing is required as input.
         :param struct_case: Structural case
         :param thrust_t: Thrust time history, {keys, [n_tstep]}.
+        :param grads_to_compute: Data structure which describes which design variables should be obtained. If none, all
+        variables are obtained.
         :return: StructuralDesignVariables dataclass containing design variables
         """
 
@@ -444,16 +447,34 @@ class BaseBeamStructure:
             if struct_case.f_ext_dead is not None
             else None
         )
-        return StructuralDesignVariables(
-            x0=self.x0,
-            m_cs=self.m_cs,
-            k_cs=self.k_cs,
-            m_lumped=self._m_lumped,
-            f_ext_dead=f_ext_dead_global,
-            f_ext_follower=struct_case.f_ext_follower,
-            thrust_t=thrust_t,
-            f_shape=(),
-        )
+        if isinstance(grads_to_compute, StructuralGradsToCompute):
+            return StructuralDesignVariables(
+                x0=self.x0 if grads_to_compute.x0 else None,
+                orientation_euler=self.orientation_euler
+                if grads_to_compute.orientation_euler
+                else None,
+                m_cs=self.m_cs if grads_to_compute.m_cs else None,
+                k_cs=self.k_cs if grads_to_compute.k_cs else None,
+                m_lumped=self._m_lumped if grads_to_compute.m_lumped else None,
+                f_ext_dead=f_ext_dead_global if grads_to_compute.f_ext_dead else None,
+                f_ext_follower=struct_case.f_ext_follower
+                if grads_to_compute.f_ext_follower
+                else None,
+                thrust_t=thrust_t if grads_to_compute.thrust_t else None,
+                f_shape=(),
+            )
+        else:
+            return StructuralDesignVariables(
+                x0=self.x0,
+                orientation_euler=self.orientation_euler,
+                m_cs=self.m_cs,
+                k_cs=self.k_cs,
+                m_lumped=self._m_lumped,
+                f_ext_dead=f_ext_dead_global,
+                f_ext_follower=struct_case.f_ext_follower,
+                thrust_t=thrust_t,
+                f_shape=(),
+            )
 
     def reference_configuration(
         self,
@@ -1394,20 +1415,6 @@ class BaseBeamStructure:
             hg,
             vmap(exp_se3, 0, 0)(phi.reshape(-1, 6)),
         )
-
-    def minimal_states_to_full_states(
-        self, q: StructureMinimalStates
-    ) -> StructureFullStates:
-        r"""
-        Convert a minimal set of states to a useful set of full states.
-        :param q: Minimal set of structural states
-        :return: Full set of structural states
-        """
-        hg = self.calculate_hg_from_varphi(q.varphi)
-        d = self.make_d(hg=hg)
-        eps = self.make_eps(d=d)
-        f_elem = self.make_f_elem(eps=eps)
-        return StructureFullStates(v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem)
 
     def make_prescribed_dofs_tuple(
         self,

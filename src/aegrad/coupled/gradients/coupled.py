@@ -1,12 +1,17 @@
 from __future__ import annotations
 from copy import deepcopy
-from typing import Optional, Callable, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Optional, Callable, TYPE_CHECKING, overload, Sequence, Literal, Final
 
 import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from aegrad.aero.gradients.data_structures import AeroDesignVariables, AeroStates
+from aegrad.aero.gradients.data_structures import (
+    AeroDesignVariables,
+    AeroStates,
+    AeroGradsToCompute,
+)
 from aegrad.aero.utils import project_forcing_to_beam
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.coupled import DynamicAeroelastic
@@ -24,6 +29,10 @@ from aegrad.coupled.coupled import BaseCoupledAeroelastic
 from aegrad.algebra.se3 import exp_se3
 from aegrad.structure.gradients.data_structures import StructureFullStates
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
+from aegrad.coupled.data_structures import DynamicAeroelasticSnapshot
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
+from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
+from aegrad.utils.print_utils import warn
 
 if TYPE_CHECKING:
     from aegrad.coupled.coupled import StaticAeroelastic
@@ -60,15 +69,22 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             m_cs=dv.structure.m_cs
             if dv.structure.m_cs is not None
             else self.structure.m_cs,
-            m_lumped=dv.structure.m_lumped
+            m_lumped=None
+            if not self.structure.use_lumped_mass
+            else dv.structure.m_lumped
             if dv.structure.m_lumped is not None
-            else None,
+            else self.structure.m_lumped,
+            thrust_reference=dv.structure.thrust_t
+            if dv.structure.thrust_t is not None
+            else self.structure.thrust_reference,
             flowfield=self.aero.flowfield.from_design_variables(
                 design_variables=dv.aero.flowfield
-            ),
+            )
+            if dv.aero.flowfield is not None
+            else self.aero.flowfield,
             delta_w=self.aero.delta_w,
             dt=self.aero.dt,
-            x0_aero=dv.aero.x0_aero,
+            x0_aero=dv.aero.x0_aero if dv.aero.x0_aero is not None else self.aero.x0_b,
             remove_checks=True,
         )
 
@@ -100,14 +116,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         else:
             f_ext_dead = None
 
-        struct_states = StructureFullStates(
-            hg=hg,
-            eps=eps,
-            f_elem=f_elem,
-            v=None,
-            v_dot=None,
-        )
-
         f_dead_total = inner_case.structure.make_f_ext_dead_tot(
             f_ext_dead, f_ext_aero_global, i_load_step=None
         )
@@ -128,27 +136,39 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             v_dot=None,
         )[0]
 
+        struct_states = StructureFullStates(
+            hg=hg,
+            eps=eps,
+            f_elem=f_elem,
+            f_res=f_res.reshape(-1, 6),
+            v=None,
+            v_dot=None,
+        )
+
         aero_states = aero_sol.get_states(i_ts=i_ts)
 
         return AeroelasticFullStates(structure=struct_states, aero=aero_states), f_res
 
     def minimal_states_to_full_states(
         self,
+        i_ts: int,
         q: AeroelasticMinimalStates,
-        dv: Optional[AeroelasticDesignVariables] = None,
+        dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
     ) -> AeroelasticFullStates:
         return AeroelasticFullStates(
             structure=self.structure.minimal_states_to_full_states(
-                q.structure, dv=dv.structure if dv is not None else None
+                i_ts=i_ts, q=q.structure, dv=dv.structure, dv_full=dv_full.structure
             ),
             aero=q.aero,
         )
 
-    @jax.jit(static_argnums=(0, 1, 2, 3, 4))
+    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5))
     def static_adjoint(
         self,
         case: StaticAeroelastic,
         objective: AeroelasticObjectiveFunction,
+        grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(),
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
@@ -159,6 +179,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         the structure's parameters.
         :param case: StaticAeroelastic containing the current state of the aeroelastic system.
         :param objective: Objective function that takes the structure and design variables and returns an array
+        :param grads_to_compute: Data structure which specifies which gradients to compute. This is used to speed up the
+        adjoint solve by only computing the necessary Jacobian blocks.
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
         :param forward_adjoint: If True, will use the forward adjoint. If false, will use the reverse adjoint.
         :return: Gradient of objective function output with respect to design variables.
@@ -174,7 +196,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         if optional_jacobians is not None:
             self.structure.optional_jacobians = optional_jacobians
 
-        dv = self.get_design_variables(case=case)
+        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
         states = case.get_full_states()
 
         # find shape of objective function output without evaluating function
@@ -251,6 +273,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     def compute_p_q0_p_x(
         self,
         case: StaticAeroelastic,
+        grads_to_compute: AeroelasticGradsToCompute,
         p_varphi_p_x: Array,
         solve_dofs: Array,
         horseshoe: bool = False,
@@ -258,20 +281,32 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         r"""
         Obtain the gradient of the initial minimal states for a dynamic aeroelastic system with respect to the design
         variables.
-        :param case: StaticAeroelastic solution
+        :param case: StaticAeroelastic solution.
+        :param grads_to_compute: AeroelasticGradsToCompute object.
         :param p_varphi_p_x: Jacobian of structural twists with respect to the design variables. This can be obtained
         from the static adjoint solver by using the forward mode, which results in this being the adjoint state.
         :param solve_dofs: Array of degree of freedom index which are solved for
         :param horseshoe: Use static_horseshoe wake.
         :return: Gradients of AeroelasticMinimalStates with respect to the design variables.
         """
-        dv = self.get_design_variables(case=case)
+
+        # design variables with variables that we don't require gradients omitted to speed up computations.
+        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
+
+        # design variables with no omissions
+        dv_full = self.get_design_variables(case=case, grads_to_compute=None)
+
         varphi = case.structure.varphi
 
         def minimal_states_from_varphi(
-            varphi_: Array, dv_: AeroelasticDesignVariables
+            varphi_: Array,
+            dv_: AeroelasticDesignVariables,
         ) -> Array:
             inner_case = self.case_from_dv(dv=dv_)
+
+            assert (
+                dv_full.aero.cs_ang_t is not None and dv_full.aero.cs_vel_t is not None
+            )
 
             # solve aero problem
             hg = inner_case.structure.calculate_hg_from_varphi(varphi=varphi_)
@@ -284,10 +319,20 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     static=True,
                     horseshoe=horseshoe,
                     cs_ang_n={
-                        k: jnp.atleast_1d(v)[0] for k, v in dv_.aero.cs_ang_t.items()
+                        k: jnp.atleast_1d(v)[0]
+                        for k, v in (
+                            dv_.aero.cs_ang_t
+                            if dv_.aero.cs_ang_t is not None
+                            else dv_full.aero.cs_ang_t
+                        ).items()
                     },
                     cs_vel_n={
-                        k: jnp.atleast_1d(v)[0] for k, v in dv_.aero.cs_vel_t.items()
+                        k: jnp.atleast_1d(v)[0]
+                        for k, v in (
+                            dv_.aero.cs_vel_t
+                            if dv_.aero.cs_vel_t is not None
+                            else dv_full.aero.cs_vel_t
+                        ).items()
                     },
                 )
             )
@@ -348,6 +393,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         q_nm1: AeroelasticMinimalStates,
         q_n: AeroelasticMinimalStates,
         dv_: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
@@ -371,6 +417,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             q_n=q_n.aero,
             q_nm1=q_nm1.aero,
             dv=dv_,
+            dv_full=dv_full,
             f_aero_beam_n=q_n.structure.f_ext_aero,
             struct_obj=self.structure,
             approx_grads=approx_grads,
@@ -439,6 +486,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         case: DynamicAeroelastic,
         objective: AeroelasticObjectiveFunction,
+        grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(),
         p_varphi_p_x: Optional[Array] = None,
         save_adjoint: bool = False,
         approx_grads: bool = True,
@@ -446,8 +494,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
         :param case: Dynamic aeroelastic case
-        :param objective: Objective function that takes the system full states, design variables and timestep index, and returns an array
-        :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found from the static solve.
+        :param objective: Objective function that takes the system full states, design variables and timestep index,
+        and returns an array.
+        :param grads_to_compute: Specify which design variables for which to compute gradients for.
+        :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found
+        from the static solve.
         :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
         :param approx_grads: Whether to use gradient approximation or not.
         :return: Gradient of sum of objective across timesteps with respect to design variables.
@@ -466,7 +517,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         n_tstep = case.structure.n_tstep
 
-        dv = self.get_design_variables(case=case)
+        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
+
+        dv_full = self.get_design_variables(case=case, grads_to_compute=None)
 
         if case.aero.static_horseshoe is None:
             raise ValueError("static_horseshoe not defined")
@@ -531,12 +584,14 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 lambda q_free, dv__: jnp.atleast_1d(
                     objective(
                         self.minimal_states_to_full_states(
-                            AeroelasticMinimalStates.from_vector(
+                            i_ts=i_ts,
+                            q=AeroelasticMinimalStates.from_vector(
                                 vect=q_n.ravel().at[free_state_ix].set(q_free),
                                 n_dof=self.structure.n_dof,
                                 aero_shapes=minimal_states_init.aero.shapes(),
                             ),
                             dv=dv__,
+                            dv_full=dv_full,
                         ),
                         dv__,
                         i_ts,
@@ -553,6 +608,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     q_nm1=q_nm1,
                     q_n=q_n,
                     dv_=dv,
+                    dv_full=dv_full,
                     thrust_t=case.structure.thrust,
                     solve_dofs=solve_dofs,
                     approx_grads=approx_grads,
@@ -590,44 +646,75 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             return d_j_d_x_, adj_ if save_adjoint else adj_n, p_res_p_q_nm1, q_nm1
 
+        assert dv_full.aero.cs_ang_t is not None and dv_full.aero.cs_vel_t is not None
         dv_grad_init = AeroelasticDesignVariables(
             structure_dv=StructuralDesignVariables(
-                x0=jnp.zeros((*j_shape, *self.structure.x0.shape)),
-                k_cs=jnp.zeros((*j_shape, *self.structure.k_cs.shape)),
-                m_cs=jnp.zeros((*j_shape, *self.structure.m_cs.shape)),
+                x0=jnp.zeros((*j_shape, *self.structure.x0.shape))
+                if grads_to_compute.structure.x0
+                else None,
+                orientation_euler=jnp.zeros((*j_shape, 3))
+                if grads_to_compute.structure.orientation_euler
+                else None,
+                k_cs=jnp.zeros((*j_shape, *self.structure.k_cs.shape))
+                if grads_to_compute.structure.k_cs
+                else None,
+                m_cs=jnp.zeros((*j_shape, *self.structure.m_cs.shape))
+                if grads_to_compute.structure.m_cs
+                else None,
                 m_lumped=jnp.zeros((*j_shape, *self.structure.m_lumped.shape))
                 if self.structure.use_lumped_mass
+                and grads_to_compute.structure.m_lumped
                 else None,
                 f_ext_dead=jnp.zeros((*j_shape, *case.structure.f_ext_dead.shape))
                 if case.structure.f_ext_dead is not None
+                and grads_to_compute.structure.f_ext_dead
                 else None,
                 f_ext_follower=jnp.zeros(
                     (*j_shape, *case.structure.f_ext_follower.shape)
                 )
                 if case.structure.f_ext_follower is not None
+                and grads_to_compute.structure.f_ext_follower
                 else None,
                 thrust_t={
                     k: jnp.zeros((*j_shape, *v.shape))
                     for k, v in case.structure.thrust.items()
-                },
+                }
+                if grads_to_compute.structure.thrust_t
+                else None,
                 f_shape=j_shape,
             ),
             aero_dv=AeroDesignVariables(
                 x0_aero=ArrayList(
                     [jnp.zeros((*j_shape, *arr.shape)) for arr in self.aero.x0_b]
-                ),
+                )
+                if grads_to_compute.aero.x0_aero
+                else None,
                 flowfield={
                     k: jnp.zeros((*j_shape, *v.shape))
                     for k, v in self.aero.flowfield.to_design_variables().items()
-                },
+                }
+                if grads_to_compute.aero.flowfield
+                else None,
                 cs_ang_t={
                     k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in dv.aero.cs_ang_t.items()
-                },
+                    for k, v in (
+                        dv.aero.cs_ang_t
+                        if dv.aero.cs_ang_t is not None
+                        else dv_full.aero.cs_ang_t
+                    ).items()
+                }
+                if grads_to_compute.aero.cs_ang_t
+                else None,
                 cs_vel_t={
                     k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in dv.aero.cs_vel_t.items()
-                },
+                    for k, v in (
+                        dv.aero.cs_vel_t
+                        if dv.aero.cs_vel_t is not None
+                        else dv_full.aero.cs_vel_t
+                    ).items()
+                }
+                if grads_to_compute.aero.cs_vel_t
+                else None,
                 f_shape=j_shape,
             ),
         )
@@ -681,12 +768,14 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             lambda q_free, dv__: jnp.atleast_1d(
                 objective(
                     self.minimal_states_to_full_states(
-                        AeroelasticMinimalStates.from_vector(
+                        i_ts=0,
+                        q=AeroelasticMinimalStates.from_vector(
                             vect=q0.ravel().at[free_state_ix].set(q_free),
                             n_dof=self.structure.n_dof,
                             aero_shapes=minimal_states_init.aero.shapes(),
                         ),
                         dv=dv__,
+                        dv_full=dv_full,
                     ),
                     dv__,
                     0,
@@ -705,6 +794,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 p_varphi_p_x=p_varphi_p_x,
                 horseshoe=static_horseshoe,
                 solve_dofs=solve_dofs_arr,
+                grads_to_compute=grads_to_compute,
             )
 
             p_j0_p_q0_full = jnp.zeros((n_j, minimal_states_init.n_states))

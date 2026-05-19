@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from math import prod
 from pathlib import Path
 from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict
@@ -13,6 +14,15 @@ from aegrad.algebra.array_utils import ArrayList, ArrayListShape, vect_to_arrs
 from aegrad.plotting.aerogrid import plot_grid_to_vtk
 from aegrad.utils.utils import make_pytree
 from aegrad.utils.data_structures import DesignVariables
+from aegrad.utils.print_utils import warn
+
+
+@dataclass(frozen=True)
+class AeroGradsToCompute:
+    x0_aero: bool = True
+    flowfield: bool = False
+    cs_ang_t: bool = False
+    cs_vel_t: bool = False
 
 
 @make_pytree
@@ -85,17 +95,17 @@ class AeroStates:
 class AeroDesignVariables(DesignVariables):
     def __init__(
         self,
-        x0_aero: ArrayList,
-        flowfield: dict[str, Array],
-        cs_ang_t: dict[str, Array],
-        cs_vel_t: dict[str, Array],
+        x0_aero: Optional[ArrayList],
+        flowfield: Optional[dict[str, Array]],
+        cs_ang_t: Optional[dict[str, Array]],
+        cs_vel_t: Optional[dict[str, Array]],
         f_shape: tuple[int, ...],
     ):
         super().__init__()
-        self.x0_aero: ArrayList = x0_aero
-        self.flowfield: dict[str, Array] = flowfield
-        self.cs_ang_t: dict[str, Array] = cs_ang_t
-        self.cs_vel_t: dict[str, Array] = cs_vel_t
+        self.x0_aero: Optional[ArrayList] = x0_aero
+        self.flowfield: Optional[dict[str, Array]] = flowfield
+        self.cs_ang_t: Optional[dict[str, Array]] = cs_ang_t
+        self.cs_vel_t: Optional[dict[str, Array]] = cs_vel_t
 
         self.f_shape: tuple[int, ...] = f_shape
         self.f_size: int = prod(f_shape)
@@ -108,26 +118,53 @@ class AeroDesignVariables(DesignVariables):
         self.mapping, self.n_x = self.make_index_mapping()
 
     def __iadd__(self, other: AeroDesignVariables) -> AeroDesignVariables:
-        self.x0_aero = ArrayList(
-            [self.x0_aero[i] + other.x0_aero[i] for i in range(len(self.x0_aero))]
-        )
-        for k in self.flowfield.keys():
-            self.flowfield[k] += other.flowfield[k]
-        for k in self.cs_ang_t.keys():
-            self.cs_ang_t[k] += other.cs_ang_t[k]
-            self.cs_vel_t[k] += other.cs_vel_t[k]
+        if self.x0_aero is not None:
+            assert other.x0_aero is not None
+            self.x0_aero = ArrayList(
+                [self.x0_aero[i] + other.x0_aero[i] for i in range(len(self.x0_aero))]
+            )
+        if self.flowfield is not None:
+            assert other.flowfield is not None
+            for k in self.flowfield.keys():
+                self.flowfield[k] += other.flowfield[k]
+        if self.cs_ang_t is not None:
+            assert other.cs_ang_t is not None
+            for k in self.cs_ang_t.keys():
+                self.cs_ang_t[k] += other.cs_ang_t[k]
+        if self.cs_vel_t is not None:
+            assert other.cs_vel_t is not None
+            for k in self.cs_vel_t.keys():
+                self.cs_vel_t[k] += other.cs_vel_t[k]
         return self
 
-    def get_cs_n(self, i_ts: int) -> tuple[dict[str, Array], dict[str, Array]]:
+    def get_cs_n(
+        self,
+        i_ts: int,
+        dv_full: AeroDesignVariables,
+    ) -> tuple[dict[str, Array], dict[str, Array]]:
         r"""
         Obtain the angles and velocities for all control surfaces at the current timestep.
         :param i_ts: Timestep index.
+        :param dv_full: Full design variables. This is used to substitute a non-differentiable value when the control
+        inputs are chosen to be omitted from the design variables.
         :return: Dictionary of {name: value} pairs for control angles and velocities.
         """
 
         # get control surface deflections from design variables
-        cs_ang_n = {k: v[i_ts, ...] for k, v in self.cs_ang_t.items()}
-        cs_vel_n = {k: v[i_ts, ...] for k, v in self.cs_vel_t.items()}
+        assert dv_full.cs_ang_t is not None and dv_full.cs_vel_t is not None
+        cs_ang_n = {
+            k: v[i_ts, ...]
+            for k, v in (
+                self.cs_ang_t if self.cs_ang_t is not None else dv_full.cs_ang_t
+            ).items()
+        }
+
+        cs_vel_n = {
+            k: v[i_ts, ...]
+            for k, v in (
+                self.cs_vel_t if self.cs_vel_t is not None else dv_full.cs_vel_t
+            ).items()
+        }
 
         return cs_ang_n, cs_vel_n
 
@@ -138,21 +175,29 @@ class AeroDesignVariables(DesignVariables):
                     jnp.einsum("ij,j...->i...", adj, self.x0_aero[i])
                     for i in range(len(self.x0_aero))
                 ]
-            ),
+            )
+            if self.x0_aero is not None
+            else None,
             flowfield={
                 k: jnp.einsum("ij,j...->i...", adj, v)
                 for k, v in self.flowfield.items()
-            },
+            }
+            if self.flowfield is not None
+            else None,
             cs_ang_t={
                 k: jnp.einsum("ij,j...->i...", adj, v) for k, v in self.cs_ang_t.items()
-            },
+            }
+            if self.cs_ang_t is not None
+            else None,
             cs_vel_t={
                 k: jnp.einsum("ij,j...->i...", adj, v) for k, v in self.cs_vel_t.items()
-            },
+            }
+            if self.cs_vel_t is not None
+            else None,
             f_shape=(adj.shape[1],),
         )
 
-    def get_vars(self) -> dict[str, Array | ArrayList | dict[str, Array]]:
+    def get_vars(self) -> dict[str, Optional[Array | ArrayList | dict[str, Array]]]:
         return {
             "x0_aero": self.x0_aero,
             "flowfield": self.flowfield,
@@ -171,6 +216,12 @@ class AeroDesignVariables(DesignVariables):
 
         if case.n_tstep != 1:
             raise ValueError("Can only plot gradients for singe timestep cases.")
+
+        if self.x0_aero is None:
+            warn(
+                "Aerodynamic grid gradient not computed. Skipping grid gradient plotting."
+            )
+            return []
 
         directory_path = Path(directory)
         directory_path.mkdir(parents=True, exist_ok=True)

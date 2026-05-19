@@ -39,11 +39,16 @@ from aegrad.aero.utils import KernelFunction, biot_savart_epsilon
 
 from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.aic import compute_v_ind, compute_aic_solve
-from aegrad.aero.gradients.data_structures import AeroDesignVariables, AeroStates
+from aegrad.aero.gradients.data_structures import (
+    AeroDesignVariables,
+    AeroStates,
+    AeroGradsToCompute,
+)
 from aegrad.utils.print_utils import VerbosityLevel
 from aegrad.coupled.data_structures import AeroelasticDesignVariables
 from aegrad.structure import BeamStructure
 from aegrad.algebra.array_utils import construct_named_block_jacobian, ArrayListShape
+
 
 if TYPE_CHECKING:
     from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
@@ -399,24 +404,51 @@ class UVLM:
         inner_case = deepcopy(self)
         inner_case.set_design_variables(
             dt=self.dt,
-            flowfield=inner_case.flowfield.from_design_variables(dv.flowfield),
+            flowfield=inner_case.flowfield.from_design_variables(dv.flowfield)
+            if dv.flowfield is not None
+            else self.flowfield,
             delta_w=self.delta_w,
-            x0_aero=dv.x0_aero,
+            x0_aero=dv.x0_aero if dv.x0_aero is not None else self.x0_b,
             hg0=self.hg0,
+            reference_cs_angles=dv.cs_ang_t
+            if dv.cs_ang_t is not None
+            else self.cs_ang0,
         )
 
         return inner_case
 
     def get_design_variables(
-        self, cs_ang_t: dict[str, Array], cs_vel_t: dict[str, Array]
+        self,
+        cs_ang_t: dict[str, Array],
+        cs_vel_t: dict[str, Array],
+        grads_to_compute: Optional[AeroGradsToCompute],
     ) -> AeroDesignVariables:
-        return AeroDesignVariables(
-            x0_aero=self.x0_b,
-            flowfield=self.flowfield.to_design_variables(),
-            cs_ang_t=cs_ang_t,
-            cs_vel_t=cs_vel_t,
-            f_shape=(),
-        )
+        r"""
+        Extract design variables from the aerodynamic case.
+        :param cs_ang_t: Time history of control surface angles, {keys, [n_tstep]}.
+        :param cs_vel_t: Time history of control surface velocities, {keys, [n_tstep]}.
+        :param grads_to_compute: Data structure which describes which design variables should be obtained. If None, all
+        variables are obtained.
+        :return: Aerodynamic design variables.
+        """
+        if isinstance(grads_to_compute, AeroGradsToCompute):
+            return AeroDesignVariables(
+                x0_aero=self.x0_b if grads_to_compute.x0_aero else None,
+                flowfield=self.flowfield.to_design_variables()
+                if grads_to_compute.flowfield
+                else None,
+                cs_ang_t=cs_ang_t if grads_to_compute.cs_ang_t else None,
+                cs_vel_t=cs_vel_t if grads_to_compute.cs_vel_t else None,
+                f_shape=(),
+            )
+        else:
+            return AeroDesignVariables(
+                x0_aero=self.x0_b,
+                flowfield=self.flowfield.to_design_variables(),
+                cs_ang_t=cs_ang_t,
+                cs_vel_t=cs_vel_t,
+                f_shape=(),
+            )
 
     def hg_to_zeta_b(self, hg_n: Array, cs_ang_n: dict[str, Array]) -> ArrayList:
         r"""
@@ -1277,6 +1309,7 @@ class UVLM:
         gamma_w_n_vec: Array,
         zeta_w_n_vec: Array,
         dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
     ) -> Array:
         r"""
@@ -1294,6 +1327,8 @@ class UVLM:
         :param gamma_w_n_vec: Wake circulation vector at timestep n.
         :param zeta_w_n_vec: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions for the variables where gradients aren't
+        requested.
         :param struct_obj: Beam structure.
         :return: Bound circulation residual.
         """
@@ -1324,7 +1359,7 @@ class UVLM:
         inner_case = self.case_from_dv(dv=dv.aero)
 
         # get control surface deflections from design variables
-        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts)
+        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts, dv_full=dv_full.aero)
 
         zeta_b_n = inner_case.hg_to_zeta_b(hg_n=hg_n, cs_ang_n=cs_ang_n)
 
@@ -1394,6 +1429,7 @@ class UVLM:
         zeta_w_nm1_vec: Array,
         zeta_w_n_vec: Array,
         dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
     ) -> tuple[Array, Array]:
         r"""
@@ -1409,6 +1445,7 @@ class UVLM:
         :param zeta_w_nm1_vec: Wake grid vector at timestep n-1.
         :param zeta_w_n_vec: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions.
         :param struct_obj: Beam structure.
         :return: Wake grid and circulation residuals.
         """
@@ -1455,8 +1492,8 @@ class UVLM:
         inner_case = self.case_from_dv(dv=dv.aero)
 
         # get control surface deflections from design variables
-        cs_ang_nm1, cs_vel_nm1 = dv.aero.get_cs_n(i_ts=i_ts - 1)
-        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts)
+        cs_ang_nm1, cs_vel_nm1 = dv.aero.get_cs_n(i_ts=i_ts - 1, dv_full=dv_full.aero)
+        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts, dv_full=dv_full.aero)
         zeta_b_nm1 = inner_case.hg_to_zeta_b(hg_n=hg_nm1, cs_ang_n=cs_ang_nm1)
         zeta_b_n = inner_case.hg_to_zeta_b(hg_n=hg_n, cs_ang_n=cs_ang_n)
 
@@ -1549,6 +1586,7 @@ class UVLM:
         gamma_b_dot_n_vec: Array,
         zeta_w_n_vec: Array,
         dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
         f_aero_beam_n_vec: Array,
         block_grid_gradients: bool,
@@ -1570,6 +1608,7 @@ class UVLM:
         :param gamma_b_dot_n_vec: Bound circulation vector time derivative at timestep n.
         :param zeta_w_n_vec: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions.
         :param struct_obj: Beam structure.
         :param f_aero_beam_n_vec: Local aerodynamic forcing projected onto beam.
         :param block_grid_gradients: If true, blocks the gradient path for the dependency of the steady aerodynamic
@@ -1613,7 +1652,7 @@ class UVLM:
         inner_case = self.case_from_dv(dv=dv.aero)
 
         # create grid
-        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts)
+        cs_ang_n, cs_vel_n = dv.aero.get_cs_n(i_ts=i_ts, dv_full=dv_full.aero)
 
         zeta_b_n = inner_case.hg_to_zeta_b(hg_n=hg_n, cs_ang_n=cs_ang_n)
         if block_grid_gradients:
@@ -1690,6 +1729,7 @@ class UVLM:
         q_n: AeroStates,
         q_nm1: AeroStates,
         dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         f_aero_beam_n: Array,
         struct_obj: BeamStructure,
         approx_grads: bool,
@@ -1722,6 +1762,7 @@ class UVLM:
         :param q_n: Aero minimal states at timestep n.
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions.
         :param f_aero_beam_n: Aerodynamic forcing for the beam at timestep n, in the local frame.
         :param struct_obj: Beam structure.
         :param approx_grads: If true, eliminate grid gradients from the aerodynamic force residual.
@@ -1734,6 +1775,7 @@ class UVLM:
             varphi_nm1_vec=varphi_nm1.ravel(),
             t_n=t_n,
             dv=dv,
+            dv_full=dv_full,
             gamma_b_nm1_vec=q_nm1.gamma_b.ravel(),
             gamma_w_nm1_vec=q_nm1.gamma_w.ravel(),
             gamma_w_n_vec=q_n.gamma_w.ravel(),
@@ -1750,6 +1792,7 @@ class UVLM:
                     v_n_vec=v_n.ravel(),
                     t_n=t_n,
                     dv=dv,
+                    dv_full=dv_full,
                     gamma_b_n_vec=q_n.gamma_b.ravel(),
                     gamma_w_n_vec=q_n.gamma_w.ravel(),
                     zeta_w_n_vec=q_n.zeta_w.ravel(),
@@ -1770,6 +1813,7 @@ class UVLM:
                     v_n_vec=v_n.ravel(),
                     t_n=t_n,
                     dv=dv,
+                    dv_full=dv_full,
                     gamma_b_n_vec=q_n.gamma_b.ravel(),
                     gamma_w_n_vec=q_n.gamma_w.ravel(),
                     gamma_b_dot_n_vec=q_n.gamma_b_dot.ravel(),
@@ -1782,7 +1826,7 @@ class UVLM:
             )
         )
 
-    @jax.jit(static_argnums=(8, 10, 11, 12))
+    @jax.jit(static_argnums=(8, 9, 11, 12, 13))
     def timestep_residual_jacobians(
         self,
         i_ts: int,
@@ -1793,6 +1837,7 @@ class UVLM:
         q_n: AeroStates,
         q_nm1: AeroStates,
         dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
         f_aero_beam_n: Array,
         struct_obj: BeamStructure,
         approx_grads: bool,
@@ -1808,6 +1853,7 @@ class UVLM:
         :param q_n: Aerodynamic minimal states at timestep n.
         :param q_nm1: Aerodynamic minimal states at timestep n-1.
         :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions.
         :param f_aero_beam_n: Aerodynamic forcing in local frame of reference at timestep n, [n_nodes, 6].
         :param struct_obj: Structural object.
         :param approx_grads: If true, eliminate grid gradients from force computation.
@@ -1846,6 +1892,7 @@ class UVLM:
             gamma_w_n,
             zeta_w_n,
             dv,
+            dv_full,
             struct_obj,
         )
 
@@ -1873,6 +1920,7 @@ class UVLM:
             zeta_w_nm1,
             zeta_w_n,
             dv,
+            dv_full,
             struct_obj,
         )
 
@@ -1900,6 +1948,7 @@ class UVLM:
             zeta_w_nm1,
             zeta_w_n,
             dv,
+            dv_full,
             struct_obj,
         )
 
@@ -1928,7 +1977,7 @@ class UVLM:
             d_f_aero["zeta_w_n"],
             d_f_aero["dv"],
             d_f_aero["f_aero_beam_n"],
-        ) = jax.jacrev(self.f_aero_res_func, argnums=(1, 2, 4, 5, 6, 7, 8, 10))(
+        ) = jax.jacrev(self.f_aero_res_func, argnums=(1, 2, 4, 5, 6, 7, 8, 11))(
             i_ts,
             varphi_n,
             v_n,
@@ -1938,6 +1987,7 @@ class UVLM:
             gamma_b_dot_n,
             zeta_w_n,
             dv,
+            dv_full,
             struct_obj,
             f_aero_beam_n.ravel(),
             block_grid_gradients=approx_grads,
