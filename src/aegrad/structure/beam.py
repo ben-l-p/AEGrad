@@ -171,9 +171,12 @@ class BaseBeamStructure:
             m_cs_index_ = m_cs_index
         self.m_cs_index: Array = m_cs_index_
 
+        self.m_lumped_index: Optional[Array] = None
         if m_lumped_index is not None:
             check_arr_dtype(m_lumped_index, int, "m_lumped_index")
-        self.m_lumped_index: Optional[Array] = m_lumped_index
+            if m_lumped_index.ndim not in (0, 1):
+                raise ValueError("m_lumped_index.ndim must be 0 or 1.")
+            self.m_lumped_index: Optional[Array] = jnp.atleast_1d(m_lumped_index)
 
         # add thrust
         self.thrust_nodes: dict[str, int] = dict()

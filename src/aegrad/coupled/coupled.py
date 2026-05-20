@@ -18,7 +18,12 @@ from aegrad.coupled.data_structures import (
     DynamicAeroelasticSnapshot,
     AeroelasticDesignVariables,
 )
-from aegrad.utils.print_utils import warn_if_32_bit, VerbosityLevel, VERBOSITY_LEVEL
+from aegrad.utils.print_utils import (
+    warn_if_32_bit,
+    VerbosityLevel,
+    VERBOSITY_LEVEL,
+    warn,
+)
 from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
@@ -160,6 +165,11 @@ class BaseCoupledAeroelastic:
         prescribed_dofs: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
             prescribed_dofs
         )
+
+        if not self.aero.flowfield.relative_motion:
+            warn(
+                "Flow field relative motion is disabled. Static solve may not be accurate."
+            )
 
         def _convergence_loop(
             converge_status_: ConvergenceStatus,
