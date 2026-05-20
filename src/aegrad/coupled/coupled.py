@@ -123,17 +123,18 @@ class BaseCoupledAeroelastic:
     def reference_configuration(
         self,
         prescribed_dofs: tuple[int, ...],
+        horseshoe: bool = False,
         use_f_ext_follower: bool = False,
         use_f_ext_dead: bool = False,
-        use_f_ext_aero: bool = False,
         t_init: float | Array = 0.0,
     ) -> StaticAeroelastic:
         r"""
         Obtain the static aeroelastic object describing the undeformed wing.
-        :param prescribed_dofs: Prescribed dofs for the structure
+        :param prescribed_dofs: Prescribed dofs for the structure.
+        :param horseshoe: Horseshoe flag.
         :param use_f_ext_follower: If true, allocate an array for follower forces.
         :param use_f_ext_dead: If true, allocate an array for dead forces.
-        :param use_f_ext_aero: If true, allocate an array for aero forces.
+
         :param t_init: Initial time
         :return: Static aeroelastic object for undeformed wing
         """
@@ -142,11 +143,11 @@ class BaseCoupledAeroelastic:
                 use_f_grav=self.structure.use_gravity,
                 use_f_ext_dead=use_f_ext_dead,
                 use_f_ext_follower=use_f_ext_follower,
-                use_f_aero=use_f_ext_aero,
+                use_f_aero=True,
                 prescribed_dofs=prescribed_dofs,
             ),
             aero=self.aero.solve_static(
-                t=t_init, hg=self.structure.hg0, horseshoe=False
+                t=t_init, hg=self.structure.hg0, horseshoe=horseshoe
             ),
         )
 
@@ -283,7 +284,7 @@ class BaseCoupledAeroelastic:
 
         # check thrust
         if thrust_t is not None:
-            if thrust_t.keys() != self.structure.thrust_direction.keys():
+            if thrust_t.keys() != dict(self.structure.thrust_direction).keys():
                 raise ValueError("Mismatch in keys for thrust")
 
             for k, v in thrust_t.items():
@@ -317,7 +318,6 @@ class BaseCoupledAeroelastic:
                     prescribed_dofs=prescribed_dofs,
                     use_f_ext_follower=f_ext_follower is not None,
                     use_f_ext_dead=f_ext_dead is not None,
-                    use_f_ext_aero=True,
                 ).to_dynamic(t=None),
                 t=t,
                 use_f_ext_follower=f_ext_follower is not None,

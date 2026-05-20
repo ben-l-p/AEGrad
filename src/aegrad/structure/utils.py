@@ -32,7 +32,7 @@ def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
             )
 
 
-def _n_elem_per_node(connectivity: Array) -> Array:
+def _n_elem_per_node(connectivity: Array, n_nodes: int) -> Array:
     r"""
     Computes the number of elements connected to each node in the structure.
     :param connectivity: Connectivity array of shape [n_elem, 2]
@@ -42,7 +42,7 @@ def _n_elem_per_node(connectivity: Array) -> Array:
     return jnp.bincount(
         connectivity.ravel(),
         minlength=connectivity.shape[0],
-        length=connectivity.shape[0],
+        length=n_nodes,
     )
 
 

@@ -1120,6 +1120,10 @@ class UVLM:
             cs_vel_n=None,
         )[0]
 
+        if horseshoe:
+            # if using a horseshoe wake, return the normal wake to prevent continuity errors
+            out_case.zeta_w = self.initialise_wake(zeta_b=out_case.zeta_b)
+
         return out_case
 
     def solve_prescribed_dynamic(

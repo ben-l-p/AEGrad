@@ -173,12 +173,6 @@ def simple_hale(
         axis=0,
     )
 
-    wing_element_index = jnp.arange(2 * n_half_wing)
-    fuselage_element_index = jnp.arange(n_fuselage) + wing_element_index[-1] + 1
-    tail_element_index = (
-        jnp.arange(2 * n_half_tail + n_fin) + fuselage_element_index[-1] + 1
-    )
-
     # mass and stiffness matrices
     m_cs_wing = jnp.diag(
         jnp.array(

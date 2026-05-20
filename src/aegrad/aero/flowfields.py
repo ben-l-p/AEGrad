@@ -91,7 +91,13 @@ class FlowField:
         Return the names of dynamic attributes for pytree registration.
         :return: Sequence of dynamic attribute names.
         """
-        return []
+        return (
+            "u_inf",
+            "rho",
+            "u_inf_mag",
+            "u_inf_dir",
+            "q_inf",
+        )
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -99,14 +105,7 @@ class FlowField:
         Return the names of static attributes for pytree registration.
         :return: Sequence of static attribute names.
         """
-        return (
-            "u_inf",
-            "rho",
-            "u_inf_mag",
-            "u_inf_dir",
-            "q_inf",
-            "relative_motion",
-        )
+        return ("relative_motion",)
 
 
 @make_pytree
@@ -232,7 +231,7 @@ class OneMinusCosine(FlowField):
         )
 
     @staticmethod
-    def _static_names() -> Sequence[str]:
+    def _dynamic_names() -> Sequence[str]:
         return (
             *FlowField._static_names(),
             "gust_amplitude",

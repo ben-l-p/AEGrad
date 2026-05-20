@@ -36,7 +36,7 @@ class StaticStructure:
     def __init__(
         self,
         hg: Array,
-        conn: Array,
+        conn: tuple[tuple[int]],
         o0: Array,
         d: Array,
         eps: Array,
@@ -49,13 +49,13 @@ class StaticStructure:
         f_elem: Array,
         f_res: Array,
         thrust: dict[str, Array],
-        thrust_nodes: dict[str, int],
-        thrust_direction: dict[str, Array],
-        prescribed_dofs: Optional[Array | tuple[int, ...]],
+        thrust_nodes: tuple[tuple[str, int], ...],
+        thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...],
+        prescribed_dofs: tuple[int, ...],
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
-        self.conn: Array = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
@@ -68,11 +68,11 @@ class StaticStructure:
         self.f_elem: Array = f_elem  # [n_elem, 6]
         self.f_res: Array = f_res  # [n_nodes, 6]
         self.thrust: dict[str, Array] = thrust  # [1]
-        self.thrust_nodes: dict[str, int] = thrust_nodes
-        self.thrust_direction: dict[str, Array] = thrust_direction  # [3]
-        self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
-            prescribed_dofs
+        self.thrust_nodes: tuple[tuple[str, int], ...] = thrust_nodes
+        self.thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...] = (
+            thrust_direction
         )
+        self.prescribed_dofs: tuple[int, ...] = prescribed_dofs
         self.local: bool = local
 
     @overload
@@ -171,11 +171,6 @@ class StaticStructure:
         self.f_int = self.f_int.at[...].set(transform_nodal_vect(self.f_int, rmat))
         self.f_res = self.f_int.at[...].set(transform_nodal_vect(self.f_res, rmat))
 
-        self.thrust_direction = {
-            k: rmat[self.thrust_nodes[k], ...] @ v
-            for k, v in self.thrust_direction.items()
-        }
-
     def to_global(self) -> None:
         """
         Convert local structure results to global frame.
@@ -207,12 +202,19 @@ class StaticStructure:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "conn", "o0", "prescribed_dofs", "local"
+        return (
+            "prescribed_dofs",
+            "local",
+            "conn",
+            "thrust_nodes",
+            "thrust_direction",
+        )
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
         return (
             "hg",
+            "o0",
             "d",
             "eps",
             "varphi",
@@ -224,8 +226,6 @@ class StaticStructure:
             "f_elem",
             "f_res",
             "thrust",
-            "thrust_nodes",
-            "thrust_direction",
         )
 
 
@@ -235,7 +235,7 @@ class DynamicStructureSnapshot:
     def __init__(
         self,
         hg: Array,
-        conn: Array,
+        conn: tuple[tuple[int]],
         o0: Array,
         d: Array,
         eps: Array,
@@ -252,15 +252,15 @@ class DynamicStructureSnapshot:
         f_iner_gyr: Array,
         f_res: Array,
         thrust: dict[str, Array],
-        thrust_nodes: dict[str, int],
-        thrust_direction: dict[str, Array],
+        thrust_nodes: tuple[tuple[str, int], ...],
+        thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...],
         t: Array,
         i_ts: int,
-        prescribed_dofs: Optional[Array | tuple[int, ...]],
+        prescribed_dofs: tuple[int, ...],
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
-        self.conn: Array = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
@@ -277,8 +277,10 @@ class DynamicStructureSnapshot:
         self.f_iner: Array = f_iner_gyr  # [n_nodes, 6]
         self.f_res: Array = f_res  # [n_nodes, 6]
         self.thrust: dict[str, Array] = thrust  # [1]
-        self.thrust_nodes: dict[str, int] = thrust_nodes
-        self.thrust_direction: dict[str, Array] = thrust_direction  # [3]
+        self.thrust_nodes: tuple[tuple[str, int], ...] = thrust_nodes
+        self.thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...] = (
+            thrust_direction  # [3]
+        )
         self.t: Array = t  # Scalar time value
         self.i_ts: int = i_ts  # Time step index
         self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
@@ -438,7 +440,7 @@ class DynamicStructureSnapshot:
 
         # node and element numbers for plotting
         node_num = jnp.arange(data.hg.shape[0])  # [n_nodes_]
-        elem_num = jnp.arange(data.conn.shape[0])  # [n_elems]
+        elem_num = jnp.arange(len(data.conn))  # [n_elems]
 
         node_scalar_data = {"node_number": node_num}
         node_vector_data = {
@@ -478,7 +480,7 @@ class DynamicStructureSnapshot:
         )  # default file name for beam objects is "beam"
         return plot_beam_to_vtk(
             hg=data.hg,
-            conn=data.conn,
+            conn=jnp.array(data.conn, dtype=int),
             o0=data.o0,
             n_interp=n_interp,
             filename=file_name,
@@ -497,7 +499,7 @@ class DynamicStructure:
     def __init__(
         self,
         hg: Array,
-        conn: Array,
+        conn: tuple[tuple[int]],
         o0: Array,
         d: Array,
         eps: Array,
@@ -514,14 +516,14 @@ class DynamicStructure:
         f_iner: Array,
         f_res: Array,
         thrust: dict[str, Array],
-        thrust_nodes: dict[str, int],
-        thrust_direction: dict[str, Array],
+        thrust_nodes: tuple[tuple[str, int], ...],
+        thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...],
         t: Array,
         n_tstep: int,
-        prescribed_dofs: Optional[Array | tuple[int, ...]],
+        prescribed_dofs: tuple[int, ...],
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
-        self.conn: Array = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]
@@ -538,13 +540,13 @@ class DynamicStructure:
         self.f_iner_gyr: Array = f_iner  # [n_tstep, n_nodes, 6]
         self.f_res: Array = f_res  # [n_tstep, n_nodes, 6]
         self.thrust: dict[str, Array] = thrust  # [n_tstep]
-        self.thrust_nodes: dict[str, int] = thrust_nodes
-        self.thrust_direction: dict[str, Array] = thrust_direction  # [3]
+        self.thrust_nodes: tuple[tuple[str, int], ...] = thrust_nodes
+        self.thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...] = (
+            thrust_direction  # [3]
+        )
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
-        self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
-            prescribed_dofs
-        )
+        self.prescribed_dofs: tuple[int, ...] = prescribed_dofs
         self.local: bool = True
 
     def to_static(self, i_ts: int) -> StaticStructure:
@@ -763,11 +765,6 @@ class DynamicStructure:
         )
         self.a = self.a.at[...].set(transform_nodal_vect(vect=self.a, rmat=rmat))
 
-        self.thrust_direction = {
-            k: rmat[self.thrust_nodes[k], ...] @ v
-            for k, v in self.thrust_direction.items()
-        }
-
     def to_global(self) -> None:
         """Convert local structure results to global frame."""
         if not self.local:
@@ -819,10 +816,11 @@ class DynamicStructure:
         Get names of static attributes in dynamic beam
         """
         return (
-            "conn",
-            "o0",
             "n_tstep",
             "prescribed_dofs",
+            "conn",
+            "thrust_nodes",
+            "thrust_direction",
         )
 
     @staticmethod
@@ -832,6 +830,7 @@ class DynamicStructure:
         """
         return (
             "hg",
+            "o0",
             "d",
             "eps",
             "varphi",
@@ -847,8 +846,6 @@ class DynamicStructure:
             "f_iner_gyr",
             "f_res",
             "thrust",
-            "thrust_nodes",
-            "thrust_direction",
             "t",
             "local",
         )

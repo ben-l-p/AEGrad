@@ -639,10 +639,6 @@ class DynamicAeroCase:
             "gamma_dot_relaxation",
             "free_wake",
             "kernels",
-            "mirror_point",
-            "mirror_normal",
-            "flowfield",
-            "dof_mapping",
         )
 
     @staticmethod
@@ -661,6 +657,10 @@ class DynamicAeroCase:
             "_cs_ang",
             "_cs_vel",
             "_t",
+            "mirror_point",
+            "mirror_normal",
+            "flowfield",
+            "dof_mapping",
         )
 
 

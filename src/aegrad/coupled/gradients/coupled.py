@@ -1,7 +1,6 @@
 from __future__ import annotations
 from copy import deepcopy
-from dataclasses import dataclass
-from typing import Optional, Callable, TYPE_CHECKING, overload, Sequence, Literal, Final
+from typing import Optional, Callable, TYPE_CHECKING, overload, Sequence, Final
 
 import jax
 from jax import numpy as jnp
@@ -33,6 +32,7 @@ from aegrad.coupled.data_structures import DynamicAeroelasticSnapshot
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 from aegrad.utils.print_utils import warn
+from aegrad.coupled.gradients.data_structures import TrimVariables
 
 if TYPE_CHECKING:
     from aegrad.coupled.coupled import StaticAeroelastic
@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 type AeroelasticObjectiveFunction = Callable[
     [AeroelasticFullStates, AeroelasticDesignVariables, Optional[int | Array]], Array
 ]
+
+ORIENTATION_DICT: Final[dict[str, int]] = {"x": 0, "y": 1, "z": 2}
 
 
 class CoupledAeroelastic(BaseCoupledAeroelastic):
@@ -85,6 +87,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             delta_w=self.aero.delta_w,
             dt=self.aero.dt,
             x0_aero=dv.aero.x0_aero if dv.aero.x0_aero is not None else self.aero.x0_b,
+            orientation_euler=dv.structure.orientation_euler
+            if dv.structure.orientation_euler is not None
+            else self.structure.orientation_euler,
             remove_checks=True,
         )
 
@@ -816,3 +821,308 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         )
 
         return d_j_d_x, adj
+
+    @overload
+    def trim(
+        self,
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
+        zero_force_dofs: Sequence[int] | Array | slice | int | None,
+        trim_cs: Optional[Sequence[str]],
+        thrust_nodes: Optional[Sequence[str]],
+        trim_orientation: Optional[str | Sequence[str]] = ...,
+        f_ext_follower: Optional[Array] = ...,
+        f_ext_dead: Optional[Array] = ...,
+        t: float | Array = ...,
+        load_steps: int = ...,
+        trim_relaxation: float = ...,
+        horseshoe: bool = ...,
+    ) -> tuple[StaticAeroelastic | DynamicAeroelasticSnapshot, TrimVariables]: ...
+
+    @overload
+    def trim(
+        self,
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
+        zero_force_dofs: Sequence[int] | Array | slice | int | None,
+        trim_cs: Optional[Sequence[str]],
+        thrust_nodes: Optional[Sequence[str]],
+        trim_orientation: Optional[str | Sequence[str]] = ...,
+        f_ext_follower: Optional[Array] = ...,
+        f_ext_dead: Optional[Array] = ...,
+        t: float | Array = ...,
+        load_steps: int = ...,
+        trim_relaxation: float = ...,
+        horseshoe: bool = ...,
+    ) -> tuple[StaticAeroelastic | DynamicAeroelasticSnapshot, TrimVariables]: ...
+
+    def trim(
+        self,
+        prescribed_dofs: Sequence[int] | Array | slice | int | None,
+        zero_force_dofs: Sequence[int] | Array | slice | int | None,
+        trim_cs: Optional[Sequence[str]],
+        thrust_nodes: Optional[Sequence[str]],
+        trim_orientation: Optional[str | Sequence[str]] = "x",
+        f_ext_follower: Optional[Array] = None,
+        f_ext_dead: Optional[Array] = None,
+        t: float | Array = 0.0,
+        load_steps: int = 1,
+        trim_relaxation: float = 1.0,
+        horseshoe: bool = False,
+    ) -> tuple[StaticAeroelastic | DynamicAeroelasticSnapshot, TrimVariables]:
+        r"""
+        Trim an aircraft such that the resulting sum of forces on the aircraft is zero without any supports.
+        :param prescribed_dofs: Degrees of freedom which are clamped for the trim process.
+        :param zero_force_dofs: Degrees freedom where we wish to drive the clamping force to zero. This is not
+        necessarily the same as prescribed_dofs, as in some cases there are degrees of freedom we will allow to have a
+        non-zero clamping force. For example in the case of a clamped cantilever wing where we wish to find the angle
+        of attack that gives lift equal to the weight, there would be a nonzero pitching moment.
+        :param trim_cs: Keys of control surfaces which are to be used to trim the aircraft.
+        :param thrust_nodes: Keys of thrust nodes which are to be used to trim the aircraft.
+        :param trim_orientation: Inertial axis (or axes if a sequence is provided) around which the aircraft is
+        rotated about at the clamp to achieve trim.
+        :param f_ext_follower: External follower forces, [n_nodes, 6].
+        :param f_ext_dead: external dead forces, [n_nodes, 6].
+        :param t: Time at which to trim the aircraft, default zero.
+        :param load_steps: Number of load steps used for the static solution.
+        :param trim_relaxation: Relaxation factor for updates to degrees of freedom used to achieve trim.
+        :param horseshoe: If true, use a horseshoe wake formulation.
+        :return: Aeroelastic solution object for the trimmed aircraft.
+        """
+
+        trim_cs_: Sequence[str] = trim_cs if trim_cs is not None else []
+        thrust_nodes_: Sequence[str] = thrust_nodes if thrust_nodes is not None else []
+        trim_orientation_: Sequence[str] = (
+            [trim_orientation]
+            if isinstance(trim_orientation, str)
+            else trim_orientation
+            if trim_orientation is not None
+            else []
+        )
+
+        zero_force_dofs_: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
+            zero_force_dofs
+        )
+
+        prescribed_dofs_: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
+            prescribed_dofs
+        )
+
+        if not self.structure.use_gravity:
+            warn("Gravity is not enabled. Trim may result in unexpected behaviour.")
+
+        # initial set of variables
+        trim_variables_init: TrimVariables = TrimVariables(
+            cs_ang={k: self.aero.cs_ang0[k] for k in trim_cs_},
+            thrust={k: self.structure.thrust_reference[k] for k in thrust_nodes_},
+            trim_angles={
+                k: self.structure.orientation_euler[ORIENTATION_DICT[k]]
+                for k in trim_orientation_
+            },
+        )
+
+        ae_sol_init = self.reference_configuration(
+            horseshoe=horseshoe,
+            prescribed_dofs=prescribed_dofs_,
+            use_f_ext_dead=f_ext_dead is not None,
+            use_f_ext_follower=f_ext_follower is not None,
+        )
+
+        inner_case = deepcopy(self)
+
+        def trim_body(
+            trim_variables_: TrimVariables,
+            sol_: StaticAeroelastic,
+            f_clamp_: Array,
+        ) -> tuple[TrimVariables, StaticAeroelastic, Array]:
+            _, tv, sol, fc = self.trim_iter(
+                inner_case,
+                trim_variables_,
+                sol_,
+                f_clamp_,
+                prescribed_dofs=prescribed_dofs_,
+                zero_force_dofs=zero_force_dofs_,
+                f_ext_dead=f_ext_dead,
+                f_ext_follower=f_ext_follower,
+                t=jnp.array(t),
+                load_steps=load_steps,
+                horseshoe=horseshoe,
+                trim_cs=trim_cs_,
+                thrust_nodes=thrust_nodes_,
+                trim_orientation=trim_orientation_,
+                trim_relaxation=trim_relaxation,
+            )
+            return tv, sol, fc
+
+        trim_variables_init.print()
+
+        f_threshold: float = 1e-3
+
+        trim_variables, ae_sol, f_clamp = jax.lax.while_loop(
+            lambda args_: jnp.any(jnp.abs(args_[2]) >= f_threshold),
+            body_fun=lambda args_: trim_body(*args_),
+            init_val=(
+                trim_variables_init,
+                ae_sol_init,
+                jnp.full((len(zero_force_dofs_)), 1e10),
+            ),
+        )
+
+        return ae_sol, trim_variables
+
+    def trim_angles_to_euler(self, trim_angles: dict[str, Array]) -> Array:
+        r"""
+        Find the 3 Euler angles describing the aircraft orientation. This allows for any combination to be set by
+        the trim routine, with values not passed using the fixed values provided in the reference orientation.
+        :param trim_angles: Dictionary of axis-angle pairs.
+        :return: Euler angles describing the aircraft orientation, [3]
+        """
+
+        orientation_euler = self.structure.orientation_euler
+        for k, v in trim_angles.items():
+            orientation_euler = orientation_euler.at[ORIENTATION_DICT[k]].set(v)
+        return orientation_euler
+
+    @staticmethod
+    def trim_iter(
+        inner_case: CoupledAeroelastic,
+        trim_variables: TrimVariables,
+        _: StaticAeroelastic,
+        __: Array,
+        *,
+        prescribed_dofs: tuple[int, ...],
+        zero_force_dofs: tuple[int, ...],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        t: Array,
+        load_steps: int,
+        trim_relaxation: float,
+        horseshoe: bool,
+        trim_cs: Sequence[str],
+        thrust_nodes: Sequence[str],
+        trim_orientation: Sequence[str],
+    ) -> tuple[CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array]:
+
+        inner_case.set_design_variables(
+            coords=inner_case.structure.x0,
+            k_cs=inner_case.structure.k_cs,
+            m_cs=inner_case.structure.m_cs,
+            m_lumped=inner_case.structure.m_lumped
+            if inner_case.structure.use_lumped_mass
+            else None,
+            thrust_reference=inner_case.structure.thrust_reference
+            | trim_variables.thrust,
+            dt=inner_case.aero.dt,
+            flowfield=inner_case.aero.flowfield,
+            delta_w=inner_case.aero.delta_w,
+            x0_aero=inner_case.aero.x0_b,
+            orientation_euler=inner_case.trim_angles_to_euler(
+                trim_variables.trim_angles
+            ),
+            cs_angles_reference=inner_case.aero.cs_ang0 | trim_variables.cs_ang,
+            remove_checks=True,
+        )
+
+        ae_sol = inner_case.static_solve(
+            prescribed_dofs=prescribed_dofs,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=f_ext_dead,
+            t=t,
+            load_steps=load_steps,
+            horseshoe=horseshoe,
+        )
+
+        f_clamp = ae_sol.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
+
+        def objective(states: AeroelasticFullStates, *_) -> Array:
+            return states.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
+
+        d_f_clamp_d_x: AeroelasticDesignVariables
+        adj: Array
+        d_f_clamp_d_x, adj = inner_case.static_adjoint(
+            case=ae_sol,
+            objective=objective,
+            grads_to_compute=AeroelasticGradsToCompute(
+                structure=StructuralGradsToCompute(
+                    x0=False,
+                    orientation_euler=True,
+                    k_cs=False,
+                    m_cs=False,
+                    m_lumped=False,
+                    f_ext_follower=False,
+                    f_ext_dead=False,
+                    thrust_t=True,
+                ),
+                aero=AeroGradsToCompute(
+                    x0_aero=False, flowfield=False, cs_ang_t=True, cs_vel_t=False
+                ),
+            ),
+        )
+
+        assert (
+            d_f_clamp_d_x.aero.cs_ang_t is not None
+            and d_f_clamp_d_x.structure.thrust_t is not None
+            and d_f_clamp_d_x.structure.orientation_euler is not None
+        )
+        d_f_clamp_d_cs_ang = (
+            jnp.concatenate([d_f_clamp_d_x.aero.cs_ang_t[k] for k in trim_cs], axis=1)
+            if trim_cs
+            else jnp.zeros((len(zero_force_dofs), 0))
+        )
+        d_f_clamp_d_thrust = (
+            jnp.concatenate(
+                [d_f_clamp_d_x.structure.thrust_t[k] for k in thrust_nodes], axis=1
+            )
+            if thrust_nodes
+            else jnp.zeros((len(zero_force_dofs), 0))
+        )
+        d_f_clamp_d_trim_angles = (
+            jnp.concatenate(
+                [
+                    d_f_clamp_d_x.structure.orientation_euler[:, [ORIENTATION_DICT[k]]]
+                    for k in trim_orientation
+                ],
+                axis=1,
+            )
+            if trim_orientation
+            else jnp.zeros((len(zero_force_dofs), 0))
+        )
+
+        d_f_clamp_d_trim_variables = jnp.concatenate(
+            [d_f_clamp_d_cs_ang, d_f_clamp_d_thrust, d_f_clamp_d_trim_angles],
+            axis=1,
+        )  # note that this is not square [n_zero_force_dof, n_free_trim_dof]
+
+        trim_update = (
+            jnp.linalg.lstsq(a=d_f_clamp_d_trim_variables, b=f_clamp)[0]
+            * trim_relaxation
+        )  # subtract this from current solution to update
+
+        # update trim_variables
+        idx = 0
+        updated_cs_ang = {}
+        for k in trim_cs:
+            updated_cs_ang[k] = trim_variables.cs_ang[k] - trim_update[idx]
+            idx += 1
+        updated_thrust = {}
+        for k in thrust_nodes:
+            updated_thrust[k] = trim_variables.thrust[k] - trim_update[idx]
+            idx += 1
+        updated_trim_angles = {}
+        for k in trim_orientation:
+            updated_trim_angles[k] = trim_variables.trim_angles[k] - trim_update[idx]
+            idx += 1
+
+        trim_variables = TrimVariables(
+            cs_ang=updated_cs_ang,
+            thrust=updated_thrust,
+            trim_angles=updated_trim_angles,
+        )
+
+        trim_variables.print()
+
+        jax_print(
+            "Residual clamping force: {f_clamp}",
+            f_clamp=f_clamp,
+            verbose_level=VerbosityLevel.NORMAL,
+        )
+
+        return inner_case, trim_variables, ae_sol, f_clamp

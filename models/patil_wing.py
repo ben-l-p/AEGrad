@@ -48,10 +48,15 @@ def make_patil_wing(
         )
     )
 
+    m_lump = 75.0 - (
+        2.0 * m_cs[0, 0] * b_ref
+    )  # add a lumped mass to get total mass up to 75 kg
+    m_lump_arr = jnp.zeros((6, 6)).at[:3, :3].set(jnp.eye(3) * m_lump)
+
     # beam non-design variables
     n_elem = n_nodes - 1
     n = n_nodes - 1
-    y_vector = jnp.array((0.0, 0.0, 1.0))  # TODO: this should include aoa
+    y_vector = jnp.array((0.0, 0.0, 1.0))
     conn = jnp.zeros((n_elem, 2), dtype=int)
     conn = conn.at[:, 0].set(jnp.arange(n_elem))
     conn = conn.at[:, 1].set(jnp.arange(1, n_nodes))
@@ -60,6 +65,7 @@ def make_patil_wing(
         connectivity=conn,
         y_vector=y_vector,
         gravity=jnp.array((0.0, 0.0, -9.81)),
+        m_lumped_index=jnp.array(n_elem // 2, dtype=int),
     )
 
     # create aero grid function with control surface
@@ -107,7 +113,7 @@ def make_patil_wing(
         coords=beam_coords,
         k_cs=k_cs,
         m_cs=m_cs,
-        m_lumped=None,
+        m_lumped=m_lump_arr[None, ...],
         dt=dt,
         flowfield=flowfield,
         delta_w=None,
@@ -116,6 +122,7 @@ def make_patil_wing(
             "left_aileron": jnp.zeros(()),
             "right_aileron": jnp.zeros(()),
         },
+        orientation_euler=jnp.array((0.0, jnp.deg2rad(5.0), 0.0)),
     )
 
     return wing
@@ -124,27 +131,39 @@ def make_patil_wing(
 if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
 
-    coupled_system = make_patil_wing(u_inf=jnp.array((30.0, 0.0, 1.0)))
+    dir_ = Path("./coupled_patil")
 
-    prescribed_dofs_static = jnp.arange(6) + (coupled_system.structure.n_nodes - 1) * 3
+    coupled_system = make_patil_wing()
 
-    prescribed_dofs_dynamic = (
-        jnp.array((0, 1, 2, 4, 5)) + (coupled_system.structure.n_nodes - 1) * 3
+    prescribed_dofs_static = (
+        jnp.arange(6) + (coupled_system.structure.n_nodes - 1) * 3
+    )  # middle node degrees of freedom
+    prescribed_dofs_dynamic = prescribed_dofs_static[jnp.array((0, 1, 2, 4, 5))]
+
+    static_sol = coupled_system.static_solve(
+        prescribed_dofs=prescribed_dofs_static, horseshoe=True
     )
 
-    static_sol = coupled_system.static_solve(prescribed_dofs=prescribed_dofs_static)
+    trimmed_sol, trim_vars = coupled_system.trim(
+        prescribed_dofs=prescribed_dofs_static,
+        zero_force_dofs=prescribed_dofs_static[2],
+        trim_cs=None,
+        thrust_nodes=None,
+        trim_orientation="y",
+        horseshoe=True,
+        trim_relaxation=0.5,
+    )
 
     n_tstep = 200
 
     dynamic_sol = coupled_system.dynamic_solve(
-        init_case=static_sol,
+        init_case=trimmed_sol,
         prescribed_dofs=prescribed_dofs_dynamic,
         n_tstep=n_tstep,
         cs_ang_t={
             "left_aileron": jnp.linspace(0.0, -jnp.deg2rad(30.0), n_tstep),
-            "right_aileron": jnp.linspace(0.0, -jnp.deg2rad(30.0), n_tstep),
+            "right_aileron": jnp.linspace(0.0, jnp.deg2rad(30.0), n_tstep),
         },
     )
 
-    dir_ = Path("./coupled_patil")
     dynamic_sol.plot(dir_)

@@ -72,3 +72,17 @@ def index_to_arr(
         return jnp.arange(n_entries)
     else:
         raise TypeError("index must be a slices, sequence of ints, or Array")
+
+
+def nested_list_to_tuple(a: list[Any]) -> tuple[Any, ...]:
+    r"""
+    Convert nested lists to nested tuples.
+    """
+
+    def inner_func(a_):
+        try:
+            return tuple(nested_list_to_tuple(i) for i in a_)
+        except TypeError:
+            return a_
+
+    return inner_func(a)

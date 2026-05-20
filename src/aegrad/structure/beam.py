@@ -10,7 +10,7 @@ from jax.scipy.linalg import block_diag
 from jax.scipy.spatial.transform import Rotation
 
 from aegrad.aero.data_structures import DynamicAeroCase
-from aegrad.utils.utils import check_type
+from aegrad.utils.utils import check_type, make_pytree, nested_list_to_tuple
 from aegrad.structure.data_structures import (
     StaticStructure,
     DynamicStructure,
@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
 
 
+@make_pytree
 class BaseBeamStructure:
     r"""
     Class to represent nonlinear beam structure model
@@ -102,16 +103,21 @@ class BaseBeamStructure:
         check_arr_shape(connectivity, (None, 2), "connectivity")
         check_arr_dtype(connectivity, int, "connectivity")
         _check_connectivity(connectivity, num_nodes)
-        self.connectivity: Array = connectivity  # [n_elem, 2]
-        self.n_elem_per_node: Array = _n_elem_per_node(connectivity)  # [n_nodes]
+        self.connectivity: tuple[tuple[int]] = nested_list_to_tuple(
+            connectivity.tolist()
+        )  # [n_elem, 2]
+        self.n_elem_per_node: tuple[int] = tuple(
+            _n_elem_per_node(connectivity=connectivity, n_nodes=num_nodes).tolist()
+        )  # [n_nodes]
         self.n_elem: int = connectivity.shape[0]
 
-        self.dof_per_elem: Array = jnp.zeros((self.n_elem, 12), dtype=int)
-        self.dof_per_elem = self.dof_per_elem.at[:, :6].set(
-            6 * self.connectivity[:, [0]] + jnp.arange(6)[None, :]
-        )
-        self.dof_per_elem = self.dof_per_elem.at[:, 6:].set(
-            6 * self.connectivity[:, [1]] + jnp.arange(6)[None, :]
+        self.dof_per_elem: tuple[tuple[float]] = nested_list_to_tuple(
+            jnp.zeros((self.n_elem, 12), dtype=int)
+            .at[:, :6]
+            .set(6 * self.connectivity_arr[:, [0]] + jnp.arange(6)[None, :])
+            .at[:, 6:]
+            .set(6 * self.connectivity_arr[:, [1]] + jnp.arange(6)[None, :])
+            .tolist()
         )
 
         # allow for a single y_vector to be broadcast to all elements
@@ -122,8 +128,10 @@ class BaseBeamStructure:
 
         # y vectors in reference unoriented configuration, and placeholder for oriented equivalent.
         check_arr_shape(y_vector, (self.n_elem, 3), "y_vector")
-        self.y_vector_reference: Array = y_vector
-        self.y_vector: Array = jnp.zeros_like(y_vector)
+        self.y_vector_reference: tuple[tuple[tuple[float]]] = nested_list_to_tuple(
+            y_vector.tolist()
+        )
+        self.y_vector: Array = jnp.zeros_like(jnp.array(y_vector))
 
         # initialise design variables with default values
         self.x0_reference: Array = jnp.zeros((num_nodes, 3))  # unoriented
@@ -150,9 +158,9 @@ class BaseBeamStructure:
         self.use_gravity: bool = gravity is not None and bool(jnp.any(gravity))
         if self.use_gravity:
             check_arr_shape(gravity, (3,), "gravity")  # type: ignore
-            self.gravity_vec: Array = gravity  # type: ignore
+            self.gravity_vec: tuple[float, float, float] = tuple(gravity.tolist())  # type: ignore
         else:
-            self.gravity_vec = jnp.zeros((3,))
+            self.gravity_vec = (0.0, 0.0, 0.0)
 
         # indexing
         if k_cs_index is None:
@@ -161,7 +169,7 @@ class BaseBeamStructure:
             check_arr_shape(k_cs_index, (self.n_elem,), "k_cs_index")
             check_arr_dtype(k_cs_index, int, "k_cs_index")
             k_cs_index_ = k_cs_index
-        self.k_cs_index: Array = k_cs_index_
+        self.k_cs_index: tuple[int] = tuple(k_cs_index_.tolist())
 
         if m_cs_index is None:
             m_cs_index_ = jnp.zeros(self.n_elem, dtype=int)
@@ -169,18 +177,20 @@ class BaseBeamStructure:
             check_arr_shape(m_cs_index, (self.n_elem,), "m_cs_index")
             check_arr_dtype(m_cs_index, int, "k_cs_index")
             m_cs_index_ = m_cs_index
-        self.m_cs_index: Array = m_cs_index_
+        self.m_cs_index: tuple[int] = tuple(m_cs_index_.tolist())
 
-        self.m_lumped_index: Optional[Array] = None
+        self.m_lumped_index: Optional[tuple[int]] = None
         if m_lumped_index is not None:
             check_arr_dtype(m_lumped_index, int, "m_lumped_index")
             if m_lumped_index.ndim not in (0, 1):
                 raise ValueError("m_lumped_index.ndim must be 0 or 1.")
-            self.m_lumped_index: Optional[Array] = jnp.atleast_1d(m_lumped_index)
+            self.m_lumped_index = tuple(jnp.atleast_1d(m_lumped_index).tolist())
 
         # add thrust
-        self.thrust_nodes: dict[str, int] = dict()
-        self.thrust_direction: dict[str, Array] = dict()
+        self.thrust_nodes: tuple[tuple[str, int], ...] = tuple()
+        self.thrust_direction: tuple[tuple[str, tuple[float, float, float]], ...] = (
+            tuple()
+        )
         if thrust_nodes is not None and thrust_direction is not None:
             if thrust_nodes.keys() != thrust_direction.keys():
                 raise ValueError(
@@ -190,10 +200,13 @@ class BaseBeamStructure:
             for k, v in thrust_direction.items():
                 check_arr_shape(v, (3,), f"thrust_direction[{k}]")
 
-            self.thrust_nodes = thrust_nodes
-            self.thrust_direction = {
-                k: v / jnp.linalg.norm(v) for k, v in thrust_direction.items()
-            }  # make unit vectors
+            self.thrust_nodes = tuple([(k, v) for k, v in thrust_nodes.items()])
+            self.thrust_direction = tuple(
+                [
+                    (k, nested_list_to_tuple((v / jnp.linalg.norm(v)).tolist()))
+                    for k, v in thrust_direction.items()
+                ]
+            )  # make unit vectors
         elif thrust_nodes is not None or thrust_direction is not None:
             warn(
                 "One of thrust_nodes or thrust_direction has not been passed. Running with no thrust nodes."
@@ -201,15 +214,12 @@ class BaseBeamStructure:
 
         # set the reference thrust to be zero, which can be overwritten later
         self.thrust_reference: dict[str, Array] = {
-            k: jnp.atleast_1d(1) for k in self.thrust_nodes.keys()
+            k: jnp.atleast_1d(1) for k in [k_ for k_, v in self.thrust_nodes]
         }
 
         # set the reference orientation, which can be overwritten later.
         self.orientation_euler: Array = jnp.zeros(3)
         self.orientation: Array = jnp.eye(3)
-
-        # other settings
-        self.use_m_cs: bool = False
 
         self.optional_jacobians: OptionalJacobians = (
             optional_jacobians
@@ -301,8 +311,16 @@ class BaseBeamStructure:
             ).as_matrix()
 
             # rotate the y vectors
-            self.y_vector = self.y_vector.at[...].set(
-                jnp.einsum("jk,ik->ij", self.orientation, self.y_vector_reference)
+            self.y_vector = (
+                jnp.array(self.y_vector)
+                .at[...]
+                .set(
+                    jnp.einsum(
+                        "jk,ik->ij",
+                        self.orientation,
+                        self.y_vector_reference_arr,
+                    )
+                )
             )
 
         # coordinates
@@ -317,7 +335,7 @@ class BaseBeamStructure:
 
         if (
             not remove_checks
-            and k_cs.shape[0] != jnp.unique_values(self.k_cs_index).size
+            and k_cs.shape[0] != jnp.unique_values(jnp.array(self.k_cs_index)).size
         ):
             warn(
                 "Redundant values in k_cs which are not used for solution due to no corresponding entry in k_cs_index."
@@ -340,7 +358,7 @@ class BaseBeamStructure:
 
         if (
             not remove_checks
-            and m_cs_.shape[0] != jnp.unique_values(self.m_cs_index).size
+            and m_cs_.shape[0] != jnp.unique_values(jnp.array(self.m_cs_index)).size
             and m_cs is not None
         ):
             warn(
@@ -366,7 +384,7 @@ class BaseBeamStructure:
                 if self.m_lumped_index is None:
                     raise ValueError("m_lumped_index has not been set")
 
-                if m_lumped.shape[0] != self.m_lumped_index.size:
+                if m_lumped.shape[0] != len(self.m_lumped_index):
                     raise ValueError(
                         "Number of entries in m_lumped does not match number of indices in m_lumped_index."
                     )
@@ -375,14 +393,16 @@ class BaseBeamStructure:
 
         # obtain initial orientation and length
         x_elem = jnp.take(
-            self.x0_reference, self.connectivity, axis=0
+            self.x0_reference, self.connectivity_arr, axis=0
         )  # [n_elem, 2, 3]
         dx = x_elem[:, 1, :] - x_elem[:, 0, :]  # [n_elem, 3]
 
         # ensure out-of-plane vector and beam vector are not collinear
         if not remove_checks:
             if jnp.any(
-                jnp.linalg.norm(jnp.cross(dx, self.y_vector_reference, 1, 1), axis=-1)
+                jnp.linalg.norm(
+                    jnp.cross(dx, self.y_vector_reference_arr, 1, 1), axis=-1
+                )
                 < 1e-6
             ):
                 raise ValueError(
@@ -395,7 +415,7 @@ class BaseBeamStructure:
 
         dx_unit = dx / self.l0[:, None]  # unit vector in beam direction, [n_elem, 3]
         dz = jnp.cross(
-            dx_unit, self.y_vector_reference, axis=-1
+            dx_unit, self.y_vector_reference_arr, axis=-1
         )  # vector in plane[n_elem, 3]
         dz_unit = dz / jnp.linalg.norm(dz, axis=-1)[:, None]  # [n_elem, 3]
 
@@ -512,6 +532,31 @@ class BaseBeamStructure:
             prescribed_dofs=prescribed_dofs,
         )
 
+    @property
+    def connectivity_arr(self) -> Array:
+        if len(self.connectivity):
+            return jnp.array(self.connectivity, dtype=int)
+        else:
+            return jnp.zeros((0, 2), dtype=int)  # special case for no beam elements
+
+    @property
+    def y_vector_reference_arr(self) -> Array:
+        if len(self.y_vector_reference):
+            return jnp.array(self.y_vector_reference)
+        else:
+            return jnp.zeros((0, 3))
+
+    @property
+    def m_lumped_index_arr(self) -> Array:
+        return jnp.atleast_1d(jnp.array(self.m_lumped_index))
+
+    @property
+    def dof_per_elem_arr(self) -> Array:
+        if len(self.dof_per_elem):
+            return jnp.array(self.dof_per_elem, dtype=int)
+        else:
+            return jnp.zeros((0, 12), dtype=int)
+
     def calculate_varphi_from_hg(self, hg: Array) -> Array:
         r"""
         Calculate the twist vector from the reference configuration to hg
@@ -531,8 +576,12 @@ class BaseBeamStructure:
         :return: System global matrix, [n_dof, n_dof]
         """
 
-        row_idx = jnp.broadcast_to(self.dof_per_elem[:, :, None], (self.n_elem, 12, 12))
-        col_idx = jnp.broadcast_to(self.dof_per_elem[:, None, :], (self.n_elem, 12, 12))
+        row_idx = jnp.broadcast_to(
+            self.dof_per_elem_arr[:, :, None], (self.n_elem, 12, 12)
+        )
+        col_idx = jnp.broadcast_to(
+            self.dof_per_elem_arr[:, None, :], (self.n_elem, 12, 12)
+        )
         return (
             jnp.zeros((self.n_dof, self.n_dof))
             .at[row_idx.ravel(), col_idx.ravel()]
@@ -547,8 +596,8 @@ class BaseBeamStructure:
         """
 
         vect = jnp.zeros(self.n_dof)
-        vect = vect.at[self.dof_per_elem[:, :6]].add(entries[:, :6])
-        return vect.at[self.dof_per_elem[:, 6:]].add(entries[:, 6:])
+        vect = vect.at[self.dof_per_elem_arr[:, :6]].add(entries[:, :6])
+        return vect.at[self.dof_per_elem_arr[:, 6:]].add(entries[:, 6:])
 
     def add_lumped_contributions_to_arr(self, arr: Array, lumped_arr: Array) -> Array:
         r"""
@@ -558,15 +607,16 @@ class BaseBeamStructure:
         :return: In-place updated array, [6*n_node, 6*n_node]
         """
 
-        if self.m_lumped_index is None:
-            raise ValueError("m_lumped_index is None")
+        assert self.m_lumped_index is not None
 
         def add_block(carry, x):
             node_idx, block = x
             dofs = node_idx * 6 + jnp.arange(6)
             return carry.at[jnp.ix_(dofs, dofs)].add(block), None
 
-        arr, _ = jax.lax.scan(add_block, arr, (self.m_lumped_index, lumped_arr))
+        arr, _ = jax.lax.scan(
+            add_block, arr, (jnp.array(self.m_lumped_index), lumped_arr)
+        )
         return arr
 
     def add_lumped_contributions_to_vec(self, vec: Array, lumped_vec: Array) -> Array:
@@ -577,11 +627,10 @@ class BaseBeamStructure:
         :return: In-place updated vector, [6*n_node]
         """
 
-        if self.m_lumped_index is None:
-            raise ValueError("m_lumped_index is None")
+        assert self.m_lumped_index is not None
 
         idx = (
-            self.m_lumped_index[:, None] * 6 + jnp.arange(6)[None, :]
+            jnp.array(self.m_lumped_index)[:, None] * 6 + jnp.arange(6)[None, :]
         ).ravel()  # [n_lump * 6]
 
         return vec.at[idx].add(lumped_vec)
@@ -715,14 +764,14 @@ class BaseBeamStructure:
             jnp.einsum(
                 "ijk,ikl->ijl",
                 m_t[:, :, :3],
-                d_g_d_omega[self.connectivity[:, 0], :, :],
+                d_g_d_omega[self.connectivity_arr[:, 0], :, :],
             )
         )
         d_mg = d_mg.at[:, :, 9:].add(
             jnp.einsum(
                 "ijk,ikl->ijl",
                 m_t[:, :, 6:9],
-                d_g_d_omega[self.connectivity[:, 1], :, :],
+                d_g_d_omega[self.connectivity_arr[:, 1], :, :],
             )
         )
 
@@ -820,7 +869,10 @@ class BaseBeamStructure:
         )(
             self.m_cs[self.m_cs_index, ...],
             jnp.concatenate(
-                (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]),
+                (
+                    v[self.connectivity_arr[:, 0], :],
+                    v[self.connectivity_arr[:, 1], :],
+                ),
                 axis=-1,
             ),
             d,
@@ -935,7 +987,9 @@ class BaseBeamStructure:
         :param rmat: Node rotations from reference, [n_node, 3, 3].
         :return: Gravity force element vector, [n_elem, 12].
         """
-        f_rot = jnp.einsum("ikj,k->ij", rmat, self.gravity_vec)  # [n_node, 3]
+        f_rot = jnp.einsum(
+            "ikj,k->ij", rmat, jnp.array(self.gravity_vec)
+        )  # [n_node, 3]
         f_rot_tot = jnp.concatenate(
             (f_rot, jnp.zeros((self.n_nodes, 3))), axis=-1
         )  # [n_node, 6]
@@ -944,8 +998,8 @@ class BaseBeamStructure:
             m_t,
             jnp.concatenate(
                 (
-                    f_rot_tot[self.connectivity[:, 0], :],
-                    f_rot_tot[self.connectivity[:, 1], :],
+                    f_rot_tot[self.connectivity_arr[:, 0], :],
+                    f_rot_tot[self.connectivity_arr[:, 1], :],
                 ),
                 axis=1,
             ),
@@ -958,7 +1012,7 @@ class BaseBeamStructure:
         :return: Lumped gravity force vector, [n_lumped, 6]
         """
         f_rot = jnp.einsum(
-            "ikj,k->ij", rmat[self.m_lumped_index, ...], self.gravity_vec
+            "ikj,k->ij", rmat[self.m_lumped_index_arr, ...], jnp.array(self.gravity_vec)
         )  # [n_lumped, 3]
         f_rot_tot = jnp.concatenate(
             (f_rot, jnp.zeros_like(f_rot)), axis=-1
@@ -978,7 +1032,11 @@ class BaseBeamStructure:
 
     def split_vector_to_elements(self, vec: Array) -> Array:
         return jnp.concatenate(
-            (vec[self.connectivity[:, 0], :], vec[self.connectivity[:, 1], :]), axis=-1
+            (
+                vec[self.connectivity_arr[:, 0], :],
+                vec[self.connectivity_arr[:, 1], :],
+            ),
+            axis=-1,
         )
 
     def _make_f_iner_gyr(
@@ -995,7 +1053,10 @@ class BaseBeamStructure:
 
         v_elem = self.split_vector_to_elements(v)
         v_dot_elem = jnp.concatenate(
-            (v_dot[self.connectivity[:, 0], :], v_dot[self.connectivity[:, 1], :]),
+            (
+                v_dot[self.connectivity_arr[:, 0], :],
+                v_dot[self.connectivity_arr[:, 1], :],
+            ),
             axis=-1,
         )  # [n_elem, 12]
 
@@ -1030,8 +1091,8 @@ class BaseBeamStructure:
         """
 
         for k, v in thrust.items():
-            node = self.thrust_nodes[k]
-            direction = self.thrust_direction[k]
+            node = dict(self.thrust_nodes)[k]
+            direction = jnp.array(dict(self.thrust_direction)[k])
             force = force.at[node, :3].add(v * direction)
         return force
 
@@ -1066,10 +1127,10 @@ class BaseBeamStructure:
         base_hg = base_hg.at[:, 3, 3].set(1.0)
 
         haha0 = jnp.einsum(
-            "ijk,ikl->ijl", hg[self.connectivity[:, 0], :, :], base_hg
+            "ijk,ikl->ijl", hg[self.connectivity_arr[:, 0], :, :], base_hg
         )  # [n_elem, 4, 4]
         haha1 = jnp.einsum(
-            "ijk,ikl->ijl", hg[self.connectivity[:, 1], :, :], base_hg
+            "ijk,ikl->ijl", hg[self.connectivity_arr[:, 1], :, :], base_hg
         )  # [n_elem, 4, 4]
 
         return vmap(hg_to_d, (0, 0), 0)(haha0, haha1)  # [n_elem, 6]
@@ -1083,7 +1144,11 @@ class BaseBeamStructure:
         """
 
         v_elem = jnp.concatenate(
-            (v[self.connectivity[:, 0], :], v[self.connectivity[:, 1], :]), axis=-1
+            (
+                v[self.connectivity_arr[:, 0], :],
+                v[self.connectivity_arr[:, 1], :],
+            ),
+            axis=-1,
         )  # [n_elem, 12]
 
         return jnp.einsum("ijk,ik->ij", p_d, v_elem)  # [n_elem, 6]
@@ -1230,8 +1295,8 @@ class BaseBeamStructure:
             if self.use_lumped_mass:
                 f_grav_lumped = self._make_f_grav_lumped(hg[:, :3, :3])
                 this_f_grav = self.add_lumped_contributions_to_vec(
-                    vec=this_f_grav, lumped_vec=f_grav_lumped
-                )
+                    vec=this_f_grav.ravel(), lumped_vec=f_grav_lumped.ravel()
+                ).reshape(-1, 6)
             this_f_res += this_f_grav
         else:
             this_f_grav = None
@@ -1431,7 +1496,7 @@ class BaseBeamStructure:
         elif isinstance(prescribed_dofs, int):
             return (prescribed_dofs,)
         elif isinstance(prescribed_dofs, Array):
-            return tuple(prescribed_dofs.tolist())
+            return tuple(jnp.atleast_1d(prescribed_dofs).tolist())
         elif prescribed_dofs is None:
             return ()
         else:
@@ -2584,4 +2649,49 @@ class BaseBeamStructure:
             thrust_t=thrust_t_,
             cs_ang_t=None,
             cs_vel_t=None,
+        )
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return (
+            "n_nodes",
+            "n_dof",
+            "connectivity",
+            "n_elem_per_node",
+            "n_elem",
+            "dof_per_elem",
+            "y_vector_reference",
+            "use_lumped_mass",
+            "use_gravity",
+            "gravity_vec",
+            "k_cs_index",
+            "m_cs_index",
+            "m_lumped_index",
+            "thrust_nodes",
+            "thrust_direction",
+            "optional_jacobians",
+            "struct_convergence_settings",
+            "relaxation_factor",
+            "spectral_radius",
+        )
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return (
+            "y_vector",
+            "x0_reference",
+            "x0",
+            "_m_cs",
+            "_k_cs",
+            "_m_lumped",
+            "o0",
+            "l0",
+            "d0",
+            "hg0_reference",
+            "hg0",
+            "ad_inv_o0",
+            "thrust_reference",
+            "orientation_euler",
+            "orientation",
+            "_time_integrator",
         )

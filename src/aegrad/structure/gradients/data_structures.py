@@ -199,7 +199,7 @@ class StructuralDesignVariables(DesignVariables):
         )
 
         node_num = jnp.arange(case.hg.shape[0])  # [n_nodes]
-        elem_num = jnp.arange(case.conn.shape[0])  # [n_elems]
+        elem_num = jnp.arange(len(case.conn))  # [n_elems]
 
         node_scalar_data = {"node_number": node_num}
         node_vector_data = {
@@ -218,7 +218,7 @@ class StructuralDesignVariables(DesignVariables):
         )  # default file name for beam objects is "beam"
         return plot_beam_to_vtk(
             hg=case.hg,
-            conn=case.conn,
+            conn=jnp.array(case.conn),
             o0=case.o0,
             n_interp=n_interp,
             filename=file_name,

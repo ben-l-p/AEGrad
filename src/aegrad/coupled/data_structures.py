@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     )
 
 
+@make_pytree
 class StaticAeroelastic:
     def __init__(self, structure: StaticStructure, aero: AeroSnapshot):
         self.structure: StaticStructure = structure
@@ -66,6 +67,14 @@ class StaticAeroelastic:
             struct = self.structure.to_dynamic(t=t)
             aero = self.aero.to_dynamic(i_ts=0, n_tstep=len(t) if t is not None else 1)
             return DynamicAeroelastic(structure=struct, aero=aero)
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "structure", "aero"
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return []
 
 
 class DynamicAeroelasticSnapshot:
@@ -293,7 +302,9 @@ class AeroelasticDesignVariables(DesignVariables):
         self.aero += other.aero
         return self
 
-    def add_structure_dv(self, other: StructuralDesignVariables) -> AeroelasticDesignVariables:
+    def add_structure_dv(
+        self, other: StructuralDesignVariables
+    ) -> AeroelasticDesignVariables:
         structure_dv = deepcopy(self.structure)
         structure_dv += other
         return AeroelasticDesignVariables(

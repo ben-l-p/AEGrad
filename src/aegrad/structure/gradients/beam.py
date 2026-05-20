@@ -23,12 +23,14 @@ from aegrad.structure import DynamicStructure
 from aegrad.structure.data_structures import StructureMinimalStates
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
 from aegrad.algebra.array_utils import construct_named_block_jacobian
+from aegrad.utils.utils import make_pytree
 
 type StructuralObjectiveFunction = Callable[
     [StructureFullStates, StructuralDesignVariables, Optional[int | Array]], Array
 ]
 
 
+@make_pytree
 class BeamStructure(BaseBeamStructure):
     def case_from_dv(self, dv: StructuralDesignVariables) -> BeamStructure:
         r"""
@@ -195,7 +197,7 @@ class BeamStructure(BaseBeamStructure):
             x0=self.x0,
             orientation_euler=self.orientation_euler,
             k_cs=self.k_cs,
-            m_cs=self.m_cs if self.use_m_cs else None,
+            m_cs=self._m_cs,
             m_lumped=self.m_lumped if self.use_lumped_mass else None,
             f_ext_follower=structure.f_ext_follower,
             f_ext_dead=f_ext_dead_global,
