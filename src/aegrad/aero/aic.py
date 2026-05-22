@@ -6,7 +6,6 @@ import jax
 
 from aegrad.aero.utils import KernelFunction, mirror_grid
 from aegrad.algebra.array_utils import ArrayList, block_axis
-from aegrad.utils.constants import AIC_BATCH_SIZE
 
 
 def compute_aic_grid(
@@ -14,7 +13,7 @@ def compute_aic_grid(
     n: Optional[Array],
     zeta: Array,
     kernel: KernelFunction,
-    batch_size: Optional[int] = AIC_BATCH_SIZE,
+    batch_size: Optional[int],
 ):
     """
     Compute the aerodynamic influence coefficient (AIC) across grids of points.
@@ -25,7 +24,7 @@ def compute_aic_grid(
     :param n: Normal vectors at collocation points, [c_m, c_n, 3], or None.
     :param zeta: Grid vertices, [m+1, varphi+1, 3].
     :param kernel: Kernel function to compute the influence.
-    :param batch_size: Passed to lax.map.
+    :param batch_size: Batch size for vectorising AIC computations.
     :return: [c_m, c_n, m, varphi, 3] if normal is None, else [c_m, c_n, m, varphi].
     """
     c_m, c_n = c.shape[:2]
@@ -68,6 +67,7 @@ def compute_aic_sys(
     cs: ArrayList,
     ns: ArrayList,
     kernels: Sequence[KernelFunction],
+    batch_size: int,
     mirror_point: Optional[Array] = None,
     mirror_normal: Optional[Array] = None,
 ) -> list[list[Array]]:
@@ -77,6 +77,7 @@ def compute_aic_sys(
     :param cs: List of target points to compute the AIC at, [n_surf][c_m, c_n, 3].
     :param ns: Bound varphi vectors, [m, varphi, 3]. If None, no projection will be done.
     :param kernels: List of kernel functions to use for each source surface, [n_surf].
+    :param batch_size: Batch size for vectorising AIC computations.
     :param mirror_normal: Normal vector to mirror across for image method, [3]. If None, no mirroring will be done.
     :param mirror_point: Mirror point for image method, [n_surf].
     :return: Nested sequences of AIC matrices, [n_target][n_source][c_m, c_n, c_m, c_n, 3], or [n_target][n_source][c_m, c_n, c_m, c_n] if projected onto normals.
@@ -92,6 +93,7 @@ def compute_aic_sys(
                 n=n,
                 zeta=zeta,
                 kernel=kernel,
+                batch_size=batch_size,
             )
 
             if mirror_point is not None and mirror_normal is not None:
@@ -101,7 +103,9 @@ def compute_aic_sys(
                     mirror_point=mirror_point,
                     mirror_normal=mirror_normal,
                 )
-                aic_ -= compute_aic_grid(c=c, n=n, zeta=zeta_mirror, kernel=kernel)
+                aic_ -= compute_aic_grid(
+                    c=c, n=n, zeta=zeta_mirror, kernel=kernel, batch_size=batch_size
+                )
             aic_mats[-1].append(aic_)
     return aic_mats
 
@@ -135,6 +139,7 @@ def compute_aic_solve(
     zetas_w: Optional[ArrayList],
     kernels_b: Sequence[KernelFunction],
     kernels_w: Optional[Sequence[KernelFunction]],
+    batch_size: int,
     mirror_point: Optional[Array],
     mirror_normal: Optional[Array],
 ) -> Array:
@@ -143,6 +148,7 @@ def compute_aic_solve(
         ns=ns,
         zetas=zetas_b,
         kernels=kernels_b,
+        batch_size=batch_size,
         mirror_point=mirror_point,
         mirror_normal=mirror_normal,
     )
@@ -155,6 +161,7 @@ def compute_aic_solve(
             ns=ns,
             zetas=zetas_w,
             kernels=kernels_w,
+            batch_size=batch_size,
             mirror_point=mirror_point,
             mirror_normal=mirror_normal,
         )
@@ -186,7 +193,7 @@ def v_ind_vmap(
     zeta: Array,
     gamma: Array,
     kernel: KernelFunction,
-    batch_size: Optional[int] = AIC_BATCH_SIZE,
+    batch_size: Optional[int],
 ) -> Array:
     # noinspection SpellCheckingInspection
     """
@@ -197,7 +204,7 @@ def v_ind_vmap(
     :param zeta: Filament grid, [zeta_m, zeta_n, 2, 3].
     :param gamma: Weights to contract with, [zeta_m, zeta_n].
     :param kernel: Kernel function.
-    :param batch_size: Passed to lax.map.
+    :param batch_size: Batch size for vectorising AIC computations.
     :return: [c_m, c_n, 3].
     """
     c_m, c_n = c.shape[:2]
@@ -221,7 +228,7 @@ def compute_v_ind[T: Array | ArrayList](
     kernels: Sequence[KernelFunction],
     mirror_point: Optional[Array],
     mirror_normal: Optional[Array],
-    batch_size: Optional[int] = AIC_BATCH_SIZE,
+    batch_size: Optional[int],
 ) -> T:
     # noinspection SpellCheckingInspection
     """
@@ -237,7 +244,7 @@ def compute_v_ind[T: Array | ArrayList](
     :param kernels: Kernel function.
     :param mirror_point: Mirror point, [3]. If None, no mirroring will be done.
     :param mirror_normal: Normal mirror vector, [3]. If None, no mirroring will be done.
-    :param batch_size: Passed to lax.map.
+    :param batch_size: Batch size for vectorising AIC computations.
     :return: [c_m, c_n, 3].
     """
 

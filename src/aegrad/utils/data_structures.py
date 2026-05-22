@@ -8,7 +8,13 @@ import numpy as np
 from jax import Array, numpy as jnp
 
 from aegrad.algebra.array_utils import ArrayListShape, ArrayList, check_arr_shape
-from aegrad.utils.print_utils import warn, jax_print, VerbosityLevel
+from aegrad.utils.print_utils import (
+    warn,
+    jax_print,
+    VerbosityLevel,
+    print_table_line,
+    print_table_title,
+)
 from aegrad.utils.utils import make_pytree
 
 
@@ -239,39 +245,25 @@ class ConvergenceStatus:
                 abs_force_val=self.abs_force_val,
             )
 
-    @staticmethod
-    def print_header(dynamic: bool) -> None:
+    @classmethod
+    def print_header(cls, dynamic: bool) -> None:
         if dynamic:
-            jax_print(
-                "\n+--------------------------------------- Dynamic Solve ---------------------------------------+",
-                verbose_level=VerbosityLevel.NORMAL,
-            )
+            print_table_title(title="Dynamic Solve", inner_width=93)
             jax_print(
                 "|   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
                 verbose_level=VerbosityLevel.NORMAL,
             )
         else:
-            jax_print(
-                "\n+--------------------------------- Static Solve ----------------------------------+",
-                verbose_level=VerbosityLevel.NORMAL,
-            )
+            print_table_title(title="Static Solve", inner_width=81)
             jax_print(
                 "|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
                 verbose_level=VerbosityLevel.NORMAL,
             )
+        cls.print_line(dynamic=dynamic)
 
     @staticmethod
-    def print_footer(dynamic: bool) -> None:
-        if dynamic:
-            jax_print(
-                "+---------------------------------------------------------------------------------------------+",
-                verbose_level=VerbosityLevel.NORMAL,
-            )
-        else:
-            jax_print(
-                "+---------------------------------------------------------------------------------+",
-                verbose_level=VerbosityLevel.NORMAL,
-            )
+    def print_line(dynamic: bool) -> None:
+        print_table_line(inner_width=93 if dynamic else 81)
 
     @staticmethod
     def _static_names() -> Sequence[str]:
@@ -304,11 +296,6 @@ class DesignVariables:
     def get_vars(self) -> dict[str, Optional[Array | ArrayList]]:
         # should only be used in child classes
         return {}
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        # should only be used in child classes
-        return ()
 
     def get_shapes(
         self,
@@ -499,4 +486,8 @@ class DesignVariables:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "shapes", "mapping"
+        return ("shapes",)
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return ("mapping",)

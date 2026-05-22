@@ -88,7 +88,7 @@ class DynamicAeroelasticSnapshot:
             aero=self.aero,
         )
 
-
+@make_pytree
 class DynamicAeroelastic:
     def __init__(self, structure: DynamicStructure, aero: DynamicAeroCase):
         self.structure: DynamicStructure = structure
@@ -210,6 +210,14 @@ class DynamicAeroelastic:
             index=index,
         )
         return struct_pvd, aero_pvd
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ()
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "structure", "aero"
 
 
 @jax.tree_util.register_dataclass

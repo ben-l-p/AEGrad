@@ -14,7 +14,7 @@ from aegrad.aero.gradients.data_structures import (
 from aegrad.aero.utils import project_forcing_to_beam
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.coupled import DynamicAeroelastic
-from aegrad.utils.print_utils import jax_print, VerbosityLevel
+from aegrad.utils.print_utils import jax_print, VerbosityLevel, verbosity
 from aegrad.structure import StructuralDesignVariables
 from aegrad.structure.data_structures import OptionalJacobians, StructureMinimalStates
 
@@ -33,14 +33,19 @@ from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 from aegrad.utils.print_utils import warn
 from aegrad.coupled.gradients.data_structures import TrimVariables
+from aegrad.utils.print_utils import (
+    VERBOSITY_LEVEL,
+    print_table_title,
+)
+from aegrad.utils.print_utils import print_table_line
 
 if TYPE_CHECKING:
     from aegrad.coupled.coupled import StaticAeroelastic
 
-type AeroelasticObjectiveFunction = Callable[
-    [AeroelasticFullStates, AeroelasticDesignVariables, Optional[int | Array]], Array
-]
-
+type AeroelasticObjectiveFunction = (
+    Callable[[AeroelasticFullStates, AeroelasticDesignVariables, None], Array]
+    | Callable[[AeroelasticFullStates, AeroelasticDesignVariables, int], Array]
+)
 ORIENTATION_DICT: Final[dict[str, int]] = {"x": 0, "y": 1, "z": 2}
 
 
@@ -143,6 +148,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         struct_states = StructureFullStates(
             hg=hg,
+            varphi=varphi,
             eps=eps,
             f_elem=f_elem,
             f_res=f_res.reshape(-1, 6),
@@ -232,6 +238,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 None,
             ),
             argnums=(0, 1),
+            allow_int=True,
         )(varphi.ravel(), dv)  # [n_f, n_u_full], [n_f, n_x]
 
         # gradient of residual w.r.t. minimal states and design variables (used by linear solves)
@@ -245,6 +252,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 use_horseshoe=static_horseshoe,
             )[1],
             argnums=(0, 1),
+            allow_int=True,
         )(varphi.ravel(), dv)
 
         if forward_adjoint:
@@ -278,7 +286,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     def compute_p_q0_p_x(
         self,
         case: StaticAeroelastic,
-        grads_to_compute: AeroelasticGradsToCompute,
+        grads_to_compute: Optional[AeroelasticGradsToCompute],
         p_varphi_p_x: Array,
         solve_dofs: Array,
         horseshoe: bool = False,
@@ -372,7 +380,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             return AeroelasticMinimalStates(structure=q_structure, aero=q_aero).ravel()
 
         p_q0_p_varphi, p_q0_p_x = jax.jacrev(
-            minimal_states_from_varphi, argnums=(0, 1)
+            minimal_states_from_varphi, argnums=(0, 1), allow_int=True
         )(varphi, dv)
 
         n_q0 = p_q0_p_varphi.shape[0]
@@ -491,22 +499,26 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         case: DynamicAeroelastic,
         objective: AeroelasticObjectiveFunction,
-        grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(),
+        grads_to_compute: Optional[
+            AeroelasticGradsToCompute
+        ] = AeroelasticGradsToCompute(),
         p_varphi_p_x: Optional[Array] = None,
         save_adjoint: bool = False,
         approx_grads: bool = True,
-    ) -> tuple[AeroelasticDesignVariables, Optional[Array]]:
+    ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
         :param case: Dynamic aeroelastic case
         :param objective: Objective function that takes the system full states, design variables and timestep index,
         and returns an array.
-        :param grads_to_compute: Specify which design variables for which to compute gradients for.
+        :param grads_to_compute: Specify which design variables for which to compute gradients for. If None, all
+        available gradients are computed.
         :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found
         from the static solve.
         :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
         :param approx_grads: Whether to use gradient approximation or not.
-        :return: Gradient of sum of objective across timesteps with respect to design variables.
+        :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
+        step, and optional adjoint states.
         """
 
         # make copies to prevent contaminating input object with tracer
@@ -551,7 +563,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # the last time step where the objective was nonzero. This can be used to prevent redundant computations for
         # computing sensitivities which only refer to a small number of time steps by not running the adjoint problem
         # after the last time step which has a contribution.
-        last_active_i_ts = int(jnp.flatnonzero(jnp.any(j_eval, axis=-1))[-1])
+        active_mask = jnp.any(j_eval, axis=-1)
+        last_active_i_ts = jnp.max(jnp.where(active_mask, jnp.arange(n_tstep), 0))
 
         def time_loop(
             rev_i_ts_: int,
@@ -603,6 +616,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     )
                 ),
                 argnums=(0, 1),
+                allow_int=True,
             )(q_n.ravel()[free_state_ix], dv)
 
             # find gradients of residual function using hand-assembled block Jacobians
@@ -655,36 +669,40 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         dv_grad_init = AeroelasticDesignVariables(
             structure_dv=StructuralDesignVariables(
                 x0=jnp.zeros((*j_shape, *self.structure.x0.shape))
-                if grads_to_compute.structure.x0
+                if grads_to_compute is None or grads_to_compute.structure.x0
                 else None,
                 orientation_euler=jnp.zeros((*j_shape, 3))
-                if grads_to_compute.structure.orientation_euler
+                if grads_to_compute is None
+                or grads_to_compute.structure.orientation_euler
                 else None,
                 k_cs=jnp.zeros((*j_shape, *self.structure.k_cs.shape))
-                if grads_to_compute.structure.k_cs
+                if grads_to_compute is None or grads_to_compute.structure.k_cs
                 else None,
                 m_cs=jnp.zeros((*j_shape, *self.structure.m_cs.shape))
-                if grads_to_compute.structure.m_cs
+                if grads_to_compute is None or grads_to_compute.structure.m_cs
                 else None,
                 m_lumped=jnp.zeros((*j_shape, *self.structure.m_lumped.shape))
                 if self.structure.use_lumped_mass
-                and grads_to_compute.structure.m_lumped
+                and (grads_to_compute is None or grads_to_compute.structure.m_lumped)
                 else None,
                 f_ext_dead=jnp.zeros((*j_shape, *case.structure.f_ext_dead.shape))
                 if case.structure.f_ext_dead is not None
-                and grads_to_compute.structure.f_ext_dead
+                and (grads_to_compute is None or grads_to_compute.structure.f_ext_dead)
                 else None,
                 f_ext_follower=jnp.zeros(
                     (*j_shape, *case.structure.f_ext_follower.shape)
                 )
                 if case.structure.f_ext_follower is not None
-                and grads_to_compute.structure.f_ext_follower
+                and (
+                    grads_to_compute is None
+                    or grads_to_compute.structure.f_ext_follower
+                )
                 else None,
                 thrust_t={
                     k: jnp.zeros((*j_shape, *v.shape))
                     for k, v in case.structure.thrust.items()
                 }
-                if grads_to_compute.structure.thrust_t
+                if grads_to_compute is None or grads_to_compute.structure.thrust_t
                 else None,
                 f_shape=j_shape,
             ),
@@ -692,13 +710,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 x0_aero=ArrayList(
                     [jnp.zeros((*j_shape, *arr.shape)) for arr in self.aero.x0_b]
                 )
-                if grads_to_compute.aero.x0_aero
+                if (grads_to_compute is None or grads_to_compute.aero.x0_aero)
                 else None,
                 flowfield={
                     k: jnp.zeros((*j_shape, *v.shape))
                     for k, v in self.aero.flowfield.to_design_variables().items()
                 }
-                if grads_to_compute.aero.flowfield
+                if (grads_to_compute is None or grads_to_compute.aero.flowfield)
                 else None,
                 cs_ang_t={
                     k: jnp.zeros((*j_shape, *v.shape))
@@ -708,7 +726,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                         else dv_full.aero.cs_ang_t
                     ).items()
                 }
-                if grads_to_compute.aero.cs_ang_t
+                if (grads_to_compute is None or grads_to_compute.aero.cs_ang_t)
                 else None,
                 cs_vel_t={
                     k: jnp.zeros((*j_shape, *v.shape))
@@ -718,7 +736,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                         else dv_full.aero.cs_vel_t
                     ).items()
                 }
-                if grads_to_compute.aero.cs_vel_t
+                if (grads_to_compute is None or grads_to_compute.aero.cs_vel_t)
                 else None,
                 f_shape=j_shape,
             ),
@@ -751,6 +769,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
 
         # pass through time steps backwards to obtain adjoints
+        d_j_d_x: AeroelasticDesignVariables
         d_j_d_x, adj, p_r1_p_q0, _ = jax.lax.fori_loop(
             lower=case.structure.n_tstep - 1 - last_active_i_ts,
             upper=case.structure.n_tstep - 1,
@@ -787,12 +806,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 )
             ),
             argnums=(0, 1),
+            allow_int=True,
         )(q0.ravel()[free_state_ix], dv)
 
         # add initial direct sensitivity
         d_j_d_x += p_j0_p_x
 
-        # include initial state sensitivityFIx t
+        # include initial state sensitivity
         if p_varphi_p_x is not None:
             p_q0_p_x = self.compute_p_q0_p_x(
                 case=case[0].to_static(),
@@ -820,7 +840,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             else None
         )
 
-        return d_j_d_x, adj
+        # restore gradient meta-data
+        d_j_d_x.mapping = dv.mapping
+
+        return d_j_d_x, j_eval, adj
 
     @overload
     def trim(
@@ -861,6 +884,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Optional[Sequence[str]],
         thrust_nodes: Optional[Sequence[str]],
         trim_orientation: Optional[str | Sequence[str]] = "x",
+        trim_f_abs_tolerance: float = 1e-3,
         f_ext_follower: Optional[Array] = None,
         f_ext_dead: Optional[Array] = None,
         t: float | Array = 0.0,
@@ -879,6 +903,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param thrust_nodes: Keys of thrust nodes which are to be used to trim the aircraft.
         :param trim_orientation: Inertial axis (or axes if a sequence is provided) around which the aircraft is
         rotated about at the clamp to achieve trim.
+        :param trim_f_abs_tolerance: Absolute maximum force residual at the clamped nodes for convergence to be achieved.
         :param f_ext_follower: External follower forces, [n_nodes, 6].
         :param f_ext_dead: external dead forces, [n_nodes, 6].
         :param t: Time at which to trim the aircraft, default zero.
@@ -929,11 +954,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         inner_case = deepcopy(self)
 
         def trim_body(
+            i_iter: int,
             trim_variables_: TrimVariables,
             sol_: StaticAeroelastic,
             f_clamp_: Array,
-        ) -> tuple[TrimVariables, StaticAeroelastic, Array]:
-            _, tv, sol, fc = self.trim_iter(
+        ) -> tuple[int, TrimVariables, StaticAeroelastic, Array]:
+            i_iter, _, tv, sol, fc = self.trim_iter(
+                i_iter,
                 inner_case,
                 trim_variables_,
                 sol_,
@@ -950,20 +977,42 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 trim_orientation=trim_orientation_,
                 trim_relaxation=trim_relaxation,
             )
-            return tv, sol, fc
+            return i_iter, tv, sol, fc
 
-        trim_variables_init.print()
-
-        f_threshold: float = 1e-3
-
-        trim_variables, ae_sol, f_clamp = jax.lax.while_loop(
-            lambda args_: jnp.any(jnp.abs(args_[2]) >= f_threshold),
+        # run trim loop
+        print_table_title(title="Trim", inner_width=81)
+        n_iter, trim_variables, ae_sol, f_clamp = jax.lax.while_loop(
+            lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
             body_fun=lambda args_: trim_body(*args_),
             init_val=(
+                0,
                 trim_variables_init,
                 ae_sol_init,
                 jnp.full((len(zero_force_dofs_)), 1e10),
             ),
+        )
+        print_table_line(inner_width=81)
+
+        new_orientation: Array = self.structure.orientation_euler
+        for k, v in trim_variables.trim_angles.items():
+            new_orientation = new_orientation.at[ORIENTATION_DICT[k]].set(v)
+
+        # set solutions into case object
+        self.set_design_variables(
+            coords=self.structure.x0,
+            k_cs=self.structure.k_cs,
+            m_cs=self.structure.m_cs,
+            m_lumped=self.structure.m_lumped
+            if self.structure.use_lumped_mass
+            else None,
+            dt=self.aero.dt,
+            flowfield=self.aero.flowfield,
+            delta_w=self.aero.delta_w,
+            x0_aero=self.aero.x0_b,
+            thrust_reference=self.structure.thrust_reference | trim_variables.thrust,
+            orientation_euler=new_orientation,
+            cs_angles_reference=self.aero.cs_ang0 | trim_variables.cs_ang,
+            remove_checks=True,
         )
 
         return ae_sol, trim_variables
@@ -983,6 +1032,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     @staticmethod
     def trim_iter(
+        i_iter: int,
         inner_case: CoupledAeroelastic,
         trim_variables: TrimVariables,
         _: StaticAeroelastic,
@@ -999,7 +1049,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Sequence[str],
         thrust_nodes: Sequence[str],
         trim_orientation: Sequence[str],
-    ) -> tuple[CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array]:
+    ) -> tuple[int, CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array]:
 
         inner_case.set_design_variables(
             coords=inner_case.structure.x0,
@@ -1021,14 +1071,20 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             remove_checks=True,
         )
 
-        ae_sol = inner_case.static_solve(
-            prescribed_dofs=prescribed_dofs,
-            f_ext_follower=f_ext_follower,
-            f_ext_dead=f_ext_dead,
-            t=t,
-            load_steps=load_steps,
-            horseshoe=horseshoe,
-        )
+        # avoid printing structure messages if Verbosity is NORMAL or lower
+        with verbosity(
+            level=VerbosityLevel.SILENT
+            if VERBOSITY_LEVEL.value <= VerbosityLevel.NORMAL.value
+            else VERBOSITY_LEVEL
+        ):
+            ae_sol = inner_case.static_solve(
+                prescribed_dofs=prescribed_dofs,
+                f_ext_follower=f_ext_follower,
+                f_ext_dead=f_ext_dead,
+                t=t,
+                load_steps=load_steps,
+                horseshoe=horseshoe,
+            )
 
         f_clamp = ae_sol.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
 
@@ -1117,12 +1173,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             trim_angles=updated_trim_angles,
         )
 
-        trim_variables.print()
+        trim_variables.print(i_iter=i_iter, f_clamp=f_clamp)
 
-        jax_print(
-            "Residual clamping force: {f_clamp}",
-            f_clamp=f_clamp,
-            verbose_level=VerbosityLevel.NORMAL,
-        )
-
-        return inner_case, trim_variables, ae_sol, f_clamp
+        return i_iter + 1, inner_case, trim_variables, ae_sol, f_clamp

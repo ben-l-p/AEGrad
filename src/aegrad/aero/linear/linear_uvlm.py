@@ -81,6 +81,7 @@ class LinearUVLM:
         self.bound_upwash: bool = bound_upwash
         self.wake_upwash: bool = wake_upwash
         self.gamma_dot_state: bool = gamma_dot_state
+        self.batch_size: int = case.batch_size
 
         # save names from case
         self.surf_b_names: list[str] = [f"linear_{name}" for name in case.surf_b_names]
@@ -685,6 +686,7 @@ class LinearUVLM:
                 zetas_w=None,
                 kernels_b=self.kernels_b,
                 kernels_w=None,
+                batch_size=self.batch_size,
                 mirror_point=self.mirror_point,
                 mirror_normal=self.mirror_normal,
             )
@@ -717,6 +719,7 @@ class LinearUVLM:
                     zetas=zeta_ws,
                     gammas=gamma_ws,
                     kernels=self.kernels_w,
+                    batch_size=self.batch_size,
                     mirror_normal=self.mirror_normal,
                     mirror_point=self.mirror_point,
                 )
@@ -755,6 +758,7 @@ class LinearUVLM:
                     zetas=ArrayList([*zeta_b, *zeta_w]),
                     gammas=ArrayList([*gamma_b, *gamma_w]),
                     kernels=[*self.kernels_b, *self.kernels_w],
+                    batch_size=self.batch_size,
                     mirror_normal=self.mirror_normal,
                     mirror_point=self.mirror_point,
                 )
@@ -1366,6 +1370,7 @@ class LinearUVLM:
             free_wake=self.reference.free_wake,
             gamma_dot_relaxation=self.reference.gamma_dot_relaxation,
             static_horseshoe=self.reference.static_horseshoe,
+            batch_size=self.batch_size,
         )
 
     def plot_reference(

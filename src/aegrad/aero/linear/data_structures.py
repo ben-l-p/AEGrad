@@ -267,4 +267,5 @@ class AeroLinearResult:
             dof_mapping=self.reference.dof_mapping,
             free_wake=self.reference.free_wake,
             gamma_dot_relaxation=self.reference.gamma_dot_relaxation,
+            batch_size=1,  # chosen default value
         )

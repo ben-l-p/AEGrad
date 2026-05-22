@@ -149,7 +149,7 @@ if __name__ == "__main__":
 
     # compute dynamic adjoint with the static adjoint as input to account for initial degree of freedom gradients
     # all design variable gradients can be extracted from dynamic_grad
-    dynamic_grad, dynamic_adj = wing.dynamic_adjoint(
+    dynamic_grad, objective_val, dynamic_adj = wing.dynamic_adjoint(
         case=dynamic_sol, objective=objective, p_varphi_p_x=-static_adj
     )
 

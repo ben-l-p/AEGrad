@@ -111,7 +111,7 @@ class TestDynamicGustAdjoint:
             grads_to_compute=grads_to_compute,
         )
 
-        cls.dynamic_grad, _ = cls.wing.dynamic_adjoint(
+        cls.dynamic_grad, *_ = cls.wing.dynamic_adjoint(
             case=cls.dynamic_sol,
             objective=_dynamic_objective,
             p_varphi_p_x=-static_adj,

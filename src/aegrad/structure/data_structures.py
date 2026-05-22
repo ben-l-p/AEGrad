@@ -138,6 +138,7 @@ class StaticStructure:
             v=None,
             v_dot=None,
             hg=self.hg,
+            varphi=self.varphi,
             eps=self.eps,
             f_elem=self.f_elem,
             f_res=self.f_res,
@@ -626,6 +627,7 @@ class DynamicStructure:
         return StructureFullStates(
             v=self.v[i_ts, ...],
             v_dot=self.v_dot[i_ts, ...],
+            varphi=self.varphi[i_ts, ...],
             hg=self.hg[i_ts, ...],
             eps=self.eps[i_ts, ...],
             f_elem=self.f_elem[i_ts, ...],

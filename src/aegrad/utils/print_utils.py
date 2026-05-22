@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from contextlib import contextmanager
 from enum import Enum
 import jax
 
@@ -27,6 +29,21 @@ def set_verbosity(level: VerbosityLevel) -> None:
     VERBOSITY_LEVEL = level
 
 
+@contextmanager
+def verbosity(level: VerbosityLevel):
+    r"""
+    Context manager to temporarily change the verbosity level.
+    :param level: Custom verbosity to use in context.
+    """
+    global VERBOSITY_LEVEL
+    old = VERBOSITY_LEVEL
+    set_verbosity(level)
+    try:
+        yield
+    finally:
+        set_verbosity(old)
+
+
 def make_color(text: str, color: Colour) -> str:
     # info on colouring from https://vascosim.medium.com/how-to-print-colored-text-in-python-52f6244e2e30
     return f"\033[{color.value}m{text}\033[0m"
@@ -50,7 +67,25 @@ def warn_if_32_bit() -> None:
 
 
 def jax_print(
-        message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
+    message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
 ) -> None:
     if VERBOSITY_LEVEL.value >= verbose_level.value:
         jax.debug.print(message, **kwargs)
+
+
+def print_table_line(
+    inner_width: int, verbose_level: VerbosityLevel = VerbosityLevel.NORMAL
+) -> None:
+    jax_print("+" + "-" * inner_width + "+", verbose_level=verbose_level)
+
+
+def print_table_title(
+    title: str, inner_width: int, verbose_level: VerbosityLevel = VerbosityLevel.NORMAL
+) -> None:
+    usable_width = inner_width - len(title) - 2
+    left_length = usable_width // 2
+    right_length = usable_width - left_length
+    jax_print(
+        "\n+" + "-" * left_length + f" {title} " + "-" * right_length + "+",
+        verbose_level=verbose_level,
+    )

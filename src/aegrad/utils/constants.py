@@ -13,7 +13,3 @@ EPSILON = 1e-7
 
 # cutoff radius for Biot-Savart kernel, in meters
 R_CUTOFF = 1e-4
-
-# batch size for limiting memory usage for AIC computation
-# setting to zero means no batching, i.e. compute all at once
-AIC_BATCH_SIZE = 1

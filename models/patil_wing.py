@@ -10,8 +10,8 @@ from aegrad.aero.uvlm import UVLM
 from aegrad.aero.utils import make_rectangular_grid
 from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.flowfields import Constant
-from aero.utils import add_control_surface
-from algebra.array_utils import ArrayList
+from aegrad.aero.utils import add_control_surface
+from aegrad.algebra.array_utils import ArrayList
 
 
 # noinspection SpellCheckingInspection

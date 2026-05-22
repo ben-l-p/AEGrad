@@ -5,12 +5,13 @@ description = "Solver for obtaining design variable sensitivites of UVLM/nonline
 authors = [{ name = "Ben Preston" }]
 requires-python = ">=3.12"
 dependencies = [
-    "jax==0.10.0",
-    "numpy==2.4.5",
-    "pytest>=9.0.3",
-    "pytest-cov==7.1.0",
-    "ruff==0.15.13",
-    "vtk>=9.6.1",
+    "jax>=0.9",
+    "matplotlib>=3.10",
+    "numpy>=2.4",
+    "pytest>=9.0",
+    "pytest-cov>=7.1",
+    "ruff>=0.15",
+    "vtk>=9.6",
 ]
 
 [tool.pytest.ini_options]
@@ -29,7 +30,7 @@ parallel = true
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-precision = 2
+precision = 1
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.",

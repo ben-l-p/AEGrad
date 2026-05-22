@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class StructureFullStates:
     v: Optional[Array]
     v_dot: Optional[Array]
+    varphi: Array
     hg: Array
     eps: Array
     f_elem: Array
@@ -252,8 +253,9 @@ class StructuralDesignVariables(DesignVariables):
             "f_ext_follower",
             "f_ext_dead",
             "thrust_t",
+            "mapping",
         )
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "f_shape", "f_size"
+        return "f_shape", "f_size", "n_x", "shapes"

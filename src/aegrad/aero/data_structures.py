@@ -73,6 +73,7 @@ class DynamicAeroCase:
         static_horseshoe: bool,
         free_wake: bool,
         gamma_dot_relaxation: float,
+        batch_size: int,
     ) -> None:
         r"""
         Time series of multiple aerodynamic surfaces
@@ -117,6 +118,7 @@ class DynamicAeroCase:
         self.static_horseshoe: bool = static_horseshoe
         self.free_wake: bool = free_wake
         self.gamma_dot_relaxation: float = gamma_dot_relaxation
+        self.batch_size: int = batch_size
 
     @property
     def zeta_b(self) -> ArrayList:
@@ -563,6 +565,7 @@ class DynamicAeroCase:
             kernels=self.kernels,
             mirror_normal=self.mirror_normal,
             mirror_point=self.mirror_point,
+            batch_size=self.batch_size,
         )
 
     def get_v_tot[T: Array | ArrayList](self, i_ts: int, x: T) -> T:
@@ -613,6 +616,7 @@ class DynamicAeroCase:
             mirror_normal=self.mirror_normal,
             flowfield=self.flowfield,
             dof_mapping=self.dof_mapping,
+            batch_size=self.batch_size,
         )
 
     @classmethod
@@ -639,6 +643,7 @@ class DynamicAeroCase:
             "gamma_dot_relaxation",
             "free_wake",
             "kernels",
+            "batch_size",
         )
 
     @staticmethod
@@ -702,6 +707,7 @@ class AeroSnapshot(DynamicAeroCase):
         static_horseshoe: bool,
         free_wake: bool,
         gamma_dot_relaxation: float,
+        batch_size: int,
     ) -> None:
         r"""
         Create an AeroSnapshot by wrapping per-initial_snapshot arrays with a leading
@@ -735,6 +741,7 @@ class AeroSnapshot(DynamicAeroCase):
             static_horseshoe=static_horseshoe,
             free_wake=free_wake,
             gamma_dot_relaxation=gamma_dot_relaxation,
+            batch_size=batch_size,
         )
 
     @property
@@ -901,6 +908,7 @@ class AeroSnapshot(DynamicAeroCase):
             static_horseshoe=self.static_horseshoe,
             free_wake=self.free_wake,
             gamma_dot_relaxation=self.gamma_dot_relaxation,
+            batch_size=self.batch_size,
         )
 
     def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:

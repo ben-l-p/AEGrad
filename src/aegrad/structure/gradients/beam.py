@@ -101,7 +101,13 @@ class BeamStructure(BaseBeamStructure):
             v_dot=q.v_dot,
         )[0]
         return StructureFullStates(
-            v=q.v, v_dot=q.v_dot, eps=eps, hg=hg, f_elem=f_elem, f_res=f_res
+            v=q.v,
+            v_dot=q.v_dot,
+            eps=eps,
+            varphi=q.varphi,
+            hg=hg,
+            f_elem=f_elem,
+            f_res=f_res,
         )
 
     def _structural_states_res_from_dv_varphi(
@@ -150,6 +156,7 @@ class BeamStructure(BaseBeamStructure):
 
         return StructureFullStates(
             hg=hg,
+            varphi=varphi,
             eps=eps,
             f_elem=f_elem,
             f_res=f_res,
@@ -225,6 +232,7 @@ class BeamStructure(BaseBeamStructure):
                 None,
             ),
             argnums=(0, 1),
+            allow_int=True,
         )(structure.varphi, dv)
 
         p_f_p_n = p_f_p_n.reshape(n_f, n_u_full)[:, solve_dofs]  # [n_f, n_u]
@@ -238,6 +246,7 @@ class BeamStructure(BaseBeamStructure):
                 ).f_res
             ),
             argnums=(0, 1),
+            allow_int=True,
         )(dv, structure.varphi)
 
         p_res_p_x = p_res_p_x.ravel_jacobian(n_u_full, n_x)[solve_dofs, :]  # [n_u, n_x]
@@ -630,6 +639,7 @@ class BeamStructure(BaseBeamStructure):
             argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9)
             if compute_f_aero_grads
             else (1, 2, 3, 4, 5, 6, 7),
+            allow_int=True,
         )(
             i_ts,
             q_nm1.varphi.ravel(),
@@ -751,7 +761,9 @@ class BeamStructure(BaseBeamStructure):
                 q_n_mat=q_n_mat, dv=dv_, dv_full=dv_full, objective=objective, i_ts=i_ts
             )
 
-        p_j_n_p_q_n, p_j_n_p_x = jax.jacrev(_j, argnums=(0, 1))(q_n.to_mat(), dv)
+        p_j_n_p_q_n, p_j_n_p_x = jax.jacrev(_j, argnums=(0, 1), allow_int=True)(
+            q_n.to_mat(), dv
+        )
 
         return cast(Array, p_j_n_p_q_n), cast(StructuralDesignVariables, p_j_n_p_x)
 

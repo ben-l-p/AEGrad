@@ -243,7 +243,7 @@ class BaseCoupledAeroelastic:
             ),
         )
 
-        fsi_converge_status.print_footer(dynamic=False)
+        fsi_converge_status.print_line(dynamic=False)
 
         return StaticAeroelastic(structure=struct_case, aero=aero_case)
 
@@ -359,6 +359,9 @@ class BaseCoupledAeroelastic:
         else:
             raise NotImplementedError
 
+        # propagate the dynamic prescribed_dofs to the case
+        case.structure.prescribed_dofs = prescribed_dofs
+
         fsi_converge_status: ConvergenceStatus = ConvergenceStatus(
             self.fsi_convergence_settings
         )
@@ -382,5 +385,5 @@ class BaseCoupledAeroelastic:
             cs_vel_t=cs_vel_t if cs_vel_t is not None else dict(),
         )
 
-        fsi_converge_status.print_footer(dynamic=True)
+        fsi_converge_status.print_line(dynamic=True)
         return out

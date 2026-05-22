@@ -255,8 +255,8 @@ class AeroDesignVariables(DesignVariables):
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return "x0_aero", "flowfield", "cs_ang_t", "cs_vel_t"
+        return "x0_aero", "flowfield", "cs_ang_t", "cs_vel_t", "mapping"
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        return "f_size", "f_shape"
+        return "f_size", "f_shape", "n_x", "shapes"

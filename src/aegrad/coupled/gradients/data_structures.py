@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence
+from typing import Sequence, Optional
 
 from dataclasses import dataclass, field
 
@@ -32,20 +32,73 @@ class TrimVariables:
         self.thrust: dict[str, Array] = thrust
         self.trim_angles: dict[str, Array] = trim_angles
 
-    def print(self) -> None:
+    def print(self, i_iter: int, f_clamp: Optional[Array]) -> None:
+        val_w = 5  # fixed character width per rendered float value
+        inner_width = 81  # total width of the content inside the borders
+
+        # Build rows as (label, format_string, rendered_width, kwargs)
+        rows: list[tuple[str, str, int, dict[str, Array]]] = []
+
+        def _entries(keys_):
+            return "  ".join(f"[{k}]: {{{k}:>{val_w}.2f}}" for k in keys_)
+
+        def _entries_rendered_len(keys_):
+            return sum(len(k) + 4 + val_w for k in keys_) + 2 * (len(keys_) - 1)
+
+        iter_label = "Iteration               "
+        padding = inner_width - len(iter_label) - val_w - 4
         jax_print(
-            "Control surface angles (deg): {cs_ang}",
-            cs_ang={k: jnp.rad2deg(v) for k, v in self.cs_ang.items()},
+            f"| {iter_label} | {{i_iter:>{val_w}}}" + " " * padding + "|",
+            i_iter=i_iter,
             verbose_level=VerbosityLevel.NORMAL,
         )
-        jax_print(
-            "Thrust: {thrust}", thrust=self.thrust, verbose_level=VerbosityLevel.NORMAL
-        )
-        jax_print(
-            "Trim angles (deg): {trim_angles}",
-            trim_angles={k: jnp.rad2deg(v) for k, v in self.trim_angles.items()},
-            verbose_level=VerbosityLevel.NORMAL,
-        )
+
+        if self.cs_ang:
+            label = "Control surface angles (deg)"
+            rows.append(
+                (
+                    label,
+                    _entries(self.cs_ang),
+                    _entries_rendered_len(self.cs_ang),
+                    {k: jnp.rad2deg(v) for k, v in self.cs_ang.items()},
+                )
+            )
+
+        if self.thrust:
+            label = "Thrust force (N)        "
+            rows.append(
+                (
+                    label,
+                    _entries(self.thrust),
+                    _entries_rendered_len(self.thrust),
+                    dict(self.thrust),
+                )
+            )
+
+        if self.trim_angles:
+            label = "Body Euler angles (deg) "
+            rows.append(
+                (
+                    label,
+                    _entries(self.trim_angles),
+                    _entries_rendered_len(self.trim_angles),
+                    {k: jnp.rad2deg(v) for k, v in self.trim_angles.items()},
+                )
+            )
+
+        if f_clamp is not None:
+            label = "Residual clamp force (N)"
+            keys = [f"f{i}" for i in range(f_clamp.shape[0])]
+            entries = "  ".join(f"[{k}]: {{{k}:>{val_w}.2f}}" for k in keys)
+            rendered_len = _entries_rendered_len(keys)
+            kwargs = {k: f_clamp[i] for i, k in enumerate(keys)}
+            rows.append((label, entries, rendered_len, kwargs))
+
+        for label, fmt, rendered_len, kwargs in rows:
+            content = f"| {label} | {fmt}"
+            padding = inner_width - len(label) - rendered_len - 4
+            content += " " * padding + "|"
+            jax_print(content, **kwargs, verbose_level=VerbosityLevel.NORMAL)
 
     @staticmethod
     def _static_names() -> Sequence[str]:

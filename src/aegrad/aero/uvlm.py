@@ -77,6 +77,7 @@ class UVLM:
         free_wake: bool = False,
         gamma_dot_relaxation: float = 0.7,
         include_unsteady_force: bool = True,
+        batch_size: int = 1,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters
@@ -89,6 +90,7 @@ class UVLM:
         geometry and flow about the plane defined by this point and the mirror varphi, [3].
         :param mirror_normal: Optional varphi vector for mirror plane, [3].
         :param kernel: Input for custom kernel function to use for induced velocity calculations.
+        :param batch_size: Batch size for vectorising AIC computations.
         """
 
         # case for single inputs
@@ -171,6 +173,7 @@ class UVLM:
         self.free_wake: bool = free_wake
         self.gamma_dot_relaxation: float = gamma_dot_relaxation
         self.include_unsteady_force: bool = include_unsteady_force
+        self.batch_size: int = batch_size
 
         # mirror definitions
         if (mirror_point is None and mirror_normal is not None) or (
@@ -410,7 +413,7 @@ class UVLM:
             delta_w=self.delta_w,
             x0_aero=dv.x0_aero if dv.x0_aero is not None else self.x0_b,
             hg0=self.hg0,
-            reference_cs_angles=dv.cs_ang_t
+            reference_cs_angles={k: v[0] for k, v in dv.cs_ang_t.items()}
             if dv.cs_ang_t is not None
             else self.cs_ang0,
         )
@@ -780,6 +783,7 @@ class UVLM:
                         zetas=zeta_full,
                         gammas=gamma_full,
                         kernels=[*self.kernels_b, *self.kernels_w],
+                        batch_size=self.batch_size,
                         mirror_normal=self.mirror_normal,
                         mirror_point=self.mirror_point,
                     )
@@ -805,6 +809,7 @@ class UVLM:
             zetas_w=zeta_w_n if static else None,
             kernels_b=self.kernels_b,
             kernels_w=self.kernels_w if static else None,
+            batch_size=self.batch_size,
             mirror_normal=self.mirror_normal,
             mirror_point=self.mirror_point,
         )
@@ -824,6 +829,7 @@ class UVLM:
                 zetas=zeta_w_n,
                 gammas=gamma_w_n,
                 kernels=self.kernels_w,
+                batch_size=self.batch_size,
                 mirror_normal=self.mirror_normal,
                 mirror_point=self.mirror_point,
             )
@@ -897,6 +903,7 @@ class UVLM:
                 zetas=ArrayList([*zeta_b_n, *zeta_w_n]),
                 gammas=ArrayList([*gamma_b_n, *gamma_w_n]),
                 kernels=[*self.kernels_b, *self.kernels_w],
+                batch_size=self.batch_size,
                 mirror_normal=self.mirror_normal,
                 mirror_point=self.mirror_point,
             )
@@ -1078,6 +1085,7 @@ class UVLM:
             gamma_dot_relaxation=gamma_dot_relaxation,
             cs_ang=cs_ang_t,
             cs_vel=cs_vel_t,
+            batch_size=self.batch_size,
         )
 
     def solve_static(
@@ -1229,6 +1237,7 @@ class UVLM:
             free_wake=False,
             cs_ang=self.cs_ang0,
             cs_vel=self.cs_vel0,
+            batch_size=self.batch_size,
         )
 
     def plot_reference(
@@ -1385,6 +1394,7 @@ class UVLM:
             zetas_w=None,
             kernels_b=inner_case.kernels_b,
             kernels_w=None,
+            batch_size=self.batch_size,
             mirror_normal=inner_case.mirror_normal,
             mirror_point=inner_case.mirror_point,
         )
@@ -1402,6 +1412,7 @@ class UVLM:
             zetas=zeta_w_n,
             gammas=gamma_w_n,
             kernels=inner_case.kernels_w,
+            batch_size=self.batch_size,
             mirror_normal=inner_case.mirror_normal,
             mirror_point=inner_case.mirror_point,
         )
@@ -1509,6 +1520,7 @@ class UVLM:
                     zetas=ArrayList([*zeta_b_nm1, *zeta_w_nm1]),
                     gammas=ArrayList([*gamma_b_nm1, *gamma_w_nm1]),
                     kernels=[*inner_case.kernels_b, *inner_case.kernels_w],
+                    batch_size=self.batch_size,
                     mirror_normal=inner_case.mirror_normal,
                     mirror_point=inner_case.mirror_point,
                 )
@@ -1674,6 +1686,7 @@ class UVLM:
                 zetas=ArrayList([*zeta_b_n, *zeta_w_n]),
                 gammas=ArrayList([*gamma_b_n, *gamma_w_n]),
                 kernels=[*inner_case.kernels_b, *inner_case.kernels_w],
+                batch_size=self.batch_size,
                 mirror_normal=inner_case.mirror_normal,
                 mirror_point=inner_case.mirror_point,
             )
@@ -1887,7 +1900,9 @@ class UVLM:
             d_gamma_b["gamma_w_n"],
             d_gamma_b["zeta_w_n"],
             d_gamma_b["dv"],
-        ) = jax.jacrev(self.gamma_b_res_func, argnums=(1, 2, 4, 5, 6, 7))(
+        ) = jax.jacrev(
+            self.gamma_b_res_func, argnums=(1, 2, 4, 5, 6, 7), allow_int=True
+        )(
             i_ts,
             varphi_n,
             v_n,
@@ -1913,6 +1928,7 @@ class UVLM:
         ) = jax.jacrev(
             lambda *args: self.wake_prop_res_func(*args)[1],
             argnums=(1, 2, 4, 5, 6, 7, 8, 9),
+            allow_int=True,
         )(
             i_ts,
             varphi_nm1,
@@ -1941,6 +1957,7 @@ class UVLM:
         ) = jax.jacrev(
             lambda *args: self.wake_prop_res_func(*args)[0],
             argnums=(1, 2, 4, 5, 6, 7, 8, 9),
+            allow_int=True,
         )(
             i_ts,
             varphi_nm1,
@@ -1963,7 +1980,9 @@ class UVLM:
             d_gamma_b_dot["gamma_b_dot_nm1"],
             d_gamma_b_dot["gamma_b_dot_n"],
             d_gamma_b_dot["dv"],
-        ) = jax.jacrev(self.gamma_b_dot_res_func, argnums=(0, 1, 2, 3, 4))(
+        ) = jax.jacrev(
+            self.gamma_b_dot_res_func, argnums=(0, 1, 2, 3, 4), allow_int=True
+        )(
             gamma_b_nm1,
             gamma_b_n,
             gamma_b_dot_nm1,
@@ -1981,7 +2000,9 @@ class UVLM:
             d_f_aero["zeta_w_n"],
             d_f_aero["dv"],
             d_f_aero["f_aero_beam_n"],
-        ) = jax.jacrev(self.f_aero_res_func, argnums=(1, 2, 4, 5, 6, 7, 8, 11))(
+        ) = jax.jacrev(
+            self.f_aero_res_func, argnums=(1, 2, 4, 5, 6, 7, 8, 11), allow_int=True
+        )(
             i_ts,
             varphi_n,
             v_n,
@@ -2099,6 +2120,7 @@ class UVLM:
             "gamma_dot_relaxation",
             "include_unsteady_force",
             "grid_func",
+            "batch_size",
         )
 
     @staticmethod
