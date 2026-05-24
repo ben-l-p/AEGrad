@@ -259,7 +259,7 @@ class AeroLinearResult:
             t=self.t,
             static_horseshoe=False,
             c=None,
-            nc=None,
+            n=None,
             kernels=self.reference.kernels,
             mirror_point=None,
             mirror_normal=None,

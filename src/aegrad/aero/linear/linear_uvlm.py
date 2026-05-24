@@ -1017,7 +1017,7 @@ class LinearUVLM:
                     raise ValueError("d_zeta_w_np1 is None")
                 d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1)
 
-            # perturbations in flow and bound grid at zeta_bs
+            # perturbations in flow and bound grid at zeta_b
             d_n = _get_dn(u_np1.zeta_b)
             d_zeta_dot_c = compute_c(u_np1.zeta_b_dot)
             zeta0_c_dot = compute_c(self.reference.zeta_b_dot)
@@ -1124,10 +1124,10 @@ class LinearUVLM:
                     )
 
                 return calculate_steady_forcing(
-                    zeta_bs=self.reference.zeta_b,
-                    zeta_dot_bs=self.reference.zeta_b_dot,
-                    gamma_bs=gamma_b,
-                    gamma_ws=gamma_w,
+                    zeta_b=self.reference.zeta_b,
+                    zeta_dot_b=self.reference.zeta_b_dot,
+                    gamma_b=gamma_b,
+                    gamma_w=gamma_w,
                     v_func=_v_forcing,
                     v_inputs=None,
                     rho=self.reference.flowfield.rho,
@@ -1175,10 +1175,10 @@ class LinearUVLM:
                     )
 
                 return calculate_steady_forcing(
-                    zeta_bs=zeta_b,
-                    zeta_dot_bs=zeta_b_dot,
-                    gamma_bs=self.reference.gamma_b,
-                    gamma_ws=self.reference.gamma_w,
+                    zeta_b=zeta_b,
+                    zeta_dot_b=zeta_b_dot,
+                    gamma_b=self.reference.gamma_b,
+                    gamma_w=self.reference.gamma_w,
                     v_func=_v_forcing,
                     v_inputs=nu_b,
                     rho=self.reference.flowfield.rho,
@@ -1358,10 +1358,10 @@ class LinearUVLM:
             cs_vel=self.reference.cs_vel,
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
-            i_ts=-1,
+            i_ts=jnp.atleast_1d(-1),
             t=jnp.zeros(()),
             c=self.reference.c,
-            nc=self.reference.nc,
+            n=self.reference.nc,
             kernels=self.reference.kernels,
             mirror_normal=self.reference.mirror_normal,
             mirror_point=self.reference.mirror_point,

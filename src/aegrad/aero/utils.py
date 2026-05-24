@@ -20,12 +20,12 @@ def make_rectangular_grid(
     m: int, n: int, chord: Array | float, ea: Array | float
 ) -> Array:
     r"""
-    Create a rectangular grid of points in the yz-plane
-    :param m: Number of panels in the chordwise direction
-    :param n: Number of panels in the spanwise direction
-    :param chord: Total chord of the surface
-    :param ea: Elastic axis location as fraction of chord
-    :return: Array of arr_list_shapes [zeta_m, zeta_n, 3] representing local grid points in 3D space
+    Create a rectangular aerodynamic grid.
+    :param m: Number of panels in the chordwise direction.
+    :param n: Number of panels in the spanwise direction.
+    :param chord: Surface chord length.
+    :param ea: Elastic axis location as fraction of chord.
+    :return: Local grid points for planar wing, [zeta_m, zeta_n, 3].
     """
 
     grid = jnp.zeros((m + 1, n + 1, 3))
@@ -41,12 +41,12 @@ def add_control_surface(
 ) -> Array:
     r"""
     Add a control surface to a panel grid.
-    :param grid: Grid without deflection of this surface, [m+1, n+1, 3].
+    :param grid: Grid without deflection of this surface, [zeta_m, zeta_n, 3].
     :param angle: Angle in radians through which the control surface will be deflected.
     :param m_slice: Slice of chordwise strips to include in the control surface.
     :param n_slice: Slice of spanwise strips to include in the control surface.
     :param hinge_axis: Axis of the hinge surface in the local frame, [3].
-    :return: Deflected aerodynamic grid, [m+1, n+1, 3].
+    :return: Deflected aerodynamic grid, [zeta_m, zeta_n, 3].
     """
 
     m_slice_arr: Array = index_to_arr(index=m_slice, n_entries=grid.shape[0])
@@ -81,19 +81,19 @@ def compute_surf_c(zeta: Array) -> Array:
     r"""
     Compute the colocation points for a given grid of points on a single surface.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3]
-    :return: Colocation points [zeta_m-1, zeta_n-1, 3]
+    :return: Colocation points [m, n, 3]
     """
     return neighbour_average(zeta, axes=(0, 1))
 
 
 def compute_surf_nc(zeta: Array) -> Array:
     r"""
-    Compute the varphi vectors for a given grid of points on a single surface. These have length equal to the area of
-    each panel.
-    :param zeta: Grid of points, [zeta_m, zeta_n, 3]
-    :return: Normal vectors [zeta_m-1, zeta_n-1, 3]
+    Compute the surface normal vectors for a given grid of points on a single surface. These have length equal to the
+    area of their corresponding panel.
+    :param zeta: Grid of points, [zeta_m, zeta_n, 3].
+    :return: Normal vectors [m, n, 3].
     """
-    diag1 = zeta[1:, 1:, :] - zeta[:-1, :-1, :]  # [n_sx, n_cy, 3]
+    diag1 = zeta[1:, 1:, :] - zeta[:-1, :-1, :]
     diag2 = zeta[1:, :-1, :] - zeta[:-1, 1:, :]
     return jnp.cross(diag1, diag2)
 
@@ -101,62 +101,62 @@ def compute_surf_nc(zeta: Array) -> Array:
 def compute_c(zetas: ArrayList) -> ArrayList:
     r"""
     Compute the colocation points for a list of surface grids.
-    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
-    :return: Colocation points [n_surf][zeta_m-1, zeta_n-1, 3]
+    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3].
+    :return: Colocation points [n_surf][m, n, 3].
     """
     return ArrayList([compute_surf_c(zeta) for zeta in zetas])
 
 
 def compute_nc(zetas: ArrayList) -> ArrayList:
     r"""
-    Compute the varphi vectors for a list of surface grids.
-    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3]
-    :return: Normal vectors [n_surf][zeta_m-1, zeta_n-1, 3]
+    Compute the surface normal vectors for a list of surface grids.
+    :param zetas: Grids of points, [n_surf][zeta_m, zeta_n, 3].
+    :return: Normal vectors [n_surf][m, n, 3].
     """
     return ArrayList([compute_surf_nc(zeta) for zeta in zetas])
 
 
 def calculate_steady_forcing(
-    zeta_bs: ArrayList,
-    zeta_dot_bs: Optional[ArrayList],
-    gamma_bs: ArrayList,
-    gamma_ws: ArrayList,
+    zeta_b: ArrayList,
+    zeta_dot_b: Optional[ArrayList],
+    gamma_b: ArrayList,
+    gamma_w: ArrayList,
     rho: Array,
     v_func: Callable[[Array], Array],
     v_inputs: Optional[ArrayList],
 ) -> ArrayList:
     r"""
-    Calculate steady aerodynamic forcing for all surfaces at specified time step
-    :param zeta_bs: Bound grids, [n_surf][zeta_m, zeta_n, 3]
-    :param zeta_dot_bs: Bound grids velocities, [n_surf][zeta_m, zeta_n, 3]
-    :param gamma_bs: Bound grid circulation, [n_surf][gamma_m, gamma_n]
-    :param gamma_ws: Bound grid circulation, [n_surf][gamma_m, gamma_n]
-    :param rho: Flow field density
-    :param v_func: Total velocity as a function of coordinate
-    :param v_inputs: Additive inputs for total velocity on bound grid vertex
+    Calculate steady aerodynamic forcing for all surfaces at specified time step.
+    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3].
+    :param zeta_dot_b: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3].
+    :param gamma_b: Bound grid circulation, [n_surf][m, n]
+    :param gamma_w: Wake grid circulation, [n_surf][m, n]
+    :param rho: Flow field density.
+    :param v_func: Total velocity as a function of coordinate.
+    :param v_inputs: Additive inputs for total velocity on bound grid vertex, used for the linear solver for custom
+    perturbations.
     """
 
     f_steady = ArrayList([])
 
-    if zeta_dot_bs is None:
-        zeta_dot_bs_: list[Optional[Array]] = [None] * len(zeta_bs)
+    if zeta_dot_b is None:
+        zeta_dot_bs_: list[Optional[Array]] = [None] * len(zeta_b)
     else:
-        zeta_dot_bs_ = zeta_dot_bs
+        zeta_dot_bs_ = zeta_dot_b
 
     if v_inputs is None:
-        v_inputs_ = [None] * len(zeta_bs)
+        v_inputs_ = [None] * len(zeta_b)
     else:
         v_inputs_ = v_inputs
 
     for zeta_b, zeta_dot_b, gamma_b, gamma_w, v_input in zip(
-        zeta_bs, zeta_dot_bs_, gamma_bs, gamma_ws, v_inputs_
+        zeta_b, zeta_dot_bs_, gamma_b, gamma_w, v_inputs_
     ):
         # compute midpoints
         mp_chordwise = neighbour_average(zeta_b, axes=0)  # [gamma_m, gamma_n+1, 3]
         mp_spanwise = neighbour_average(zeta_b, axes=1)  # [gamma_m+1, gamma_n, 3]
 
-        if zeta_dot_b is None:
-            raise ValueError("zeta_dot_b is none")
+        assert zeta_dot_b is not None
 
         mp_dot_chordwise = neighbour_average(
             zeta_dot_b, axes=0
@@ -213,10 +213,10 @@ def calculate_steady_forcing(
 
 
 def propagate_surf_wake(
-    gamma_b_n: Array,
-    gamma_w_n: Array,
-    zeta_b_np1: Array,
-    zeta_w_n: Array,
+    gamma_b_nm1: Array,
+    gamma_w_nm1: Array,
+    zeta_b_n: Array,
+    zeta_w_nm1: Array,
     delta_w: Optional[Array],
     v_func: Callable[[Array], Array],
     dt: Array,
@@ -224,32 +224,32 @@ def propagate_surf_wake(
     linearise_variable_wake: bool = False,
 ) -> tuple[Optional[Array], Array]:
     r"""
-    Convect the wake at some given velocity for a single surface. This step includes convection from the trailing edge and culling the
-    downstream data.
-    :param gamma_b_n: Bound circulation at time varphi, [m, varphi].
-    :param gamma_w_n: Wake circulation at time varphi, [m_star, varphi].
-    :param zeta_b_np1: Bound grid at time varphi+1, [zeta_m, zeta_n, 3].
-    :param zeta_w_n: Wake grid at time varphi, [zeta_star_m, zeta_n, 3].
-    :param delta_w: Desired wake discretisation, [zeta_star_m, 3] or None for uniform.
-    :param v_func: Function that computes the velocity, [3] -> [3].
+    Convect the wake at some given velocity for a single surface from timestep n-1 to timestep n. This step includes
+    convection from the trailing edge and culling the downstream data.
+    :param gamma_b_nm1: Bound circulation at time step n-1, [m, n].
+    :param gamma_w_nm1: Wake circulation at time step n-1, [m_star, n].
+    :param zeta_b_n: Bound grid at time step n, [zeta_m, zeta_n, 3].
+    :param zeta_w_nm1: Wake grid at time step n-1, [zeta_m_star, zeta_n, 3].
+    :param delta_w: Desired wake discretisation, [zeta_m_star, 3], or None for uniform.
+    :param v_func: Function that computes the velocity as a function of coordinate, [3] -> [3].
     :param dt: Time step length.
-    :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
+    :param frozen_wake: If true, the grid stays constant with time. Used in the linearised case.
     :param linearise_variable_wake: If true, block gradients through the arc-length computation so that
-        the re-discretisation is treated as a linear operator when differentiated with jax.jvp.
-    :return: New wake grid and circulation, [zeta_star_m, zeta_n, 3], [zeta_m_star, zeta_n].
+        the re-discretisation is treated as a linear operator when differentiated.
+    :return: New wake grid and circulation, [zeta_m_star, zeta_n, 3], [m_star, n].
     """
 
     # trailing edge positions and circulations
-    zeta_te = zeta_b_np1[-1, ...]  # [zeta_n, 3]
-    gamma_te = gamma_b_n[-1, ...]  # [gamma_n]
+    zeta_te = zeta_b_n[-1, ...]  # [zeta_n, 3]
+    gamma_te = gamma_b_nm1[-1, ...]  # [gamma_n]
 
     # variable wake discretisation also depends on the final element
     if delta_w is not None:
-        zeta_base = zeta_w_n  # [zeta_w_m, zeta_n, 3]
-        gamma_base = gamma_w_n  # [gamma_w_m, gamma_n]
+        zeta_base = zeta_w_nm1  # [zeta_w_m, zeta_n, 3]
+        gamma_base = gamma_w_nm1  # [gamma_w_m, gamma_n]
     else:
-        zeta_base = zeta_w_n[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
-        gamma_base = gamma_w_n[:-1, ...]  # [gamma_w_m - 1, gamma_n]
+        zeta_base = zeta_w_nm1[:-1, ...]  # [zeta_w_m - 1, zeta_n, 3]
+        gamma_base = gamma_w_nm1[:-1, ...]  # [gamma_w_m - 1, gamma_n]
 
     # values at t=varphi+1 before re-discretisation
     gamma_w_np1 = jnp.concatenate(
@@ -351,19 +351,18 @@ def propagate_wake(
     linearise_variable_wake: bool = False,
 ) -> tuple[Optional[ArrayList], ArrayList]:
     r"""
-    Convect the wake at some given velocity for all surfaces. This step includes convection from the trailing edge and
-    culling the downstream data.
-    :param gamma_b_nm1: Bound circulation at time varphi, [n_surf][m, varphi].
-    :param gamma_w_nm1: Wake circulation at time varphi, [n_surf][m_star, varphi].
-    :param zeta_b_n: Bound grid at time varphi+1, [n_surf][zeta_m, zeta_n, 3].
-    :param zeta_w_nm1: Wake grid at time varphi, [n_surf][zeta_star_m, zeta_n, 3].
-    :param delta_w: Desired wake discretisation, [n_surf][zeta_star_m, 3] or None for uniform.
+    Convect the wake for all surfaces.
+    :param gamma_b_nm1: Bound circulation at time step n-1, [n_surf][m, n].
+    :param gamma_w_nm1: Wake circulation at time step n-1, [n_surf][m_star, n].
+    :param zeta_b_n: Bound grid at time step n, [n_surf][zeta_m, zeta_n, 3].
+    :param zeta_w_nm1: Wake grid at time step n-1, [n_surf][zeta_m_star, zeta_n, 3].
+    :param delta_w: Desired wake discretisation, [n_surf][zeta_m_star, 3] or None for uniform.
     :param v_func: Function that computes the velocity, [3] -> [3].
     :param dt: Time step length.
     :param frozen_wake: If true, the grid stays constant with time, useful in the linearised case.
     :param linearise_variable_wake: If true, block gradients through the arc-length computation so that
         the re-discretisation is treated as a linear operator when differentiated with jax.jvp.
-    :return: New wake grid and circulation, [n_surf][zeta_star_m, zeta_n, 3], [n_surf][m_star, n].
+    :return: New wake grid and circulation, [n_surf][zeta_m_star, zeta_n, 3], [n_surf][m_star, n].
     """
 
     n_surf = len(gamma_b_nm1)
@@ -372,10 +371,10 @@ def propagate_wake(
 
     for i_surf in range(n_surf):
         surf_zeta_w, surf_gamma_w = propagate_surf_wake(
-            gamma_b_n=gamma_b_nm1[i_surf],
-            gamma_w_n=gamma_w_nm1[i_surf],
-            zeta_b_np1=zeta_b_n[i_surf],
-            zeta_w_n=zeta_w_nm1[i_surf],
+            gamma_b_nm1=gamma_b_nm1[i_surf],
+            gamma_w_nm1=gamma_w_nm1[i_surf],
+            zeta_b_n=zeta_b_n[i_surf],
+            zeta_w_nm1=zeta_w_nm1[i_surf],
             delta_w=delta_w[i_surf],
             v_func=v_func,
             dt=dt,
@@ -383,8 +382,7 @@ def propagate_wake(
             linearise_variable_wake=linearise_variable_wake,
         )
         if zeta_w_np1 is not None:
-            if surf_zeta_w is None:
-                raise ValueError("surf_zeta_w is None")
+            assert surf_zeta_w is not None
             zeta_w_np1.append(surf_zeta_w)
         gamma_w_np1.append(surf_gamma_w)
     return zeta_w_np1, gamma_w_np1
@@ -392,7 +390,7 @@ def propagate_wake(
 
 def biot_savart(x: Array, y: Array) -> Array:
     r"""
-    Basic Biot-Savart kernel without any smoothing or cutoff.
+    Biot-Savart kernel without any smoothing or cutoff.
     :param x: Target point, [3]
     :param y: Filament endpoints, [2, 3]
     :return: Influence at target point, [3]
@@ -408,10 +406,10 @@ def biot_savart(x: Array, y: Array) -> Array:
 @jax.custom_jvp
 def make_unit_epsilon(r: Array) -> Array:
     r"""
-    Differentiable function to obtain a smoothed unit vector. As r -> 0, the output approaches zero instead of being
+    Differentiable function to obtain a unit vector that is defined for all ``r``. As ``r`` -> 0, the output approaches zero instead of being
     undefined.
-    :param r: Vector to be normalised, [3]
-    :return: Unit vector, [3]
+    :param r: Vector to be normalised, [3].
+    :return: Unit vector, [3].
     """
     return r / jnp.sqrt(jnp.sum(r**2) + EPSILON**2)
 
@@ -421,8 +419,8 @@ def smooth_unit_vector_jvp(primals, tangents):
     r"""
     Custom JVP rule for the smoothed unit vector function.
     """
-    (r,) = primals
-    (r_dot,) = tangents
+    r = primals[0]
+    r_dot = tangents[0]
     r_norm2 = jnp.sum(r**2)
     r_norm = jnp.sqrt(r_norm2)
 
@@ -482,7 +480,7 @@ def biot_savart_cutoff(x: Array, y: Array) -> Array:
 
 def mirror_grid(zeta: Array, mirror_point: Array, mirror_normal: Array) -> Array:
     """
-    Mirror a grid of points across a plane defined by a point and a varphi vector.
+    Mirror a grid of points across a plane defined by a point and a normal vector.
     :param zeta: Grid of points, [zeta_m, zeta_n, 3].
     :param mirror_point: Point in mirror plane, [3].
     :param mirror_normal: Normal vector of mirror plane, [3]. Should be normalised.
@@ -525,16 +523,16 @@ def project_forcing_to_beam(
         )  # forcing is sum along strip [zeta_n, 3]
         result = result.at[dof_mapping[i_surf], 3:].set(
             jnp.cross(r_x0, f_total[i_surf]).sum(axis=0)
-        )  # moment is r x_target f summed along strip [zeta_n, 3]
+        )  # moment is cross(r, f) summed along strip [zeta_n, 3]
     return result
 
 
 def cs_ang_to_cs_vel(cs_ang_t: dict[str, Array], dt: float | Array) -> dict[str, Array]:
     r"""
     Approximate control surfaces velocities from the time series of their angles using finite differences.
-    :param cs_ang_t: Time history of control surface angle, {name, [n_tstep, ...]}.
+    :param cs_ang_t: Time history of control surface angle, {name, [n_tstep]}.
     :param dt: Time step length.
-    :return: Control surface velocity, {name, [n_tstep, ...]}.
+    :return: Control surface velocity, {name, [n_tstep]}.
     """
     cs_vel_t = dict()
     for k, v in cs_ang_t.items():
@@ -552,9 +550,9 @@ def cs_ang_to_cs_vel(cs_ang_t: dict[str, Array], dt: float | Array) -> dict[str,
 def cs_vel_to_cs_ang(cs_vel_t: dict[str, Array], dt: float | Array) -> dict[str, Array]:
     r"""
     Approximate control surfaces angles from the time series of their velocities using finite differences.
-    :param cs_vel_t: Time history of control surface velocity, {name, [n_tstep, ...]}.
+    :param cs_vel_t: Time history of control surface velocity, {name, [n_tstep]}.
     :param dt: Time step length.
-    :return: Control surface angle, {name, [n_tstep, ...]}.
+    :return: Control surface angle, {name, [n_tstep]}.
     """
     cs_ang_t = dict()
     for k, v in cs_vel_t.items():

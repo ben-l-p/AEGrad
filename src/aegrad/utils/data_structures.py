@@ -293,7 +293,7 @@ class DesignVariables:
         self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = {}
         self.mapping: dict[str, Optional[Array | ArrayList]] = {}
 
-    def get_vars(self) -> dict[str, Optional[Array | ArrayList]]:
+    def to_dict(self) -> dict[str, Optional[Array | ArrayList]]:
         # should only be used in child classes
         return {}
 
@@ -325,7 +325,7 @@ class DesignVariables:
                 return elem.shape
 
         out_dict = OrderedDict()
-        for k, var in self.get_vars().items():
+        for k, var in self.to_dict().items():
             out_dict[k] = _elem_shape(var)
 
         return out_dict
@@ -397,7 +397,7 @@ class DesignVariables:
                 v
                 for v in [
                     _inner_ravel(var)
-                    for var in self.get_vars().values()
+                    for var in self.to_dict().values()
                     if var is not None
                 ]
                 if v is not None
@@ -409,7 +409,7 @@ class DesignVariables:
 
     def ravel(self) -> Array:
         return jnp.concatenate(
-            [var.ravel() for var in self.get_vars().values() if var is not None]
+            [var.ravel() for var in self.to_dict().values() if var is not None]
         )
 
     def reshape(self, *args: int) -> Array:
@@ -449,7 +449,7 @@ class DesignVariables:
 
     @classmethod
     def concatenate[T: DesignVariables](cls, *dvs: T) -> T:
-        dict_dvs = [dvs.get_vars() for dvs in dvs]
+        dict_dvs = [dvs.to_dict() for dvs in dvs]
 
         f_shape = 0
         out_dict = {}

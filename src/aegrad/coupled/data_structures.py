@@ -88,6 +88,7 @@ class DynamicAeroelasticSnapshot:
             aero=self.aero,
         )
 
+
 @make_pytree
 class DynamicAeroelastic:
     def __init__(self, structure: DynamicStructure, aero: DynamicAeroCase):
@@ -280,21 +281,21 @@ class AeroelasticDesignVariables(DesignVariables):
         ] = self.get_shapes()
         self.mapping, self.n_x = self.make_index_mapping()
 
-    def get_vars(self) -> dict[str, Optional[Array]]:
+    def to_dict(self) -> dict[str, Optional[Array]]:
         return {
-            **(self.structure.get_vars() if self.structure is not None else {}),
-            **(self.aero.get_vars() if self.aero is not None else {}),
+            **(self.structure.to_dict() if self.structure is not None else {}),
+            **(self.aero.to_dict() if self.aero is not None else {}),
         }
 
     def split_adjoint(
         self, d_f_d_x: dict[str, Optional[Array | ArrayList]], f_shape: tuple[int, ...]
     ) -> AeroelasticDesignVariables:
         struct_dv = StructuralDesignVariables(
-            **{k: v for k, v in d_f_d_x.items() if k in self.structure.get_vars()},
+            **{k: v for k, v in d_f_d_x.items() if k in self.structure.to_dict()},
             f_shape=f_shape,
         )
         aero_dv = AeroDesignVariables(
-            **{k: v for k, v in d_f_d_x.items() if k in self.aero.get_vars()},
+            **{k: v for k, v in d_f_d_x.items() if k in self.aero.to_dict()},
             f_shape=f_shape,
         )
         return AeroelasticDesignVariables(structure_dv=struct_dv, aero_dv=aero_dv)

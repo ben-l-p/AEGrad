@@ -91,7 +91,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             else self.aero.flowfield,
             delta_w=self.aero.delta_w,
             dt=self.aero.dt,
-            x0_aero=dv.aero.x0_aero if dv.aero.x0_aero is not None else self.aero.x0_b,
+            x0_aero=dv.aero.x0_b if dv.aero.x0_b is not None else self.aero.x0_b,
             orientation_euler=dv.structure.orientation_euler
             if dv.structure.orientation_euler is not None
             else self.structure.orientation_euler,
@@ -328,6 +328,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     q_nm1=None,
                     t_n=case.aero.t,
                     hg_n=hg,
+                    hg_nm1=None,
                     hg_dot_n=None,
                     static=True,
                     horseshoe=horseshoe,
@@ -339,6 +340,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                             else dv_full.aero.cs_ang_t
                         ).items()
                     },
+                    cs_ang_nm1=None,
                     cs_vel_n={
                         k: jnp.atleast_1d(v)[0]
                         for k, v in (
@@ -390,10 +392,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         indirect_dict = dv.from_adjoint((n_q0,), indirect_mat)
         indirect_term = AeroelasticDesignVariables(
             structure_dv=StructuralDesignVariables(
-                **{k: indirect_dict[k] for k in dv.structure.get_vars()}, f_shape=()
+                **{k: indirect_dict[k] for k in dv.structure.to_dict()}, f_shape=()
             ),
             aero_dv=AeroDesignVariables(
-                **{k: indirect_dict[k] for k in dv.aero.get_vars()}, f_shape=()
+                **{k: indirect_dict[k] for k in dv.aero.to_dict()}, f_shape=()
             ),
         )
         p_q0_p_x += indirect_term
@@ -707,7 +709,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 f_shape=j_shape,
             ),
             aero_dv=AeroDesignVariables(
-                x0_aero=ArrayList(
+                x0_b=ArrayList(
                     [jnp.zeros((*j_shape, *arr.shape)) for arr in self.aero.x0_b]
                 )
                 if (grads_to_compute is None or grads_to_compute.aero.x0_aero)

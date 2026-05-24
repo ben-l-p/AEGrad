@@ -69,7 +69,7 @@ if __name__ == "__main__":
     nonlinear_model.set_design_variables(
         dt=dt,
         flowfield=Constant(u_inf=u_inf, rho=rho_inf, relative_motion=True),
-        x0_aero=x_grid,
+        x0_b=x_grid,
         hg0=hg,
         delta_w=delta_w,
     )

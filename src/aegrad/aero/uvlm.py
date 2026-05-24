@@ -80,17 +80,25 @@ class UVLM:
         batch_size: int = 1,
     ) -> None:
         r"""
-        Initialise UVLM class with all non-design parameters
-        :param grid_shapes: Discretisation(s) for the number of chordwise, spanwise and wake-wise panels for each surface.
-        May be passed using either the GridDiscretization class or a tuple of integers (m, varphi, m_star). Multiple surfaces
-        may be defined by passing a sequence of GridDiscretization instances or tuples.
+        Initialise UVLM class with all non-design parameters.
+        :param grid_shapes: Discretisations for the number of chordwise, spanwise and wake-wise panels for each surface.
+        May be passed as a sequence of either the GridDiscretization class or a tuple of integers ordered as (m, n,
+        m_star).
         :param dof_mapping: Mapping from aerodynamic grid points to structure grid points for each surface.
-        :param variable_wake_disc: If true, allow for variable wake discretisation per surface.
-        :param mirror_point: Optional point in mirror plane. If provided, this will apply mirroring of the aerodynamic
-        geometry and flow about the plane defined by this point and the mirror varphi, [3].
-        :param mirror_normal: Optional varphi vector for mirror plane, [3].
+        :param variable_wake_disc: If True, allow for variable wake discretisations.
+        :param mirror_point: Optional point in mirror plane, [3]. If provided, this will apply mirroring of the aerodynamic
+        geometry and flow about the plane defined by this point and the mirror normal.
+        :param mirror_normal: Optional normal vector for mirror plane, [3].
         :param kernel: Input for custom kernel function to use for induced velocity calculations.
-        :param batch_size: Batch size for vectorising AIC computations.
+        :param grid_func: Input functions used for defining surfaces with control surfaces. This function should take
+        the reference local grid coordinates ``x0_b``, as well as control inputs as keyword arguments, and return the
+        deflected local grid coordinates as an ArrayList of equal dimensionality to ``x0_b``.
+        :param free_wake: If True, include the velocity induced from the aerodynamic elements for wake propagation.
+        :param gamma_dot_relaxation: Filtering parameter used for obtaining the time derivative of the circulation
+        strengths.
+        :param include_unsteady_force: If True, include forces due to apparent mass for simulation.
+        :param batch_size: Batch size for vectorising AIC computations. Larger values may result in faster computations,
+        at the expense of increased memory usage.
         """
 
         # case for single inputs
@@ -180,7 +188,8 @@ class UVLM:
             mirror_point is not None and mirror_normal is None
         ):
             raise ValueError(
-                "Both mirror_point and mirror_normal must be provided to apply mirroring, or both must be None to apply no mirroring."
+                "Both mirror_point and mirror_normal must be provided to apply mirroring, or both must be None to "
+                "apply no mirroring."
             )
 
         if mirror_point is None or mirror_normal is None:
@@ -211,8 +220,8 @@ class UVLM:
     @property
     def flowfield(self) -> FlowField:
         r"""
-        Get the FlowField object defining the background flow in space and time
-        :return: FlowField object
+        Get the FlowField object defining the background flow in space and time.
+        :return: FlowField object.
         """
         if self._flowfield is None:
             raise ValueError("FlowField has not been set.")
@@ -225,8 +234,8 @@ class UVLM:
     @property
     def x0_b(self) -> ArrayList:
         r"""
-        Get the aerodynamic local grid coordinates at the reference configuration
-        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
+        Get the aerodynamic local grid coordinates at the reference configuration.
+        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3].
         """
         if self._x0_b is None:
             raise ValueError("Design variable x0_b has not been set.")
@@ -235,8 +244,8 @@ class UVLM:
     @property
     def zeta0_b(self) -> ArrayList:
         r"""
-        Get the aerodynamic global grid coordinates at the reference configuration
-        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
+        Get the aerodynamic global grid coordinates at the reference configuration.
+        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3].
         """
         if self._zeta0_b is None:
             raise ValueError("Design variable zeta0_b has not been set.")
@@ -245,8 +254,8 @@ class UVLM:
     @property
     def zeta0_w(self) -> ArrayList:
         r"""
-        Get the aerodynamic global wake grid coordinates at the reference configuration
-        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m_star, zeta_n, 3]
+        Get the aerodynamic global wake grid coordinates at the reference configuration.
+        :return: List of aerodynamic local grid coordinates for each surface, [n_surf][zeta_m_star, zeta_n, 3].
         """
         if self._zeta0_w is None:
             raise ValueError("Design variable zeta0_w has not been set.")
@@ -255,8 +264,8 @@ class UVLM:
     @property
     def dt(self) -> Array:
         r"""
-        Get the time step length
-        :return: Time step length
+        Get the time step length.
+        :return: Time step length.
         """
         if self._dt is None:
             raise ValueError("Time step length dt has not been set.")
@@ -266,7 +275,7 @@ class UVLM:
     def delta_w(self) -> list[Optional[Array]]:
         r"""
         Get the wake displacement vector defining segment lengths of a variable wake discretisation per surface.
-        :return: Wake displacement vector(s) for each surface, [n_surf][m_star]
+        :return: Wake displacement vectors for each surface, [n_surf][m_star].
         """
         if self._delta_w is None:
             raise ValueError("Wake displacement delta_w has not been set.")
@@ -274,6 +283,10 @@ class UVLM:
 
     @property
     def hg0(self) -> Array:
+        r"""
+        Get the reference beam coordinates used to create the reference aerodynamic grid.
+        :return: Reference beam coordinates, [n_nodes, 4, 4].
+        """
         if self._hg0 is None:
             raise ValueError("Variable hg0 has not been set.")
         return self._hg0
@@ -296,7 +309,7 @@ class UVLM:
         :param wake_upwash: If true, linearise for flowfield perturbations at the wake vortex vertex.
         :param unsteady_force: If true, include unsteady force terms in linearisation.
         :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model.
-        :return: LinearUVLM model linearised at specified time step.
+        :return: LinearUVLM model, linearised at specified time step.
         """
 
         # local import used to prevent circular import issues
@@ -316,7 +329,7 @@ class UVLM:
         self,
         dt: float | Array,
         flowfield: FlowField,
-        x0_aero: ArrayList | Sequence[Array] | Array,
+        x0_b: ArrayList | Sequence[Array] | Array,
         hg0: Array,
         delta_w: Optional[Sequence[Optional[Array]] | Optional[Array]] = None,
         reference_cs_angles: Optional[dict[str, Array]] = None,
@@ -327,10 +340,11 @@ class UVLM:
         :param flowfield: FlowField object defining the background flow in space and time
         :param delta_w: Vector to define segment lengths of a variable wake discretisation per surface. If None, this
         will use a uniform discretisation, as in the canonical UVLM.
-        :param x0_aero: Aerodynamic local grid coordinates, [n_surf][zeta_m, zeta_n, 3]
-        :param hg0: Beam reference global grid coordinates, [zeta_n, 4, 4]
+        :param x0_b: Aerodynamic local grid coordinates, [n_surf][zeta_m, zeta_n, 3].
+        :param hg0: Beam reference global grid coordinates, [n_nodes, 4, 4].
         dictionary input for deflections, and returns an ArrayList of the local deflected grid.
-        :param reference_cs_angles: Dictionary of {name: angle} for each control surface at the reference.
+        :param reference_cs_angles: Dictionary of {name: angle} for each control surface at the reference. If None,
+        defaults to no control surfaces.
         """
 
         if isinstance(delta_w, Array):
@@ -342,26 +356,26 @@ class UVLM:
         else:
             raise TypeError("Invalid delta_w type")
 
-        if isinstance(x0_aero, Array):
-            x0_aero_arraylist = ArrayList([x0_aero])
-        elif isinstance(x0_aero, Sequence):
-            x0_aero_arraylist = ArrayList(x0_aero)
-        elif isinstance(x0_aero, ArrayList):
-            x0_aero_arraylist = x0_aero
+        if isinstance(x0_b, Array):
+            x0_aero_arraylist = ArrayList([x0_b])
+        elif isinstance(x0_b, Sequence):
+            x0_aero_arraylist = ArrayList(x0_b)
+        elif isinstance(x0_b, ArrayList):
+            x0_aero_arraylist = x0_b
         else:
-            raise TypeError("Invalid x0_aero type")
+            raise TypeError("Invalid x0_b type")
 
         # set aerodynamic local coordinates
         if len(x0_aero_arraylist) != self.n_surf:
             raise ValueError(
-                f"Expected {self.n_surf} aerodynamic grid coordinate arrays, got {len(x0_aero)}"
+                f"Expected {self.n_surf} aerodynamic grid coordinate arrays, got {len(x0_b)}"
             )
 
         for i_surf in range(self.n_surf):
             check_arr_shape(
                 x0_aero_arraylist[i_surf],
                 (self.grid_disc[i_surf].m + 1, self.grid_disc[i_surf].n + 1, 3),
-                "x0_aero",
+                "x0_b",
             )
         self._x0_b = x0_aero_arraylist
 
@@ -400,9 +414,10 @@ class UVLM:
 
     def case_from_dv(self, dv: AeroDesignVariables) -> UVLM:
         r"""
-        Obtain a structural object as a function of design variables, allowing it to have defined gradients w.r.t. design variables.
+        Create a new UVLM instance as a function of design variables, allowing it to have defined gradients w.r.t.
+        design variables.
         :param dv: Design variables.
-        :return: Beam structure object with the same functionality as self.
+        :return: UVLM object with the same functionality as ``self``.
         """
         inner_case = deepcopy(self)
         inner_case.set_design_variables(
@@ -411,7 +426,7 @@ class UVLM:
             if dv.flowfield is not None
             else self.flowfield,
             delta_w=self.delta_w,
-            x0_aero=dv.x0_aero if dv.x0_aero is not None else self.x0_b,
+            x0_b=dv.x0_b if dv.x0_b is not None else self.x0_b,
             hg0=self.hg0,
             reference_cs_angles={k: v[0] for k, v in dv.cs_ang_t.items()}
             if dv.cs_ang_t is not None
@@ -427,7 +442,8 @@ class UVLM:
         grads_to_compute: Optional[AeroGradsToCompute],
     ) -> AeroDesignVariables:
         r"""
-        Extract design variables from the aerodynamic case.
+        Extract design variables from the aerodynamic case. As the control input time histories are defined when
+        initialising the simulation, they are not included in ``self`` and so are passed by argument.
         :param cs_ang_t: Time history of control surface angles, {keys, [n_tstep]}.
         :param cs_vel_t: Time history of control surface velocities, {keys, [n_tstep]}.
         :param grads_to_compute: Data structure which describes which design variables should be obtained. If None, all
@@ -436,7 +452,7 @@ class UVLM:
         """
         if isinstance(grads_to_compute, AeroGradsToCompute):
             return AeroDesignVariables(
-                x0_aero=self.x0_b if grads_to_compute.x0_aero else None,
+                x0_b=self.x0_b if grads_to_compute.x0_aero else None,
                 flowfield=self.flowfield.to_design_variables()
                 if grads_to_compute.flowfield
                 else None,
@@ -444,9 +460,9 @@ class UVLM:
                 cs_vel_t=cs_vel_t if grads_to_compute.cs_vel_t else None,
                 f_shape=(),
             )
-        else:
+        else:  # grads_to_compute is None
             return AeroDesignVariables(
-                x0_aero=self.x0_b,
+                x0_b=self.x0_b,
                 flowfield=self.flowfield.to_design_variables(),
                 cs_ang_t=cs_ang_t,
                 cs_vel_t=cs_vel_t,
@@ -456,9 +472,9 @@ class UVLM:
     def hg_to_zeta_b(self, hg_n: Array, cs_ang_n: dict[str, Array]) -> ArrayList:
         r"""
         Convert beam global grid coordinates to aerodynamic global grid coordinates.
-        :param hg_n: Beam global grid coordinates, [zeta_n, 4, 4]
-        :param cs_ang_n: Control surface angles as {surface_name: angle} pairs.
-        :return: Full aerodynamic global grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3]
+        :param hg_n: Beam global grid coordinates at time step n, [n_nodes, 4, 4].
+        :param cs_ang_n: Control surface angles as {surface_name: angle} pairs at time step n.
+        :return: Full aerodynamic global grid coordinates for each surface, [n_surf][zeta_m, zeta_n, 3].
         """
 
         zeta_b0_cs = self.grid_func(
@@ -485,11 +501,11 @@ class UVLM:
     ) -> ArrayList:
         r"""
         Convert beam global grid velocities to aerodynamic global grid velocities.
-        :param hg_n: Beam global grid coordinates, [zeta_n, 4, 4].
-        :param hg_dot_n: Beam global grid velocities, [zeta_n, 4, 4].
+        :param hg_n: Beam global grid coordinates, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam global grid velocities, [n_nodes, 4, 4].
         :param cs_ang_n: Control surface angles as {surface_name: angle} pairs.
         :param cs_vel_n: Control surface velocities as {surface_name: velocities} pairs.
-        :return: Full aerodynamic global grid velocities for each surface, [n_surf][zeta_m, zeta_n, 3]
+        :return: Full aerodynamic global grid velocities for each surface, [n_surf][zeta_m, zeta_n, 3].
         """
         zeta_b0_cs = self.grid_func(
             self.x0_b, **cs_ang_n
@@ -507,6 +523,7 @@ class UVLM:
                     f"Mismatched shape for control surface angles {cs_vel_n[key].shape} and velocities {cs_vel_n[key].shape}"
                 )
 
+        # use jvp to find the velocity of the aerodynamic grid due to control velocity.
         _, zeta_b0_dot_cs = jax.jvp(
             lambda angs: self.grid_func(
                 self.x0_b, **angs
@@ -536,8 +553,8 @@ class UVLM:
 
     def _make_gamma_slices(self) -> tuple[tuple[slice, ...], tuple[slice, ...]]:
         r"""
-        Create slices for the bound and wake circulation strengths in their respective solution vectors based on the grid
-        discretisations.
+        Create slices for the bound and wake circulation strengths in their respective solution vectors based on the
+        grid discretisations.
         :return: Sequence of slices for bound and wake circulation strengths.
         """
         gamma_b_slices = []
@@ -557,10 +574,10 @@ class UVLM:
         self, zeta_b: Array, i_surf: int, horseshoe_length: float
     ) -> Array:
         r"""
-        Create a static_horseshoe wake grid for a given surface at a given time step.
-        :param zeta_b: Bound grid coordinates for single surface, [m+1, n+1, 3]
-        :param i_surf: Surface index
-        :param horseshoe_length: Length of static_horseshoe wake to generate
+        Create a horseshoe wake grid for a given surface at a given time step.
+        :param zeta_b: Bound grid coordinates for single surface, [zeta_m, zeta_n, 3].
+        :param i_surf: Surface index.
+        :param horseshoe_length: Length of horseshoe wake to generate.
         :return: Wake grid coordinates, [2, zeta_n, 3]
         """
         zeta_te = zeta_b[-1, ...]  # [zeta_n, 3]
@@ -602,24 +619,6 @@ class UVLM:
             )
         return zeta0_w
 
-    def set_gamma_b(self, case: DynamicAeroCase, gamma_vec: Array, i_ts: int) -> None:
-        r"""
-        Set bound circulation strengths from total circulation strengths vector at specified time step
-        :param case: DynamicAeroCase object
-        :param gamma_vec: Total circulation strengths vector, [gamma_b_tot]
-        :param i_ts: Timestep index
-        """
-        for i_surf in range(self.n_surf):
-            case.gamma_b[i_surf] = (
-                case.gamma_b[i_surf]
-                .at[i_ts, ...]
-                .set(
-                    gamma_vec[self.gamma_b_slice[i_surf]].reshape(
-                        self.grid_disc[i_surf].m, self.grid_disc[i_surf].n
-                    )
-                )
-            )
-
     @staticmethod
     def compute_gamma_dot(
         gamma_b_n: ArrayList,
@@ -630,11 +629,11 @@ class UVLM:
     ) -> ArrayList:
         r"""
         Calculate time derivative of bound circulation strengths at specified time step using finite difference.
-        :param gamma_b_n: Bound circulation strengths at timestep n, [n_surf][m, n]
-        :param gamma_b_nm1: Bound circulation strengths at timestep n-1, [n_surf][m, n]
+        :param gamma_b_n: Bound circulation strengths at timestep n, [n_surf][m, n].
+        :param gamma_b_nm1: Bound circulation strengths at timestep n-1, [n_surf][m, n].
         :param gamma_b_dot_nm1: Filtered bound circulation strengths time derivative at timestep n-1, [n_surf][m, n].
-        :param dt: Time step size.
-        :param gamma_dot_relaxation: Relaxation factor which filters gamma dot.
+        :param dt: Time step length.
+        :param gamma_dot_relaxation: Relaxation factor which filters the time derivative.
         """
 
         # first obtain the current unfiltered, and previous filtered values for gamma_dot
@@ -651,9 +650,9 @@ class UVLM:
         r"""
         Set wake circulation strengths from total circulation strengths at specified time step. Can be passed either a
         full vector of strengths, or a sequence of strengths per surface.
-        :param case: DynamicAeroCase object
-        :param gamma_vec: Total circulation strengths vector, [gamma_w_tot]
-        :param i_ts: Timestep index
+        :param case: DynamicAeroCase object.
+        :param gamma_vec: Total circulation strengths vector, [gamma_w_tot].
+        :param i_ts: Timestep index.
         """
         for i_surf in range(self.n_surf):
             case.gamma_w[i_surf] = (
@@ -680,10 +679,12 @@ class UVLM:
         q_nm1: Optional[AeroStates],
         t_n: Array,
         hg_n: Optional[Array],
+        hg_nm1: Optional[Array],
         hg_dot_n: Optional[Array],
         static: bool,
         horseshoe: bool,
         cs_ang_n: dict[str, Array],
+        cs_ang_nm1: Optional[dict[str, Array]],
         cs_vel_n: Optional[dict[str, Array]],
     ) -> tuple[
         ArrayList,
@@ -699,24 +700,27 @@ class UVLM:
     ]:
         r"""
         Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
-        :param q_nm1: Minimal states from timestep n-1.
+        :param q_nm1: Minimal aerodynamic states from timestep n-1.
         :param t_n: Time at timestep n.
-        :param hg_n: Beam global grid coordinates, [zeta_n, 4, 4].
-        :param hg_dot_n: Beam global grid velocities, [zeta_n, 4, 4].
-        :param static: If true, perform a static solve.
-        :param horseshoe: If true, replace the wake with a static_horseshoe wake in static solve which extends a fixed
+        :param hg_n: Beam global grid coordinates at time step n, [n_nodes, 4, 4].
+        :param hg_nm1: Beam global grid coordinates at time step n - 1, [n_nodes, 4, 4]. Required for consistent free
+        wake modelling.
+        :param hg_dot_n: Beam global grid velocities, [n_nodes, 4, 4].
+        :param static: If True, perform a static solve.
+        :param horseshoe: If True, replace the wake with a horseshoe wake in static solve which extends a fixed
         distance.
         :param cs_ang_n: Control surface angle at timestep n, {name, []}.
+        :param cs_ang_nm1: Control surface angle at timestep n - 1, {name, []}.
         :param cs_vel_n: Control surface velocity at timestep n, {name, []}.
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
         derivative, bound grid, wake grid, bound grid time derivattive, steady forcing and unsteady forcing.
         """
         if not (0.0 < self.gamma_dot_relaxation <= 1.0):
-            raise ValueError("Gamma_dot relaxation factor not in (0, 1]")
+            warn("Gamma_dot relaxation factor not in (0, 1]")
 
         if not static and horseshoe:
             warn(
-                "Horseshoe wake not compatible with non-static solve. Overriding static_horseshoe to False."
+                "Horseshoe wake not compatible with non-static solve. Overriding horseshoe to False."
             )
             horseshoe = False
 
@@ -732,15 +736,20 @@ class UVLM:
 
         if hg_dot_n is None:
             zeta_b_dot_n: Optional[ArrayList] = None
-            c_dot_n = None
+            c_dot_n: Optional[ArrayList] = None
+            zeta_b_nm1: Optional[ArrayList] = None
         else:
-            if hg_n is None:
-                raise ValueError("hg_n needs to be specified for dynamic solve")
-            if cs_vel_n is None:
-                raise ValueError("cs_vel_n needs to be specified for dynamic solve")
+            assert (
+                hg_n is not None
+                and cs_vel_n is not None
+                and hg_nm1 is not None
+                and cs_ang_nm1 is not None
+            )
             zeta_b_dot_n = self.hg_dot_to_zeta_b_dot(
                 hg_n=hg_n, hg_dot_n=hg_dot_n, cs_ang_n=cs_ang_n, cs_vel_n=cs_vel_n
             )
+
+            zeta_b_nm1 = self.hg_to_zeta_b(hg_n=hg_nm1, cs_ang_n=cs_ang_nm1)
 
             c_dot_n = ArrayList(
                 [neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot_n]
@@ -768,11 +777,9 @@ class UVLM:
 
             gamma_w_n = None  # allocate later from gamma_b
         else:
-            if q_nm1 is None:
-                raise ValueError("q_nm1 needs to be specified for dynamic solve")
+            assert q_nm1 is not None and zeta_b_nm1 is not None
 
-            # TODO: replace zeta_b_n with zeta_b_nm1
-            zeta_full = ArrayList([*zeta_b_n, *q_nm1.zeta_w])
+            zeta_full = ArrayList([*zeta_b_nm1, *q_nm1.zeta_w])
             gamma_full = ArrayList([*q_nm1.gamma_b, *q_nm1.gamma_w])
 
             def v_wake_prop(x_: Array) -> Array:
@@ -909,10 +916,10 @@ class UVLM:
             )
 
         f_steady = calculate_steady_forcing(
-            zeta_bs=zeta_b_n,
-            zeta_dot_bs=zeta_b_dot_for_forces,
-            gamma_bs=gamma_b_n,
-            gamma_ws=gamma_w_n,
+            zeta_b=zeta_b_n,
+            zeta_dot_b=zeta_b_dot_for_forces,
+            gamma_b=gamma_b_n,
+            gamma_w=gamma_w_n,
             rho=self.flowfield.rho,
             v_func=v_total_func,
             v_inputs=None,
@@ -935,11 +942,13 @@ class UVLM:
         self,
         case: DynamicAeroCase,
         i_ts: int,
-        hg: Optional[Array],
-        hg_dot: Optional[Array],
+        hg_n: Optional[Array],
+        hg_nm1: Optional[Array],
+        hg_dot_n: Optional[Array],
         static: bool,
         horseshoe: bool,
         cs_ang_n: dict[str, Array],
+        cs_ang_nm1: Optional[dict[str, Array]],
         cs_vel_n: Optional[dict[str, Array]],
     ) -> DynamicAeroCase:
         r"""
@@ -947,13 +956,16 @@ class UVLM:
         is updated in-place in the case object.
         :param case: Solution object.
         :param i_ts: Timestep index to solve for.
-        :param hg: Beam global grid coordinates, [zeta_n, 4, 4].
-        :param hg_dot: Beam global grid velocities, [zeta_n, 4, 4].
+        :param hg_n: Beam global grid coordinates at time step n, [zeta_n, 4, 4].
+        :param hg_nm1: Beam global grid coordinates at time step n11, [zeta_n, 4, 4].
+        :param hg_dot_n: Beam global grid velocities at time step n, [zeta_n, 4, 4].
         :param static: If true, perform a static solve.
         :param horseshoe: If true, replace the wake with a static_horseshoe wake in static solve which extends a fixed
         distance.
         :param cs_ang_n: Control surface angle at timestep n, {name, []}.
+        :param cs_ang_nm1: Control surface angle at timestep n - 1, {name, []}.
         :param cs_vel_n: Control surface velocity at timestep n, {name, []}.
+        :return: Solution object with data for current time step added.
         """
 
         q_nm1 = AeroStates(
@@ -982,11 +994,13 @@ class UVLM:
         ) = self.base_solve(
             q_nm1=q_nm1,
             t_n=case.t[i_ts, ...],
-            hg_n=hg,
-            hg_dot_n=hg_dot,
+            hg_n=hg_n,
+            hg_nm1=hg_nm1,
+            hg_dot_n=hg_dot_n,
             static=static,
             horseshoe=horseshoe,
             cs_ang_n=cs_ang_n,
+            cs_ang_nm1=cs_ang_nm1,
             cs_vel_n=cs_vel_n,
         )
 
@@ -1028,15 +1042,15 @@ class UVLM:
         cs_vel_t: dict[str, Array],
     ) -> DynamicAeroCase:
         r"""
-        Initialise an DynamicAeroCase object to store the solution of the aerodynamic case, with the correct dimensions and
-        initial conditions.
+        Initialise an DynamicAeroCase object to store the solution of the aerodynamic case for a given number of time
+        steps. All solution data is initialised to zero.
         :param n_tstep: Number of time steps to solve for in dynamic solution.
         :param static_horseshoe: Whether a horseshoe formulation was used for the static case.
         :param free_wake: Whether to use a free wake formulation.
         :param gamma_dot_relaxation: Relaxation factor for damping gamma_dot.
         :param cs_ang_t: Control surface angle time history, {name, [n_tstep]}.
         :param cs_vel_t: Control surface velocity time history, {name, [n_tstep]}.
-        :return: DynamicAeroCase object with initial conditions set.
+        :return: DynamicAeroCase object.
         """
         # zero initialise
         return DynamicAeroCase(
@@ -1068,9 +1082,7 @@ class UVLM:
                 [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
             c=ArrayList([jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]),
-            nc=ArrayList(
-                [jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]
-            ),
+            n=ArrayList([jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]),
             kernels=[*self.kernels_b, *self.kernels_w],
             mirror_point=self.mirror_point,
             mirror_normal=self.mirror_normal,
@@ -1096,12 +1108,13 @@ class UVLM:
         cs_ang: Optional[dict[str, Array]] = None,
     ) -> AeroSnapshot:
         r"""
-        Solve the VLM.
-        :param hg: Beam global grid coordinates, [zeta_n, 4, 4].
-        :param t: Time at which to solve static solution, used for flowfield evaluation.
-        :param horseshoe: If true, replace the wake with a static_horseshoe wake which extends a fixed distance.
-        :param cs_ang: Control surface angle, {name, []}.
-        # TODO: add free wake
+        Solve the VLM for given static beam coordinates.
+        TODO: add free wake
+        :param hg: Beam coordinates, [zeta_n, 4, 4].
+        :param t: Time at which to solve static solution, used for background flowfield evaluation.
+        :param horseshoe: If true, replace the wake with a horseshoe wake which extends a fixed distance.
+        :param cs_ang: Control surface angles, {name, []}.
+        :return: AeroSnapshot solution object.
         """
 
         case = self.initialise_case_object(
@@ -1118,13 +1131,15 @@ class UVLM:
         case.t = case.t.at[0].set(t)
 
         out_case = self.case_solve(
-            case,
-            0,
-            hg,
-            None,
+            case=case,
+            i_ts=0,
+            hg_n=hg,
+            hg_nm1=None,
+            hg_dot_n=None,
             static=True,
             horseshoe=horseshoe,
             cs_ang_n=cs_ang if cs_ang is not None else self.cs_ang0,
+            cs_ang_nm1=None,
             cs_vel_n=None,
         )[0]
 
@@ -1145,10 +1160,11 @@ class UVLM:
         r"""
         Solve the UVLM for prescribed grid motions.
         :param init_case: StaticAero object containing initial conditions for the solution at time step 0.
-        :param hg_t: Beam global grid coordinates over time, [n_tstep, zeta_n, 4, 4].
-        :param hg_dot_t: Beam global grid velocities over time, [n_tstep, zeta_n, 4, 4].
+        :param hg_t: Beam coordinates over time, [n_tstep, n_nodes, 4, 4].
+        :param hg_dot_t: Beam coordinate time derivative over time, [n_tstep, n_nodes, 4, 4].
         :param cs_ang_t: Control surface angle time history, {name, [n_tstep]}.
         :param cs_vel_t: Control surface velocity time history, {name, [n_tstep]}.
+        :return: DynamicAeroCase solution object.
         """
         check_arr_shape(hg_t, (None, None, 4, 4), "hg_n")
         check_if_all_se3_g(hg_t, True)
@@ -1165,26 +1181,31 @@ class UVLM:
         case = init_case.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
         def _step_func(i_ts_: int, case_: DynamicAeroCase) -> DynamicAeroCase:
-            cs_angle_i_ts = (
-                {k: v[i_ts_] for k, v in cs_ang_t.items()}
-                if cs_ang_t is not None
-                else dict()
+            cs_angle_nm1, cs_angle_n = (
+                (
+                    {k: v[i_ts__] for k, v in cs_ang_t.items()}
+                    if cs_ang_t is not None
+                    else dict()
+                )
+                for i_ts__ in (i_ts_ - 1, i_ts_)
             )
-            cs_velocity_i_ts = (
+            cs_velocity_n = (
                 {k: v[i_ts_] for k, v in cs_vel_t.items()}
                 if cs_vel_t is not None
                 else dict()
             )
 
             case_ = self.case_solve(
-                case_,
-                i_ts_,
-                hg_t[i_ts_, ...],
-                hg_dot_t[i_ts_, ...],
+                case=case_,
+                i_ts=i_ts_,
+                hg_n=hg_t[i_ts_, ...],
+                hg_nm1=hg_t[i_ts_ - 1, ...],
+                hg_dot_n=hg_dot_t[i_ts_, ...],
                 static=False,
                 horseshoe=False,
-                cs_ang_n=cs_angle_i_ts,
-                cs_vel_n=cs_velocity_i_ts,
+                cs_ang_n=cs_angle_n,
+                cs_ang_nm1=cs_angle_nm1,
+                cs_vel_n=cs_velocity_n,
             )
             jax_print(
                 "UVLM timestep {i_ts_}",
@@ -1203,8 +1224,8 @@ class UVLM:
 
     def reference_configuration(self) -> AeroSnapshot:
         r"""
-        Get the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
-        :return: StaticAero object at initial time step
+        Get the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        :return: StaticAero object at initial time step.
         """
         return AeroSnapshot(
             zeta_b=self.zeta0_b,
@@ -1213,7 +1234,7 @@ class UVLM:
             ),
             zeta_w=self.zeta0_w,
             c=compute_c(self.zeta0_b),
-            nc=compute_nc(self.zeta0_b),
+            n=compute_nc(self.zeta0_b),
             gamma_b=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
             gamma_b_dot=ArrayList([jnp.zeros((gd.m, gd.n)) for gd in self.grid_disc]),
             gamma_w=ArrayList([jnp.zeros((gd.m_star, gd.n)) for gd in self.grid_disc]),
@@ -1241,12 +1262,12 @@ class UVLM:
         )
 
     def plot_reference(
-        self, directory: os.PathLike, plot_wake: bool = True
+        self, directory: os.PathLike | str, plot_wake: bool = True
     ) -> Sequence[Path]:
         r"""
-        Plot the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
-        :param directory: Path to write files to
-        :param plot_wake: If True, plot the wake grid
+        Plot the reference (initial) snapshot of the aerodynamic case. This will set the timestep as -1.
+        :param directory: Path to write files to.
+        :param plot_wake: If True, plot the wake grid.
         """
         return self.reference_configuration().plot(
             Path(directory).resolve(), plot_wake=plot_wake
@@ -1255,21 +1276,28 @@ class UVLM:
     def _base_solve_from_dv(
         self,
         hg_n: Array,
+        hg_nm1: Array,
         hg_dot_n: Array,
         t_n: Array,
         q_nm1: AeroStates,
         dv: AeroDesignVariables,
-        cs_angles_n: dict[str, Array],
-        cs_velocity_n: Optional[dict[str, Array]],
-    ) -> tuple:
+        cs_ang_n: dict[str, Array],
+        cs_ang_nm1: Optional[dict[str, Array]],
+        cs_vel_n: Optional[dict[str, Array]],
+    ) -> tuple[ArrayList, ArrayList, ArrayList, ArrayList, Array]:
         r"""
         Perform base_solve from design variables and return intermediate quantities.
-        :param hg_n: Beam coordinates at timestep n, [n_nodes, 4, 4].
-        :param hg_dot_n: Beam velocities at timestep n, [n_nodes, 4, 4].
+        :param hg_n: Beam coordinates at time step n, [n_nodes, 4, 4].
+        :param hg_nm1: Beam coordinates at time step n-1, [n_nodes, 4, 4].
+        :param hg_dot_n: Beam velocities at time step n, [n_nodes, 4, 4].
         :param t_n: Time at step n.
         :param q_nm1: Aero minimal states at timestep n-1.
         :param dv: Aero design variables.
-        :return: gamma_b_nm1, gamma_w_nm1, gamma_b_dot_n, zeta_w_nm1, f_aero_beam_local.
+        :param cs_ang_n: Control surface angles at time step n, {name, []}.
+        :param cs_ang_nm1: Control surface angles at time step n-1, {name, []}.
+        :param cs_vel_n: Control velocity at time step n-1, {name, []}.
+        :return: Bound circulation, wake circulation, bound circulation time derivative, wake grid and aerodynamic
+        force projected onto local beam coordinates.
         """
         inner_case = self.case_from_dv(dv=dv)
 
@@ -1288,15 +1316,16 @@ class UVLM:
             q_nm1=q_nm1,
             t_n=t_n,
             hg_n=hg_n,
+            hg_nm1=hg_nm1,
             hg_dot_n=hg_dot_n,
             static=False,
             horseshoe=False,
-            cs_ang_n=cs_angles_n,
-            cs_vel_n=cs_velocity_n,
+            cs_ang_n=cs_ang_n,
+            cs_ang_nm1=cs_ang_nm1,
+            cs_vel_n=cs_vel_n,
         )
 
-        if gamma_b_dot_n is None or f_unsteady is None:
-            raise ValueError("Non-optional aero parameters are set to None")
+        assert gamma_b_dot_n is not None and f_unsteady is not None
 
         # project forcing onto beam
         f_total_zeta = f_steady + f_unsteady
@@ -1315,9 +1344,9 @@ class UVLM:
     def gamma_b_res_func(
         self,
         i_ts: int,
+        t_n: Array,
         varphi_n_vec: Array,
         v_n_vec: Array,
-        t_n: Array,
         gamma_b_n_vec: Array,
         gamma_w_n_vec: Array,
         zeta_w_n_vec: Array,
@@ -1326,16 +1355,16 @@ class UVLM:
         struct_obj: BeamStructure,
     ) -> Array:
         r"""
-        Bound circulation residual.
+        Bound circulation residual used for adjoint computations.
 
-        :math:`\left(\boldsymbol{\mathcal{A}}_{b, n} \cdot \mathbf{n}_n\right)^{-1} \left[\left(
-        \boldsymbol{\mathcal{A}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\mathbf{v}_{bc, n} - \dot{\mathbf{c}}\right)
+        :math:`\mathbf{r}_{\Gamma_b} = \left(\boldsymbol{\mathcal{A}}_{b, n} \cdot \mathbf{n}_n\right)^{-1} \left[\left(
+        \boldsymbol{\mathcal{A}}_{w, n} \boldsymbol{\Gamma}_{w, n} +\mathbf{v}_{bc, n} - \dot{\boldsymbol{\zeta}}_c\right)
         \cdot \mathbf{n}_n\right] + \boldsymbol{\Gamma}_{b, n}`
 
         :param i_ts: Time step index.
+        :param t_n: Time at step n.
         :param varphi_n_vec: varphi vector at timestep n.
         :param v_n_vec: Beam velocity vector at timestep n.
-        :param t_n: Time at step n.
         :param gamma_b_n_vec: Bound circulation vector at timestep n.
         :param gamma_w_n_vec: Wake circulation vector at timestep n.
         :param zeta_w_n_vec: Wake grid vector at timestep n.
@@ -1435,9 +1464,9 @@ class UVLM:
     def wake_prop_res_func(
         self,
         i_ts: int,
+        t_n: Array,
         varphi_nm1_vec: Array,
         varphi_n_vec: Array,
-        t_n: Array,
         gamma_b_nm1_vec: Array,
         gamma_w_nm1_vec: Array,
         gamma_w_n_vec: Array,
@@ -1451,9 +1480,9 @@ class UVLM:
         Wake propagation residual for both grid coordinates and circulation strengths.
 
         :param i_ts: Time step index.
+        :param t_n: Time at timestep n.
         :param varphi_nm1_vec: Beam minimal coordinates vector at timestep n-1.
         :param varphi_n_vec: Beam maximal coordinates vector at timestep n.
-        :param t_n: Time at timestep n.
         :param gamma_b_nm1_vec: Bound circulation vector at timestep n-1.
         :param gamma_w_nm1_vec: Wake circulation vector at timestep n-1.
         :param gamma_w_n_vec: Wake circulation vector at timestep n.
@@ -1594,9 +1623,9 @@ class UVLM:
     def f_aero_res_func(
         self,
         i_ts: int,
+        t_n: Array,
         varphi_n_vec: Array,
         v_n_vec: Array,
-        t_n: Array,
         gamma_b_n_vec: Array,
         gamma_w_n_vec: Array,
         gamma_b_dot_n_vec: Array,
@@ -1616,9 +1645,9 @@ class UVLM:
         \boldsymbol{\zeta}_{w, n}) - \mathbf{f}_{\text{aero}, n}`
 
         :param i_ts: Time step index.
+        :param t_n: Time at timestep n.
         :param varphi_n_vec: Beam minimal coordinates vector at timestep n.
         :param v_n_vec: Beam velocity vector at timestep n.
-        :param t_n: Time at timestep n.
         :param gamma_b_n_vec: Bound circulation vector at timestep n.
         :param gamma_w_n_vec: Wake circulation vector at timestep n.
         :param gamma_b_dot_n_vec: Bound circulation vector time derivative at timestep n.
@@ -1692,10 +1721,10 @@ class UVLM:
             )
 
         f_steady = calculate_steady_forcing(
-            zeta_bs=zeta_b_n,
-            zeta_dot_bs=zeta_b_dot_n,
-            gamma_bs=gamma_b_n,
-            gamma_ws=gamma_w_n,
+            zeta_b=zeta_b_n,
+            zeta_dot_b=zeta_b_dot_n,
+            gamma_b=gamma_b_n,
+            gamma_w=gamma_w_n,
             rho=inner_case.flowfield.rho,
             v_func=v_total_func,
             v_inputs=None,
@@ -1901,12 +1930,12 @@ class UVLM:
             d_gamma_b["zeta_w_n"],
             d_gamma_b["dv"],
         ) = jax.jacrev(
-            self.gamma_b_res_func, argnums=(1, 2, 4, 5, 6, 7), allow_int=True
+            self.gamma_b_res_func, argnums=(2, 3, 4, 5, 6, 7), allow_int=True
         )(
             i_ts,
+            t_n,
             varphi_n,
             v_n,
-            t_n,
             gamma_b_n,
             gamma_w_n,
             zeta_w_n,
@@ -1927,13 +1956,13 @@ class UVLM:
             d_gamma_w["dv"],
         ) = jax.jacrev(
             lambda *args: self.wake_prop_res_func(*args)[1],
-            argnums=(1, 2, 4, 5, 6, 7, 8, 9),
+            argnums=(2, 3, 4, 5, 6, 7, 8, 9),
             allow_int=True,
         )(
             i_ts,
+            t_n,
             varphi_nm1,
             varphi_n,
-            t_n,
             gamma_b_nm1,
             gamma_w_nm1,
             gamma_w_n,
@@ -1956,13 +1985,13 @@ class UVLM:
             d_zeta_w["dv"],
         ) = jax.jacrev(
             lambda *args: self.wake_prop_res_func(*args)[0],
-            argnums=(1, 2, 4, 5, 6, 7, 8, 9),
+            argnums=(2, 3, 4, 5, 6, 7, 8, 9),
             allow_int=True,
         )(
             i_ts,
+            t_n,
             varphi_nm1,
             varphi_n,
-            t_n,
             gamma_b_nm1,
             gamma_w_nm1,
             gamma_w_n,
@@ -2001,12 +2030,12 @@ class UVLM:
             d_f_aero["dv"],
             d_f_aero["f_aero_beam_n"],
         ) = jax.jacrev(
-            self.f_aero_res_func, argnums=(1, 2, 4, 5, 6, 7, 8, 11), allow_int=True
+            self.f_aero_res_func, argnums=(2, 3, 4, 5, 6, 7, 8, 11), allow_int=True
         )(
             i_ts,
+            t_n,
             varphi_n,
             v_n,
-            t_n,
             gamma_b_n,
             gamma_w_n,
             gamma_b_dot_n,
@@ -2098,10 +2127,7 @@ class UVLM:
 
     @staticmethod
     def _static_names() -> Sequence[str]:
-        r"""
-        Get names of static attributes in UVLM
-        :return: Sequence of static attribute names
-        """
+
         return (
             "n_surf",
             "grid_disc",
@@ -2125,10 +2151,7 @@ class UVLM:
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        r"""
-        Get names of dynamic attributes in UVLM
-        :return: Sequence of dynamic attribute names
-        """
+
         return (
             "_hg0",
             "_x0_b",

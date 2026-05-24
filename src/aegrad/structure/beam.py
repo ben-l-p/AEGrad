@@ -2054,6 +2054,7 @@ class BaseBeamStructure:
                 )
 
                 # get control surface angles and velocities
+                cs_ang_nm1 = {k: v[i_ts - 1] for k, v in cs_ang_t_.items()}
                 cs_ang_n = {k: v[i_ts] for k, v in cs_ang_t_.items()}
                 cs_vel_n = {k: v[i_ts] for k, v in cs_vel_t_.items()}
 
@@ -2081,6 +2082,7 @@ class BaseBeamStructure:
                         f_aero_nm1,  # first guess for forcing at alpha is to use value from i_ts=n-1
                         thrust_alpha,
                         cs_ang_n,
+                        cs_ang_nm1,
                         cs_vel_n,
                     ),
                 )
@@ -2234,6 +2236,7 @@ class BaseBeamStructure:
             f_aero_alpha_prev: Array,
             thrust_alpha: dict[str, Array],
             cs_ang_n: dict[str, Array],
+            cs_ang_nm1: dict[str, Array],
             cs_vel_n: dict[str, Array],
         ) -> tuple[
             int,
@@ -2245,6 +2248,7 @@ class BaseBeamStructure:
             StructureMinimalStates,
             Array,
             Array,
+            dict[str, Array],
             dict[str, Array],
             dict[str, Array],
             dict[str, Array],
@@ -2268,11 +2272,13 @@ class BaseBeamStructure:
             aero_sol = aero_obj.case_solve(
                 case=aero_sol,
                 i_ts=i_ts,
-                hg=hg_n,
-                hg_dot=hg_dot,
+                hg_n=hg_n,
+                hg_nm1=struct_sol.hg[i_ts - 1, ...],
+                hg_dot_n=hg_dot,
                 static=False,
                 horseshoe=False,
                 cs_ang_n=cs_ang_n,
+                cs_ang_nm1=cs_ang_nm1,
                 cs_vel_n=cs_vel_n,
             )
 
@@ -2332,6 +2338,7 @@ class BaseBeamStructure:
                 f_aero_alpha,
                 thrust_alpha,
                 cs_ang_n,
+                cs_ang_nm1,
                 cs_vel_n,
             )
 

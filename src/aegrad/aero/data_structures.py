@@ -12,14 +12,10 @@ from aegrad.aero.aic import compute_v_ind
 from aegrad.aero.gradients.data_structures import AeroStates
 from aegrad.aero.utils import (
     KernelFunction,
-    compute_c,
-    compute_nc,
-    calculate_steady_forcing,
     project_forcing_to_beam,
 )
 
 from aegrad.utils.print_utils import warn
-from aegrad.algebra.array_utils import split_to_vertex
 from aegrad.aero.flowfields import FlowField
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.plotting.aerogrid import plot_grid_to_vtk
@@ -30,10 +26,10 @@ from aegrad.utils.utils import make_pytree, index_to_arr
 @dataclass
 class GridDiscretization:
     r"""
-    Data class to hold grid discretisation parameters
-    :param m: Number of panels in the chordwise direction
-    :param n: Number of panels in the spanwise direction
-    :param m_star: Number of wake panels in the chordwise direction
+    Data class to hold discretisation parameters for each aerodynamic grid.
+    :param m: Number of panels in the chordwise direction.
+    :param n: Number of panels in the spanwise direction.
+    :param m_star: Number of wake panels in the chordwise direction.
     """
 
     m: int
@@ -44,7 +40,7 @@ class GridDiscretization:
 @make_pytree
 class DynamicAeroCase:
     r"""
-    Class to hold time series of multiple aerodynamic surfaces.
+    Contains a solution for a dynamic time series of multiple aerodynamic surfaces.
     """
 
     def __init__(
@@ -53,7 +49,7 @@ class DynamicAeroCase:
         zeta_b_dot: ArrayList,
         zeta_w: Optional[ArrayList],
         c: Optional[ArrayList],
-        nc: Optional[ArrayList],
+        n: Optional[ArrayList],
         gamma_b: ArrayList,
         gamma_b_dot: Optional[ArrayList],
         gamma_w: ArrayList,
@@ -68,7 +64,7 @@ class DynamicAeroCase:
         surf_b_names: Sequence[str],
         surf_w_names: Sequence[str],
         t: Array,
-        i_ts: int | Array,
+        i_ts: Array,
         dof_mapping: ArrayList,
         static_horseshoe: bool,
         free_wake: bool,
@@ -76,23 +72,37 @@ class DynamicAeroCase:
         batch_size: int,
     ) -> None:
         r"""
-        Time series of multiple aerodynamic surfaces
-        :param zeta_b: Bound grid coordinates, [n_surf][n_ts, zeta_m, zeta_n, 3]
-        :param zeta_b_dot: Bound grid velocities, [n_surf][n_ts, zeta_m, zeta_n, 3]
-        :param zeta_w: Wake grid coordinates, [n_surf][n_ts, zeta_m_star, zeta_n, 3]
-        :param gamma_b: Bound circulation strengths, [n_surf][n_ts, m, varphi]
-        :param gamma_w: Wake circulation strengths, [n_surf][n_ts, m_star, varphi]
-        :param f_steady: Steady force contributions, [n_surf][n_ts, zeta_m, zeta_n, 3]
-        :param f_unsteady: Unsteady force contributions, [n_surf][n_ts, zeta_m, zeta_n, 3]
-        :param surf_b_names: Names of bound surfaces, [n_surf]
-        :param surf_w_names: Names of wake surfaces, [n_surf]
-        :param t: Time array for the time series
+        :param zeta_b: Bound grid coordinates, [n_surf][n_tstep, zeta_m, zeta_n, 3].
+        :param zeta_b_dot: Bound grid velocities, [n_surf][n_tstep, zeta_m, zeta_n, 3].
+        :param zeta_w: Wake grid coordinates, [n_surf][n_tstep, zeta_m_star, zeta_n, 3].
+        :param c: Bound collocation points, [n_surf][n_tstep, m, n, 3].
+        :param n: Bound grid normals, [n_surf][n_tstep, m, n, 3].
+        :param gamma_b: Bound circulation strengths, [n_surf][n_tstep, m, n].
+        :param gamma_b_dot:  Bound circulation time derivatives, [n_surf][n_tstep, m, n].
+        :param gamma_w: Wake circulation strengths, [n_surf][n_tstep, m_star, n].
+        :param f_steady: Steady force contributions, [n_surf][n_tstep, zeta_m, zeta_n, 3].
+        :param f_unsteady: Unsteady force contributions, [n_surf][n_tstep, zeta_m, zeta_n, 3].
+        :param cs_ang: Control surface angle time histories, {name: [n_tstep]}.
+        :param cs_vel: Control surface velocity time history, {name: [n_tstep]}.
+        :param kernels: Kernel functions for both bound and wake source grids.
+        :param mirror_point: Point on mirror plane, [3] or None.
+        :param mirror_normal: Normal on mirror plane, [3] or None.
+        :param flowfield: FlowField object to obtain background velocity and density.
+        :param surf_b_names: Names of bound surfaces, [n_surf].
+        :param surf_w_names: Names of wake surfaces, [n_surf].
+        :param t: Time array for the time series, [n_tstep].
+        :param i_ts: Time series indices, [n_tstep].
+        :param dof_mapping: Array for mapping the aerodynamic grid onto the beam degrees of freedom, [n_surf][zeta_n].
+        :param static_horseshoe: If true, a horseshoe formulation was used to obtain the initial static solution.
+        :param free_wake: Flag for if a free-wake formulation was used for solution.
+        :param gamma_dot_relaxation: Circulation time derivative filtering parameter.
+        :param batch_size: Batch size used for AIC vectorisation.
         """
         self.zeta_b: ArrayList = zeta_b
         self.zeta_b_dot: ArrayList = zeta_b_dot
         self.zeta_w: Optional[ArrayList] = zeta_w
         self.c: Optional[ArrayList] = c
-        self.nc: Optional[ArrayList] = nc
+        self.nc: Optional[ArrayList] = n
         self.gamma_b: ArrayList = gamma_b
         self.gamma_b_dot: Optional[ArrayList] = gamma_b_dot
         self.gamma_w: ArrayList = gamma_w
@@ -101,7 +111,7 @@ class DynamicAeroCase:
         self.cs_ang: dict[str, Array] = cs_ang
         self.cs_vel: dict[str, Array] = cs_vel
         self.t: Array = t
-        self.i_ts: Array | int = i_ts
+        self.i_ts: Array = i_ts
 
         self.kernels: Sequence[KernelFunction] = kernels
         self.mirror_point: Optional[Array] = mirror_point
@@ -119,6 +129,9 @@ class DynamicAeroCase:
         self.free_wake: bool = free_wake
         self.gamma_dot_relaxation: float = gamma_dot_relaxation
         self.batch_size: int = batch_size
+
+    # we use properties here to allow for subclasses where there are only a single time step, and so the output data
+    # is preferred to have different dimensionality.
 
     @property
     def zeta_b(self) -> ArrayList:
@@ -159,7 +172,7 @@ class DynamicAeroCase:
     @property
     def nc(self) -> ArrayList:
         if self._nc is None:
-            raise ValueError("nc is not set")
+            raise ValueError("n is not set")
         return self._nc
 
     @nc.setter
@@ -243,8 +256,11 @@ class DynamicAeroCase:
         self._i_ts = i_ts_arr
 
     def get_states(self, i_ts: int | Array) -> AeroStates:
-        # here we obtain the structural forcing externally, as it is saved in the beam data structures
-        # note that the forcing is in the local frame
+        r"""
+        Obtain the aerodynamic state at a given timestep, used in the adjoint solution.
+        :param i_ts: Time step index.
+        :return: Aero states.
+        """
         return AeroStates(
             gamma_b=self.gamma_b.index_all(i_ts, ...),
             gamma_w=self.gamma_w.index_all(i_ts, ...),
@@ -254,25 +270,31 @@ class DynamicAeroCase:
 
     def gamma_full(self, i_ts: int) -> ArrayList:
         r"""
-        Obtain the full bound and wake gamma at a given timestep.
-        :param i_ts: Time step index
-        :return: Circulation strength, [2 * n_surf][m, varphi]
+        Obtain the full bound and wake circulation strengths at a given time step.
+        :param i_ts: Time step index.
+        :return: Circulation strength, [2 * n_surf][m | m_star, n].
         """
         return ArrayList(
             [*self.gamma_b.index_all(i_ts, ...), *self.gamma_w.index_all(i_ts, ...)]
         )
 
     def zeta_full(self, i_ts: int) -> ArrayList:
+        r"""
+        Obtain the full bound and wake grids at a given time step.
+        :param i_ts: Time step index.
+        :return: Grids, [2 * n_surf][zeta_m | zeta_m_star, zeta_n, 3].
+        """
         return ArrayList(
             [*self.zeta_b.index_all(i_ts, ...), *self.zeta_w.index_all(i_ts, ...)]
         )
 
     def set_arraylist_at_ts(self, attr: str, values: ArrayList, i_ts: int) -> None:
         """
-        Sets self.attr with a given ArrayList of values at a given timestep.
-        :param attr: Name of attribute in class
-        :param values: Values to set
-        :param i_ts: Time step index
+        Sets a given attribute with an ArrayList of values at a given timestep. This prevents needing a separate method
+        for setting each attribute.
+        :param attr: Name of attribute in class to set.
+        :param values: ArrayList of values to set.
+        :param i_ts: Time step index.
         """
         arr = getattr(self, attr)
         for i_surf, val in enumerate(values):
@@ -280,10 +302,10 @@ class DynamicAeroCase:
 
     def get_surf_snapshot(self, i_ts: int, i_surf: int) -> AeroSurfaceSnapshot:
         r"""
-        Get initial_snapshot at a given timestep and surface.
-        :param i_ts: Timestep index
-        :param i_surf: Surface index
-        :return: StaticAero for the specified timestep
+        Get aerodynamic solution for a given timestep and surface.
+        :param i_ts: Timestep index.
+        :param i_surf: Surface index.
+        :return: Data for aerodynamic solution at a given timestep and surface.
         """
 
         return AeroSurfaceSnapshot(
@@ -310,6 +332,11 @@ class DynamicAeroCase:
         i_ts: int,
         snapshot: DynamicAeroCase,
     ) -> None:
+        r"""
+        Sets the data at a given time step from a snapshot.
+        :param i_ts: Time step index.
+        :param snapshot: Snapshot of data to set at the given time step.
+        """
         if snapshot.n_tstep != 1:
             raise ValueError(
                 "Snapshot must have n_tstep = 1 to set into DynamicAeroCase"
@@ -364,17 +391,17 @@ class DynamicAeroCase:
     def plot(
         self,
         directory: os.PathLike,
-        index: Optional[int | Sequence[int] | Array | slice] = None,
         plot_bound: bool = True,
         plot_wake: bool = True,
+        index: Optional[int | Sequence[int] | Array | slice] = None,
     ) -> Sequence[Path]:
         r"""
-        Plot all aerodynamic surfaces in the time series initial_snapshot to VTU files.
-        :param directory: Directory to save VTU files.
-        :param index: Index of timesteps to plot
+        Plot all aerodynamic surfaces in the time series to VTU files, with a corresponding PVD file for each surface.
+        :param directory: Directory to save files.
+        :param index: Index of timesteps to plot. If none, the full solution is saved.
         :param plot_bound: If True, plot the bound surfaces.
         :param plot_wake: If True, plot the wake surfaces.
-        :return: Sequence of paths to the saved VTU files.
+        :return: Sequence of paths to the saved PVD files.
         """
 
         index_ = index_to_arr(index=index, n_entries=self.n_tstep)
@@ -413,95 +440,6 @@ class DynamicAeroCase:
                 )
         return pvd_paths
 
-    def get_c(self, i_ts: int) -> ArrayList:
-        r"""
-        Get collocation points for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: List of collocation points, [n_surf][m, varphi, 3]
-        """
-        if self._c is None:
-            raise ValueError("No collocation points available")
-        return self._c.index_all(i_ts, ...)
-
-    def compute_c(self, i_ts: int) -> None:
-        r"""
-        Compute collocation points for all surfaces at specified time step and store in-place.
-        :param i_ts: Timestep index
-        """
-        if self._c is None:
-            raise ValueError("No collocation points available")
-        c_list = compute_c(self._zeta_b.index_all(i_ts, ...))
-        self.set_arraylist_at_ts("_c", c_list, i_ts)
-
-    def get_n(self, i_ts: int) -> ArrayList:
-        r"""
-        Get varphi vectors for all surfaces at specified time step
-        :param i_ts: Timestep index
-        :return: List of varphi vectors, [n_surf][m, varphi, 3]
-        """
-        if self._nc is None:
-            raise ValueError("No normal vectors available")
-        return self._nc.index_all(i_ts, ...)
-
-    def compute_nc(self, i_ts: int) -> None:
-        r"""
-        Compute varphi vectors for all surfaces at specified time step and store in-place.
-        :param i_ts: Timestep index
-        """
-        if self._nc is None:
-            raise ValueError("No normal vectors available")
-        nc_list = compute_nc(self._zeta_b.index_all(i_ts, ...))
-        self.set_arraylist_at_ts("_nc", nc_list, i_ts)
-
-    def set_gamma_w_static(self, i_ts: int) -> None:
-        r"""
-        Set wake circulation strengths in static solution to all match trailing edge strengths.
-        :param i_ts: Timestep index
-        """
-        # Set wake panels equal to trailing edge gamma for each surface
-        for i_surf in range(self.n_surf):
-            val = self._gamma_b[i_surf][i_ts, [-1], :]
-            self._gamma_w[i_surf] = self._gamma_w[i_surf].at[i_ts, ...].set(val)
-
-    def calculate_steady_forcing(self, i_ts: int) -> None:
-        r"""
-        Calculate steady aerodynamic forcing for all surfaces at specified time step
-        :param i_ts: Timestep index
-        """
-
-        f_steady = calculate_steady_forcing(
-            zeta_bs=self.zeta_b.index_all(i_ts, ...),
-            zeta_dot_bs=self.zeta_b_dot.index_all(i_ts, ...),
-            gamma_bs=self.gamma_b.index_all(i_ts, ...),
-            gamma_ws=self.gamma_w.index_all(i_ts, ...),
-            rho=self.flowfield.rho,
-            v_func=lambda x: self.get_v_tot(x=x, i_ts=i_ts),
-            v_inputs=None,
-        )
-
-        for i_surf in range(self.n_surf):
-            self._f_steady[i_surf] = (
-                self._f_steady[i_surf].at[i_ts, ...].set(f_steady[i_surf])
-            )
-
-    def calculate_unsteady_forcing(
-        self,
-        i_ts: int,
-    ) -> None:
-        r"""
-        Calculate unsteady aerodynamic forcing for all surfaces at specified time step.
-        :param i_ts: Timestep index
-        """
-        if self._nc is None:
-            raise ValueError("No normal vectors available")
-        if self._f_unsteady is None:
-            raise ValueError("No unsteady forcing available")
-        for i_surf in range(self.n_surf):
-            val = self._calculate_surf_unsteady_forcing(
-                i_ts, i_surf, self._nc[i_surf][i_ts, ...], rho=self.flowfield.rho
-            )
-            self._f_unsteady[i_surf] = self._f_unsteady[i_surf].at[i_ts, ...].set(val)
-
     def project_forcing_to_beam(
         self,
         i_ts: int,
@@ -511,11 +449,11 @@ class DynamicAeroCase:
     ) -> Array:
         r"""
         Project aerodynamic forcing at specified time step onto the beam grid. Returned forces are in the global frame.
-        :param i_ts: Timestep index.
+        :param i_ts: Time step index.
         :param rmat: Rotation matrix for each node relative to reference, [n_nodes, 3, 3].
         :param x0_aero: Reference coordinates for aerodynamic grid, [n_surf][zeta_m, zeta_n, 3].
         :param include_unsteady: If true, include unsteady forcing in projection, otherwise only project steady forcing.
-        :return: Steady and unsteady forcing projected onto the beam grid, [n_nodes, 6]
+        :return: Steady and unsteady forcing projected onto the beam grid in local frame, [n_nodes, 6].
         """
 
         f_total = self._f_steady.index_all(i_ts, ...)
@@ -526,29 +464,12 @@ class DynamicAeroCase:
             f_total=f_total, rmat=rmat, x0_aero=x0_aero, dof_mapping=self.dof_mapping
         )
 
-    def _calculate_surf_unsteady_forcing(
-        self, i_ts: int, i_surf: int, nc: Array, rho: Array
-    ) -> Array:
-        r"""
-        Calculate unsteady aerodynamic forcing for a single surfaces at specified time step.
-        :param i_ts: Timestep index
-        :param i_surf: Surface index
-        :param nc: Bound varphi vectors, [m, varphi, 3]
-        :return: Unsteady aerodynamic forcing for surface at grid vertex, [zeta_m, zeta_n, 3]
-        """
-        if self._gamma_b_dot is None:
-            raise ValueError("No gamma_b_dot available")
-
-        return split_to_vertex(
-            rho * self._gamma_b_dot[i_surf][i_ts, ..., None] * nc, (0, 1)
-        )
-
     def get_v_background[T: Array | ArrayList](self, i_ts: int, x_target: T) -> T:
         r"""
         Get background velocity at specified points and time step.
-        :param i_ts: Timestep index
-        :param x_target: Points to evaluate background velocity at, [][..., 3]
-        :return: Background velocity at points, [][..., 3]
+        :param i_ts: Time step index.
+        :param x_target: Points to evaluate background velocity at, [..., 3] or [][..., 3].
+        :return: Background velocity at points, [..., 3] or [][..., 3].
         """
         if isinstance(x_target, Array):
             return self.flowfield.vmap_call(x=x_target, t=self._t[i_ts])
@@ -558,6 +479,12 @@ class DynamicAeroCase:
             raise NotImplementedError
 
     def get_v_ind[T: Array | ArrayList](self, i_ts: int, x_target: T) -> T:
+        r"""
+        Get induced velocity at specified points and time step.
+        :param i_ts: Time step index.
+        :param x_target: Points to evaluate induced velocity at, [..., 3] or [][..., 3].
+        :return: Induced velocity at points, [..., 3] or [][..., 3].
+        """
         return compute_v_ind(
             cs=x_target,
             zetas=self.zeta_full(i_ts),
@@ -568,22 +495,22 @@ class DynamicAeroCase:
             batch_size=self.batch_size,
         )
 
-    def get_v_tot[T: Array | ArrayList](self, i_ts: int, x: T) -> T:
+    def get_v_tot[T: Array | ArrayList](self, i_ts: int, x_target: T) -> T:
         r"""
         Obtain the total velocity at specified points and time step.
-        :param i_ts: Timestep index
-        :param x: ArrayList of points to evaluate total velocity at, [][..., 3]
-        :return: Velocity at points, [][..., 3]
+        :param i_ts: Time step index.
+        :param x_target: Points to evaluate induced velocity at, [..., 3] or [][..., 3].
+        :return: Induced velocity at points, [..., 3] or [][..., 3].
         """
-        return self.get_v_ind(i_ts=i_ts, x_target=x) + self.get_v_background(
-            i_ts=i_ts, x_target=x
+        return self.get_v_ind(i_ts=i_ts, x_target=x_target) + self.get_v_background(
+            i_ts=i_ts, x_target=x_target
         )
 
     def __getitem__(self, i_ts: int) -> AeroSnapshot:
         r"""
         Obtain a snapshot of the aerodynamic state at a given time step index.
-        :param i_ts: Timestep index
-        :return: AeroSnapshot object.
+        :param i_ts: Time step index.
+        :return: Solution for specified time step index.
         """
         return AeroSnapshot(
             zeta_b=self._zeta_b.index_all(i_ts, ...),
@@ -592,7 +519,7 @@ class DynamicAeroCase:
             if self._zeta_w is not None
             else None,
             c=self._c.index_all(i_ts, ...) if self._c is not None else None,
-            nc=self._nc.index_all(i_ts, ...) if self._nc is not None else None,
+            n=self._nc.index_all(i_ts, ...) if self._nc is not None else None,
             gamma_b=self._gamma_b.index_all(i_ts, ...),
             gamma_b_dot=self._gamma_b_dot.index_all(i_ts, ...)
             if self._gamma_b_dot is not None
@@ -627,7 +554,7 @@ class DynamicAeroCase:
         Use a snapshot from a single timestep to create a solution object with many timesteps.
         :param initial_snapshot: Initial snapshot of the aerodynamic state.
         :param n_tstep: Number of timesteps.
-        :return: New DynamicAeroCase object with n_tstep timesteps, with the initial case set to i_ts=0.
+        :return: New instance with n_tstep timesteps, with the initial case set at i_ts=0.
         """
         return initial_snapshot.to_dynamic(i_ts=0, n_tstep=n_tstep)
 
@@ -637,7 +564,6 @@ class DynamicAeroCase:
             "surf_b_names",
             "surf_w_names",
             "n_surf",
-            "_i_ts",
             "n_tstep",
             "static_horseshoe",
             "gamma_dot_relaxation",
@@ -661,6 +587,7 @@ class DynamicAeroCase:
             "_f_unsteady",
             "_cs_ang",
             "_cs_vel",
+            "_i_ts",
             "_t",
             "mirror_point",
             "mirror_normal",
@@ -673,12 +600,6 @@ class DynamicAeroCase:
 class AeroSnapshot(DynamicAeroCase):
     r"""
     Class to hold initial_snapshot of multiple aerodynamic surfaces at a single time step.
-
-    This class subclasses DynamicAeroCase but internally stores all arrays with a
-    leading time dimension of length 1 so that it can reuse all of
-    DynamicAeroCase's methods. When users request a single-surface initial_snapshot via
-    indexing (initial_snapshot[i_surf]) they receive an AeroSurfaceSnapshot with the
-    time dimension removed for convenience.
     """
 
     def __init__(
@@ -687,7 +608,7 @@ class AeroSnapshot(DynamicAeroCase):
         zeta_b_dot: ArrayList,
         zeta_w: Optional[ArrayList],
         c: Optional[ArrayList],
-        nc: Optional[ArrayList],
+        n: Optional[ArrayList],
         gamma_b: ArrayList,
         gamma_b_dot: Optional[ArrayList],
         gamma_w: ArrayList,
@@ -710,9 +631,31 @@ class AeroSnapshot(DynamicAeroCase):
         batch_size: int,
     ) -> None:
         r"""
-        Create an AeroSnapshot by wrapping per-initial_snapshot arrays with a leading
-        time dimension of size 1 so that DynamicAeroCase functions operate
-        normally.
+        :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3].
+        :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3].
+        :param zeta_w: Wake grid coordinates, [n_surf][zeta_m_star, zeta_n, 3].
+        :param c: Bound collocation points, [n_surf][m, n, 3].
+        :param n: Bound grid normals, [n_surf][m, n, 3].
+        :param gamma_b: Bound circulation strengths, [n_surf][m, n].
+        :param gamma_b_dot:  Bound circulation time derivatives, [n_surf][m, n].
+        :param gamma_w: Wake circulation strengths, [n_surf][m_star, n].
+        :param f_steady: Steady force contributions, [n_surf][zeta_m, zeta_n, 3].
+        :param f_unsteady: Unsteady force contributions, [n_surf][zeta_m, zeta_n, 3].
+        :param cs_ang: Control surface angle time histories, {name: []}.
+        :param cs_vel: Control surface velocity time history, {name: []}.
+        :param kernels: Kernel functions for both bound and wake source grids.
+        :param mirror_point: Point on mirror plane, [3] or None.
+        :param mirror_normal: Normal on mirror plane, [3] or None.
+        :param flowfield: FlowField object to obtain background velocity and density.
+        :param surf_b_names: Names of bound surfaces, [n_surf].
+        :param surf_w_names: Names of wake surfaces, [n_surf].
+        :param t: Time at the current snapshot, [].
+        :param i_ts: Time series index in full solution, [].
+        :param dof_mapping: Array for mapping the aerodynamic grid onto the beam degrees of freedom, [n_surf][zeta_n].
+        :param static_horseshoe: If true, a horseshoe formulation was used to obtain the initial static solution.
+        :param free_wake: Flag for if a free-wake formulation was used for solution.
+        :param gamma_dot_relaxation: Circulation time derivative filtering parameter.
+        :param batch_size: Batch size used for AIC vectorisation.
         """
 
         # call DynamicAeroCase initializer with expanded arrays
@@ -721,7 +664,7 @@ class AeroSnapshot(DynamicAeroCase):
             zeta_b_dot=zeta_b_dot,
             zeta_w=zeta_w,
             c=c,
-            nc=nc,
+            n=n,
             gamma_b=gamma_b,
             gamma_b_dot=gamma_b_dot,
             gamma_w=gamma_w,
@@ -736,7 +679,7 @@ class AeroSnapshot(DynamicAeroCase):
             surf_b_names=surf_b_names,
             surf_w_names=surf_w_names,
             t=jnp.atleast_1d(t),
-            i_ts=i_ts,
+            i_ts=jnp.atleast_1d(i_ts),
             dof_mapping=dof_mapping,
             static_horseshoe=static_horseshoe,
             free_wake=free_wake,
@@ -744,6 +687,8 @@ class AeroSnapshot(DynamicAeroCase):
             batch_size=batch_size,
         )
 
+    # redefine properties to allow internal representation (all variables with leading underscore) to have leading
+    # dimension of 1.
     @property
     def zeta_b(self) -> ArrayList:
         return self._zeta_b.index_all(0, ...)
@@ -785,7 +730,7 @@ class AeroSnapshot(DynamicAeroCase):
     @property
     def nc(self) -> ArrayList:
         if self._nc is None:
-            raise ValueError("nc is None")
+            raise ValueError("n is None")
         return self._nc.index_all(0, ...)
 
     @nc.setter
@@ -888,7 +833,7 @@ class AeroSnapshot(DynamicAeroCase):
             zeta_b_dot=_expand_to_dyn(self.zeta_b_dot),
             zeta_w=_expand_to_dyn(self.zeta_w),
             c=_expand_to_dyn(self.c),
-            nc=_expand_to_dyn(self.nc),
+            n=_expand_to_dyn(self.nc),
             gamma_b=_expand_to_dyn(self.gamma_b),
             gamma_b_dot=_expand_to_dyn(self.gamma_b_dot),
             gamma_w=_expand_to_dyn(self.gamma_w),
@@ -903,7 +848,7 @@ class AeroSnapshot(DynamicAeroCase):
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             t=jnp.zeros(n_tstep).at[i_ts].set(self.t),
-            i_ts=i_ts,
+            i_ts=jnp.atleast_1d(i_ts),
             dof_mapping=self.dof_mapping,
             static_horseshoe=self.static_horseshoe,
             free_wake=self.free_wake,
@@ -913,8 +858,9 @@ class AeroSnapshot(DynamicAeroCase):
 
     def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:
         """
-        Return a single-surface initial_snapshot with the time dimension removed for
-        convenience. Uses the stored i_ts index to pick the single time slice.
+        Return data for a single surface at the given time snapshot.
+        :param i_surf: Aerodynamic surface index.
+        :return: AeroSurfaceSnapshot object.
         """
         return AeroSurfaceSnapshot(
             zeta_b=self.zeta_b[i_surf],
@@ -938,13 +884,19 @@ class AeroSnapshot(DynamicAeroCase):
     def plot(
         self,
         directory: os.PathLike | str,
-        _=None,
         plot_bound: bool = True,
         plot_wake: bool = True,
+        _=None,
     ) -> Sequence[Path]:
+        r"""
+        Plot aerodynamic surfaces in the time snapshot to VTU files.
+        :param directory: Directory to save files.
+        :param plot_bound: If True, plot the bound surfaces.
+        :param plot_wake: If True, plot the wake surfaces.
+        :param _: Unused inherited argument.
+        :return: Sequence of paths to the saved PVD files.
         """
-        Plot all aerodynamic surfaces in this single-time initial_snapshot to VTU files.
-        """
+
         directory_path = Path(directory)
         directory_path.mkdir(parents=True, exist_ok=True)
         paths = []
@@ -958,7 +910,7 @@ class AeroSnapshot(DynamicAeroCase):
 
 class AeroSurfaceSnapshot:
     r"""
-    Data class to hold initial_snapshot of a single aerodynamic surface at a single time step.
+    Data class to hold solution for a single aerodynamic surface at a single time step.
     """
 
     def __init__(
@@ -981,19 +933,23 @@ class AeroSurfaceSnapshot:
         dof_mapping: Array,
     ) -> None:
         r"""
-        Snapshot of an aerodynamic surface at a single time step
-        :param zeta_b: Bound grid coordinates, [zeta_m, zeta_n, 3]
-        :param zeta_b_dot: Bound grid velocities, [zeta_m, zeta_n, 3]
-        :param zeta_w: Wake grid coordinates, [zeta_m_star, zeta_n, 3]
-        :param gamma_b: Bound circulation strengths, [m, varphi]
-        :param gamma_w: Wake circulation strengths, [m_star, varphi]
-        :param f_steady: Steady force contributions, [zeta_m, zeta_n, 3]
-        :param f_unsteady: Unsteady force contributions, [zeta_m, zeta_n, 3]
-        :param surf_b_name: Names of bound surface
-        :param surf_w_name: Names of wake surface
-        :param i_ts: Time step index
-        :param t: Time at this initial_snapshot
+        Data structure to hold the solution for a single aerodynamic surface at a single time step.
+        :param zeta_b: Bound grid coordinates, [zeta_m, zeta_n, 3].
+        :param zeta_b_dot: Bound grid velocities, [zeta_m, zeta_n, 3].
+        :param zeta_w: Wake grid coordinates, [zeta_m_star, zeta_n, 3].
+        :param gamma_b: Bound circulation strengths, [m, n].
+        :param gamma_b_dot:  Bound circulation time derivatives, [m, n].
+        :param gamma_w: Wake circulation strengths, [m_star, n].
+        :param f_steady: Steady force contributions, [zeta_m, zeta_n, 3].
+        :param f_unsteady: Unsteady force contributions, [zeta_m, zeta_n, 3].
+        :param cs_ang: Control surface angle time histories, {name: []}.
+        :param cs_vel: Control surface velocity time history, {name: []}.
+        :param t: Time at the current step, [].
+        :param i_ts: Time series index in full solution, [].
+        :param dof_mapping: Array for mapping the aerodynamic grid onto the beam degrees of freedom, [zeta_n].
+        :param static_horseshoe: If true, a horseshoe formulation was used to obtain the initial static solution.
         """
+
         self.zeta_b: Array = zeta_b
         self.zeta_b_dot: Array = zeta_b_dot
         self.zeta_w: Array = zeta_w

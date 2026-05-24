@@ -230,7 +230,7 @@ class StructuralDesignVariables(DesignVariables):
             cell_vector_data=cell_vector_data,
         )
 
-    def get_vars(self) -> dict[str, Optional[Array] | Optional[dict[str, Array]]]:
+    def to_dict(self) -> dict[str, Optional[Array] | Optional[dict[str, Array]]]:
         return {
             "x0": self.x0,
             "orientation_euler": self.orientation_euler,

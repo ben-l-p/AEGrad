@@ -80,7 +80,7 @@ class BaseCoupledAeroelastic:
             dt=dt,
             flowfield=flowfield,
             delta_w=delta_w,
-            x0_aero=x0_aero,
+            x0_b=x0_aero,
             hg0=self.structure.hg0,
             reference_cs_angles=cs_angles_reference,
         )

@@ -36,9 +36,7 @@ class TestRotInvariance:
             [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
         ):
             flowfield = Constant(u_inf, 1.225, True)
-            uvlm.set_design_variables(
-                dt=1.0, flowfield=flowfield, x0_aero=x_grid, hg0=hg
-            )
+            uvlm.set_design_variables(dt=1.0, flowfield=flowfield, x0_b=x_grid, hg0=hg)
             cases.append(uvlm.solve_static())
 
         if not jnp.allclose(cases[0].gamma_b[0], cases[1].gamma_b[0]):

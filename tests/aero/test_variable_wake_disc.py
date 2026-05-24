@@ -72,7 +72,7 @@ class TestVarWakeDisc:
             uvlm.set_design_variables(
                 dt=dt,
                 flowfield=flowfield,
-                x0_aero=x_grid,
+                x0_b=x_grid,
                 hg0=hg,
                 delta_w=delta_w_,
             )
