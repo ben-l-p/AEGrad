@@ -25,9 +25,11 @@ from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
 from aegrad.algebra.array_utils import construct_named_block_jacobian
 from aegrad.utils.utils import make_pytree
 
-type StructuralObjectiveFunction = Callable[
-    [StructureFullStates, StructuralDesignVariables, Optional[int | Array]], Array
-]
+type StructuralObjectiveFunction = (
+    Callable[[StructureFullStates, StructuralDesignVariables, int], Array]
+    | Callable[[StructureFullStates, StructuralDesignVariables, Array], Array]
+    | Callable[[StructureFullStates, StructuralDesignVariables, None], Array]
+)
 
 
 @make_pytree
@@ -865,7 +867,7 @@ class BeamStructure(BaseBeamStructure):
         objective: StructuralObjectiveFunction,
         p_q0_p_x: Optional[StructuralDesignVariables] = None,
         save_adjoint: bool = False,
-        approx_grads: bool = False,
+        approx_grads: bool = True,
         grads_to_compute: StructuralGradsToCompute = StructuralGradsToCompute(
             x0=False,
             k_cs=True,

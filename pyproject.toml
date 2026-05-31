@@ -8,9 +8,11 @@ dependencies = [
     "jax>=0.9",
     "matplotlib>=3.10",
     "numpy>=2.4",
+    "optax==0.2.8",
     "pytest>=9.0",
     "pytest-cov>=7.1",
     "ruff>=0.15",
+    "scipy-stubs~=1.17.1",
     "vtk>=9.6",
 ]
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from jax import Array
 from jax import numpy as jnp
@@ -11,6 +12,8 @@ def flying_spaghetti(
     n_nodes: int,
     t: Array,
     use_gravity: bool = False,
+    m_lumped: Optional[Array] = None,
+    m_bar: Optional[Array] = None,
     spectral_radius: float = 0.9,
 ) -> tuple[BeamStructure, Array, Array]:
     r"""
@@ -18,20 +21,41 @@ def flying_spaghetti(
     :param n_nodes: Number of nodes.
     :param t: Time array for dead force, [n_tstep]
     :param use_gravity: Whether to include gravity in the model.
+    :param m_lumped: Optional lumped translational mass per node, [n_nodes].
+    :param m_bar: Optional per-element cross-section mass per unit length, [n_elem]. If None, a uniform value of 1.0
+        is used.
     :param spectral_radius: Spectral radius for time integrator.
     :return: Beam model, and dead force array corresponding to the passed time array for respective 2D and 3D cases.
     """
 
     gay, gaz, ea = 10e4, 10e4, 10e4
     eiy, eiz, gj = 500.0, 500.0, 500.0
-    m_bar = 1.0
     j = jnp.array((20.0, 10.0, 10.0))
     y_vector = jnp.array([0.0, 1.0, 0.0])
 
-    k_cs = jnp.diag(jnp.array((ea, gay, gaz, gj, eiy, eiz)))
-    m_cs = jnp.diag(jnp.array((m_bar, m_bar, m_bar, *j)))
-
     n_elem = n_nodes - 1
+
+    k_cs = jnp.diag(jnp.array((ea, gay, gaz, gj, eiy, eiz)))
+
+    if m_bar is None:
+        m_cs = jnp.diag(jnp.array((1.0, 1.0, 1.0, *j)))
+        m_cs_index = None
+    else:
+        m_cs = jnp.zeros((n_elem, 6, 6))
+        for i in range(3):
+            m_cs = m_cs.at[:, i, i].set(m_bar)
+        for i, ji in enumerate(j.tolist()):
+            m_cs = m_cs.at[:, 3 + i, 3 + i].set(ji)
+        m_cs_index = jnp.arange(n_elem)
+
+    if m_lumped is not None:
+        m_lump_arr = jnp.zeros((n_nodes, 6, 6))
+        for i in range(3):
+            m_lump_arr = m_lump_arr.at[:, i, i].set(m_lumped)
+        m_lumped_index = jnp.arange(n_nodes)
+    else:
+        m_lump_arr = None
+        m_lumped_index = None
 
     conn = jnp.zeros((n_elem, 2), dtype=int)
     conn = conn.at[:, 0].set(jnp.arange(n_elem))
@@ -45,9 +69,17 @@ def flying_spaghetti(
     gravity = jnp.array((0.0, 0.0, -9.81)) if use_gravity else None
 
     struct = BeamStructure(
-        n_nodes, conn, y_vector, gravity, spectral_radius=spectral_radius
+        num_nodes=n_nodes,
+        connectivity=conn,
+        y_vector=y_vector,
+        gravity=gravity,
+        spectral_radius=spectral_radius,
+        m_lumped_index=m_lumped_index,
+        m_cs_index=m_cs_index,
     )
-    struct.set_design_variables(coords, k_cs, m_cs)
+    struct.set_design_variables(
+        coords=coords, k_cs=k_cs, m_cs=m_cs, m_lumped=m_lump_arr
+    )
 
     n_tstep = t.shape[0]
 

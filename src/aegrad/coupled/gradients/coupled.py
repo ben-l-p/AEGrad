@@ -548,7 +548,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         minimal_states_init = case.get_minimal_states(i_ts=0)
 
         j_properties = jax.eval_shape(
-            lambda: jnp.atleast_1d(objective(full_states_init, dv, None))
+            lambda: jnp.atleast_1d(objective(full_states_init, dv, 0))
         )
         j_shape = j_properties.shape
         n_j = j_properties.size
@@ -855,6 +855,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Optional[Sequence[str]],
         thrust_nodes: Optional[Sequence[str]],
         trim_orientation: Optional[str | Sequence[str]] = ...,
+        trim_f_abs_tolerance: float = 1e-3,
         f_ext_follower: Optional[Array] = ...,
         f_ext_dead: Optional[Array] = ...,
         t: float | Array = ...,
@@ -871,6 +872,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Optional[Sequence[str]],
         thrust_nodes: Optional[Sequence[str]],
         trim_orientation: Optional[str | Sequence[str]] = ...,
+        trim_f_abs_tolerance: float = 1e-3,
         f_ext_follower: Optional[Array] = ...,
         f_ext_dead: Optional[Array] = ...,
         t: float | Array = ...,

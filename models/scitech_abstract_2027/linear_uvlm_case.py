@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
-from jax import Array
+from jax import Array, vmap
 
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import GridDiscretization
@@ -12,6 +12,7 @@ from aegrad.aero.uvlm import UVLM
 from aegrad.aero.linear import LinearWakeType, InputUnflattened
 from aegrad.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import Constant
+from aegrad.structure.data_structures import DynamicStructure
 
 if __name__ == "__main__":
     r"""
@@ -149,3 +150,38 @@ if __name__ == "__main__":
         comments="",
         header="t linear nonlinear",
     )
+
+    # make fake beam
+    f_aero = vmap(
+        lambda i_ts, rmat: nonlinear_case.project_forcing_to_beam(
+            i_ts=i_ts, rmat=rmat, x0_aero=ArrayList([x_grid]), include_unsteady=True
+        ),
+        in_axes=(0, 0),
+        out_axes=0,
+    )(jnp.arange(n_tstep), hg_t[:, :, :3, :3])
+    beam = DynamicStructure(
+        hg=hg_t,
+        conn=tuple((i, i + 1) for i in range(n)),
+        o0=jnp.broadcast_to(jnp.eye(3), (n, 3, 3)),
+        d=jnp.zeros((n_tstep, n, 6)),
+        eps=jnp.zeros((n_tstep, n, 6)),
+        varphi=jnp.zeros((n_tstep, n + 1, 6)),
+        v=jnp.zeros((n_tstep, n + 1, 6)),
+        v_dot=jnp.zeros((n_tstep, n + 1, 6)),
+        a=jnp.zeros((n_tstep, n + 1, 6)),
+        f_ext_follower=None,
+        f_ext_dead=None,
+        f_ext_aero=f_aero,
+        f_grav=None,
+        f_int=jnp.zeros((n_tstep, n + 1, 6)),
+        f_elem=jnp.zeros((n_tstep, n, 6)),
+        f_iner=jnp.zeros((n_tstep, n + 1, 6)),
+        f_res=jnp.zeros((n_tstep, n + 1, 6)),
+        thrust={},
+        thrust_nodes=(),
+        thrust_direction=(),
+        t=t,
+        n_tstep=n_tstep,
+        prescribed_dofs=(),
+    )
+    beam.plot(Path(f"./test_outputs/beam_{ampl:.02f}"))

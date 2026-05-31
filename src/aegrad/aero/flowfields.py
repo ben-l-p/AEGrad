@@ -210,7 +210,7 @@ class OneMinusCosine(FlowField):
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
         return (
-            *FlowField._static_names(),
+            *FlowField._dynamic_names(),
             "gust_amplitude",
             "gust_length",
             "gust_travel_direction",
