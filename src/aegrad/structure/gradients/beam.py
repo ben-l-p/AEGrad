@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import functools
+import time
 from copy import deepcopy
+
 from typing import Optional, Callable, overload, cast
 
 import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from aegrad.utils.print_utils import jax_print, VerbosityLevel
+from aegrad.utils.print_utils import (
+    jax_print,
+    VerbosityLevel,
+    print_table_line,
+    print_table_title,
+)
 from aegrad.structure.beam import BaseBeamStructure
 from aegrad.structure import OptionalJacobians
 from aegrad.structure.data_structures import (
@@ -1021,3 +1029,183 @@ class BeamStructure(BaseBeamStructure):
             return d_j_d_x, adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[:-1]
         else:
             return d_j_d_x, None
+
+    def dynamic_adjoint_profile(
+        self,
+        sol: DynamicStructure,
+        approx_grads: bool,
+        grads_to_compute: Optional[StructuralGradsToCompute] = None,
+        f_aero_nm1_n: Optional[tuple[Array, Array]] = None,
+        i_ts: int = 1,
+        n_loop: int = 10,
+        *,
+        print_header: bool = True,
+    ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
+        r"""
+        Function to time evaluation of the Jacobians used for the adjoint solution.
+        :param sol: Dynamic structural solution to extract states from.
+        :param approx_grads: If True, neglect small gradient terms.
+        :param grads_to_compute: StructuralGradsToCompute object which describes which design gradients to compute. If
+        None, all gradients will be computed.
+        :param f_aero_nm1_n: Tuple of [f_aero_nm1, f_aero_n] which are passed from the aero problem. If None, no
+        aerodynamic force gradients will be computed.
+        :param i_ts: Time step index where to evaluate residual Jacobians.
+        :param n_loop: Number of times to loop the Jacobian evaluation time for averaging the runtime.
+        :param print_header: Flag to prevent heading printing for when this function is called for the coupled routine.
+        :return: Dictionary of {residual_name: {gradient_argument: val}} for compile time and run time respectively.
+        """
+
+        # print header
+        if print_header:
+            print_table_title(inner_width=95, title="Structure Adjoint Profile")
+
+        q_nm1: StructureMinimalStates = sol.get_minimal_states(i_ts - 1)
+        q_n: StructureMinimalStates = sol.get_minimal_states(i_ts)
+        solve_dofs: tuple[int, ...] = tuple(
+            int(i)
+            for i in get_solve_dofs(
+                n_dof=self.n_dof, prescribed_dofs=sol.prescribed_dofs
+            )
+        )
+        dv = self.get_design_variables(
+            struct_case=sol, thrust_t=sol.thrust, grads_to_compute=grads_to_compute
+        )
+
+        compile_time = dict()
+        run_time = dict()
+
+        varphi_args = (
+            q_nm1.varphi.ravel(),
+            q_n.varphi.ravel(),
+            q_nm1.v.ravel(),
+            q_nm1.a.ravel(),
+            q_n.a.ravel(),
+            solve_dofs,
+        )
+
+        varphi_arg_nums = (0, 1, 2, 3, 4, (0, 1, 2, 3, 4))
+        varphi_arg_names = ("varphi_nm1", "varphi_n", "v_nm1", "a_nm1", "a_n", "all")
+
+        v_args = (
+            q_nm1.v.ravel(),
+            q_n.v.ravel(),
+            q_nm1.a.ravel(),
+            q_n.a.ravel(),
+            solve_dofs,
+        )
+
+        v_arg_nums = (0, 1, 2, 3, (0, 1, 2, 3))
+        v_arg_names = ("v_nm1", "v_n", "a_nm1", "a_n", "all")
+
+        v_dot_args = (
+            i_ts,
+            q_nm1.varphi.ravel(),
+            q_n.varphi.ravel(),
+            q_nm1.v.ravel(),
+            q_n.v.ravel(),
+            q_nm1.v_dot.ravel(),
+            q_n.v_dot.ravel(),
+            dv,
+            f_aero_nm1_n[0].ravel() if f_aero_nm1_n is not None else None,
+            f_aero_nm1_n[1].ravel() if f_aero_nm1_n is not None else None,
+            sol.thrust,
+            solve_dofs,
+            approx_grads,
+        )
+
+        v_dot_arg_nums = (
+            (1, 2, 3, 4, 5, 6, 7, 8, 9, (1, 2, 3, 4, 5, 6, 7, 8, 9))
+            if f_aero_nm1_n is not None
+            else (1, 2, 3, 4, 5, 6, 7, (1, 2, 3, 4, 5, 6, 7))
+        )
+        v_dot_arg_names = (
+            (
+                "varphi_nm1",
+                "varphi_n",
+                "v_nm1",
+                "v_n",
+                "v_dot_nm1",
+                "v_dot_n",
+                "dv",
+                "f_aero_nm1",
+                "f_aero_n",
+                "all",
+            )
+            if f_aero_nm1_n is not None
+            else (
+                "varphi_nm1",
+                "varphi_n",
+                "v_nm1",
+                "v_n",
+                "v_dot_nm1",
+                "v_dot_n",
+                "dv",
+                "all",
+            )
+        )
+
+        a_args = (
+            q_nm1.v_dot.ravel(),
+            q_n.v_dot.ravel(),
+            q_nm1.a.ravel(),
+            q_n.a.ravel(),
+            solve_dofs,
+        )
+
+        a_arg_nums = (0, 1, 2, 3, (0, 1, 2, 3))
+        a_arg_names = ("v_dot_nm1", "v_dot_n", "a_nm1", "a_n", "all")
+
+        all_args = (varphi_args, v_args, v_dot_args, a_args)
+        all_arg_nums = (varphi_arg_nums, v_arg_nums, v_dot_arg_nums, a_arg_nums)
+        all_arg_names = (varphi_arg_names, v_arg_names, v_dot_arg_names, a_arg_names)
+        all_func_names = ("varphi", "v", "v_dot", "a")
+        all_funcs = (
+            self.varphi_res_func,
+            self.v_res_func,
+            self.v_dot_res_func,
+            self.a_res_func,
+        )
+
+        for args, arg_nums, arg_names, func, func_name in zip(
+            all_args, all_arg_nums, all_arg_names, all_funcs, all_func_names
+        ):
+            compile_time[func_name] = dict()
+            run_time[func_name] = dict()
+
+            # mark static arguments
+            if func is self.v_dot_res_func:
+                static_positions = (0, len(args) - 2, len(args) - 1)
+            else:
+                static_positions = (len(args) - 1,)
+
+            for arg_num, arg_name in zip(arg_nums, arg_names):
+
+                @functools.partial(jax.jit, static_argnums=static_positions)
+                def inner_func(*args_):
+                    return jax.jacrev(fun=func, argnums=arg_num, allow_int=True)(*args_)
+
+                # initial evaluation
+                t_start = time.time()
+                jax.block_until_ready(inner_func(*args))
+                t_compile_and_run = time.time() - t_start
+
+                # time compiled function
+                t_start = time.time()
+                for _ in range(n_loop):
+                    jax.block_until_ready(inner_func(*args))
+                t_run = (time.time() - t_start) / n_loop
+                t_compile = t_compile_and_run - t_run
+
+                # write to console
+                jax_print(
+                    f"| Residual: {func_name:<14} Argument: {arg_name:<16} Compile time: {t_compile:<8.4f} Run time: {t_run:<8.4f} |",
+                    verbose_level=VerbosityLevel.NORMAL,
+                )
+
+                # save data
+                compile_time[func_name][arg_name] = t_compile
+                run_time[func_name][arg_name] = t_run
+
+            print_table_line(inner_width=95)
+
+        return compile_time, run_time

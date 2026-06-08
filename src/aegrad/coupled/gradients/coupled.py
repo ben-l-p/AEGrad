@@ -1,4 +1,6 @@
 from __future__ import annotations
+import functools
+import time
 from copy import deepcopy
 from typing import Optional, Callable, TYPE_CHECKING, overload, Sequence, Final
 
@@ -846,6 +848,277 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         d_j_d_x.mapping = dv.mapping
 
         return d_j_d_x, j_eval, adj
+
+    def dynamic_adjoint_profile(
+        self,
+        case: DynamicAeroelastic,
+        approx_grads: bool,
+        grads_to_compute: Optional[AeroelasticGradsToCompute] = None,
+        i_ts: int = 1,
+        n_loop: int = 10,
+    ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
+        r"""
+        Function to time evaluation of the Jacobians used for the coupled aeroelastic adjoint solution. The structural
+        residual Jacobians are profiled by delegating to :meth:`BeamStructure.dynamic_adjoint_profile`, and the
+        aerodynamic residual Jacobians (bound circulation, wake propagation, bound circulation rate, aerodynamic
+        forcing) are profiled here.
+        :param case: Dynamic aeroelastic case from which to extract states.
+        :param approx_grads: If True, neglect small gradient terms.
+        :param grads_to_compute: AeroelasticGradsToCompute object describing which design gradients to compute. If
+        None, all gradients will be computed.
+        :param i_ts: Time step index where to evaluate residual Jacobians.
+        :param n_loop: Number of times to loop the Jacobian evaluation time for averaging the runtime.
+        :return: Dictionary of {residual_name: {gradient_argument: val}} for compile time and run time respectively.
+        """
+
+        print_table_title(inner_width=95, title="Aeroelastic Adjoint Profile")
+
+        solve_dofs: tuple[int, ...] = tuple(
+            int(i)
+            for i in get_solve_dofs(
+                n_dof=self.structure.n_dof,
+                prescribed_dofs=case.structure.prescribed_dofs,
+            )
+        )
+
+        q_nm1: AeroelasticMinimalStates = case.get_minimal_states(i_ts=i_ts - 1)
+        q_n: AeroelasticMinimalStates = case.get_minimal_states(i_ts=i_ts)
+        t_n: Array = case.structure.t[i_ts]
+
+        if q_n.structure.f_ext_aero is None or q_nm1.structure.f_ext_aero is None:
+            raise ValueError("Missing aerodynamic forcing states")
+
+        # profile structural residuals via beam's method
+        compile_time, run_time = self.structure.dynamic_adjoint_profile(
+            sol=case.structure,
+            approx_grads=approx_grads,
+            grads_to_compute=grads_to_compute.structure
+            if grads_to_compute is not None
+            else None,
+            f_aero_nm1_n=(q_nm1.structure.f_ext_aero, q_n.structure.f_ext_aero),
+            i_ts=i_ts,
+            n_loop=n_loop,
+            print_header=False,
+        )
+
+        # design variables for the aero residuals
+        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
+        dv_full = self.get_design_variables(case=case, grads_to_compute=None)
+
+        # ravel states for aero residual functions
+        varphi_nm1 = q_nm1.structure.varphi.ravel()
+        varphi_n = q_n.structure.varphi.ravel()
+        v_n = q_n.structure.v.ravel()
+        gamma_b_nm1 = q_nm1.aero.gamma_b.ravel()
+        gamma_b_n = q_n.aero.gamma_b.ravel()
+        gamma_w_nm1 = q_nm1.aero.gamma_w.ravel()
+        gamma_w_n = q_n.aero.gamma_w.ravel()
+        gamma_b_dot_nm1 = q_nm1.aero.gamma_b_dot.ravel()
+        gamma_b_dot_n = q_n.aero.gamma_b_dot.ravel()
+        zeta_w_nm1 = q_nm1.aero.zeta_w.ravel()
+        zeta_w_n = q_n.aero.zeta_w.ravel()
+        f_aero_n = q_n.structure.f_ext_aero.ravel()
+
+        # close over struct_obj (BeamStructure) so it is not flattened by jax.jit — its TimeIntegrator field is not a
+        # pytree and would otherwise be treated as an invalid leaf
+        struct_obj = self.structure
+
+        def gamma_b_func(*args_):
+            return self.aero.gamma_b_res_func(*args_, struct_obj=struct_obj)
+
+        def zeta_w_func(*args_):
+            return self.aero.wake_prop_res_func(*args_, struct_obj=struct_obj)[0]
+
+        def gamma_w_func(*args_):
+            return self.aero.wake_prop_res_func(*args_, struct_obj=struct_obj)[1]
+
+        def f_aero_func(*args_):
+            # splice struct_obj between dv_full and f_aero_beam_n
+            return self.aero.f_aero_res_func(
+                *args_[:-1],
+                struct_obj=struct_obj,
+                f_aero_beam_n_vec=args_[-1],
+                block_grid_gradients=approx_grads,
+                solve_dofs=solve_dofs,
+            )
+
+        # gamma_b residual args (i_ts, t_n, varphi_n, v_n, gamma_b_n, gamma_w_n, zeta_w_n, dv, dv_full)
+        gamma_b_args = (
+            i_ts,
+            t_n,
+            varphi_n,
+            v_n,
+            gamma_b_n,
+            gamma_w_n,
+            zeta_w_n,
+            dv,
+            dv_full,
+        )
+        gamma_b_arg_nums = (2, 3, 4, 5, 6, 7, (2, 3, 4, 5, 6, 7))
+        gamma_b_arg_names = (
+            "varphi_n",
+            "v_n",
+            "gamma_b_n",
+            "gamma_w_n",
+            "zeta_w_n",
+            "dv",
+            "all",
+        )
+
+        # wake_prop residual args (i_ts, t_n, varphi_nm1, varphi_n, gamma_b_nm1, gamma_w_nm1, gamma_w_n,
+        # zeta_w_nm1, zeta_w_n, dv, dv_full)
+        wake_prop_args = (
+            i_ts,
+            t_n,
+            varphi_nm1,
+            varphi_n,
+            gamma_b_nm1,
+            gamma_w_nm1,
+            gamma_w_n,
+            zeta_w_nm1,
+            zeta_w_n,
+            dv,
+            dv_full,
+        )
+        wake_prop_arg_nums = (2, 3, 4, 5, 6, 7, 8, 9, (2, 3, 4, 5, 6, 7, 8, 9))
+        wake_prop_arg_names = (
+            "varphi_nm1",
+            "varphi_n",
+            "gamma_b_nm1",
+            "gamma_w_nm1",
+            "gamma_w_n",
+            "zeta_w_nm1",
+            "zeta_w_n",
+            "dv",
+            "all",
+        )
+
+        # gamma_b_dot residual args (gamma_b_nm1, gamma_b_n, gamma_b_dot_nm1, gamma_b_dot_n, dv)
+        gamma_b_dot_args = (
+            gamma_b_nm1,
+            gamma_b_n,
+            gamma_b_dot_nm1,
+            gamma_b_dot_n,
+            dv,
+        )
+        gamma_b_dot_arg_nums = (0, 1, 2, 3, 4, (0, 1, 2, 3, 4))
+        gamma_b_dot_arg_names = (
+            "gamma_b_nm1",
+            "gamma_b_n",
+            "gamma_b_dot_nm1",
+            "gamma_b_dot_n",
+            "dv",
+            "all",
+        )
+
+        # f_aero residual args (i_ts, t_n, varphi_n, v_n, gamma_b_n, gamma_w_n, gamma_b_dot_n, zeta_w_n,
+        # dv, dv_full, f_aero_beam_n); struct_obj closed over; block_grid_gradients/solve_dofs bound as kwargs
+        f_aero_args = (
+            i_ts,
+            t_n,
+            varphi_n,
+            v_n,
+            gamma_b_n,
+            gamma_w_n,
+            gamma_b_dot_n,
+            zeta_w_n,
+            dv,
+            dv_full,
+            f_aero_n,
+        )
+        f_aero_arg_nums = (2, 3, 4, 5, 6, 7, 8, 10, (2, 3, 4, 5, 6, 7, 8, 10))
+        f_aero_arg_names = (
+            "varphi_n",
+            "v_n",
+            "gamma_b_n",
+            "gamma_w_n",
+            "gamma_b_dot_n",
+            "zeta_w_n",
+            "dv",
+            "f_aero_beam_n",
+            "all",
+        )
+
+        all_args = (
+            gamma_b_args,
+            wake_prop_args,
+            wake_prop_args,
+            gamma_b_dot_args,
+            f_aero_args,
+        )
+        all_arg_nums = (
+            gamma_b_arg_nums,
+            wake_prop_arg_nums,
+            wake_prop_arg_nums,
+            gamma_b_dot_arg_nums,
+            f_aero_arg_nums,
+        )
+        all_arg_names = (
+            gamma_b_arg_names,
+            wake_prop_arg_names,
+            wake_prop_arg_names,
+            gamma_b_dot_arg_names,
+            f_aero_arg_names,
+        )
+        all_func_names = (
+            "gamma_b",
+            "zeta_w",
+            "gamma_w",
+            "gamma_b_dot",
+            "f_aero",
+        )
+        all_funcs = (
+            gamma_b_func,
+            zeta_w_func,
+            gamma_w_func,
+            self.aero.gamma_b_dot_res_func,
+            f_aero_func,
+        )
+
+        for args, arg_nums, arg_names, func, func_name in zip(
+            all_args, all_arg_nums, all_arg_names, all_funcs, all_func_names
+        ):
+            compile_time[func_name] = dict()
+            run_time[func_name] = dict()
+
+            # Mark Python-valued positional args (i_ts at position 0) as static so they are not traced by jax.jit.
+            # r_gamma_b_dot takes no Python-valued positional args.
+            if func_name == "gamma_b_dot":
+                static_positions: tuple[int, ...] = ()
+            else:
+                static_positions = (0,)
+
+            for arg_num, arg_name in zip(arg_nums, arg_names):
+
+                @functools.partial(jax.jit, static_argnums=static_positions)
+                def inner_func(*args_):
+                    return jax.jacrev(fun=func, argnums=arg_num, allow_int=True)(*args_)
+
+                # initial evaluation
+                t_start = time.time()
+                jax.block_until_ready(inner_func(*args))
+                t_compile_and_run = time.time() - t_start
+
+                # time compiled function
+                t_start = time.time()
+                for _ in range(n_loop):
+                    jax.block_until_ready(inner_func(*args))
+                t_run = (time.time() - t_start) / n_loop
+                t_compile = t_compile_and_run - t_run
+
+                # write to console
+                jax_print(
+                    f"| Residual: {func_name:<14} Argument: {arg_name:<16} Compile time: {t_compile:<8.4f} Run time: {t_run:<8.4f} |",
+                    verbose_level=VerbosityLevel.NORMAL,
+                )
+
+                # save data
+                compile_time[func_name][arg_name] = t_compile
+                run_time[func_name][arg_name] = t_run
+
+            print_table_line(inner_width=95)
+
+        return compile_time, run_time
 
     @overload
     def trim(

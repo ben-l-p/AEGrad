@@ -146,6 +146,7 @@ if __name__ == "__main__":
     )
 
     # optimise the mass distribution
+    # noinspection SpellCheckingInspection
     result = minimize(  # type: ignore
         fun=make_sol,
         x0=m_bar0,

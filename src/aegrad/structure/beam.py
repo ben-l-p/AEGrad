@@ -103,7 +103,7 @@ class BaseBeamStructure:
         check_arr_shape(connectivity, (None, 2), "connectivity")
         check_arr_dtype(connectivity, int, "connectivity")
         _check_connectivity(connectivity, num_nodes)
-        self.connectivity: tuple[tuple[int]] = nested_list_to_tuple(
+        self.connectivity: tuple[tuple[int, int], ...] = nested_list_to_tuple(
             connectivity.tolist()
         )  # [n_elem, 2]
         self.n_elem_per_node: tuple[int] = tuple(

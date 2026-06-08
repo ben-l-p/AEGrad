@@ -6,14 +6,17 @@ authors = [{ name = "Ben Preston" }]
 requires-python = ">=3.12"
 dependencies = [
     "jax>=0.9",
-    "matplotlib>=3.10",
     "numpy>=2.4",
-    "optax==0.2.8",
+    "vtk>=9.6",
+    "scipy>=1.17",
+    # only needed for example scripts
+    "scipy-stubs>=1.17",
+    "matplotlib>=3.10",
+    "optax>=0.2.8",
+    # testing and linting
     "pytest>=9.0",
     "pytest-cov>=7.1",
     "ruff>=0.15",
-    "scipy-stubs~=1.17.1",
-    "vtk>=9.6",
 ]
 
 [tool.pytest.ini_options]

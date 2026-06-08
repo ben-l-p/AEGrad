@@ -338,7 +338,7 @@ if __name__ == "__main__":
 
         return total_obj, grad
 
-    # impose hard constraints that limit the control deflections an velocities
+    # impose hard constraints that limit the control deflections and velocities
     cum_sum_dt = dt * jnp.tril(jnp.ones((n_ctrl_tstep, n_ctrl_tstep)))
     ang_block = (cum_sum_dt @ jnp.eye(n_ctrl_tstep, n_ctrl_tstep - 1, k=-1)) * (
         max_cs_velocity / max_cs_deflection
@@ -348,6 +348,7 @@ if __name__ == "__main__":
     angle_constraint = LinearConstraint(A=angle_constraint_jac, lb=-1.0, ub=1.0)
 
     # run optimisation
+    # noinspection SpellCheckingInspection
     result = minimize(  # type: ignore
         fun=get_cs_grad,
         x0=jnp.concatenate([v for v in cs_vel_init.values()]),

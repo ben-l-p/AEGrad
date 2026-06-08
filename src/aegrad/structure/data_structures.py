@@ -36,7 +36,7 @@ class StaticStructure:
     def __init__(
         self,
         hg: Array,
-        conn: tuple[tuple[int]],
+        conn: tuple[tuple[int, int], ...],
         o0: Array,
         d: Array,
         eps: Array,
@@ -55,7 +55,7 @@ class StaticStructure:
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
-        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int, int], ...] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
@@ -236,7 +236,7 @@ class DynamicStructureSnapshot:
     def __init__(
         self,
         hg: Array,
-        conn: tuple[tuple[int]],
+        conn: tuple[tuple[int, int], ...],
         o0: Array,
         d: Array,
         eps: Array,
@@ -261,7 +261,7 @@ class DynamicStructureSnapshot:
         local: bool = True,
     ):
         self.hg: Array = hg  # [n_nodes, 4, 4]
-        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int, int], ...] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_elem, 6]
         self.eps: Array = eps  # [n_elem, 6]
@@ -500,7 +500,7 @@ class DynamicStructure:
     def __init__(
         self,
         hg: Array,
-        conn: tuple[tuple[int]],
+        conn: tuple[tuple[int, int], ...],
         o0: Array,
         d: Array,
         eps: Array,
@@ -524,7 +524,7 @@ class DynamicStructure:
         prescribed_dofs: tuple[int, ...],
     ):
         self.hg: Array = hg  # [n_tstep, n_nodes, 4, 4]
-        self.conn: tuple[tuple[int]] = conn  # [n_elem, 2]
+        self.conn: tuple[tuple[int, int], ...] = conn  # [n_elem, 2]
         self.o0: Array = o0  # [n_elem, 3, 3]
         self.d: Array = d  # [n_tstep, n_elem, 6]
         self.eps: Array = eps  # [n_tstep, n_elem, 6]

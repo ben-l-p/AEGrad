@@ -153,8 +153,8 @@ if __name__ == "__main__":
 
     # make fake beam
     f_aero = vmap(
-        lambda i_ts, rmat: nonlinear_case.project_forcing_to_beam(
-            i_ts=i_ts, rmat=rmat, x0_aero=ArrayList([x_grid]), include_unsteady=True
+        lambda i_ts, rmat_: nonlinear_case.project_forcing_to_beam(
+            i_ts=i_ts, rmat=rmat_, x0_aero=ArrayList([x_grid]), include_unsteady=True
         ),
         in_axes=(0, 0),
         out_axes=0,

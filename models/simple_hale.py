@@ -5,11 +5,10 @@ from aegrad.aero.flowfields import FlowField, Constant
 from aegrad.aero.utils import make_rectangular_grid
 from aegrad.aero.uvlm import UVLM
 from aegrad.coupled import CoupledAeroelastic
+from aegrad.structure import BeamStructure
 
 from jax import numpy as jnp
 from jax import Array
-
-from structure import BeamStructure
 
 
 def simple_hale(
