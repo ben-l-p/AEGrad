@@ -937,7 +937,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             return self.aero.f_aero_res_func(
                 *args_[:-1],
                 struct_obj=struct_obj,
-                f_aero_beam_n_vec=args_[-1],
+                f_aero_beam_n=args_[-1],
                 block_grid_gradients=approx_grads,
                 solve_dofs=solve_dofs,
             )

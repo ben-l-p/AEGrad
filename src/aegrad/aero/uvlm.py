@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
+from aegrad.algebra.base import jacrev_kwargs
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
@@ -1345,11 +1346,11 @@ class UVLM:
         self,
         i_ts: int,
         t_n: Array,
-        varphi_n_vec: Array,
-        v_n_vec: Array,
-        gamma_b_n_vec: Array,
-        gamma_w_n_vec: Array,
-        zeta_w_n_vec: Array,
+        varphi_n: Array,
+        v_n: Array,
+        gamma_b_n: Array,
+        gamma_w_n: Array,
+        zeta_w_n: Array,
         dv: AeroelasticDesignVariables,
         dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
@@ -1363,11 +1364,11 @@ class UVLM:
 
         :param i_ts: Time step index.
         :param t_n: Time at step n.
-        :param varphi_n_vec: varphi vector at timestep n.
-        :param v_n_vec: Beam velocity vector at timestep n.
-        :param gamma_b_n_vec: Bound circulation vector at timestep n.
-        :param gamma_w_n_vec: Wake circulation vector at timestep n.
-        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param varphi_n: varphi vector at timestep n.
+        :param v_n: Beam velocity vector at timestep n.
+        :param gamma_b_n: Bound circulation vector at timestep n.
+        :param gamma_w_n: Wake circulation vector at timestep n.
+        :param zeta_w_n: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
         :param dv_full: Aeroelastic design variables without omissions for the variables where gradients aren't
         requested.
@@ -1375,20 +1376,20 @@ class UVLM:
         :return: Bound circulation residual.
         """
 
-        varphi_n = varphi_n_vec.reshape(-1, 6)
-        v_n = v_n_vec.reshape(-1, 6)
+        varphi_n = varphi_n.reshape(-1, 6)
+        v_n = v_n.reshape(-1, 6)
         gamma_b_n = ArrayList.from_vector(
-            vect=gamma_b_n_vec,
+            vect=gamma_b_n,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
         gamma_w_n = ArrayList.from_vector(
-            vect=gamma_w_n_vec,
+            vect=gamma_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star, gd.n) for gd in self.grid_disc]
             ),
         )
         zeta_w_n = ArrayList.from_vector(
-            vect=zeta_w_n_vec,
+            vect=zeta_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
             ),
@@ -1465,13 +1466,13 @@ class UVLM:
         self,
         i_ts: int,
         t_n: Array,
-        varphi_nm1_vec: Array,
-        varphi_n_vec: Array,
-        gamma_b_nm1_vec: Array,
-        gamma_w_nm1_vec: Array,
-        gamma_w_n_vec: Array,
-        zeta_w_nm1_vec: Array,
-        zeta_w_n_vec: Array,
+        varphi_nm1: Array,
+        varphi_n: Array,
+        gamma_b_nm1: Array,
+        gamma_w_nm1: Array,
+        gamma_w_n: Array,
+        zeta_w_nm1: Array,
+        zeta_w_n: Array,
         dv: AeroelasticDesignVariables,
         dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
@@ -1481,49 +1482,49 @@ class UVLM:
 
         :param i_ts: Time step index.
         :param t_n: Time at timestep n.
-        :param varphi_nm1_vec: Beam minimal coordinates vector at timestep n-1.
-        :param varphi_n_vec: Beam maximal coordinates vector at timestep n.
-        :param gamma_b_nm1_vec: Bound circulation vector at timestep n-1.
-        :param gamma_w_nm1_vec: Wake circulation vector at timestep n-1.
-        :param gamma_w_n_vec: Wake circulation vector at timestep n.
-        :param zeta_w_nm1_vec: Wake grid vector at timestep n-1.
-        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param varphi_nm1: Beam minimal coordinates vector at timestep n-1.
+        :param varphi_n: Beam maximal coordinates vector at timestep n.
+        :param gamma_b_nm1: Bound circulation vector at timestep n-1.
+        :param gamma_w_nm1: Wake circulation vector at timestep n-1.
+        :param gamma_w_n: Wake circulation vector at timestep n.
+        :param zeta_w_nm1: Wake grid vector at timestep n-1.
+        :param zeta_w_n: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
         :param dv_full: Aeroelastic design variables without omissions.
         :param struct_obj: Beam structure.
         :return: Wake grid and circulation residuals.
         """
 
-        varphi_nm1 = varphi_nm1_vec.reshape(-1, 6)
-        varphi_n = varphi_n_vec.reshape(-1, 6)
+        varphi_nm1 = varphi_nm1.reshape(-1, 6)
+        varphi_n = varphi_n.reshape(-1, 6)
 
         gamma_b_nm1 = ArrayList.from_vector(
-            vect=gamma_b_nm1_vec,
+            vect=gamma_b_nm1,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         gamma_w_nm1 = ArrayList.from_vector(
-            vect=gamma_w_nm1_vec,
+            vect=gamma_w_nm1,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star, gd.n) for gd in self.grid_disc]
             ),
         )
 
         gamma_w_n = ArrayList.from_vector(
-            vect=gamma_w_n_vec,
+            vect=gamma_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star, gd.n) for gd in self.grid_disc]
             ),
         )
         zeta_w_nm1 = ArrayList.from_vector(
-            vect=zeta_w_nm1_vec,
+            vect=zeta_w_nm1,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
             ),
         )
 
         zeta_w_n = ArrayList.from_vector(
-            vect=zeta_w_n_vec,
+            vect=zeta_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
             ),
@@ -1571,13 +1572,14 @@ class UVLM:
             gamma_w_nm1_update - gamma_w_n
         ).ravel()
 
+    # noinspection PyUnusedLocal
     def gamma_b_dot_res_func(
         self,
-        gamma_b_nm1_vec: Array,
-        gamma_b_n_vec: Array,
-        gamma_b_dot_nm1_vec: Array,
-        gamma_b_dot_n_vec: Array,
-        _: AeroelasticDesignVariables,
+        gamma_b_nm1: Array,
+        gamma_b_n: Array,
+        gamma_b_dot_nm1: Array,
+        gamma_b_dot_n: Array,
+        dv: AeroelasticDesignVariables,
     ) -> Array:
         r"""
         Bound circulation time derivative residual.
@@ -1585,32 +1587,32 @@ class UVLM:
         :math:`\frac{g}{h} \left[\mathbf{\Gamma}_{b, n} - \mathbf{\Gamma}_{b, n-1}\right] + (1-g)
         \dot{\mathbf{\Gamma}}_{b, n-1} - \dot{\mathbf{\Gamma}}_{b, n}`
 
-        :param gamma_b_nm1_vec: Bound circulation vector at timestep n-1.
-        :param gamma_b_n_vec: Bound circulation vector at timestep n.
-        :param gamma_b_dot_nm1_vec: Bound circulation time derivative vector at timestep n-1.
-        :param gamma_b_dot_n_vec: Bound circulation time derivative vector at timestep n.
-        :param _: Design variables. Whilst this function does not depend upon it, including it simplified obtaining
+        :param gamma_b_nm1: Bound circulation vector at timestep n-1.
+        :param gamma_b_n: Bound circulation vector at timestep n.
+        :param gamma_b_dot_nm1: Bound circulation time derivative vector at timestep n-1.
+        :param gamma_b_dot_n: Bound circulation time derivative vector at timestep n.
+        :param dv: Design variables. Whilst this function does not depend upon it, including it simplified obtaining
         the residual design gradient.
         :return: Bound circulation time derivative residual.
         """
 
         gamma_b_nm1 = ArrayList.from_vector(
-            vect=gamma_b_nm1_vec,
+            vect=gamma_b_nm1,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         gamma_b_n = ArrayList.from_vector(
-            vect=gamma_b_n_vec,
+            vect=gamma_b_n,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         gamma_b_dot_nm1 = ArrayList.from_vector(
-            vect=gamma_b_dot_nm1_vec,
+            vect=gamma_b_dot_nm1,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         gamma_b_dot_n = ArrayList.from_vector(
-            vect=gamma_b_dot_n_vec,
+            vect=gamma_b_dot_n,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
@@ -1624,16 +1626,16 @@ class UVLM:
         self,
         i_ts: int,
         t_n: Array,
-        varphi_n_vec: Array,
-        v_n_vec: Array,
-        gamma_b_n_vec: Array,
-        gamma_w_n_vec: Array,
-        gamma_b_dot_n_vec: Array,
-        zeta_w_n_vec: Array,
+        varphi_n: Array,
+        v_n: Array,
+        gamma_b_n: Array,
+        gamma_w_n: Array,
+        gamma_b_dot_n: Array,
+        zeta_w_n: Array,
         dv: AeroelasticDesignVariables,
         dv_full: AeroelasticDesignVariables,
         struct_obj: BeamStructure,
-        f_aero_beam_n_vec: Array,
+        f_aero_beam_n: Array,
         block_grid_gradients: bool,
         solve_dofs: tuple[int, ...],
     ) -> Array:
@@ -1646,49 +1648,49 @@ class UVLM:
 
         :param i_ts: Time step index.
         :param t_n: Time at timestep n.
-        :param varphi_n_vec: Beam minimal coordinates vector at timestep n.
-        :param v_n_vec: Beam velocity vector at timestep n.
-        :param gamma_b_n_vec: Bound circulation vector at timestep n.
-        :param gamma_w_n_vec: Wake circulation vector at timestep n.
-        :param gamma_b_dot_n_vec: Bound circulation vector time derivative at timestep n.
-        :param zeta_w_n_vec: Wake grid vector at timestep n.
+        :param varphi_n: Beam minimal coordinates vector at timestep n.
+        :param v_n: Beam velocity vector at timestep n.
+        :param gamma_b_n: Bound circulation vector at timestep n.
+        :param gamma_w_n: Wake circulation vector at timestep n.
+        :param gamma_b_dot_n: Bound circulation vector time derivative at timestep n.
+        :param zeta_w_n: Wake grid vector at timestep n.
         :param dv: Aeroelastic design variables.
         :param dv_full: Aeroelastic design variables without omissions.
         :param struct_obj: Beam structure.
-        :param f_aero_beam_n_vec: Local aerodynamic forcing projected onto beam.
+        :param f_aero_beam_n: Local aerodynamic forcing projected onto beam.
         :param block_grid_gradients: If true, blocks the gradient path for the dependency of the steady aerodynamic
         forcing on the bound grid.
         :param solve_dofs: Index of forces to keep for solution.
         """
 
-        varphi_n = varphi_n_vec.reshape(-1, 6)
-        v_n = v_n_vec.reshape(-1, 6)
+        varphi_n = varphi_n.reshape(-1, 6)
+        v_n = v_n.reshape(-1, 6)
 
         gamma_b_n = ArrayList.from_vector(
-            vect=gamma_b_n_vec,
+            vect=gamma_b_n,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         gamma_w_n = ArrayList.from_vector(
-            vect=gamma_w_n_vec,
+            vect=gamma_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star, gd.n) for gd in self.grid_disc]
             ),
         )
 
         gamma_b_dot_n = ArrayList.from_vector(
-            vect=gamma_b_dot_n_vec,
+            vect=gamma_b_dot_n,
             arr_list_shapes=ArrayListShape([(gd.m, gd.n) for gd in self.grid_disc]),
         )
 
         zeta_w_n = ArrayList.from_vector(
-            vect=zeta_w_n_vec,
+            vect=zeta_w_n,
             arr_list_shapes=ArrayListShape(
                 [(gd.m_star + 1, gd.n + 1, 3) for gd in self.grid_disc]
             ),
         )
 
-        f_aero_beam_n = f_aero_beam_n_vec.reshape(-1, 6)
+        f_aero_beam_n = f_aero_beam_n.reshape(-1, 6)
 
         inner_struct = struct_obj.case_from_dv(dv=dv.structure)
         hg_n = inner_struct.calculate_hg_from_varphi(varphi=varphi_n)
@@ -1817,16 +1819,16 @@ class UVLM:
 
         zeta_w_res, gamma_w_res = self.wake_prop_res_func(
             i_ts=i_ts,
-            varphi_n_vec=varphi_n.ravel(),
-            varphi_nm1_vec=varphi_nm1.ravel(),
+            varphi_n=varphi_n.ravel(),
+            varphi_nm1=varphi_nm1.ravel(),
             t_n=t_n,
             dv=dv,
             dv_full=dv_full,
-            gamma_b_nm1_vec=q_nm1.gamma_b.ravel(),
-            gamma_w_nm1_vec=q_nm1.gamma_w.ravel(),
-            gamma_w_n_vec=q_n.gamma_w.ravel(),
-            zeta_w_nm1_vec=q_nm1.zeta_w.ravel(),
-            zeta_w_n_vec=q_n.zeta_w.ravel(),
+            gamma_b_nm1=q_nm1.gamma_b.ravel(),
+            gamma_w_nm1=q_nm1.gamma_w.ravel(),
+            gamma_w_n=q_n.gamma_w.ravel(),
+            zeta_w_nm1=q_nm1.zeta_w.ravel(),
+            zeta_w_n=q_n.zeta_w.ravel(),
             struct_obj=struct_obj,
         )
 
@@ -1834,37 +1836,37 @@ class UVLM:
             (
                 self.gamma_b_res_func(
                     i_ts=i_ts,
-                    varphi_n_vec=varphi_n.ravel(),
-                    v_n_vec=v_n.ravel(),
+                    varphi_n=varphi_n.ravel(),
+                    v_n=v_n.ravel(),
                     t_n=t_n,
                     dv=dv,
                     dv_full=dv_full,
-                    gamma_b_n_vec=q_n.gamma_b.ravel(),
-                    gamma_w_n_vec=q_n.gamma_w.ravel(),
-                    zeta_w_n_vec=q_n.zeta_w.ravel(),
+                    gamma_b_n=q_n.gamma_b.ravel(),
+                    gamma_w_n=q_n.gamma_w.ravel(),
+                    zeta_w_n=q_n.zeta_w.ravel(),
                     struct_obj=struct_obj,
                 ),
                 gamma_w_res,
                 self.gamma_b_dot_res_func(
-                    gamma_b_nm1_vec=q_nm1.gamma_b.ravel(),
-                    gamma_b_n_vec=q_n.gamma_b.ravel(),
-                    gamma_b_dot_nm1_vec=q_nm1.gamma_b_dot.ravel(),
-                    gamma_b_dot_n_vec=q_n.gamma_b_dot.ravel(),
+                    gamma_b_nm1=q_nm1.gamma_b.ravel(),
+                    gamma_b_n=q_n.gamma_b.ravel(),
+                    gamma_b_dot_nm1=q_nm1.gamma_b_dot.ravel(),
+                    gamma_b_dot_n=q_n.gamma_b_dot.ravel(),
                     _=dv,
                 ),
                 zeta_w_res,
                 self.f_aero_res_func(
                     i_ts=i_ts,
-                    varphi_n_vec=varphi_n.ravel(),
-                    v_n_vec=v_n.ravel(),
+                    varphi_n=varphi_n.ravel(),
+                    v_n=v_n.ravel(),
                     t_n=t_n,
                     dv=dv,
                     dv_full=dv_full,
-                    gamma_b_n_vec=q_n.gamma_b.ravel(),
-                    gamma_w_n_vec=q_n.gamma_w.ravel(),
-                    gamma_b_dot_n_vec=q_n.gamma_b_dot.ravel(),
-                    zeta_w_n_vec=q_n.zeta_w.ravel(),
-                    f_aero_beam_n_vec=f_aero_beam_n.ravel(),
+                    gamma_b_n=q_n.gamma_b.ravel(),
+                    gamma_w_n=q_n.gamma_w.ravel(),
+                    gamma_b_dot_n=q_n.gamma_b_dot.ravel(),
+                    zeta_w_n=q_n.zeta_w.ravel(),
+                    f_aero_beam_n=f_aero_beam_n.ravel(),
                     struct_obj=struct_obj,
                     block_grid_gradients=approx_grads,
                     solve_dofs=tuple(range(struct_obj.n_dof)),
@@ -1921,129 +1923,118 @@ class UVLM:
         zeta_w_nm1 = q_nm1.zeta_w.ravel()
         zeta_w_n = q_n.zeta_w.ravel()
 
-        d_gamma_b = dict()
-        (
-            d_gamma_b["varphi_n"],
-            d_gamma_b["v_n"],
-            d_gamma_b["gamma_b_n"],
-            d_gamma_b["gamma_w_n"],
-            d_gamma_b["zeta_w_n"],
-            d_gamma_b["dv"],
-        ) = jax.jacrev(
-            self.gamma_b_res_func, argnums=(2, 3, 4, 5, 6, 7), allow_int=True
+        d_gamma_b = jacrev_kwargs(
+            func=self.gamma_b_res_func,
+            argnames=("varphi_n", "v_n", "gamma_b_n", "gamma_w_n", "zeta_w_n", "dv"),
         )(
-            i_ts,
-            t_n,
-            varphi_n,
-            v_n,
-            gamma_b_n,
-            gamma_w_n,
-            zeta_w_n,
-            dv,
-            dv_full,
-            struct_obj,
+            i_ts=i_ts,
+            t_n=t_n,
+            varphi_n=varphi_n,
+            v_n=v_n,
+            gamma_b_n=gamma_b_n,
+            gamma_w_n=gamma_w_n,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
         )
 
-        d_gamma_w = dict()
-        (
-            d_gamma_w["varphi_nm1"],
-            d_gamma_w["varphi_n"],
-            d_gamma_w["gamma_b_nm1"],
-            d_gamma_w["gamma_w_nm1"],
-            d_gamma_w["gamma_w_n"],
-            d_gamma_w["zeta_w_nm1"],
-            d_gamma_w["zeta_w_n"],
-            d_gamma_w["dv"],
-        ) = jax.jacrev(
-            lambda *args: self.wake_prop_res_func(*args)[1],
-            argnums=(2, 3, 4, 5, 6, 7, 8, 9),
-            allow_int=True,
+        d_gamma_w = jacrev_kwargs(
+            func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
+            argnames=(
+                "varphi_nm1",
+                "varphi_n",
+                "gamma_b_nm1",
+                "gamma_w_nm1",
+                "gamma_w_n",
+                "zeta_w_nm1",
+                "zeta_w_n",
+                "dv",
+            ),
         )(
-            i_ts,
-            t_n,
-            varphi_nm1,
-            varphi_n,
-            gamma_b_nm1,
-            gamma_w_nm1,
-            gamma_w_n,
-            zeta_w_nm1,
-            zeta_w_n,
-            dv,
-            dv_full,
-            struct_obj,
+            i_ts=i_ts,
+            t_n=t_n,
+            varphi_nm1=varphi_nm1,
+            varphi_n=varphi_n,
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_w_nm1=gamma_w_nm1,
+            gamma_w_n=gamma_w_n,
+            zeta_w_nm1=zeta_w_nm1,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
         )
 
-        d_zeta_w = dict()
-        (
-            d_zeta_w["varphi_nm1"],
-            d_zeta_w["varphi_n"],
-            d_zeta_w["gamma_b_nm1"],
-            d_zeta_w["gamma_w_nm1"],
-            d_zeta_w["gamma_w_n"],
-            d_zeta_w["zeta_w_nm1"],
-            d_zeta_w["zeta_w_n"],
-            d_zeta_w["dv"],
-        ) = jax.jacrev(
-            lambda *args: self.wake_prop_res_func(*args)[0],
-            argnums=(2, 3, 4, 5, 6, 7, 8, 9),
-            allow_int=True,
+        d_zeta_w = jacrev_kwargs(
+            func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
+            argnames=(
+                "varphi_nm1",
+                "varphi_n",
+                "gamma_b_nm1",
+                "gamma_w_nm1",
+                "gamma_w_n",
+                "zeta_w_nm1",
+                "zeta_w_n",
+                "dv",
+            ),
         )(
-            i_ts,
-            t_n,
-            varphi_nm1,
-            varphi_n,
-            gamma_b_nm1,
-            gamma_w_nm1,
-            gamma_w_n,
-            zeta_w_nm1,
-            zeta_w_n,
-            dv,
-            dv_full,
-            struct_obj,
+            i_ts=i_ts,
+            t_n=t_n,
+            varphi_nm1=varphi_nm1,
+            varphi_n=varphi_n,
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_w_nm1=gamma_w_nm1,
+            gamma_w_n=gamma_w_n,
+            zeta_w_nm1=zeta_w_nm1,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
         )
 
-        d_gamma_b_dot = dict()
-        (
-            d_gamma_b_dot["gamma_b_nm1"],
-            d_gamma_b_dot["gamma_b_n"],
-            d_gamma_b_dot["gamma_b_dot_nm1"],
-            d_gamma_b_dot["gamma_b_dot_n"],
-            d_gamma_b_dot["dv"],
-        ) = jax.jacrev(
-            self.gamma_b_dot_res_func, argnums=(0, 1, 2, 3, 4), allow_int=True
+        d_gamma_b_dot = jacrev_kwargs(
+            func=self.gamma_b_dot_res_func,
+            argnames=(
+                "gamma_b_nm1",
+                "gamma_b_n",
+                "gamma_b_dot_nm1",
+                "gamma_b_dot_n",
+                "dv",
+            ),
         )(
-            gamma_b_nm1,
-            gamma_b_n,
-            gamma_b_dot_nm1,
-            gamma_b_dot_n,
-            dv,
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_b_n=gamma_b_n,
+            gamma_b_dot_nm1=gamma_b_dot_nm1,
+            gamma_b_dot_n=gamma_b_dot_n,
+            dv=dv,
         )
 
-        d_f_aero = dict()
-        (
-            d_f_aero["varphi_n"],
-            d_f_aero["v_n"],
-            d_f_aero["gamma_b_n"],
-            d_f_aero["gamma_w_n"],
-            d_f_aero["gamma_b_dot_n"],
-            d_f_aero["zeta_w_n"],
-            d_f_aero["dv"],
-            d_f_aero["f_aero_beam_n"],
-        ) = jax.jacrev(
-            self.f_aero_res_func, argnums=(2, 3, 4, 5, 6, 7, 8, 11), allow_int=True
+        d_f_aero = jacrev_kwargs(
+            func=self.f_aero_res_func,
+            argnames=(
+                "varphi_n",
+                "v_n",
+                "gamma_b_n",
+                "gamma_w_n",
+                "gamma_b_dot_n",
+                "zeta_w_n",
+                "dv",
+                "f_aero_beam_n",
+            ),
         )(
-            i_ts,
-            t_n,
-            varphi_n,
-            v_n,
-            gamma_b_n,
-            gamma_w_n,
-            gamma_b_dot_n,
-            zeta_w_n,
-            dv,
-            dv_full,
-            struct_obj,
-            f_aero_beam_n.ravel(),
+            i_ts=i_ts,
+            t_n=t_n,
+            varphi_n=varphi_n,
+            v_n=v_n,
+            gamma_b_n=gamma_b_n,
+            gamma_w_n=gamma_w_n,
+            gamma_b_dot_n=gamma_b_dot_n,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
+            f_aero_beam_n=f_aero_beam_n.ravel(),
             block_grid_gradients=approx_grads,
             solve_dofs=solve_dofs,
         )

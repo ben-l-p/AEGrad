@@ -10,6 +10,7 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
+from aegrad.algebra.base import jacrev_kwargs
 from aegrad.utils.print_utils import (
     jax_print,
     VerbosityLevel,
@@ -355,8 +356,8 @@ class BeamStructure(BaseBeamStructure):
         v_dot_nm1: Array,
         v_dot_n: Array,
         dv: StructuralDesignVariables,
-        f_ext_aero_nm1: Optional[Array],
-        f_ext_aero_n: Optional[Array],
+        f_aero_nm1: Optional[Array],
+        f_aero_n: Optional[Array],
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
@@ -368,10 +369,8 @@ class BeamStructure(BaseBeamStructure):
         v_n = v_n.reshape(-1, 6)
         v_dot_nm1 = v_dot_nm1.reshape(-1, 6)
         v_dot_n = v_dot_n.reshape(-1, 6)
-        f_ext_aero_nm1 = (
-            f_ext_aero_nm1.reshape(-1, 6) if f_ext_aero_nm1 is not None else None
-        )
-        f_ext_aero_n = f_ext_aero_n.reshape(-1, 6) if f_ext_aero_n is not None else None
+        f_aero_nm1 = f_aero_nm1.reshape(-1, 6) if f_aero_nm1 is not None else None
+        f_aero_n = f_aero_n.reshape(-1, 6) if f_aero_n is not None else None
 
         solve_dofs: Array = jnp.array(solve_dofs)
 
@@ -410,9 +409,9 @@ class BeamStructure(BaseBeamStructure):
             else None
         )
 
-        if f_ext_aero_n is not None and f_ext_aero_nm1 is not None:
+        if f_aero_n is not None and f_aero_nm1 is not None:
             f_aero_alpha = inner_case.time_integrator.calculate_f_alpha(
-                f_nm1=f_ext_aero_nm1, f_n=f_ext_aero_n
+                f_nm1=f_aero_nm1, f_n=f_aero_n
             )
         else:
             f_aero_alpha = None
@@ -534,8 +533,8 @@ class BeamStructure(BaseBeamStructure):
                     v_dot_nm1=q_nm1.v_dot,
                     v_dot_n=q_n.v_dot,
                     approx_grads=approx_grads,
-                    f_ext_aero_nm1=q_nm1.f_ext_aero,
-                    f_ext_aero_n=q_n.f_ext_aero,
+                    f_aero_nm1=q_nm1.f_ext_aero,
+                    f_aero_n=q_n.f_ext_aero,
                     thrust_t=thrust_t,
                     dv=dv_,
                     solve_dofs=solve_dofs,
@@ -609,78 +608,73 @@ class BeamStructure(BaseBeamStructure):
         """
 
         # varphi
-        d_varphi = dict()
-        (
-            d_varphi["varphi_nm1"],
-            d_varphi["varphi_n"],
-            d_varphi["v_nm1"],
-            d_varphi["a_nm1"],
-            d_varphi["a_n"],
-        ) = jax.jacrev(self.varphi_res_func, argnums=(0, 1, 2, 3, 4))(
-            q_nm1.varphi.ravel(),
-            q_n.varphi.ravel(),
-            q_nm1.v.ravel(),
-            q_nm1.a.ravel(),
-            q_n.a.ravel(),
-            solve_dofs,
+        d_varphi = jacrev_kwargs(
+            func=self.varphi_res_func,
+            argnames=("varphi_nm1", "varphi_n", "v_nm1", "a_nm1", "a_n"),
+        )(
+            varphi_nm1=q_nm1.varphi.ravel(),
+            varphi_n=q_n.varphi.ravel(),
+            v_nm1=q_nm1.v.ravel(),
+            a_nm1=q_nm1.a.ravel(),
+            a_n=q_n.a.ravel(),
+            solve_dofs=solve_dofs,
         )
 
         # velocity
-        d_v = dict()
-        d_v["v_nm1"], d_v["v_n"], d_v["a_nm1"], d_v["a_n"] = jax.jacrev(
-            self.v_res_func, argnums=(0, 1, 2, 3)
-        )(q_nm1.v.ravel(), q_n.v.ravel(), q_nm1.a.ravel(), q_n.a.ravel(), solve_dofs)
-
-        # acceleration (aero_dv Jacobian computed separately via VJP in the adjoint loop)
-        d_v_dot = dict()
-        compute_f_aero_grads = f_ext_aero_nm1 is not None and f_ext_aero_n is not None
-
-        (
-            d_v_dot["varphi_nm1"],
-            d_v_dot["varphi_n"],
-            d_v_dot["v_nm1"],
-            d_v_dot["v_n"],
-            d_v_dot["v_dot_nm1"],
-            d_v_dot["v_dot_n"],
-            p_v_dot_p_dv,
-            *f_jacs,
-        ) = jax.jacrev(
-            self.v_dot_res_func,
-            argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9)
-            if compute_f_aero_grads
-            else (1, 2, 3, 4, 5, 6, 7),
-            allow_int=True,
+        d_v = jacrev_kwargs(
+            func=self.v_res_func,
+            argnames=("v_nm1", "v_n", "a_nm1", "a_n"),
         )(
-            i_ts,
-            q_nm1.varphi.ravel(),
-            q_n.varphi.ravel(),
-            q_nm1.v.ravel(),
-            q_n.v.ravel(),
-            q_nm1.v_dot.ravel(),
-            q_n.v_dot.ravel(),
-            dv,
-            f_ext_aero_nm1.ravel() if compute_f_aero_grads else None,  # type: ignore
-            f_ext_aero_n.ravel() if compute_f_aero_grads else None,  # type: ignore
-            thrust_t,
-            solve_dofs,
-            approx_grads,
+            v_nm1=q_nm1.v.ravel(),
+            v_n=q_n.v.ravel(),
+            a_nm1=q_nm1.a.ravel(),
+            a_n=q_n.a.ravel(),
+            solve_dofs=solve_dofs,
         )
 
+        # acceleration
+        compute_f_aero_grads = f_ext_aero_nm1 is not None and f_ext_aero_n is not None
+        d_v_dot_argnames = (
+            "varphi_nm1",
+            "varphi_n",
+            "v_nm1",
+            "v_n",
+            "v_dot_nm1",
+            "v_dot_n",
+            "dv",
+        )
         if compute_f_aero_grads:
-            p_v_dot_p_f_ext_nm1, p_v_dot_p_f_ext_n = f_jacs
-        else:
-            p_v_dot_p_f_ext_nm1, p_v_dot_p_f_ext_n = None, None
+            d_v_dot_argnames += ("f_aero_nm1", "f_aero_n")
+
+        d_v_dot = jacrev_kwargs(func=self.v_dot_res_func, argnames=d_v_dot_argnames)(
+            i_ts=i_ts,
+            varphi_nm1=q_nm1.varphi.ravel(),
+            varphi_n=q_n.varphi.ravel(),
+            v_nm1=q_nm1.v.ravel(),
+            v_n=q_n.v.ravel(),
+            v_dot_nm1=q_nm1.v_dot.ravel(),
+            v_dot_n=q_n.v_dot.ravel(),
+            dv=dv,
+            f_aero_nm1=f_ext_aero_nm1.ravel() if compute_f_aero_grads else None,  # type: ignore
+            f_aero_n=f_ext_aero_n.ravel() if compute_f_aero_grads else None,  # type: ignore
+            thrust_t=thrust_t,
+            solve_dofs=solve_dofs,
+            approx_grads=approx_grads,
+        )
+
+        if not compute_f_aero_grads:
+            # no Jacobians for aero case, but include a None to keep the keys consistent
+            d_v_dot.update({"f_aero_nm1": None, "f_aero_n": None})
 
         # pseudo-acceleration
-        d_a = dict()
-        d_a["v_dot_nm1"], d_a["v_dot_n"], d_a["a_nm1"], d_a["a_n"] = jax.jacrev(
-            self.a_res_func, argnums=(0, 1, 2, 3)
+        d_a = jacrev_kwargs(
+            func=self.a_res_func, argnames=("v_dot_nm1", "v_dot_n", "a_nm1", "a_n")
         )(
-            q_nm1.v_dot.ravel(),
-            q_n.v_dot.ravel(),
-            q_nm1.a.ravel(),
-            q_n.a.ravel(),
-            solve_dofs,
+            v_dot_nm1=q_nm1.v_dot.ravel(),
+            v_dot_n=q_n.v_dot.ravel(),
+            a_nm1=q_nm1.a.ravel(),
+            a_n=q_n.a.ravel(),
+            solve_dofs=solve_dofs,
         )
 
         struct_sizes = (
@@ -690,26 +684,28 @@ class BeamStructure(BaseBeamStructure):
             len(solve_dofs),
         )
 
+        nm1_keys = ("varphi_nm1", "v_nm1", "v_dot_nm1", "a_nm1")
         p_r_n_p_q_nm1 = construct_named_block_jacobian(
             entries=tuple(
                 [
-                    {k: v[:, solve_dofs] for k, v in jacs.items()}
+                    {k: v[:, solve_dofs] for k, v in jacs.items() if k in nm1_keys}
                     for jacs in (d_varphi, d_v, d_v_dot, d_a)
                 ]
             ),
-            keys=("varphi_nm1", "v_nm1", "v_dot_nm1", "a_nm1"),
+            keys=nm1_keys,
             widths=struct_sizes,
             heights=struct_sizes,
         )
 
+        n_keys = ("varphi_n", "v_n", "v_dot_n", "a_n")
         p_r_n_p_q_n = construct_named_block_jacobian(
             entries=tuple(
                 [
-                    {k: v[:, solve_dofs] for k, v in jacs.items()}
+                    {k: v[:, solve_dofs] for k, v in jacs.items() if k in n_keys}
                     for jacs in (d_varphi, d_v, d_v_dot, d_a)
                 ]
             ),
-            keys=("varphi_n", "v_n", "v_dot_n", "a_n"),
+            keys=n_keys,
             widths=struct_sizes,
             heights=struct_sizes,
         )
@@ -717,9 +713,9 @@ class BeamStructure(BaseBeamStructure):
         return (
             p_r_n_p_q_nm1,
             p_r_n_p_q_n,
-            p_v_dot_p_dv,
-            p_v_dot_p_f_ext_nm1,
-            p_v_dot_p_f_ext_n,
+            d_v_dot["dv"],
+            d_v_dot["f_aero_nm1"],
+            d_v_dot["f_aero_n"],
         )
 
     def j_from_q_x(
