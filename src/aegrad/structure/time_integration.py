@@ -1,35 +1,38 @@
+from typing import Sequence
+
 from jax import Array, vmap
-from jax import numpy as jnp
 
 from aegrad.utils.print_utils import warn
 from aegrad.algebra.se3 import log_se3, exp_se3, hg_to_d
 from aegrad.structure.data_structures import StructureMinimalStates
+from aegrad.utils.utils import make_pytree
 
 
+@make_pytree
 class TimeIntegrator:
     r"""
     Container for time integration parameters.
     """
 
     def __init__(
-            self,
-            spectral_radius: float | Array,
-            dt: float | Array,
+        self,
+        spectral_radius: float,
+        dt: float,
     ):
         if 1.0 < spectral_radius < 0.0:
             warn(
                 "Spectral radius should be between 0.0 and 1.0 to guarantee stability."
             )
-        spectral_radius: Array = jnp.array(spectral_radius)
-        self.dt: Array = jnp.array(dt)
-        self.spectral_radius: Array = spectral_radius
-        self.alpha_m: Array = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
-        self.alpha_f: Array = spectral_radius / (spectral_radius + 1.0)
-        self.gamma: Array = (3.0 - spectral_radius) / (2.0 + 2.0 * spectral_radius)
-        self.beta: Array = 1.0 / ((spectral_radius + 1.0) ** 2)
-        self.gamma_prime: Array = self.gamma / (self.beta * dt)
-        self.beta_prime: Array = (1.0 - self.alpha_m) / (
-                self.beta * dt * dt * (1.0 - self.alpha_f)
+        spectral_radius: float = spectral_radius
+        self.dt: float = dt
+        self.spectral_radius: float = spectral_radius
+        self.alpha_m: float = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
+        self.alpha_f: float = spectral_radius / (spectral_radius + 1.0)
+        self.gamma: float = (3.0 - spectral_radius) / (2.0 + 2.0 * spectral_radius)
+        self.beta: float = 1.0 / ((spectral_radius + 1.0) ** 2)
+        self.gamma_prime: float = self.gamma / (self.beta * dt)
+        self.beta_prime: float = (1.0 - self.alpha_m) / (
+            self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
     def calculate_a_n(self, v_dot_nm1: Array, v_dot_n: Array, a_nm1: Array) -> Array:
@@ -41,20 +44,20 @@ class TimeIntegrator:
         :return: pseudo-acceleration at next time step, [n_nodes_, 6].
         """
         return (
-                1.0
-                / (1.0 - self.alpha_m)
-                * (
-                        (1.0 - self.alpha_f) * v_dot_n
-                        + self.alpha_f * v_dot_nm1
-                        - self.alpha_m * a_nm1
-                )
+            1.0
+            / (1.0 - self.alpha_m)
+            * (
+                (1.0 - self.alpha_f) * v_dot_n
+                + self.alpha_f * v_dot_nm1
+                - self.alpha_m * a_nm1
+            )
         )
 
     def calculate_q_n_from_q_alpha(
-            self,
-            q_nm1: StructureMinimalStates,
-            q_alpha: StructureMinimalStates,
-            phi_alpha: Array,
+        self,
+        q_nm1: StructureMinimalStates,
+        q_alpha: StructureMinimalStates,
+        phi_alpha: Array,
     ) -> tuple[StructureMinimalStates, Array]:
         phi = phi_alpha / (1.0 - self.alpha_f)
         varphi = vmap(
@@ -66,27 +69,40 @@ class TimeIntegrator:
         return StructureMinimalStates(varphi=varphi, v=v, v_dot=v_dot, a=a), phi
 
     def predict_q(
-            self, q_nm1: StructureMinimalStates
+        self, q_nm1: StructureMinimalStates
     ) -> tuple[Array, StructureMinimalStates]:
         r"""
         Predict the current state based upon the previous state.
         :param q_nm1: State at timestep varphi
         :return: Predicted state at timestep varphi+1
         """
-        a_n = (self.alpha_f * q_nm1.v_dot - self.alpha_m * q_nm1.a) / (1.0 - self.alpha_m)
+        a_n = (self.alpha_f * q_nm1.v_dot - self.alpha_m * q_nm1.a) / (
+            1.0 - self.alpha_m
+        )
 
-        phi_n = self.dt * q_nm1.v + self.dt * self.dt * ((0.5 - self.beta) * q_nm1.a + self.beta * a_n)
+        phi_n = self.dt * q_nm1.v + self.dt * self.dt * (
+            (0.5 - self.beta) * q_nm1.a + self.beta * a_n
+        )
 
         varphi_n = vmap(
             lambda varphi_, phi_: log_se3(exp_se3(varphi_) @ exp_se3(phi_)), 0, 0
         )(q_nm1.varphi, phi_n)
 
-        v_n = q_nm1.v + (1.0 - self.gamma) * self.dt * q_nm1.a + self.gamma * self.dt * a_n
+        v_n = (
+            q_nm1.v
+            + (1.0 - self.gamma) * self.dt * q_nm1.a
+            + self.gamma * self.dt * a_n
+        )
 
-        v_dot_n = ((1.0 - self.alpha_m) * a_n + self.alpha_m * q_nm1.a - self.alpha_f * q_nm1.v_dot) / (
-                1.0 - self.alpha_f)
+        v_dot_n = (
+            (1.0 - self.alpha_m) * a_n
+            + self.alpha_m * q_nm1.a
+            - self.alpha_f * q_nm1.v_dot
+        ) / (1.0 - self.alpha_f)
 
-        return phi_n, StructureMinimalStates(varphi=varphi_n, v=v_n, v_dot=v_dot_n, a=a_n)
+        return phi_n, StructureMinimalStates(
+            varphi=varphi_n, v=v_n, v_dot=v_dot_n, a=a_n
+        )
 
     def calculate_f_alpha(self, f_nm1: Array, f_n: Array) -> Array:
         return (1.0 - self.alpha_f) * f_n + self.alpha_f * f_nm1
@@ -112,7 +128,7 @@ class TimeIntegrator:
         )(varphi_nm1, phi_alpha)
 
     def calculate_q_alpha(
-            self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates, phi_n: Array
+        self, q_nm1: StructureMinimalStates, q_n: StructureMinimalStates, phi_n: Array
     ) -> tuple[Array, StructureMinimalStates]:
         phi_alpha = self.calculate_phi_alpha(phi_n)
         varphi_alpha = self.calculate_varphi_alpha(
@@ -147,3 +163,20 @@ class TimeIntegrator:
         """
 
         return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return ()
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return (
+            "dt",
+            "spectral_radius",
+            "alpha_m",
+            "alpha_f",
+            "gamma",
+            "beta",
+            "gamma_prime",
+            "beta_prime",
+        )

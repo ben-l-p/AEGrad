@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import functools
-import time
 from copy import deepcopy
 
 from typing import Optional, Callable, overload, cast
@@ -10,7 +8,6 @@ import jax
 from jax import numpy as jnp
 from jax import Array, vmap
 
-from aegrad.algebra.base import jacrev_kwargs
 from aegrad.utils.print_utils import (
     jax_print,
     VerbosityLevel,
@@ -28,6 +25,7 @@ from aegrad.structure.gradients.data_structures import (
     StructuralGradsToCompute,
 )
 from aegrad.algebra.se3 import exp_se3, log_se3
+from aegrad.algebra.base import jacrev_custom
 from aegrad.structure import DynamicStructure
 from aegrad.structure.data_structures import StructureMinimalStates
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
@@ -562,7 +560,16 @@ class BeamStructure(BaseBeamStructure):
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
-    ) -> tuple[Array, Array, StructuralDesignVariables, Array, Array]: ...
+        n_profile_loops: Optional[int],
+    ) -> tuple[
+        Array,
+        Array,
+        StructuralDesignVariables,
+        Array,
+        Array,
+        Optional[dict[str, dict[str, float]]],
+        Optional[dict[str, dict[str, float]]],
+    ]: ...
 
     @overload
     def timestep_residual_jacobians(
@@ -576,9 +583,18 @@ class BeamStructure(BaseBeamStructure):
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
-    ) -> tuple[Array, Array, StructuralDesignVariables, None, None]: ...
+        n_profile_loops: Optional[int],
+    ) -> tuple[
+        Array,
+        Array,
+        StructuralDesignVariables,
+        None,
+        None,
+        Optional[dict[str, dict[str, float]]],
+        Optional[dict[str, dict[str, float]]],
+    ]: ...
 
-    @jax.jit(static_argnums=(0, 6, 8, 9))
+    # @jax.jit(static_argnums=(0, 6, 8, 9))
     def timestep_residual_jacobians(
         self,
         i_ts: int,
@@ -590,8 +606,15 @@ class BeamStructure(BaseBeamStructure):
         thrust_t: dict[str, Array],
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
+        n_profile_loops: Optional[int],
     ) -> tuple[
-        Array, Array, StructuralDesignVariables, Optional[Array], Optional[Array]
+        Array,
+        Array,
+        StructuralDesignVariables,
+        Optional[Array],
+        Optional[Array],
+        Optional[dict[str, dict[str, float]]],
+        Optional[dict[str, dict[str, float]]],
     ]:
         r"""
         Obtain the Jacobians of the structural residual with respect to the current states and previous states.
@@ -604,13 +627,27 @@ class BeamStructure(BaseBeamStructure):
         :param thrust_t: Thrust time history, {key, [n_tstep]}.
         :param solve_dofs: Index of degrees of freedom to solve for.
         :param approx_grads: If True, remove some gradient terms which are generally small.
-        :return: Jacobians with respect to previous state and current state.
+        :param n_profile_loops: Number of profile loops to run for timing function. If None, no profiling is done.
+        :return: Jacobians with respect to previous state and current state, gradients with respect to design variables,
+        previous, and current aerodynamic forces respectively, and profiling times for compilation and run time.
         """
 
+        compile_time: dict[str, dict[str, float]] = {}
+        run_time: dict[str, dict[str, float]] = {}
+
         # varphi
-        d_varphi = jacrev_kwargs(
+        d_varphi, compile_time["varphi"], run_time["varphi"] = jacrev_custom(
             func=self.varphi_res_func,
-            argnames=("varphi_nm1", "varphi_n", "v_nm1", "a_nm1", "a_n"),
+            jac_options={  # currently no options selected TODO
+                "varphi_nm1": None,
+                "varphi_n": None,
+                "v_nm1": None,
+                "a_nm1": None,
+                "a_n": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="varphi",
+            static_argnames=("solve_dofs",),
         )(
             varphi_nm1=q_nm1.varphi.ravel(),
             varphi_n=q_n.varphi.ravel(),
@@ -621,9 +658,12 @@ class BeamStructure(BaseBeamStructure):
         )
 
         # velocity
-        d_v = jacrev_kwargs(
+        d_v, compile_time["v"], run_time["v"] = jacrev_custom(
             func=self.v_res_func,
-            argnames=("v_nm1", "v_n", "a_nm1", "a_n"),
+            jac_options={"v_nm1": None, "v_n": None, "a_nm1": None, "a_n": None},
+            n_profile_loops=n_profile_loops,
+            func_name="v",
+            static_argnames=("solve_dofs",),
         )(
             v_nm1=q_nm1.v.ravel(),
             v_n=q_n.v.ravel(),
@@ -634,19 +674,25 @@ class BeamStructure(BaseBeamStructure):
 
         # acceleration
         compute_f_aero_grads = f_ext_aero_nm1 is not None and f_ext_aero_n is not None
-        d_v_dot_argnames = (
-            "varphi_nm1",
-            "varphi_n",
-            "v_nm1",
-            "v_n",
-            "v_dot_nm1",
-            "v_dot_n",
-            "dv",
-        )
+        d_v_dot_options = {
+            "varphi_nm1": None,
+            "varphi_n": None,
+            "v_nm1": None,
+            "v_n": None,
+            "v_dot_nm1": None,
+            "v_dot_n": None,
+            "dv": None,
+        }
         if compute_f_aero_grads:
-            d_v_dot_argnames += ("f_aero_nm1", "f_aero_n")
+            d_v_dot_options.update({"f_aero_nm1": None, "f_aero_n": None})
 
-        d_v_dot = jacrev_kwargs(func=self.v_dot_res_func, argnames=d_v_dot_argnames)(
+        d_v_dot, compile_time["v_dot"], run_time["v_dot"] = jacrev_custom(
+            func=self.v_dot_res_func,
+            jac_options=d_v_dot_options,
+            n_profile_loops=n_profile_loops,
+            func_name="v_dot",
+            static_argnames=("solve_dofs", "approx_grads"),
+        )(
             i_ts=i_ts,
             varphi_nm1=q_nm1.varphi.ravel(),
             varphi_n=q_n.varphi.ravel(),
@@ -667,8 +713,17 @@ class BeamStructure(BaseBeamStructure):
             d_v_dot.update({"f_aero_nm1": None, "f_aero_n": None})
 
         # pseudo-acceleration
-        d_a = jacrev_kwargs(
-            func=self.a_res_func, argnames=("v_dot_nm1", "v_dot_n", "a_nm1", "a_n")
+        d_a, compile_time["a"], run_time["a"] = jacrev_custom(
+            func=self.a_res_func,
+            jac_options={
+                "v_dot_nm1": None,
+                "v_dot_n": None,
+                "a_nm1": None,
+                "a_n": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="a",
+            static_argnames=("solve_dofs",),
         )(
             v_dot_nm1=q_nm1.v_dot.ravel(),
             v_dot_n=q_n.v_dot.ravel(),
@@ -716,6 +771,8 @@ class BeamStructure(BaseBeamStructure):
             d_v_dot["dv"],
             d_v_dot["f_aero_nm1"],
             d_v_dot["f_aero_n"],
+            compile_time if n_profile_loops is not None else None,
+            run_time if n_profile_loops is not None else None,
         )
 
     def j_from_q_x(
@@ -827,7 +884,7 @@ class BeamStructure(BaseBeamStructure):
         )
 
         # find gradients of residual function (state Jacobians only)
-        p_r_n_p_q_nm1, p_r_n_p_q_n, p_r_v_dot_n_p_dv, _, _ = (
+        p_r_n_p_q_nm1, p_r_n_p_q_n, p_r_v_dot_n_p_dv, *_ = (
             self.timestep_residual_jacobians(
                 i_ts=i_ts,
                 q_n=q_n,
@@ -838,6 +895,7 @@ class BeamStructure(BaseBeamStructure):
                 f_ext_aero_nm1=None,
                 f_ext_aero_n=None,
                 thrust_t=thrust_t,
+                n_profile_loops=None,
             )
         )
 
@@ -1047,161 +1105,41 @@ class BeamStructure(BaseBeamStructure):
         aerodynamic force gradients will be computed.
         :param i_ts: Time step index where to evaluate residual Jacobians.
         :param n_loop: Number of times to loop the Jacobian evaluation time for averaging the runtime.
-        :param print_header: Flag to prevent heading printing for when this function is called for the coupled routine.
+        :param print_header: Flag used to prevent heading printer when called by the coupled profiler.
         :return: Dictionary of {residual_name: {gradient_argument: val}} for compile time and run time respectively.
         """
 
-        # print header
         if print_header:
             print_table_title(inner_width=95, title="Structure Adjoint Profile")
 
-        q_nm1: StructureMinimalStates = sol.get_minimal_states(i_ts - 1)
-        q_n: StructureMinimalStates = sol.get_minimal_states(i_ts)
-        solve_dofs: tuple[int, ...] = tuple(
-            int(i)
-            for i in get_solve_dofs(
-                n_dof=self.n_dof, prescribed_dofs=sol.prescribed_dofs
+        common_kwargs = dict(
+            i_ts=i_ts,
+            q_nm1=sol.get_minimal_states(i_ts - 1),
+            q_n=sol.get_minimal_states(i_ts),
+            dv=self.get_design_variables(
+                struct_case=sol, thrust_t=sol.thrust, grads_to_compute=grads_to_compute
+            ),
+            thrust_t=sol.thrust,
+            solve_dofs=tuple(
+                get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=sol.prescribed_dofs)
+            ),
+            approx_grads=approx_grads,
+            n_profile_loops=n_loop,
+        )
+        if f_aero_nm1_n is not None:
+            *_, compile_time, run_time = self.timestep_residual_jacobians(
+                f_ext_aero_nm1=f_aero_nm1_n[0],
+                f_ext_aero_n=f_aero_nm1_n[1],
+                **common_kwargs,
             )
-        )
-        dv = self.get_design_variables(
-            struct_case=sol, thrust_t=sol.thrust, grads_to_compute=grads_to_compute
-        )
-
-        compile_time = dict()
-        run_time = dict()
-
-        varphi_args = (
-            q_nm1.varphi.ravel(),
-            q_n.varphi.ravel(),
-            q_nm1.v.ravel(),
-            q_nm1.a.ravel(),
-            q_n.a.ravel(),
-            solve_dofs,
-        )
-
-        varphi_arg_nums = (0, 1, 2, 3, 4, (0, 1, 2, 3, 4))
-        varphi_arg_names = ("varphi_nm1", "varphi_n", "v_nm1", "a_nm1", "a_n", "all")
-
-        v_args = (
-            q_nm1.v.ravel(),
-            q_n.v.ravel(),
-            q_nm1.a.ravel(),
-            q_n.a.ravel(),
-            solve_dofs,
-        )
-
-        v_arg_nums = (0, 1, 2, 3, (0, 1, 2, 3))
-        v_arg_names = ("v_nm1", "v_n", "a_nm1", "a_n", "all")
-
-        v_dot_args = (
-            i_ts,
-            q_nm1.varphi.ravel(),
-            q_n.varphi.ravel(),
-            q_nm1.v.ravel(),
-            q_n.v.ravel(),
-            q_nm1.v_dot.ravel(),
-            q_n.v_dot.ravel(),
-            dv,
-            f_aero_nm1_n[0].ravel() if f_aero_nm1_n is not None else None,
-            f_aero_nm1_n[1].ravel() if f_aero_nm1_n is not None else None,
-            sol.thrust,
-            solve_dofs,
-            approx_grads,
-        )
-
-        v_dot_arg_nums = (
-            (1, 2, 3, 4, 5, 6, 7, 8, 9, (1, 2, 3, 4, 5, 6, 7, 8, 9))
-            if f_aero_nm1_n is not None
-            else (1, 2, 3, 4, 5, 6, 7, (1, 2, 3, 4, 5, 6, 7))
-        )
-        v_dot_arg_names = (
-            (
-                "varphi_nm1",
-                "varphi_n",
-                "v_nm1",
-                "v_n",
-                "v_dot_nm1",
-                "v_dot_n",
-                "dv",
-                "f_aero_nm1",
-                "f_aero_n",
-                "all",
+        else:
+            *_, compile_time, run_time = self.timestep_residual_jacobians(
+                f_ext_aero_nm1=None,
+                f_ext_aero_n=None,
+                **common_kwargs,
             )
-            if f_aero_nm1_n is not None
-            else (
-                "varphi_nm1",
-                "varphi_n",
-                "v_nm1",
-                "v_n",
-                "v_dot_nm1",
-                "v_dot_n",
-                "dv",
-                "all",
-            )
-        )
 
-        a_args = (
-            q_nm1.v_dot.ravel(),
-            q_n.v_dot.ravel(),
-            q_nm1.a.ravel(),
-            q_n.a.ravel(),
-            solve_dofs,
-        )
-
-        a_arg_nums = (0, 1, 2, 3, (0, 1, 2, 3))
-        a_arg_names = ("v_dot_nm1", "v_dot_n", "a_nm1", "a_n", "all")
-
-        all_args = (varphi_args, v_args, v_dot_args, a_args)
-        all_arg_nums = (varphi_arg_nums, v_arg_nums, v_dot_arg_nums, a_arg_nums)
-        all_arg_names = (varphi_arg_names, v_arg_names, v_dot_arg_names, a_arg_names)
-        all_func_names = ("varphi", "v", "v_dot", "a")
-        all_funcs = (
-            self.varphi_res_func,
-            self.v_res_func,
-            self.v_dot_res_func,
-            self.a_res_func,
-        )
-
-        for args, arg_nums, arg_names, func, func_name in zip(
-            all_args, all_arg_nums, all_arg_names, all_funcs, all_func_names
-        ):
-            compile_time[func_name] = dict()
-            run_time[func_name] = dict()
-
-            # mark static arguments
-            if func is self.v_dot_res_func:
-                static_positions = (0, len(args) - 2, len(args) - 1)
-            else:
-                static_positions = (len(args) - 1,)
-
-            for arg_num, arg_name in zip(arg_nums, arg_names):
-
-                @functools.partial(jax.jit, static_argnums=static_positions)
-                def inner_func(*args_):
-                    return jax.jacrev(fun=func, argnums=arg_num, allow_int=True)(*args_)
-
-                # initial evaluation
-                t_start = time.time()
-                jax.block_until_ready(inner_func(*args))
-                t_compile_and_run = time.time() - t_start
-
-                # time compiled function
-                t_start = time.time()
-                for _ in range(n_loop):
-                    jax.block_until_ready(inner_func(*args))
-                t_run = (time.time() - t_start) / n_loop
-                t_compile = t_compile_and_run - t_run
-
-                # write to console
-                jax_print(
-                    f"| Residual: {func_name:<14} Argument: {arg_name:<16} Compile time: {t_compile:<8.4f} Run time: {t_run:<8.4f} |",
-                    verbose_level=VerbosityLevel.NORMAL,
-                )
-
-                # save data
-                compile_time[func_name][arg_name] = t_compile
-                run_time[func_name][arg_name] = t_run
-
+        if print_header:
             print_table_line(inner_width=95)
 
         return compile_time, run_time

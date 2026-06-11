@@ -308,7 +308,7 @@ class BaseCoupledAeroelastic:
         t = jnp.arange(n_tstep) * self.aero.dt + t_init
 
         self.structure.time_integrator = TimeIntegrator(
-            spectral_radius=self.structure.spectral_radius, dt=self.aero.dt
+            spectral_radius=self.structure.spectral_radius, dt=float(self.aero.dt)
         )
 
         # initialise aeroelastic case object

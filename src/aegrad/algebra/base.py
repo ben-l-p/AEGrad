@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from time import time
 from math import factorial
 from typing import Callable, Any, Optional, Sequence
 
+import jax
 from jax import numpy as jnp, Array
 from jax.scipy.special import bernoulli
 from jax.lax import cond
 from jax import jacrev
 
 from aegrad.utils.constants import BASE_SUMMATION_ORDER
+from aegrad.utils.utils import conditional_profile
 
 
 def matrix2(mat: Array) -> Array:
@@ -191,97 +192,86 @@ def jacrev_kwargs(
     return inner_func
 
 
-def jacrev_custom[T: dict[str, Any]](
-    func: Callable[[T], Array],
-    args: T,
-    jac_options: dict[str, tuple[int, Optional[Callable[[dict[str, Any]], Array]]]],
-) -> dict[str, Array]:
+def jacrev_custom(
+    func: Callable[..., Array],
+    jac_options: dict[str, Optional[Callable[[dict[str, Any]], Array]]],
+    n_profile_loops: Optional[int],
+    func_name: str,
+    static_argnames: Sequence[str] = (),
+) -> Callable[
+    ..., tuple[dict[str, Any], Optional[dict[str, float]], Optional[dict[str, float]]]
+]:
     r"""
     Obtain the Jacobians of the function `func` with respect to
     :param func: Function for which to obtain the Jacobians.
-    :param args: Full dictionary of arguments required for `func`.
     :param jac_options: Dictionary with variable names as keys, with values being a tuple of the argument number in
     `func`, and an optional function which can be used to compute the given Jacobian. If this is None, the Jacobian is
     computed by applying reverse-mode AD with no approximations.
-    :return: Dictionary of argument name - Jacobian array pairs.
+    :param n_profile_loops: Number of profile loops. If None, no profiling is done.
+    :param func_name: Name of the function to be called, used for console prints during profiling.
+    :param static_argnames: Argument names to treat as static when JIT-compiling the AD Jacobian. Needed so the
+    profile loop hits a cached jaxpr instead of re-tracing on every call.
+    :return: Function to obtain Jacobians, as well as respective compile and run times for
+    Jacobians if `n_profile_loops` is not None.
     """
 
-    jacobians: dict[str, Array] = {}
-    ad_args: dict[
-        str, int
-    ] = {}  # accumulate dictionary of argument name - number pairs that we will use for AD
+    static_argnames_t = tuple(static_argnames)
 
-    for arg, option in jac_options.items():
-        argnum, jac_func = option
-        if jac_func is not None:
-            jacobians[arg] = jac_func(args)  # evaluate function
+    def inner_func(
+        **args: Any,
+    ) -> tuple[dict[str, Any], Optional[dict[str, float]], Optional[dict[str, float]]]:
+        jacobians: dict[str, Any] = {}
+        ad_args: list[
+            str
+        ] = []  # accumulate list of argument names that we will use for AD
+        compile_time: dict[str, Optional[float]] = {}
+        run_time: dict[str, Optional[float]] = {}
+
+        # compute cases which have a passed approximation function for finding the Jacobian
+        for arg, jac_func in jac_options.items():
+            if jac_func is not None:
+                jacobians[arg], compile_time[arg], run_time[arg] = conditional_profile(
+                    func=jac_func,
+                    n_loops=n_profile_loops,
+                    func_name=func_name,
+                    arg_name=arg,
+                )(args)  # evaluate function
+            else:
+                ad_args.append(arg)  # indicate that we will use AD to compute
+
+        # compute cases where we perform AD directly
+        if ad_args:
+            if n_profile_loops is not None:
+                for ad_arg in ad_args:
+                    # profile for individual Jacobians
+                    jac_func = jax.jit(
+                        jacrev_kwargs(func, argnames=ad_arg, allow_int=True),
+                        static_argnames=static_argnames_t,
+                    )
+                    val, compile_time[ad_arg], run_time[ad_arg] = conditional_profile(
+                        func=jac_func,
+                        n_loops=n_profile_loops,
+                        func_name=func_name,
+                        arg_name=ad_arg,
+                    )(**args)
+
+            # compute case for all arguments
+            jac_func = jacrev_kwargs(func, argnames=ad_args, allow_int=True)
+            if n_profile_loops is not None:
+                jac_func = jax.jit(jac_func, static_argnames=static_argnames_t)
+
+            all_jacobians, compile_time["all"], run_time["all"] = conditional_profile(
+                func=jac_func,
+                n_loops=n_profile_loops,
+                func_name=func_name,
+                arg_name="all",
+            )(**args)
+
+            jacobians.update(all_jacobians)
+
+        if n_profile_loops is not None:
+            return jacobians, compile_time, run_time  # type: ignore
         else:
-            ad_args.update({arg: argnum})  # indicate that we will use AD to compute
+            return jacobians, None, None
 
-    if ad_args:  # ensure that we don't perform AD when there are no arguments to differentiate for
-        jac_func = jacrev_kwargs(func, argnames=list(ad_args.keys()), allow_int=True)
-        jacobians.update(jac_func(**args))
-    return jacobians
-
-
-def jacrev_custom_profiling[T: dict[str, Any]](
-    func: Callable[[T], Array],
-    args: T,
-    jac_options: dict[str, tuple[int, Optional[Callable[[dict[str, Any]], Array]]]],
-    n_loops: int = 10,
-) -> tuple[dict[str, float], dict[str, float]]:
-
-    # TODO: add docstring and console printing
-
-    compile_time: dict[str, float] = {}
-    run_time: dict[str, float] = {}
-
-    ad_args: list[
-        str
-    ] = []  # accumulate dictionary of argument name - number pairs that we will use for AD
-
-    for arg, option in jac_options.items():
-        argnum, jac_func = option
-        if jac_func is not None:
-            # compile
-            t_start = time()
-            jac_func(args)  # evaluate function
-            compile_time[arg] = time() - t_start
-
-            # run
-            t_start = time()
-            for _ in range(n_loops):
-                jac_func(args)
-            run_time[arg] = (time() - t_start) / n_loops
-        else:
-            ad_args.append(arg)  # indicate that we will use AD to compute
-
-    if ad_args:  # ensure that we don't perform AD when there are no arguments to differentiate for
-        for ad_arg in ad_args:
-            jac_func = jacrev_kwargs(func, argnames=ad_arg, allow_int=True)
-
-            # compile
-            t_start = time()
-            jac_func(**args)
-            run_time[ad_arg] = time() - t_start
-
-            # run
-            t_start = time()
-            for _ in range(n_loops):
-                jac_func(**args)
-            run_time[ad_arg] = (time() - t_start) / n_loops
-
-        # case for all gradients at once
-        jac_func = jacrev_kwargs(func, argnames=ad_args, allow_int=True)
-
-        # compile
-        t_start = time()
-        jac_func(**args)
-        run_time["all"] = time() - t_start
-
-        # run
-        t_start = time()
-        for _ in range(n_loops):
-            jac_func(**args)
-        run_time["all"] = (time() - t_start) / n_loops
-    return compile_time, run_time
+    return inner_func

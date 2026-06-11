@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
-from aegrad.algebra.base import jacrev_kwargs
+from aegrad.algebra.base import jacrev_custom
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
@@ -1852,7 +1852,7 @@ class UVLM:
                     gamma_b_n=q_n.gamma_b.ravel(),
                     gamma_b_dot_nm1=q_nm1.gamma_b_dot.ravel(),
                     gamma_b_dot_n=q_n.gamma_b_dot.ravel(),
-                    _=dv,
+                    dv=dv,
                 ),
                 zeta_w_res,
                 self.f_aero_res_func(
@@ -1874,7 +1874,6 @@ class UVLM:
             )
         )
 
-    @jax.jit(static_argnums=(8, 9, 11, 12, 13))
     def timestep_residual_jacobians(
         self,
         i_ts: int,
@@ -1890,7 +1889,16 @@ class UVLM:
         struct_obj: BeamStructure,
         approx_grads: bool,
         solve_dofs: tuple[int, ...],
-    ) -> tuple[Array, Array, AeroelasticDesignVariables, Array, Array]:
+        n_profile_loops: Optional[int],
+    ) -> tuple[
+        Array,
+        Array,
+        AeroelasticDesignVariables,
+        Array,
+        Array,
+        Optional[dict[str, dict[str, float]]],
+        Optional[dict[str, dict[str, float]]],
+    ]:
         r"""
         Compute the Jacobians of the aerodynamic problem.
         :param i_ts: Time step index.
@@ -1906,10 +1914,14 @@ class UVLM:
         :param struct_obj: Structural object.
         :param approx_grads: If true, eliminate grid gradients from force computation.
         :param solve_dofs: Degrees of freedom to solve for. This removes non-active forcing entries.
+        :param n_profile_loops: Optional number of loops for profiling function.
         :return: Gradients of aerodynamic residual with respect to previous states, current states, and design
         variables. Additionally, includes Jacobians of the aerodynamic residual with respect to the structural
-        displacement and velocity.
+        displacement and velocity, and profiling times for compilation and run time.
         """
+
+        compile_time: dict[str, dict[str, float]] = {}
+        run_time: dict[str, dict[str, float]] = {}
 
         varphi_nm1 = varphi_nm1.ravel()
         varphi_n = varphi_n.ravel()
@@ -1923,9 +1935,18 @@ class UVLM:
         zeta_w_nm1 = q_nm1.zeta_w.ravel()
         zeta_w_n = q_n.zeta_w.ravel()
 
-        d_gamma_b = jacrev_kwargs(
+        d_gamma_b, compile_time["gamma_b"], run_time["gamma_b"] = jacrev_custom(
             func=self.gamma_b_res_func,
-            argnames=("varphi_n", "v_n", "gamma_b_n", "gamma_w_n", "zeta_w_n", "dv"),
+            jac_options={
+                "varphi_n": None,
+                "v_n": None,
+                "gamma_b_n": None,
+                "gamma_w_n": None,
+                "zeta_w_n": None,
+                "dv": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="gamma_b",
         )(
             i_ts=i_ts,
             t_n=t_n,
@@ -1939,18 +1960,20 @@ class UVLM:
             struct_obj=struct_obj,
         )
 
-        d_gamma_w = jacrev_kwargs(
+        d_gamma_w, compile_time["gamma_w"], run_time["gamma_w"] = jacrev_custom(
             func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
-            argnames=(
-                "varphi_nm1",
-                "varphi_n",
-                "gamma_b_nm1",
-                "gamma_w_nm1",
-                "gamma_w_n",
-                "zeta_w_nm1",
-                "zeta_w_n",
-                "dv",
-            ),
+            jac_options={
+                "varphi_nm1": None,
+                "varphi_n": None,
+                "gamma_b_nm1": None,
+                "gamma_w_nm1": None,
+                "gamma_w_n": None,
+                "zeta_w_nm1": None,
+                "zeta_w_n": None,
+                "dv": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="gamma_w",
         )(
             i_ts=i_ts,
             t_n=t_n,
@@ -1966,18 +1989,20 @@ class UVLM:
             struct_obj=struct_obj,
         )
 
-        d_zeta_w = jacrev_kwargs(
+        d_zeta_w, compile_time["zeta_w"], run_time["zeta_w"] = jacrev_custom(
             func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
-            argnames=(
-                "varphi_nm1",
-                "varphi_n",
-                "gamma_b_nm1",
-                "gamma_w_nm1",
-                "gamma_w_n",
-                "zeta_w_nm1",
-                "zeta_w_n",
-                "dv",
-            ),
+            jac_options={
+                "varphi_nm1": None,
+                "varphi_n": None,
+                "gamma_b_nm1": None,
+                "gamma_w_nm1": None,
+                "gamma_w_n": None,
+                "zeta_w_nm1": None,
+                "zeta_w_n": None,
+                "dv": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="zeta_w",
         )(
             i_ts=i_ts,
             t_n=t_n,
@@ -1993,35 +2018,42 @@ class UVLM:
             struct_obj=struct_obj,
         )
 
-        d_gamma_b_dot = jacrev_kwargs(
-            func=self.gamma_b_dot_res_func,
-            argnames=(
-                "gamma_b_nm1",
-                "gamma_b_n",
-                "gamma_b_dot_nm1",
-                "gamma_b_dot_n",
-                "dv",
-            ),
-        )(
-            gamma_b_nm1=gamma_b_nm1,
-            gamma_b_n=gamma_b_n,
-            gamma_b_dot_nm1=gamma_b_dot_nm1,
-            gamma_b_dot_n=gamma_b_dot_n,
-            dv=dv,
+        d_gamma_b_dot, compile_time["gamma_b_dot"], run_time["gamma_b_dot"] = (
+            jacrev_custom(
+                func=self.gamma_b_dot_res_func,
+                jac_options={
+                    "gamma_b_nm1": None,
+                    "gamma_b_n": None,
+                    "gamma_b_dot_nm1": None,
+                    "gamma_b_dot_n": None,
+                    "dv": None,
+                },
+                n_profile_loops=n_profile_loops,
+                func_name="gamma_b_dot",
+            )(
+                gamma_b_nm1=gamma_b_nm1,
+                gamma_b_n=gamma_b_n,
+                gamma_b_dot_nm1=gamma_b_dot_nm1,
+                gamma_b_dot_n=gamma_b_dot_n,
+                dv=dv,
+            )
         )
 
-        d_f_aero = jacrev_kwargs(
+        d_f_aero, compile_time["f_aero"], run_time["f_aero"] = jacrev_custom(
             func=self.f_aero_res_func,
-            argnames=(
-                "varphi_n",
-                "v_n",
-                "gamma_b_n",
-                "gamma_w_n",
-                "gamma_b_dot_n",
-                "zeta_w_n",
-                "dv",
-                "f_aero_beam_n",
-            ),
+            jac_options={
+                "varphi_n": None,
+                "v_n": None,
+                "gamma_b_n": None,
+                "gamma_w_n": None,
+                "gamma_b_dot_n": None,
+                "zeta_w_n": None,
+                "dv": None,
+                "f_aero_beam_n": None,
+            },
+            n_profile_loops=n_profile_loops,
+            func_name="f_aero",
+            static_argnames=("block_grid_gradients", "solve_dofs"),
         )(
             i_ts=i_ts,
             t_n=t_n,
@@ -2114,6 +2146,8 @@ class UVLM:
             d_res_d_dv,
             d_struct_res_d_q_nm1,
             d_struct_res_d_q_n,
+            compile_time if n_profile_loops is not None else None,
+            run_time if n_profile_loops is not None else None,
         )
 
     @staticmethod

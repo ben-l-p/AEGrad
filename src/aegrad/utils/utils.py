@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Sequence, Optional
+import time
+from typing import Any, Sequence, Optional, Callable
 from typing import Protocol, TypeVar
 from dataclasses import fields, is_dataclass
+import jax
 from jax import tree_util, Array
 from jax import numpy as jnp
+
+from aegrad.utils.print_utils import jax_print, VerbosityLevel
 
 
 class SupportsPytree(Protocol):
@@ -86,3 +90,51 @@ def nested_list_to_tuple(a: list[Any]) -> tuple[Any, ...]:
             return a_
 
     return inner_func(a)
+
+
+def conditional_profile[U](
+    func: Callable[..., U],
+    n_loops: Optional[int],
+    func_name: str,
+    arg_name: str,
+) -> Callable[..., tuple[U, Optional[float], Optional[float]]]:
+    r"""
+    Function wrapper which optionally profiles it.
+    :param func: Function to be profiled.
+    :param n_loops: Number of times to run the function, where the average time will be taken. If None, no profiling is
+    done.
+    :param func_name: Name of the function to be profiled, used for console printing.
+    :param arg_name: Name of the argument to be profiled, used for console printing.
+    :return: New function which returns the same value as `func`, alongside the compile time and average run time of
+    `func`, which are substituted for None when no profiling is done.
+    """
+
+    if n_loops is None:
+        return lambda *args, **kwargs: (func(*args, **kwargs), None, None)
+    else:
+        if not isinstance(n_loops, int) or n_loops <= 0:
+            raise ValueError("n_loops must be a positive int")
+        loops: int = n_loops
+
+        def inner_func(**a_: Any) -> tuple[U, float, float]:
+            # warm-up: includes compile + first run
+            start_time = time.time()
+            out = jax.block_until_ready(func(**a_))
+            compile_run_time = time.time() - start_time
+
+            # timed run on the compiled function
+            start_time = time.time()
+            for _ in range(loops):
+                jax.block_until_ready(func(**a_))
+
+            run_time = (time.time() - start_time) / loops
+            compile_time = compile_run_time - run_time
+
+            jax_print(
+                f"| Function: {func_name:<14} Argument: {arg_name:<16} Compile time: {compile_time:<8.4f} Run time: {run_time:<8.4f} |",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+
+            return out, compile_time, run_time
+
+        return inner_func

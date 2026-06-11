@@ -2545,9 +2545,8 @@ class BaseBeamStructure:
         f_ext_aero = check_force(f_ext_aero, "f_ext_aero")  # [n_tstep, n_node, 6]
 
         # time integration parameters
-        dt: Array = jnp.array(dt)
         self.time_integrator = TimeIntegrator(
-            spectral_radius=self.spectral_radius, dt=dt
+            spectral_radius=self.spectral_radius, dt=float(dt)
         )
 
         def evaluate_initial_equilibrium(
