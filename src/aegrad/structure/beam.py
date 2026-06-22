@@ -23,6 +23,7 @@ from aegrad.utils.print_utils import (
     warn_if_32_bit,
     VerbosityLevel,
     VERBOSITY_LEVEL,
+    jax_print,
 )
 from aegrad.structure.utils import (
     _check_connectivity,
@@ -2573,11 +2574,11 @@ class BaseBeamStructure:
             )
 
             max_res = jnp.max(jnp.abs(f_res))
-            if max_res > 1e-6:
-                warn(
-                    "Initial state is not in equilibrium, maximum residual force is {max_res:.3e}",
-                    max_res=max_res,
-                )
+            jax_print(
+                "Initial state maximum residual force: {max_res:.3e}",
+                max_res=max_res,
+                verbose_level=VerbosityLevel.NORMAL,
+            )
 
             f_elem = self.make_f_elem(eps=eps)
 

@@ -473,8 +473,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         Optional[dict[str, dict[str, float]]],
     ]:
 
-        if q_n.structure.f_ext_aero is None or q_nm1.structure.f_ext_aero is None:
-            raise ValueError("Missing aerodynamic forcing states")
+        assert (
+            q_n.structure.f_ext_aero is not None
+            and q_nm1.structure.f_ext_aero is not None
+        )
 
         (
             p_aero_res_p_q_aero_nm1,
@@ -675,8 +677,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         dv_full = self.get_design_variables(case=case, grads_to_compute=None)
 
-        if case.aero.static_horseshoe is None:
-            raise ValueError("static_horseshoe not defined")
+        assert case.aero.static_horseshoe is not None
         static_horseshoe: bool = case.aero.static_horseshoe
 
         full_states_init = case.get_full_states(i_ts=0)
@@ -765,7 +766,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             """
 
             i_ts = (
-                n_tstep - rev_i_ts_ - 1
+                last_active_i_ts - rev_i_ts_
             )  # index for timestep varphi, which decrements
 
             # solve for adjoint at current timestep
@@ -824,7 +825,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             """
 
             # i_ts for each step in the chunk; index 0 is the latest in real time (processed first by the adjoint)
-            i_ts_chunk = n_tstep - 1 - rev_i_ts_start - jnp.arange(n_parallel_steps_)
+            i_ts_chunk = (
+                last_active_i_ts - rev_i_ts_start - jnp.arange(n_parallel_steps_)
+            )
 
             def per_step_jacobians(
                 i_ts: Array,
@@ -1017,7 +1020,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         n_adj_dof = 4 * n_solve + n_aero_states + n_solve
 
         # pass through time steps backwards in chunks of n_parallel_steps
-        n_active_steps: int = case.structure.n_tstep - 1
+        n_active_steps: int = int(last_active_i_ts)
         n_full_chunks: int = n_active_steps // n_parallel_steps
         remainder: int = n_active_steps - n_full_chunks * n_parallel_steps
 
@@ -1042,7 +1045,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
             if save_adjoint:
                 # adj_history is ordered with index 0 at the latest real time in the chunk
-                i_ts_chunk = n_tstep - 1 - rev_i_ts_start - jnp.arange(n_parallel_steps)
+                i_ts_chunk = (
+                    last_active_i_ts - rev_i_ts_start - jnp.arange(n_parallel_steps)
+                )
                 adj_full_ = adj_full_.at[i_ts_chunk].set(adj_history)
             return d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_
 
@@ -1071,7 +1076,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
             if save_adjoint:
                 i_ts_chunk_rem = (
-                    n_tstep - 1 - rev_i_ts_start_rem - jnp.arange(remainder)
+                    last_active_i_ts - rev_i_ts_start_rem - jnp.arange(remainder)
                 )
                 adj_full = adj_full.at[i_ts_chunk_rem].set(adj_history_rem)
 
