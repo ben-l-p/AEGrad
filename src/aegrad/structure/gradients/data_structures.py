@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from math import prod
 from pathlib import Path
@@ -9,6 +9,7 @@ from typing import Optional, Sequence, Self, TYPE_CHECKING, OrderedDict
 import jax
 from jax import Array, numpy as jnp
 
+from aegrad.aero.gradients.data_structures import ApproxJacobianEntry
 from aegrad.plotting.beam import plot_beam_to_vtk
 from aegrad.algebra.array_utils import ArrayListShape
 from aegrad.utils.utils import make_pytree
@@ -43,6 +44,50 @@ class StructuralGradsToCompute:
     f_ext_follower: bool = False
     f_ext_dead: bool = False
     thrust_t: bool = False
+
+
+@dataclass
+class VarphiApprox:
+    varphi_nm1: ApproxJacobianEntry = None
+    varphi_n: ApproxJacobianEntry = None
+    v_nm1: ApproxJacobianEntry = None
+    a_nm1: ApproxJacobianEntry = None
+    a_n: ApproxJacobianEntry = None
+
+
+@dataclass
+class VApprox:
+    v_nm1: ApproxJacobianEntry = None
+    v_n: ApproxJacobianEntry = None
+    a_nm1: ApproxJacobianEntry = None
+    a_n: ApproxJacobianEntry = None
+
+
+@dataclass
+class VDotApprox:
+    varphi_nm1: ApproxJacobianEntry = None
+    varphi_n: ApproxJacobianEntry = None
+    v_nm1: ApproxJacobianEntry = None
+    v_n: ApproxJacobianEntry = None
+    v_dot_nm1: ApproxJacobianEntry = None
+    v_dot_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+
+
+@dataclass
+class AApprox:
+    v_dot_nm1: ApproxJacobianEntry = None
+    v_dot_n: ApproxJacobianEntry = None
+    a_nm1: ApproxJacobianEntry = None
+    a_n: ApproxJacobianEntry = None
+
+
+@dataclass
+class BeamJacobianApproximations:
+    varphi: VarphiApprox = field(default_factory=VarphiApprox)
+    v: VApprox = field(default_factory=VApprox)
+    v_dot: VDotApprox = field(default_factory=VDotApprox)
+    a: AApprox = field(default_factory=AApprox)
 
 
 @make_pytree

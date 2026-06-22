@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict
+from typing import Optional, Sequence, TYPE_CHECKING, OrderedDict, Literal
 
 from jax import Array, numpy as jnp
 
@@ -32,6 +32,76 @@ class AeroGradsToCompute:
     flowfield: bool = False
     cs_ang_t: bool = False
     cs_vel_t: bool = False
+
+
+type ApproxJacobianEntry = Optional[
+    Literal["zero", "constant"]
+    | tuple[Literal["dense_linear", "lazy_linear"], str | Sequence[str]]
+]
+
+
+@dataclass
+class GammaBApprox:
+    varphi_n: ApproxJacobianEntry = None
+    v_n: ApproxJacobianEntry = None
+    gamma_b_n: ApproxJacobianEntry = None
+    gamma_w_n: ApproxJacobianEntry = None
+    zeta_w_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+
+
+@dataclass
+class GammaWApprox:
+    varphi_nm1: ApproxJacobianEntry = None
+    varphi_n: ApproxJacobianEntry = None
+    gamma_b_nm1: ApproxJacobianEntry = None
+    gamma_w_nm1: ApproxJacobianEntry = None
+    gamma_w_n: ApproxJacobianEntry = None
+    zeta_w_nm1: ApproxJacobianEntry = None
+    zeta_w_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+
+
+@dataclass
+class ZetaWApprox:
+    varphi_nm1: ApproxJacobianEntry = None
+    varphi_n: ApproxJacobianEntry = None
+    gamma_b_nm1: ApproxJacobianEntry = None
+    gamma_w_nm1: ApproxJacobianEntry = None
+    gamma_w_n: ApproxJacobianEntry = None
+    zeta_w_nm1: ApproxJacobianEntry = None
+    zeta_w_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+
+
+@dataclass
+class GammaBDotApprox:
+    gamma_b_nm1: ApproxJacobianEntry = None
+    gamma_b_n: ApproxJacobianEntry = None
+    gamma_b_dot_nm1: ApproxJacobianEntry = None
+    gamma_b_dot_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+
+
+@dataclass
+class FAeroApprox:
+    varphi_n: ApproxJacobianEntry = None
+    v_n: ApproxJacobianEntry = None
+    gamma_b_n: ApproxJacobianEntry = None
+    gamma_w_n: ApproxJacobianEntry = None
+    gamma_b_dot_n: ApproxJacobianEntry = None
+    zeta_w_n: ApproxJacobianEntry = None
+    dv: ApproxJacobianEntry = None
+    f_aero_beam_n: ApproxJacobianEntry = None
+
+
+@dataclass
+class AeroJacobianApproximations:
+    gamma_b: GammaBApprox = field(default_factory=GammaBApprox)
+    gamma_w: GammaWApprox = field(default_factory=GammaWApprox)
+    zeta_w: ZetaWApprox = field(default_factory=ZetaWApprox)
+    gamma_b_dot: GammaBDotApprox = field(default_factory=GammaBDotApprox)
+    f_aero: FAeroApprox = field(default_factory=FAeroApprox)
 
 
 @make_pytree

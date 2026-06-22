@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import fields
 
-from typing import Optional, Callable, overload, cast
+from typing import Optional, Callable, cast, Sequence, Any
 
 import jax
 from jax import numpy as jnp
@@ -23,9 +24,17 @@ from aegrad.structure.gradients.data_structures import (
     StructureFullStates,
     StructuralDesignVariables,
     StructuralGradsToCompute,
+    BeamJacobianApproximations,
+    VarphiApprox,
+    VApprox,
+    VDotApprox,
+    AApprox,
 )
 from aegrad.algebra.se3 import exp_se3, log_se3
-from aegrad.algebra.base import jacrev_custom
+from aegrad.algebra.base import (
+    jacrev_custom,
+    construct_approximation,
+)
 from aegrad.structure import DynamicStructure
 from aegrad.structure.data_structures import StructureMinimalStates
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
@@ -548,56 +557,9 @@ class BeamStructure(BaseBeamStructure):
             axis=0,
         ).ravel()  # [4*n_free_dof]
 
-    @overload
     def timestep_residual_jacobians(
         self,
-        i_ts: int,
-        q_nm1: StructureMinimalStates,
-        q_n: StructureMinimalStates,
-        f_ext_aero_nm1: Array,
-        f_ext_aero_n: Array,
-        dv: StructuralDesignVariables,
-        thrust_t: dict[str, Array],
-        solve_dofs: tuple[int, ...],
-        approx_grads: bool,
-        n_profile_loops: Optional[int],
-    ) -> tuple[
-        Array,
-        Array,
-        StructuralDesignVariables,
-        Array,
-        Array,
-        Optional[dict[str, dict[str, float]]],
-        Optional[dict[str, dict[str, float]]],
-    ]: ...
-
-    @overload
-    def timestep_residual_jacobians(
-        self,
-        i_ts: int,
-        q_nm1: StructureMinimalStates,
-        q_n: StructureMinimalStates,
-        f_ext_aero_nm1: None,
-        f_ext_aero_n: None,
-        dv: StructuralDesignVariables,
-        thrust_t: dict[str, Array],
-        solve_dofs: tuple[int, ...],
-        approx_grads: bool,
-        n_profile_loops: Optional[int],
-    ) -> tuple[
-        Array,
-        Array,
-        StructuralDesignVariables,
-        None,
-        None,
-        Optional[dict[str, dict[str, float]]],
-        Optional[dict[str, dict[str, float]]],
-    ]: ...
-
-    # @jax.jit(static_argnums=(0, 6, 8, 9))
-    def timestep_residual_jacobians(
-        self,
-        i_ts: int,
+        i_ts: int | Array,
         q_nm1: StructureMinimalStates,
         q_n: StructureMinimalStates,
         f_ext_aero_nm1: Optional[Array],
@@ -607,6 +569,7 @@ class BeamStructure(BaseBeamStructure):
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
         n_profile_loops: Optional[int],
+        jac_options: dict[str, dict[str, Optional[Callable[..., Any]]]],
     ) -> tuple[
         Array,
         Array,
@@ -628,6 +591,8 @@ class BeamStructure(BaseBeamStructure):
         :param solve_dofs: Index of degrees of freedom to solve for.
         :param approx_grads: If True, remove some gradient terms which are generally small.
         :param n_profile_loops: Number of profile loops to run for timing function. If None, no profiling is done.
+        :param jac_options: Input which passes functions which can be used to approximate the Jacobians. If entries are
+        None, AD is used.
         :return: Jacobians with respect to previous state and current state, gradients with respect to design variables,
         previous, and current aerodynamic forces respectively, and profiling times for compilation and run time.
         """
@@ -635,16 +600,14 @@ class BeamStructure(BaseBeamStructure):
         compile_time: dict[str, dict[str, float]] = {}
         run_time: dict[str, dict[str, float]] = {}
 
+        compute_f_aero_grads = f_ext_aero_nm1 is not None and f_ext_aero_n is not None
+        if compute_f_aero_grads:
+            jac_options["v_dot"].update({"f_aero_nm1": None, "f_aero_n": None})
+
         # varphi
         d_varphi, compile_time["varphi"], run_time["varphi"] = jacrev_custom(
             func=self.varphi_res_func,
-            jac_options={  # currently no options selected TODO
-                "varphi_nm1": None,
-                "varphi_n": None,
-                "v_nm1": None,
-                "a_nm1": None,
-                "a_n": None,
-            },
+            jac_options=jac_options["varphi"],
             n_profile_loops=n_profile_loops,
             func_name="varphi",
             static_argnames=("solve_dofs",),
@@ -660,7 +623,7 @@ class BeamStructure(BaseBeamStructure):
         # velocity
         d_v, compile_time["v"], run_time["v"] = jacrev_custom(
             func=self.v_res_func,
-            jac_options={"v_nm1": None, "v_n": None, "a_nm1": None, "a_n": None},
+            jac_options=jac_options["v"],
             n_profile_loops=n_profile_loops,
             func_name="v",
             static_argnames=("solve_dofs",),
@@ -673,22 +636,9 @@ class BeamStructure(BaseBeamStructure):
         )
 
         # acceleration
-        compute_f_aero_grads = f_ext_aero_nm1 is not None and f_ext_aero_n is not None
-        d_v_dot_options = {
-            "varphi_nm1": None,
-            "varphi_n": None,
-            "v_nm1": None,
-            "v_n": None,
-            "v_dot_nm1": None,
-            "v_dot_n": None,
-            "dv": None,
-        }
-        if compute_f_aero_grads:
-            d_v_dot_options.update({"f_aero_nm1": None, "f_aero_n": None})
-
         d_v_dot, compile_time["v_dot"], run_time["v_dot"] = jacrev_custom(
             func=self.v_dot_res_func,
-            jac_options=d_v_dot_options,
+            jac_options=jac_options["v_dot"],
             n_profile_loops=n_profile_loops,
             func_name="v_dot",
             static_argnames=("solve_dofs", "approx_grads"),
@@ -715,12 +665,7 @@ class BeamStructure(BaseBeamStructure):
         # pseudo-acceleration
         d_a, compile_time["a"], run_time["a"] = jacrev_custom(
             func=self.a_res_func,
-            jac_options={
-                "v_dot_nm1": None,
-                "v_dot_n": None,
-                "a_nm1": None,
-                "a_n": None,
-            },
+            jac_options=jac_options["a"],
             n_profile_loops=n_profile_loops,
             func_name="a",
             static_argnames=("solve_dofs",),
@@ -847,6 +792,7 @@ class BeamStructure(BaseBeamStructure):
         approx_grads: bool,
         save_adjoint: bool,
         n_j: int,
+        jac_options: dict[str, dict[str, Optional[Callable[..., Any]]]],
     ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
         r"""
         Function to obtain the grads states at timestep varphi, which is dependent on the grads at timestep varphi+1.
@@ -865,6 +811,8 @@ class BeamStructure(BaseBeamStructure):
         :param approx_grads: Whether to approximate the gradient or not.
         :param save_adjoint: Whether to save the full adjoint time history.
         :param n_j: Number of objective function outputs.
+        :param jac_options: Input which passes functions which can be used to approximate the Jacobians. If entries are
+        None, AD is used.
         :return: Updated grads matrix, gradient of current step with respect to previous state and current state.
         """
 
@@ -896,6 +844,7 @@ class BeamStructure(BaseBeamStructure):
                 f_ext_aero_n=None,
                 thrust_t=thrust_t,
                 n_profile_loops=None,
+                jac_options=jac_options,
             )
         )
 
@@ -923,10 +872,102 @@ class BeamStructure(BaseBeamStructure):
 
         return d_j_d_x_, adj_ if save_adjoint else adj_n, p_r_n_p_q_nm1, q_nm1
 
+    def construct_approximate_jacobians(
+        self,
+        sol: DynamicStructure,
+        jacobian_approximations: BeamJacobianApproximations,
+    ) -> dict[str, dict[str, Optional[Callable[..., Any]]]]:
+        r"""
+        Compute approximations for Jacobians which are specified in the jacobian_approximations data structure.
+        :param sol: Solution for which approximations will be created for the initial time step.
+        :param jacobian_approximations: Data structure which defines which approximations to create.
+        :return: Dictionary of approximations.
+        """
+        q_nm1 = sol.get_minimal_states(0)
+        q_n = sol.get_minimal_states(1)
+        dv = self.get_design_variables(
+            struct_case=sol, thrust_t=sol.thrust, grads_to_compute=None
+        )
+        solve_dofs = tuple(
+            int(i)
+            for i in get_solve_dofs(
+                n_dof=self.n_dof, prescribed_dofs=sol.prescribed_dofs
+            )
+        )
+        if sol.f_ext_aero is not None:
+            f_aero_nm1 = sol.f_ext_aero[0, ...].ravel()
+            f_aero_n = sol.f_ext_aero[1, ...].ravel()
+        else:
+            f_aero_nm1 = None
+            f_aero_n = None
+
+        res_args: dict[
+            str, tuple[Callable[..., Array], dict[str, Any], Sequence[str]]
+        ] = {
+            "varphi": (
+                self.varphi_res_func,
+                dict(
+                    varphi_nm1=q_nm1.varphi.ravel(),
+                    varphi_n=q_n.varphi.ravel(),
+                    v_nm1=q_nm1.v.ravel(),
+                    a_nm1=q_nm1.a.ravel(),
+                    a_n=q_n.a.ravel(),
+                    solve_dofs=solve_dofs,
+                ),
+                [f.name for f in fields(VarphiApprox)],
+            ),
+            "v": (
+                self.v_res_func,
+                dict(
+                    v_nm1=q_nm1.v.ravel(),
+                    v_n=q_n.v.ravel(),
+                    a_nm1=q_nm1.a.ravel(),
+                    a_n=q_n.a.ravel(),
+                    solve_dofs=solve_dofs,
+                ),
+                [f.name for f in fields(VApprox)],
+            ),
+            "v_dot": (
+                self.v_dot_res_func,
+                dict(
+                    i_ts=1,
+                    varphi_nm1=q_nm1.varphi.ravel(),
+                    varphi_n=q_n.varphi.ravel(),
+                    v_nm1=q_nm1.v.ravel(),
+                    v_n=q_n.v.ravel(),
+                    v_dot_nm1=q_nm1.v_dot.ravel(),
+                    v_dot_n=q_n.v_dot.ravel(),
+                    dv=dv,
+                    f_aero_nm1=f_aero_nm1,
+                    f_aero_n=f_aero_n,
+                    thrust_t=sol.thrust,
+                    solve_dofs=solve_dofs,
+                    approx_grads=True,
+                ),
+                [f.name for f in fields(VDotApprox)],
+            ),
+            "a": (
+                self.a_res_func,
+                dict(
+                    v_dot_nm1=q_nm1.v_dot.ravel(),
+                    v_dot_n=q_n.v_dot.ravel(),
+                    a_nm1=q_nm1.a.ravel(),
+                    a_n=q_n.a.ravel(),
+                    solve_dofs=solve_dofs,
+                ),
+                [f.name for f in fields(AApprox)],
+            ),
+        }
+
+        return construct_approximation(
+            res_args=res_args, jacobian_approximations=jacobian_approximations
+        )
+
     def dynamic_adjoint(
         self,
         structure: DynamicStructure,
         objective: StructuralObjectiveFunction,
+        jacobian_approximations: BeamJacobianApproximations = BeamJacobianApproximations(),
         p_q0_p_x: Optional[StructuralDesignVariables] = None,
         save_adjoint: bool = False,
         approx_grads: bool = True,
@@ -947,7 +988,11 @@ class BeamStructure(BaseBeamStructure):
         the dynamic structure equations. The gradient is computed by first solving a backward pass to obtain the grads
         states, and then using these to compute the gradient w.r.t. design variables in a forward pass.
         :param structure: Dynamic structure solution object.
-        :param objective: Objective function :math:`j(\mathbf{x}, \mathbf{y}_i)`
+        :param objective: Objective function :math:`j(\mathbf{x}, \mathbf{y}_i)`.
+        :param jacobian_approximations: Data structure which specifies Jacobian approximations to use for each part of
+        the problem. The value can either be None for no approximation, `constant` for the assumption that the Jacobian
+        does not vary with any variables. Alternatively, it can be tuple pairs with first entry being `dense_linear` or
+        `lazy_linear`, with the second entry being a sequence of argument names for which to obtain the Hessian.
         :param p_q0_p_x: Optional Jacobian used to describe the sensitivities of the initial structural degrees of
         freedom to the design variables.
         :param save_adjoint: Whether to save the full adjoint vectors.
@@ -1015,6 +1060,11 @@ class BeamStructure(BaseBeamStructure):
             self.n_dof - len(structure.prescribed_dofs)
         )  # number of grads degrees of freedom
 
+        # compute Jacobian approximations, if requested
+        jac_options = self.construct_approximate_jacobians(
+            sol=structure, jacobian_approximations=jacobian_approximations
+        )
+
         # wrap in a local JIT so structure/aero_dv become closure constants
         @jax.jit
         def adjoint_step(
@@ -1039,6 +1089,7 @@ class BeamStructure(BaseBeamStructure):
                 approx_grads=approx_grads,
                 save_adjoint=save_adjoint,
                 n_j=n_j,
+                jac_options=jac_options,
             )
 
         # pass through time steps backwards to obtain adjoints
@@ -1088,6 +1139,7 @@ class BeamStructure(BaseBeamStructure):
         self,
         sol: DynamicStructure,
         approx_grads: bool,
+        jacobian_approximations: BeamJacobianApproximations = BeamJacobianApproximations(),
         grads_to_compute: Optional[StructuralGradsToCompute] = None,
         f_aero_nm1_n: Optional[tuple[Array, Array]] = None,
         i_ts: int = 1,
@@ -1099,6 +1151,8 @@ class BeamStructure(BaseBeamStructure):
         Function to time evaluation of the Jacobians used for the adjoint solution.
         :param sol: Dynamic structural solution to extract states from.
         :param approx_grads: If True, neglect small gradient terms.
+        :param jacobian_approximations: Data structure which specifies Jacobian approximations to use for each part of
+        the problem.
         :param grads_to_compute: StructuralGradsToCompute object which describes which design gradients to compute. If
         None, all gradients will be computed.
         :param f_aero_nm1_n: Tuple of [f_aero_nm1, f_aero_n] which are passed from the aero problem. If None, no
@@ -1111,6 +1165,11 @@ class BeamStructure(BaseBeamStructure):
 
         if print_header:
             print_table_title(inner_width=95, title="Structure Adjoint Profile")
+
+        # compute Jacobian approximations, if requested
+        jac_options = self.construct_approximate_jacobians(
+            sol=sol, jacobian_approximations=jacobian_approximations
+        )
 
         common_kwargs = dict(
             i_ts=i_ts,
@@ -1125,7 +1184,9 @@ class BeamStructure(BaseBeamStructure):
             ),
             approx_grads=approx_grads,
             n_profile_loops=n_loop,
+            jac_options=jac_options,
         )
+
         if f_aero_nm1_n is not None:
             *_, compile_time, run_time = self.timestep_residual_jacobians(
                 f_ext_aero_nm1=f_aero_nm1_n[0],

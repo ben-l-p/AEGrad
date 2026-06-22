@@ -116,16 +116,16 @@ def conditional_profile[U](
             raise ValueError("n_loops must be a positive int")
         loops: int = n_loops
 
-        def inner_func(**a_: Any) -> tuple[U, float, float]:
+        def inner_func(*args_: Any, **a_: Any) -> tuple[U, float, float]:
             # warm-up: includes compile + first run
             start_time = time.time()
-            out = jax.block_until_ready(func(**a_))
+            out = jax.block_until_ready(func(*args_, **a_))
             compile_run_time = time.time() - start_time
 
             # timed run on the compiled function
             start_time = time.time()
             for _ in range(loops):
-                jax.block_until_ready(func(**a_))
+                jax.block_until_ready(func(*args_, **a_))
 
             run_time = (time.time() - start_time) / loops
             compile_time = compile_run_time - run_time

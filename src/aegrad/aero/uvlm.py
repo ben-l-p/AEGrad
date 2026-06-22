@@ -1,7 +1,8 @@
 from __future__ import annotations
 from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, TYPE_CHECKING, Protocol
+from dataclasses import fields
+from typing import Any, Callable, Optional, TYPE_CHECKING, Protocol
 import os
 from pathlib import Path
 from functools import singledispatchmethod
@@ -11,7 +12,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
-from aegrad.algebra.base import jacrev_custom
+from aegrad.algebra.base import construct_approximation, jacrev_custom
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
@@ -42,12 +43,18 @@ from aegrad.algebra.se3 import vect_product as se3_vect_product
 from aegrad.aero.aic import compute_v_ind, compute_aic_solve
 from aegrad.aero.gradients.data_structures import (
     AeroDesignVariables,
+    AeroJacobianApproximations,
     AeroStates,
     AeroGradsToCompute,
+    GammaBApprox,
+    GammaWApprox,
+    ZetaWApprox,
+    GammaBDotApprox,
+    FAeroApprox,
 )
 from aegrad.utils.print_utils import VerbosityLevel
 from aegrad.coupled.data_structures import AeroelasticDesignVariables
-from aegrad.structure import BeamStructure
+from aegrad.structure import BeamStructure, DynamicStructure
 from aegrad.algebra.array_utils import construct_named_block_jacobian, ArrayListShape
 
 
@@ -1874,9 +1881,143 @@ class UVLM:
             )
         )
 
+    def construct_approximate_jacobians(
+        self,
+        aero_sol: DynamicAeroCase,
+        structure_sol: DynamicStructure,
+        struct_obj: BeamStructure,
+        dv: AeroelasticDesignVariables,
+        dv_full: AeroelasticDesignVariables,
+        solve_dofs: tuple[int, ...],
+        jacobian_approximations: AeroJacobianApproximations,
+    ) -> dict[str, dict[str, Optional[Callable[..., Any]]]]:
+        r"""
+        Compute approximations for the aerodynamic residual Jacobians specified in the ``jacobian_approximations`` data
+        structure. The residuals covered are the bound circulation, wake propagation, bound circulation rate, and
+        aerodynamic forcing.
+        :param aero_sol: Aerodynamic solution from which to extract states for the initial time step.
+        :param structure_sol: Structural solution from which to extract states for the initial time step.
+        :param struct_obj: Beam structure used by the residual functions for the kinematic transformations.
+        :param dv: Aeroelastic design variables.
+        :param dv_full: Aeroelastic design variables without omissions for the variables where gradients aren't
+        requested.
+        :param solve_dofs: Active structural degrees of freedom.
+        :param jacobian_approximations: Data structure which defines which approximations to create.
+        :return: Dictionary of approximations keyed by residual name.
+        """
+        q_nm1 = aero_sol.get_states(0)
+        q_n = aero_sol.get_states(1)
+        struct_nm1 = structure_sol.get_minimal_states(0)
+        struct_n = structure_sol.get_minimal_states(1)
+
+        varphi_nm1 = struct_nm1.varphi.ravel()
+        varphi_n = struct_n.varphi.ravel()
+        v_n = struct_n.v.ravel()
+        gamma_b_nm1 = q_nm1.gamma_b.ravel()
+        gamma_b_n = q_n.gamma_b.ravel()
+        gamma_w_nm1 = q_nm1.gamma_w.ravel()
+        gamma_w_n = q_n.gamma_w.ravel()
+        gamma_b_dot_nm1 = q_nm1.gamma_b_dot.ravel()
+        gamma_b_dot_n = q_n.gamma_b_dot.ravel()
+        zeta_w_nm1 = q_nm1.zeta_w.ravel()
+        zeta_w_n = q_n.zeta_w.ravel()
+
+        if struct_n.f_ext_aero is None:
+            raise ValueError("Missing aerodynamic forcing states")
+        f_aero_beam_n = struct_n.f_ext_aero.ravel()
+
+        t_n = aero_sol.t[1]
+
+        gamma_b_args = dict(
+            i_ts=1,
+            t_n=t_n,
+            varphi_n=varphi_n,
+            v_n=v_n,
+            gamma_b_n=gamma_b_n,
+            gamma_w_n=gamma_w_n,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
+        )
+
+        wake_args = dict(
+            i_ts=1,
+            t_n=t_n,
+            varphi_nm1=varphi_nm1,
+            varphi_n=varphi_n,
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_w_nm1=gamma_w_nm1,
+            gamma_w_n=gamma_w_n,
+            zeta_w_nm1=zeta_w_nm1,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
+        )
+
+        gamma_b_dot_args = dict(
+            gamma_b_nm1=gamma_b_nm1,
+            gamma_b_n=gamma_b_n,
+            gamma_b_dot_nm1=gamma_b_dot_nm1,
+            gamma_b_dot_n=gamma_b_dot_n,
+            dv=dv,
+        )
+
+        f_aero_args = dict(
+            i_ts=1,
+            t_n=t_n,
+            varphi_n=varphi_n,
+            v_n=v_n,
+            gamma_b_n=gamma_b_n,
+            gamma_w_n=gamma_w_n,
+            gamma_b_dot_n=gamma_b_dot_n,
+            zeta_w_n=zeta_w_n,
+            dv=dv,
+            dv_full=dv_full,
+            struct_obj=struct_obj,
+            f_aero_beam_n=f_aero_beam_n,
+            block_grid_gradients=True,
+            solve_dofs=solve_dofs,
+        )
+
+        res_args: dict[
+            str, tuple[Callable[..., Array], dict[str, Any], Sequence[str]]
+        ] = {
+            "gamma_b": (
+                self.gamma_b_res_func,
+                gamma_b_args,
+                [f.name for f in fields(GammaBApprox)],
+            ),
+            "gamma_w": (
+                lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
+                wake_args,
+                [f.name for f in fields(GammaWApprox)],
+            ),
+            "zeta_w": (
+                lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
+                wake_args,
+                [f.name for f in fields(ZetaWApprox)],
+            ),
+            "gamma_b_dot": (
+                self.gamma_b_dot_res_func,
+                gamma_b_dot_args,
+                [f.name for f in fields(GammaBDotApprox)],
+            ),
+            "f_aero": (
+                self.f_aero_res_func,
+                f_aero_args,
+                [f.name for f in fields(FAeroApprox)],
+            ),
+        }
+
+        return construct_approximation(
+            res_args=res_args, jacobian_approximations=jacobian_approximations
+        )
+
     def timestep_residual_jacobians(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         varphi_nm1: Array,
         varphi_n: Array,
         v_n: Array,
@@ -1890,6 +2031,7 @@ class UVLM:
         approx_grads: bool,
         solve_dofs: tuple[int, ...],
         n_profile_loops: Optional[int],
+        jac_options: dict,
     ) -> tuple[
         Array,
         Array,
@@ -1915,6 +2057,8 @@ class UVLM:
         :param approx_grads: If true, eliminate grid gradients from force computation.
         :param solve_dofs: Degrees of freedom to solve for. This removes non-active forcing entries.
         :param n_profile_loops: Optional number of loops for profiling function.
+        :param jac_options: Dictionary of optional functions which can be used to substitute Jacobian evaluations from
+        AD.
         :return: Gradients of aerodynamic residual with respect to previous states, current states, and design
         variables. Additionally, includes Jacobians of the aerodynamic residual with respect to the structural
         displacement and velocity, and profiling times for compilation and run time.
@@ -1937,14 +2081,7 @@ class UVLM:
 
         d_gamma_b, compile_time["gamma_b"], run_time["gamma_b"] = jacrev_custom(
             func=self.gamma_b_res_func,
-            jac_options={
-                "varphi_n": None,
-                "v_n": None,
-                "gamma_b_n": None,
-                "gamma_w_n": None,
-                "zeta_w_n": None,
-                "dv": None,
-            },
+            jac_options=jac_options["gamma_b"],
             n_profile_loops=n_profile_loops,
             func_name="gamma_b",
         )(
@@ -1962,16 +2099,7 @@ class UVLM:
 
         d_gamma_w, compile_time["gamma_w"], run_time["gamma_w"] = jacrev_custom(
             func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
-            jac_options={
-                "varphi_nm1": None,
-                "varphi_n": None,
-                "gamma_b_nm1": None,
-                "gamma_w_nm1": None,
-                "gamma_w_n": None,
-                "zeta_w_nm1": None,
-                "zeta_w_n": None,
-                "dv": None,
-            },
+            jac_options=jac_options["gamma_w"],
             n_profile_loops=n_profile_loops,
             func_name="gamma_w",
         )(
@@ -1991,16 +2119,7 @@ class UVLM:
 
         d_zeta_w, compile_time["zeta_w"], run_time["zeta_w"] = jacrev_custom(
             func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
-            jac_options={
-                "varphi_nm1": None,
-                "varphi_n": None,
-                "gamma_b_nm1": None,
-                "gamma_w_nm1": None,
-                "gamma_w_n": None,
-                "zeta_w_nm1": None,
-                "zeta_w_n": None,
-                "dv": None,
-            },
+            jac_options=jac_options["zeta_w"],
             n_profile_loops=n_profile_loops,
             func_name="zeta_w",
         )(
@@ -2021,13 +2140,7 @@ class UVLM:
         d_gamma_b_dot, compile_time["gamma_b_dot"], run_time["gamma_b_dot"] = (
             jacrev_custom(
                 func=self.gamma_b_dot_res_func,
-                jac_options={
-                    "gamma_b_nm1": None,
-                    "gamma_b_n": None,
-                    "gamma_b_dot_nm1": None,
-                    "gamma_b_dot_n": None,
-                    "dv": None,
-                },
+                jac_options=jac_options["gamma_b_dot"],
                 n_profile_loops=n_profile_loops,
                 func_name="gamma_b_dot",
             )(
@@ -2041,16 +2154,7 @@ class UVLM:
 
         d_f_aero, compile_time["f_aero"], run_time["f_aero"] = jacrev_custom(
             func=self.f_aero_res_func,
-            jac_options={
-                "varphi_n": None,
-                "v_n": None,
-                "gamma_b_n": None,
-                "gamma_w_n": None,
-                "gamma_b_dot_n": None,
-                "zeta_w_n": None,
-                "dv": None,
-                "f_aero_beam_n": None,
-            },
+            jac_options=jac_options["f_aero"],
             n_profile_loops=n_profile_loops,
             func_name="f_aero",
             static_argnames=("block_grid_gradients", "solve_dofs"),

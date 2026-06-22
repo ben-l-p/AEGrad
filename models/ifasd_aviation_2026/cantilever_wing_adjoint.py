@@ -19,8 +19,7 @@ from aegrad.utils.data_structures import ConvergenceSettings
 if __name__ == "__main__":
     r"""
     Obtain the time history of the cantilever wing case, and the gradient of the wing root bending moment with respect 
-    to some structural and aerodynamic properties. Note: this case is rather expensive to run, and can take hours on a 
-    GPU. This does not verify with finite differences.
+    to some structural and aerodynamic properties. This does not verify with finite differences.
     """
     jax.config.update("jax_enable_x64", True)
 

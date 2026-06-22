@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from math import factorial
-from typing import Callable, Any, Optional, Sequence
+from typing import Callable, Any, Literal, Optional, Sequence, TYPE_CHECKING
 
 import jax
 from jax import numpy as jnp, Array
@@ -11,6 +12,10 @@ from jax import jacrev
 
 from aegrad.utils.constants import BASE_SUMMATION_ORDER
 from aegrad.utils.utils import conditional_profile
+
+if TYPE_CHECKING:
+    from aegrad.aero.gradients.data_structures import AeroJacobianApproximations
+    from aegrad.structure.gradients.data_structures import BeamJacobianApproximations
 
 
 def matrix2(mat: Array) -> Array:
@@ -275,3 +280,145 @@ def jacrev_custom(
             return jacobians, None, None
 
     return inner_func
+
+
+def jacobian_approximation(
+    func: Callable[..., Any],
+    args: Any,
+    approx_type: Optional[Literal["zero", "constant", "dense_linear", "lazy_linear"]],
+    jacobian_argname: str,
+    hessian_argnames: str | Sequence[str],
+) -> Optional[Callable[..., Any]]:
+    r"""
+    Compute approximations of Jacobians. The following options for approximation are available:
+    `None` - No approximation is computed.
+    `zero` - Assume that the Jacobian is zero.
+    `constant` - Assume that the Jacobian is constant across all time steps.
+     Alongside these, options are also available to compute the Jacobians by a linear approximation by using a
+     Hessian-vector product, where the Hessian is constant. This introduces additional options:
+     `dense_linear` - The dense Hessian is explicitly computed, which increases memory cost but reduces computation cost.
+     `lazy_linear` - Uses the JAX linearise routine, which avoids explicitly computing the dense Hessian, which reduces
+     memory cost at the expense of increased computation cost.
+    :param func: Function for which Jacobians are to be computed.
+    :param args: Arguments for `func` which define the state around which we want to make the approximation.
+    :param approx_type: Type of approximation to be used to compute Jacobians. Options are "constant", "dense_linear" or
+    "lazy_linear". If None, no approximation is computed.
+    :param jacobian_argname: Argument which the function Jacobian is to be computed with respect to.
+    :param hessian_argnames: Argument names which the Jacobian is linearised with respect to for computing
+    Hessian-vector products.
+    :return: Function which approximates the Jacobian which takes the same arguments as `func`, or None.
+    """
+
+    hessian_argnames_t = (
+        (hessian_argnames,)
+        if isinstance(hessian_argnames, str)
+        else tuple(hessian_argnames)
+    )
+
+    match approx_type:
+        case None:
+            # no approximation, and so we will compute the exact Jacobian using AD later
+            return None
+        case "zero":
+            # assume that the Jacobian is zero, avoiding any Jacobian computation. In practice, this is only useful
+            # when the `constant` path would be slow to linearise.
+            jac_shape = jax.eval_shape(
+                jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True),
+                **args,
+            )[jacobian_argname]
+            zero_jac = jnp.zeros(jac_shape.shape)
+            return lambda *_, **__: zero_jac
+        case "constant":
+            # assume that the Jacobian stays constant for all time
+            jac = jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
+                **args
+            )[jacobian_argname]
+            return lambda *_, **__: jac
+        case "lazy_linear":
+            # Jacobian is computed using a Hessian-vector product where the Hessian is chosen to be constant
+            # uses the JAX linearise function which means that the dense Hessian is never computed
+            # reduced memory cost at the expense of increased computation cost
+            def _jac_at(*y_vals: Any) -> Array:
+                new_args = dict(args)
+                for name, val in zip(hessian_argnames_t, y_vals):
+                    new_args[name] = val
+                return jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
+                    **new_args
+                )[jacobian_argname]
+
+            y0_vals = tuple(args[name] for name in hessian_argnames_t)
+            j0, jac_jvp = jax.linearize(_jac_at, *y0_vals)
+
+            def lazy_linear_approx(
+                new_args: dict[str, Any], *_: Any, **__: Any
+            ) -> Array:
+                dy_vals = tuple(
+                    new_args[name] - args[name] for name in hessian_argnames_t
+                )
+                return j0 + jac_jvp(*dy_vals)
+
+            return lazy_linear_approx
+        case "dense_linear":
+            # as `lazy_linear`, except that the dense Hessian is explicitly computed.
+            def _jac_at_kwargs(**kw: Any) -> Array:
+                new_args = dict(args)
+                new_args.update(kw)
+                return jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
+                    **new_args
+                )[jacobian_argname]
+
+            y0_kwargs = {name: args[name] for name in hessian_argnames_t}
+            j0 = _jac_at_kwargs(**y0_kwargs)
+            hessians = jacrev_kwargs(
+                _jac_at_kwargs, argnames=hessian_argnames_t, allow_int=True
+            )(**y0_kwargs)
+
+            def dense_linear_approx(
+                new_args: dict[str, Any], *_: Any, **__: Any
+            ) -> Array:
+                result = j0
+                for name in hessian_argnames_t:
+                    dy = new_args[name] - args[name]
+                    result += jnp.tensordot(hessians[name], dy, axes=dy.ndim)
+                return result
+
+            return dense_linear_approx
+        case _:
+            raise ValueError(f"Invalid approximation type: {approx_type}")
+
+
+def construct_approximation(
+    res_args: dict[str, tuple[Callable[..., Any], dict, Sequence[str]]],
+    jacobian_approximations: AeroJacobianApproximations | BeamJacobianApproximations,
+) -> dict[str, dict[str, Optional[Callable[..., Any]]]]:
+
+    jacobian_options: dict[str, dict[str, Optional[Callable[..., Any]]]] = {}
+    for res_name, (func, args, diff_arg_names) in res_args.items():
+        approx_class = getattr(jacobian_approximations, res_name)
+        inner: dict[str, Optional[Callable[..., Any]]] = {
+            k: None for k in diff_arg_names
+        }
+        for arg_name, entry in asdict(approx_class).items():
+            if entry is None:
+                inner[arg_name] = None
+            elif entry == "zero" or entry == "constant":
+                inner[arg_name] = jacobian_approximation(
+                    func=func,
+                    args=args,
+                    approx_type=entry,
+                    jacobian_argname=arg_name,
+                    hessian_argnames=(),
+                )
+            elif isinstance(entry, tuple) and len(entry) == 2:
+                approx_type, hessian_argnames = entry
+                inner[arg_name] = jacobian_approximation(
+                    func=func,
+                    args=args,
+                    approx_type=approx_type,
+                    jacobian_argname=arg_name,
+                    hessian_argnames=hessian_argnames,
+                )
+            else:
+                raise NotImplementedError("Invalid Jacobian approx type")
+        jacobian_options[res_name] = inner
+    return jacobian_options

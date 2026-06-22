@@ -6,8 +6,14 @@ from dataclasses import dataclass, field
 from jax import Array
 from jax import numpy as jnp
 
-from aegrad.aero.gradients.data_structures import AeroGradsToCompute
-from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
+from aegrad.aero.gradients.data_structures import (
+    AeroGradsToCompute,
+    AeroJacobianApproximations,
+)
+from aegrad.structure.gradients.data_structures import (
+    StructuralGradsToCompute,
+    BeamJacobianApproximations,
+)
 from aegrad.utils.utils import make_pytree
 from aegrad.utils.print_utils import jax_print, VerbosityLevel
 
@@ -18,6 +24,14 @@ class AeroelasticGradsToCompute:
         default_factory=StructuralGradsToCompute
     )
     aero: AeroGradsToCompute = field(default_factory=AeroGradsToCompute)
+
+
+@dataclass
+class AeroelasticJacobianApproximations:
+    structure: BeamJacobianApproximations = field(
+        default_factory=BeamJacobianApproximations
+    )
+    aero: AeroJacobianApproximations = field(default_factory=AeroJacobianApproximations)
 
 
 @make_pytree
