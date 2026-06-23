@@ -67,6 +67,14 @@ class AeroGridFunction(Protocol):
     def __call__(self, x0: ArrayList, **kwargs: Array) -> ArrayList: ...
 
 
+def _identity_grid_func(x0: ArrayList, **_: Array) -> ArrayList:
+    r"""
+    Function used when there are no control surfaces used. This is defined here to allow for equality checks when
+    running cases in parallel.
+    """
+    return x0
+
+
 @make_pytree
 class UVLM:
     r"""
@@ -213,14 +221,10 @@ class UVLM:
         self.surf_b_names: list[str] = [f"surf_{i}_bound" for i in range(self.n_surf)]
         self.surf_w_names: list[str] = [f"surf_{i}_wake" for i in range(self.n_surf)]
 
-        def grid_func_inner(x0: ArrayList, **kwargs: Array) -> ArrayList:
-            if grid_func is not None:
-                return grid_func(x0, **kwargs)
-            else:
-                return x0
-
         # control surface variables
-        self.grid_func: AeroGridFunction = grid_func_inner
+        self.grid_func: AeroGridFunction = (
+            grid_func if grid_func is not None else _identity_grid_func
+        )
 
         self.cs_ang0: dict[str, Array] = dict()
         self.cs_vel0: dict[str, Array] = dict()
@@ -2265,7 +2269,6 @@ class UVLM:
             "n_panels_tot",
             "gamma_b_slice",
             "gamma_w_slice",
-            "dof_mapping",
             "variable_wake_disc",
             "kernels_b",
             "kernels_w",
@@ -2293,4 +2296,5 @@ class UVLM:
             "mirror_normal",
             "cs_ang0",
             "cs_vel0",
+            "dof_mapping",
         )

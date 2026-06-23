@@ -33,6 +33,7 @@ from aegrad.coupled.data_structures import (
 )
 
 from aegrad.coupled.coupled import BaseCoupledAeroelastic
+from aegrad.utils.utils import make_pytree
 from aegrad.algebra.se3 import exp_se3
 from aegrad.structure.gradients.data_structures import StructureFullStates
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
@@ -60,6 +61,7 @@ type AeroelasticObjectiveFunction = (
 ORIENTATION_DICT: Final[dict[str, int]] = {"x": 0, "y": 1, "z": 2}
 
 
+@make_pytree
 class CoupledAeroelastic(BaseCoupledAeroelastic):
     def _aeroelastic_states_res_from_dv_varphi(
         self,

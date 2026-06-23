@@ -17,21 +17,21 @@ class TimeIntegrator:
     def __init__(
         self,
         spectral_radius: float,
-        dt: float,
+        dt: Array,
     ):
         if 1.0 < spectral_radius < 0.0:
             warn(
                 "Spectral radius should be between 0.0 and 1.0 to guarantee stability."
             )
         spectral_radius: float = spectral_radius
-        self.dt: float = dt
+        self.dt: Array = dt
         self.spectral_radius: float = spectral_radius
         self.alpha_m: float = (2.0 * spectral_radius - 1.0) / (spectral_radius + 1.0)
         self.alpha_f: float = spectral_radius / (spectral_radius + 1.0)
         self.gamma: float = (3.0 - spectral_radius) / (2.0 + 2.0 * spectral_radius)
         self.beta: float = 1.0 / ((spectral_radius + 1.0) ** 2)
-        self.gamma_prime: float = self.gamma / (self.beta * dt)
-        self.beta_prime: float = (1.0 - self.alpha_m) / (
+        self.gamma_prime: Array = self.gamma / (self.beta * dt)
+        self.beta_prime: Array = (1.0 - self.alpha_m) / (
             self.beta * dt * dt * (1.0 - self.alpha_f)
         )
 
@@ -166,17 +166,14 @@ class TimeIntegrator:
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:
-        return ()
+        return "dt", "gamma_prime", "beta_prime"
 
     @staticmethod
     def _static_names() -> Sequence[str]:
         return (
-            "dt",
             "spectral_radius",
             "alpha_m",
             "alpha_f",
             "gamma",
             "beta",
-            "gamma_prime",
-            "beta_prime",
         )

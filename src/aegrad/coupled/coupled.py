@@ -29,11 +29,13 @@ from aegrad.structure.time_integration import TimeIntegrator
 from aegrad.structure.utils import get_solve_dofs
 from aegrad.aero.utils import cs_ang_to_cs_vel
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
+from aegrad.utils.utils import make_pytree
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
 
 
+@make_pytree
 class BaseCoupledAeroelastic:
     def __init__(
         self,
@@ -308,7 +310,7 @@ class BaseCoupledAeroelastic:
         t = jnp.arange(n_tstep) * self.aero.dt + t_init
 
         self.structure.time_integrator = TimeIntegrator(
-            spectral_radius=self.structure.spectral_radius, dt=float(self.aero.dt)
+            spectral_radius=self.structure.spectral_radius, dt=self.aero.dt
         )
 
         # initialise aeroelastic case object
@@ -387,3 +389,11 @@ class BaseCoupledAeroelastic:
 
         fsi_converge_status.print_line(dynamic=True)
         return out
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        return "structure", "aero"
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        return ("fsi_convergence_settings",)
