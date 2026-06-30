@@ -1507,10 +1507,10 @@ class BaseBeamStructure:
 
     def static_solve(
         self,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
-        f_ext_aero: Optional[Array],
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
+        f_ext_follower: Optional[Array] = None,
+        f_ext_dead: Optional[Array] = None,
+        f_ext_aero: Optional[Array] = None,
         load_steps: int = 1,
     ) -> StaticStructure:
         r"""

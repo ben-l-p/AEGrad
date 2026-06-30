@@ -629,6 +629,25 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         return aero_options | struct_options
 
+    def evaluate_dynamic_objective(
+        self, case: DynamicAeroelastic, objective: AeroelasticObjectiveFunction
+    ) -> Array:
+        r"""
+        Evaluate the dynamic objective for a given case.
+        :param case: Dynamic aeroelastic case object.
+        :param objective: Objective function to be evaluated.
+        :return: Value of subobjective at every time step, [n_tstep].
+        """
+        n_tstep = case.structure.n_tstep
+
+        dv = self.get_design_variables(case=case, grads_to_compute=None)
+
+        return jax.vmap(
+            lambda i_ts: jnp.atleast_1d(
+                objective(case.get_full_states(i_ts=i_ts), dv, i_ts)
+            )
+        )(jnp.arange(n_tstep)).reshape(n_tstep, -1)
+
     def dynamic_adjoint(
         self,
         case: DynamicAeroelastic,
@@ -641,6 +660,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         save_adjoint: bool = False,
         approx_grads: bool = True,
         n_parallel_steps: int = 1,
+        n_tstep_adjoint: Optional[int] = None,
     ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
@@ -658,6 +678,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param n_parallel_steps: Number of time steps whose residual and objective Jacobians are evaluated together in
         a single vmap call before the adjoint linear solves are stepped sequentially across them. Larger values
         expose more parallelism but linearly increase peak memory.
+        :param n_tstep_adjoint: Optional integer giving the last time step at which the objective contributes to the
+        gradient. When provided, skips computation of the adjoint solution for time steps after this index.
         :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
         step, and optional adjoint states.
         """
@@ -693,27 +715,20 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         n_solve = len(solve_dofs)
 
-        j_eval = jnp.array(
-            [
+        j_eval = jax.vmap(
+            lambda i_ts: jnp.atleast_1d(
                 objective(case.get_full_states(i_ts=i_ts), dv, i_ts)
-                for i_ts in range(n_tstep)
-            ]
-        ).reshape(n_tstep, n_j)
-
-        # the last time step where the objective was nonzero. This can be used to prevent redundant computations for
-        # computing sensitivities which only refer to a small number of time steps by not running the adjoint problem
-        # after the last time step which has a contribution.
-        active_mask = jnp.any(j_eval, axis=-1)
-        last_active_i_ts = jnp.max(jnp.where(active_mask, jnp.arange(n_tstep), 0))
-        jax_print(
-            "Evaluating adjoint problem from timestep 0 to {last_active_i_ts}",
-            last_active_i_ts=last_active_i_ts,
-            verbose_level=VerbosityLevel.NORMAL,
-        )
+            )
+        )(jnp.arange(n_tstep)).reshape(n_tstep, n_j)
 
         jac_options = self.construct_approximate_jacobians(
             sol=case, jacobian_approximations=jacobian_approximations
         )
+
+        if n_tstep_adjoint is None:
+            n_tstep_adjoint_: int = n_tstep - 1
+        else:
+            n_tstep_adjoint_ = n_tstep_adjoint
 
         @jax.jit
         def objective_jacobians(
@@ -768,7 +783,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             """
 
             i_ts = (
-                last_active_i_ts - rev_i_ts_
+                n_tstep_adjoint_ - rev_i_ts_
             )  # index for timestep varphi, which decrements
 
             # solve for adjoint at current timestep
@@ -828,7 +843,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             # i_ts for each step in the chunk; index 0 is the latest in real time (processed first by the adjoint)
             i_ts_chunk = (
-                last_active_i_ts - rev_i_ts_start - jnp.arange(n_parallel_steps_)
+                n_tstep_adjoint_ - rev_i_ts_start - jnp.arange(n_parallel_steps_)
             )
 
             def per_step_jacobians(
@@ -1022,9 +1037,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         n_adj_dof = 4 * n_solve + n_aero_states + n_solve
 
         # pass through time steps backwards in chunks of n_parallel_steps
-        n_active_steps: int = int(last_active_i_ts)
-        n_full_chunks: int = n_active_steps // n_parallel_steps
-        remainder: int = n_active_steps - n_full_chunks * n_parallel_steps
+        n_full_chunks: int = n_tstep_adjoint_ // n_parallel_steps
+        remainder: int = n_tstep_adjoint_ - n_full_chunks * n_parallel_steps
 
         adj_full_init: Optional[Array] = (
             jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
@@ -1048,7 +1062,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             if save_adjoint:
                 # adj_history is ordered with index 0 at the latest real time in the chunk
                 i_ts_chunk = (
-                    last_active_i_ts - rev_i_ts_start - jnp.arange(n_parallel_steps)
+                    n_tstep_adjoint_ - rev_i_ts_start - jnp.arange(n_parallel_steps)
                 )
                 adj_full_ = adj_full_.at[i_ts_chunk].set(adj_history)
             return d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_
@@ -1078,7 +1092,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
             if save_adjoint:
                 i_ts_chunk_rem = (
-                    last_active_i_ts - rev_i_ts_start_rem - jnp.arange(remainder)
+                    n_tstep_adjoint_ - rev_i_ts_start_rem - jnp.arange(remainder)
                 )
                 adj_full = adj_full.at[i_ts_chunk_rem].set(adj_history_rem)
 

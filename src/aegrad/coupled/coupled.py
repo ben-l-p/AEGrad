@@ -26,7 +26,7 @@ from aegrad.utils.print_utils import (
 )
 from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
-from aegrad.structure.utils import get_solve_dofs
+from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
 from aegrad.aero.utils import cs_ang_to_cs_vel
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.utils.utils import make_pytree
@@ -161,6 +161,8 @@ class BaseCoupledAeroelastic:
         t: float | Array = 0.0,
         load_steps: int = 1,
         horseshoe: bool = False,
+        fsi_relaxation: float = 0.6,
+        fsi_omega_min: float = 1e-2,
     ) -> StaticAeroelastic:
 
         warn_if_32_bit()
@@ -174,17 +176,61 @@ class BaseCoupledAeroelastic:
                 "Flow field relative motion is disabled. Static solve may not be accurate."
             )
 
+        if not 0.0 < fsi_relaxation <= 1.0:
+            raise ValueError(f"fsi_relaxation must be in (0, 1], got {fsi_relaxation}.")
+        if not 0.0 < fsi_omega_min <= fsi_relaxation:
+            raise ValueError(
+                f"fsi_omega_min must be in (0, fsi_relaxation], got {fsi_omega_min}."
+            )
+
+        # mask out prescribed dofs from the force residual
+        free_mask = jnp.ones((self.structure.n_nodes, 6), dtype=bool)
+        for dof in prescribed_dofs:
+            node, comp = divmod(dof, 6)
+            free_mask = free_mask.at[node, comp].set(False)
+
         def _convergence_loop(
             converge_status_: ConvergenceStatus,
             struct_case_n: StaticStructure,
             aero_case_n: DynamicAeroCase,
-        ) -> tuple[ConvergenceStatus, StaticStructure, DynamicAeroCase]:
-            f_aero_n = aero_case_n.project_forcing_to_beam(
+            omega_prev: Array,
+            r_prev: Array,
+        ) -> tuple[ConvergenceStatus, StaticStructure, DynamicAeroCase, Array, Array]:
+            f_aero_new = aero_case_n.project_forcing_to_beam(
                 i_ts=0,
                 rmat=struct_case_n.hg[:, :3, :3],
                 x0_aero=self.aero.x0_b,
                 include_unsteady=False,
-            )  # [n_nodes_, 6]
+            )  # [n_nodes_, 6], global frame
+
+            # convert from local to global frame
+            assert struct_case_n.f_ext_aero is not None
+            f_applied_global = transform_nodal_vect(
+                struct_case_n.f_ext_aero, struct_case_n.hg[:, :3, :3]
+            )
+
+            # unrelaxed Picard residual on unconstrained dofs
+            r_curr = jnp.where(free_mask, f_aero_new - f_applied_global, 0.0)
+
+            # Aitken delta squared update
+            delta_r = r_curr - r_prev
+            den = jnp.vdot(delta_r, delta_r)
+            omega_aitken = (
+                -omega_prev * jnp.vdot(r_prev, delta_r) / jnp.where(den > 0.0, den, 1.0)
+            )
+            omega_aitken = jnp.clip(omega_aitken, fsi_omega_min, 1.0)
+            omega = jnp.where(
+                converge_status_.i_iter >= 2,
+                omega_aitken,
+                jnp.array(fsi_relaxation),
+            )
+
+            # apply relaxation to the forcing, using the full forcing for the first iteration
+            f_aero_n = jnp.where(
+                converge_status_.i_iter == 0,
+                f_aero_new,
+                f_applied_global + omega * r_curr,
+            )
 
             struct_case_np1 = self.structure.static_solve(
                 f_ext_follower=f_ext_follower,
@@ -194,24 +240,31 @@ class BaseCoupledAeroelastic:
                 load_steps=load_steps,
             )
 
-            delta_n = vmap(hg_to_d)(
+            # compute the full varphi delta
+            delta_n_raw = vmap(hg_to_d)(
                 struct_case_n.hg, struct_case_np1.hg
             )  # [n_nodes, 6]
+            # delta with relaxation
+            delta_n = jnp.where(
+                converge_status_.i_iter == 0,
+                delta_n_raw,
+                delta_n_raw / omega,
+            )
 
             tot_n = vmap(hg_to_d)(struct_case_np1.hg, self.structure.hg0)
 
             if struct_case_n.f_ext_aero is None:
                 delta_f = None
+                total_f = None
             else:
-                delta_f = (
-                    struct_case_n.f_ext_aero - struct_case_np1.f_ext_aero
-                )  # [n_nodes, 6]
+                delta_f = -r_curr  # f_applied_global - f_aero_new
+                total_f = jnp.where(free_mask, f_aero_new, 0.0)
 
             converge_status_.update(
                 delta_disp=delta_n,
                 total_disp=tot_n,
                 delta_force=delta_f,
-                total_force=struct_case_np1.f_ext_aero,
+                total_force=total_f,
             )
 
             aero_case_np1 = self.aero.solve_static(
@@ -224,12 +277,12 @@ class BaseCoupledAeroelastic:
             if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
                 converge_status_.print_fsi_message(None)
 
-            return converge_status_, struct_case_np1, aero_case_np1
+            return converge_status_, struct_case_np1, aero_case_np1, omega, r_curr
 
         fsi_converge_status = ConvergenceStatus(self.fsi_convergence_settings)
         fsi_converge_status.print_header(dynamic=False)
 
-        convergence_status, struct_case, aero_case = jax.lax.while_loop(
+        convergence_status, struct_case, aero_case, _, _ = jax.lax.while_loop(
             lambda args_: ~args_[0].get_status(),
             lambda args_: _convergence_loop(*args_),  # type: ignore
             (
@@ -242,6 +295,8 @@ class BaseCoupledAeroelastic:
                     prescribed_dofs=prescribed_dofs,
                 ),
                 self.aero.solve_static(t=t, hg=self.structure.hg0, horseshoe=horseshoe),
+                jnp.array(fsi_relaxation),
+                jnp.zeros((self.structure.n_nodes, 6)),
             ),
         )
 

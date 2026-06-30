@@ -808,11 +808,11 @@ class AeroSnapshot(DynamicAeroCase):
 
     @property
     def i_ts(self) -> int:
-        return self._i_ts
+        return int(self._i_ts[0])
 
     @i_ts.setter
     def i_ts(self, i_ts_val: int) -> None:
-        self._i_ts = i_ts_val
+        self._i_ts = jnp.atleast_1d(i_ts_val)
 
     def to_dynamic(self, i_ts: int, n_tstep: int) -> DynamicAeroCase:
         """

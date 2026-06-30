@@ -57,7 +57,7 @@ class TestLinearOperator:
         y = jnp.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         bs = biot_savart(x, y)
         bse = biot_savart_epsilon(x, y)
-        assert jnp.allclose(bs, bse), (
+        assert jnp.allclose(bs, bse, rtol=5e-5), (
             f"Returned {bse}, but expected {bs} from baseline kernel"
         )
 

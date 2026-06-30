@@ -449,7 +449,9 @@ def biot_savart_epsilon(x: Array, y: Array) -> Array:
     r2 = x - y[1, :]
     r1_x_r2 = jnp.cross(r1, r2)
     diff_r = make_unit_epsilon(r1) - make_unit_epsilon(r2)
-    r1_x_r2_unit = r1_x_r2 / (jnp.inner(r1_x_r2, r1_x_r2) + EPSILON)
+    r1_x_r2_unit = r1_x_r2 / (
+        jnp.inner(r1_x_r2, r1_x_r2) + EPSILON * jnp.inner(r0, r0) ** 2
+    )
     return r1_x_r2_unit / (4.0 * jnp.pi) * jnp.dot(r0, diff_r)
 
 
