@@ -334,6 +334,11 @@ class BaseCoupledAeroelastic:
                     raise ValueError(
                         f"Missing control velocity for control surface input cs_vel_t['{key}']"
                     )
+        elif init_case is not None:
+            # if control angles are not input, we obtain them from the initial case and keep them constant over time
+            cs_ang_t = {
+                k: jnp.full(n_tstep, v) for k, v in init_case.aero.cs_ang.items()
+            }
 
         # if control velocities are not input, we obtain them from finite differences
         if cs_vel_t is None and cs_ang_t is not None:
@@ -350,7 +355,7 @@ class BaseCoupledAeroelastic:
             thrust_t_: dict[str, Array] = {}
         else:
             thrust_t_ = {
-                k: jnp.full(v, n_tstep)
+                k: jnp.full(n_tstep, v)
                 for k, v in self.structure.thrust_reference.items()
             }
 
@@ -444,6 +449,31 @@ class BaseCoupledAeroelastic:
 
         fsi_converge_status.print_line(dynamic=True)
         return out
+
+    def initialise_dynamic(
+        self, static_case: StaticAeroelastic
+    ) -> DynamicAeroelasticSnapshot:
+        r"""
+        Initialise a dynamic aeroelastic snapshot from a static aeroelastic case. This takes a static aeroelastic case
+        obtained under clamped conditions (i.e. `relative_motion` is True for the free stream), and sets the structural
+        velocity to be that of the freestream.
+        :param static_case: Static aeroelastic case.
+        :return: Dynamic aeroelastic snapshot.
+        """
+        u_inf = self.aero.flowfield.u_inf  # flowfield velocity to set
+        self.aero.flowfield.relative_motion = (
+            False  # the output will have relative motion disabled
+        )
+
+        rmat_struct = static_case.structure.hg[:, :3, :3]  # deformed rotations
+        v_local = jnp.einsum(
+            "ijk,j->ik", rmat_struct, -u_inf
+        )  # local frame velocity, [n_nodes, 3]
+
+        dynamic_case = static_case.to_dynamic(t=None)
+        dynamic_case.structure.v = dynamic_case.structure.v.at[:, :3].set(v_local)
+
+        return dynamic_case
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:

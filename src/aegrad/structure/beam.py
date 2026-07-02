@@ -75,8 +75,8 @@ class BaseBeamStructure:
         spectral_radius: float = 0.9,
         struct_convergence_settings: ConvergenceSettings = ConvergenceSettings(
             max_n_iter=25,
-            rel_disp_tol=1e-6,
-            abs_disp_tol=1e-8,
+            rel_disp_tol=1e-5,
+            abs_disp_tol=1e-7,
             rel_force_tol=1e-6,
             abs_force_tol=1e-8,
         ),
@@ -93,7 +93,14 @@ class BaseBeamStructure:
         :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as
         that for the lumped mass data [n_lumped_mass].
         :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, [3].
+        :param thrust_nodes: Dictionary of thrust node names and their corresponding node indices, {keys, int}.
+        :param thrust_direction: Dictionary of thrust node names and their corresponding thrust direction vectors,
+        {keys, [3]}.
         :param optional_jacobians: Define which Jacobians contributions are to be used for solution.
+        :param relaxation_factor: Relaxation factor which reduces the displacement update at each iteration. A value of
+        1 is no relaxation, and a value of 0 is no update.
+        :param spectral_radius: Spectral radius for structural time integrator, where a value of 0 is highly damped and
+        a value of 1 is undamped.
         :param struct_convergence_settings: Structure convergence settings.
         """
 

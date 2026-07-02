@@ -14,7 +14,7 @@ from aegrad.coupled.data_structures import (
 from aegrad.aero.gradients.data_structures import AeroGradsToCompute
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.utils.data_structures import ConvergenceSettings
-from models.patil_wing import make_patil_wing
+from models.patil_wing import generate_patil_wing
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 if __name__ == "__main__":
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     dir_.mkdir(parents=True, exist_ok=True)
 
     # create wing model
-    wing = make_patil_wing(sigma=1.1, m_star=m_star, n_nodes=n_nodes)
+    wing = generate_patil_wing(sigma=1.1, m_star=m_star, n_nodes=n_nodes)
     wing.aero.batch_size = (
         256  # larger values should compute faster but require more RAM
     )

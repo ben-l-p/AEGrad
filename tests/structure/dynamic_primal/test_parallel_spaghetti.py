@@ -1,4 +1,4 @@
-from models.flying_spaghetti import flying_spaghetti
+from models.flying_spaghetti import generate_flying_spaghetti
 
 import jax
 from jax import numpy as jnp
@@ -21,7 +21,7 @@ class TestParallelSpaghetti:
 
         cases = []
         for m in mult:
-            case, f_2d, _ = flying_spaghetti(n_nodes=20, t=t)
+            case, f_2d, _ = generate_flying_spaghetti(n_nodes=20, t=t)
             case.k_cs *= m
             cases.append(case)
 

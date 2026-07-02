@@ -8,7 +8,7 @@ import jax
 from aegrad.structure import BeamStructure
 
 
-def flying_spaghetti(
+def generate_flying_spaghetti(
     n_nodes: int,
     t: Array,
     use_gravity: bool = False,
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     t_ = jnp.arange(n_tstep_) * dt_ - dt_
 
     # will work with 1.0 (numerical damping is not essential)
-    struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(
+    struct_, f_dead_2d_, f_dead_3d_ = generate_flying_spaghetti(
         n_nodes_, t_, spectral_radius=0.7
     )
 

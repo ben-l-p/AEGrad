@@ -7,10 +7,10 @@ from jax import Array
 from aegrad.structure import BeamStructure
 
 
-def geradin_beam(
-        n_nodes: int = 20,
-        beam_direction: Literal["x_target", "y", "z"] = "x_target",
-        m_cs: Optional[Array] = None,
+def generate_geradin_beam(
+    n_nodes: int = 20,
+    beam_direction: Literal["x_target", "y", "z"] = "x_target",
+    m_cs: Optional[Array] = None,
 ) -> BeamStructure:
     length = jnp.array(5.0)
     n_elem = n_nodes - 1
@@ -31,7 +31,9 @@ def geradin_beam(
         .at[:, direction_index]
         .set(jnp.linspace(0, length, n_nodes))
     )
-    struct = BeamStructure(num_nodes=n_nodes, connectivity=conn, y_vector=y_vect[None, :])
+    struct = BeamStructure(
+        num_nodes=n_nodes, connectivity=conn, y_vector=y_vect[None, :]
+    )
 
     k_coeffs = jnp.full(6, 1e12)
     k_coeffs = k_coeffs.at[1:3].set(3.231e8)
@@ -43,7 +45,7 @@ def geradin_beam(
 if __name__ == "__main__":
     n_nodes_ = 20
     load = 600000.0
-    struct_ = geradin_beam(n_nodes=n_nodes_, beam_direction="x_target")
+    struct_ = generate_geradin_beam(n_nodes=n_nodes_, beam_direction="x_target")
     f_ext = jnp.zeros((n_nodes_, 6))
     f_ext = f_ext.at[-1, 2].set(-load)
 

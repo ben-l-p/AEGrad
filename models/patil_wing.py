@@ -15,7 +15,7 @@ from aegrad.algebra.array_utils import ArrayList
 
 
 # noinspection SpellCheckingInspection
-def make_patil_wing(
+def generate_patil_wing(
     sigma: float = 1.0,
     n_nodes: int = 49,
     m: int = 4,
@@ -133,7 +133,7 @@ if __name__ == "__main__":
 
     dir_ = Path("./coupled_patil")
 
-    coupled_system = make_patil_wing()
+    coupled_system = generate_patil_wing()
 
     prescribed_dofs_static = (
         jnp.arange(6) + (coupled_system.structure.n_nodes - 1) * 3

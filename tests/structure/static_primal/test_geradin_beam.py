@@ -1,11 +1,11 @@
 from jax import numpy as jnp
 
 from aegrad.algebra.so3 import log_so3
-from models.geradin_beam import geradin_beam
+from models.geradin_beam import generate_geradin_beam
 
 
 class TestGeradinBeam:
-    struct = geradin_beam(20, "x_target")
+    struct = generate_geradin_beam(20, "x_target")
 
     @classmethod
     def run_load_case(cls, load: float) -> tuple[float, float]:

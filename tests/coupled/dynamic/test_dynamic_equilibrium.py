@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 
 from aegrad.utils.data_structures import ConvergenceSettings
-from models.cantilever_wing import make_cantilever_wing
+from models.cantilever_wing import generate_cantilever_wing
 
 
 class TestDynamicEquilibrium:
@@ -17,7 +17,7 @@ class TestDynamicEquilibrium:
         u_inf = jnp.array((10.0, 0.0, 1.5))
         k_cs = jnp.diag(jnp.array((1e6, 1e6, 1e6, 1e3, 1e3, 1e3)))
 
-        wing = make_cantilever_wing(
+        wing = generate_cantilever_wing(
             m=m,
             m_star=m_star,
             c_ref=c_ref,

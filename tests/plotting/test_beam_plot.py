@@ -2,7 +2,7 @@ from pathlib import Path
 
 from jax import numpy as jnp
 
-from models.geradin_beam import geradin_beam
+from models.geradin_beam import generate_geradin_beam
 
 
 class TestBeamPlot:
@@ -16,7 +16,7 @@ class TestBeamPlot:
             m_bar = 1.0
             m_cs = jnp.zeros((6, 6)).at[:3, :3].set(jnp.eye(3) * m_bar)
 
-            struct = geradin_beam(20, "x_target", m_cs)
+            struct = generate_geradin_beam(20, "x_target", m_cs)
 
             load = 600000.0
             f_ext = jnp.zeros((struct.n_nodes, 6))

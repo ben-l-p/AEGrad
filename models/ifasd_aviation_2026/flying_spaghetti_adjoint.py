@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import Array
 from typing import Optional
 
-from models.flying_spaghetti import flying_spaghetti
+from models.flying_spaghetti import generate_flying_spaghetti
 
 from aegrad.structure import StructureFullStates, StructuralDesignVariables
 from aegrad.utils.data_structures import ConvergenceSettings
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     t_ = jnp.arange(n_tstep_) * dt_ - dt_
 
     def make_sol(k_cs_eps: float, m_cs_eps: float):
-        struct_, f_dead_2d_, f_dead_3d_ = flying_spaghetti(
+        struct_, f_dead_2d_, f_dead_3d_ = generate_flying_spaghetti(
             n_nodes_, t_, spectral_radius=0.7
         )
         struct_.k_cs = struct_.k_cs.at[0, 4, 4].add(k_cs_eps)

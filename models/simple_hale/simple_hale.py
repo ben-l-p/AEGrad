@@ -1,9 +1,10 @@
 import jax
 
 from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.flowfields import FlowField, Constant
-from aegrad.aero.utils import make_rectangular_grid
+from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
+from aegrad.aero.utils import add_control_surface, make_rectangular_grid
 from aegrad.aero.uvlm import UVLM
+from aegrad.algebra.array_utils import ArrayList
 from aegrad.coupled import CoupledAeroelastic
 from aegrad.structure import BeamStructure
 
@@ -11,7 +12,7 @@ from jax import numpy as jnp
 from jax import Array
 
 
-def simple_hale(
+def generate_simple_hale(
     sigma_wing: float = 1.5,
     sigma_fuselage: float = 10.0,
     sigma_tail: float = 100.0,
@@ -68,8 +69,7 @@ def simple_hale(
 
     # other variables
     dt: float = c_wing / (m_wing * float(jnp.linalg.norm(flowfield.u_inf)))
-    thrust_reference: float = 6.16
-    alpha: Array = jnp.deg2rad(4.31)
+    alpha: float = 0.0
     roll: float = 0.0
     beta: float = 0.0
 
@@ -248,7 +248,9 @@ def simple_hale(
         m_lumped_index=jnp.array(0, dtype=int),
         gravity=jnp.array((0.0, 0.0, -9.81)),
         thrust_nodes={"thrust": 0},
-        thrust_direction={"thrust": jnp.array((1, 0, 0))},
+        thrust_direction={"thrust": jnp.array((-1.0, 0.0, 0.0))},
+        relaxation_factor=0.7,
+        spectral_radius=0.5,
     )
 
     # aerodynamic_grids
@@ -277,9 +279,54 @@ def simple_hale(
     )
     tail_grid_shape = GridDiscretization(m=m_tail, n=2 * n_half_tail, m_star=m_star)
 
+    # control surface spanwise extents on the wing grid (left tip → root → right tip)
+    n_left_aileron_grid = n_outer_wing + 1
+    n_right_aileron_grid = n_outer_wing + 1
+
+    # control surface chordwise extents
+    elevator_m_slice = slice(0, None)
+    rudder_m_slice = slice(m_tail - 1, None)
+    aileron_m_slice = slice(int(0.75 * m_wing), None)
+
+    def aero_grid_func(
+        x0: ArrayList,
+        *,
+        left_aileron: Array,
+        right_aileron: Array,
+        elevator: Array,
+        rudder: Array,
+    ) -> ArrayList:
+        wing_grid = add_control_surface(
+            grid=x0[0],
+            angle=left_aileron,
+            m_slice=aileron_m_slice,
+            n_slice=slice(0, n_left_aileron_grid),
+        )
+        wing_grid = add_control_surface(
+            grid=wing_grid,
+            angle=right_aileron,
+            m_slice=aileron_m_slice,
+            n_slice=slice(-n_right_aileron_grid, None),
+        )
+        fin_grid = add_control_surface(
+            grid=x0[1],
+            angle=rudder,
+            m_slice=rudder_m_slice,
+            n_slice=slice(None),
+        )
+        tail_grid = add_control_surface(
+            grid=x0[2],
+            angle=elevator,
+            m_slice=elevator_m_slice,
+            n_slice=slice(None),
+        )
+        return ArrayList([wing_grid, fin_grid, tail_grid])
+
     aero = UVLM(
         grid_shapes=(wing_grid_shape, fin_grid_shape, tail_grid_shape),
         dof_mapping=(wing_mapping, fin_mapping, tail_mapping),
+        grid_func=aero_grid_func,  # type: ignore
+        gamma_dot_relaxation=0.5,
     )
     wing = CoupledAeroelastic(aero=aero, structure=structure)
     wing.set_design_variables(
@@ -291,7 +338,13 @@ def simple_hale(
         flowfield=flowfield,
         delta_w=None,
         x0_aero=[wing_x0, fin_x0, tail_x0],
-        thrust_reference={"thrust": jnp.array(thrust_reference)},
+        thrust_reference={"thrust": jnp.zeros(())},
+        cs_angles_reference={
+            "left_aileron": jnp.zeros(()),
+            "right_aileron": jnp.zeros(()),
+            "elevator": jnp.zeros(()),
+            "rudder": jnp.zeros(()),
+        },
         orientation_euler=jnp.array((roll, alpha, beta)),
     )
 
@@ -299,8 +352,43 @@ def simple_hale(
 
 
 if __name__ == "__main__":
-    # run a clamped case
+    # trim the simple hale aircraft and run a gust case
     jax.config.update("jax_enable_x64", True)
-    hale = simple_hale()
-    sol = hale.static_solve(prescribed_dofs=jnp.arange(6))
-    sol.plot("./simple_hale/")
+
+    # parameters
+    u_inf_mag: float = 10.0
+    gust_intensity: float = 0.2
+    gust_length: float = 1.0 * u_inf_mag  # 1 second gust duration
+    physical_time: float = 10.0
+
+    flowfield_ = OneMinusCosine(
+        u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
+        rho=1.225,
+        relative_motion=True,
+        gust_length=gust_length,
+        gust_amplitude=gust_intensity * u_inf_mag,
+        gust_x0=jnp.array((-2.0 * gust_length, 0.0, 0.0)),
+    )
+
+    # create aircraft model
+    hale = generate_simple_hale(flowfield=flowfield_, sigma_wing=1.5)
+    n_tstep = int(physical_time / float(hale.aero.dt)) + 1
+
+    # trim the aircraft
+    static_sol, trim_vars = hale.trim(
+        prescribed_dofs=jnp.arange(6),
+        zero_force_dofs=(0, 2, 4),  # balance drag, lift, and pitching moment
+        trim_cs="elevator",
+        thrust_nodes="thrust",
+        trim_orientation="y",
+        horseshoe=False,
+    )
+
+    # run gust case
+    dynamic_init = hale.initialise_dynamic(static_case=static_sol)
+    dynamic_sol = hale.dynamic_solve(
+        init_case=dynamic_init, prescribed_dofs=None, n_tstep=n_tstep
+    )
+
+    # plot the transient
+    dynamic_sol.plot("./simple_hale/")

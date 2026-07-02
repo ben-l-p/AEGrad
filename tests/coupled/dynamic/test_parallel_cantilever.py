@@ -1,5 +1,5 @@
 from aegrad.coupled import CoupledAeroelastic
-from models.cantilever_wing import make_cantilever_wing
+from models.cantilever_wing import generate_cantilever_wing
 
 import jax
 from jax import numpy as jnp
@@ -18,7 +18,7 @@ class TestParallelCantilever:
 
         cases = []
         for m in mult:
-            case = make_cantilever_wing(n_nodes=10, m=6, m_star=20)
+            case = generate_cantilever_wing(n_nodes=10, m=6, m_star=20)
             case.structure.k_cs *= m
             cases.append(case)
 

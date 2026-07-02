@@ -10,7 +10,7 @@ from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 from aegrad.aero.gradients.data_structures import AeroGradsToCompute
 from aegrad.coupled import DynamicAeroelastic
 
-from models.cantilever_wing import make_cantilever_wing
+from models.cantilever_wing import generate_cantilever_wing
 
 
 # Discretisation parameters shared across all tests
@@ -27,7 +27,7 @@ def _dynamic_objective(states: AeroelasticFullStates, *_, **__) -> Array:
 
 
 def _build_wing(k_cs: Array, gust_amplitude: float | Array):
-    wing = make_cantilever_wing(
+    wing = generate_cantilever_wing(
         m=2,
         m_star=3,
         c_ref=0.2,

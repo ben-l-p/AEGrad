@@ -6,7 +6,7 @@ import numpy as np
 from scipy.optimize import minimize
 from matplotlib import pyplot as plt
 
-from models.flying_spaghetti import flying_spaghetti
+from models.flying_spaghetti import generate_flying_spaghetti
 
 from aegrad.structure import StructureFullStates, StructuralDesignVariables
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
         m_bar_j = jnp.asarray(m_bar)
 
-        struct_, f_dead_2d_, _ = flying_spaghetti(
+        struct_, f_dead_2d_, _ = generate_flying_spaghetti(
             n_nodes_,
             t_,
             spectral_radius=0.7,

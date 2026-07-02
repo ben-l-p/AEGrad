@@ -17,9 +17,9 @@ from models.straight_pazy.pazy_properties import Y, WITH_SKIN, NO_SKIN, N_KEYPOI
 
 
 def make_pazy_wing(
-    m: int,
-    m_star: int,
-    skin: bool,
+    m: int = 12,
+    m_star: int = 120,
+    skin: bool = True,
     node_multiplier: int = 1,
     gravity: bool | Array = False,
     flowfield: FlowField = Constant(

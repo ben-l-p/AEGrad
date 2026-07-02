@@ -7,7 +7,7 @@
 AEGrad is a differentiable nonlinear aeroelastic analysis framework which couples a nonlinear structural model with
 unsteady vortex lattice method (UVLM) aerodynamics. This allows for a range of structural, aerodynamic and coupled
 analyses, with gradients available using the adjoint method. The full codebase is implemented in JAX, which allows for
-efficient automatic differentiation and GPU acceleration.
+efficient automatic differentiation, GPU acceleration and multi-case parallelisation.
 
 ## Installation
 

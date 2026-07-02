@@ -12,7 +12,7 @@ from aegrad.aero.gradients.data_structures import AeroGradsToCompute
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
-from models.cantilever_wing import make_cantilever_wing
+from models.cantilever_wing import generate_cantilever_wing
 
 
 class TestDynamicEquilibriumAdjoint:
@@ -25,7 +25,7 @@ class TestDynamicEquilibriumAdjoint:
         u_inf = jnp.array((10.0, 0.0, 0.1))
         k_cs = jnp.diag(jnp.array((1e2, 1e2, 1.0, 1.0, 1.0, 1.0)))
 
-        wing = make_cantilever_wing(
+        wing = generate_cantilever_wing(
             m=m,
             m_star=m_star,
             c_ref=c_ref,

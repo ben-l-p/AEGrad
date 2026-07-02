@@ -67,6 +67,10 @@ class TrimVariables:
             verbose_level=VerbosityLevel.NORMAL,
         )
 
+        # jax.debug.print's numeric format for printing required 0-D values
+        def _scalar(x: Array) -> Array:
+            return jnp.ravel(x)[0]
+
         if self.cs_ang:
             label = "Control surface angles (deg)"
             rows.append(
@@ -74,7 +78,7 @@ class TrimVariables:
                     label,
                     _entries(self.cs_ang),
                     _entries_rendered_len(self.cs_ang),
-                    {k: jnp.rad2deg(v) for k, v in self.cs_ang.items()},
+                    {k: jnp.rad2deg(_scalar(v)) for k, v in self.cs_ang.items()},
                 )
             )
 
@@ -85,7 +89,7 @@ class TrimVariables:
                     label,
                     _entries(self.thrust),
                     _entries_rendered_len(self.thrust),
-                    dict(self.thrust),
+                    {k: _scalar(v) for k, v in self.thrust.items()},
                 )
             )
 
@@ -96,7 +100,7 @@ class TrimVariables:
                     label,
                     _entries(self.trim_angles),
                     _entries_rendered_len(self.trim_angles),
-                    {k: jnp.rad2deg(v) for k, v in self.trim_angles.items()},
+                    {k: jnp.rad2deg(_scalar(v)) for k, v in self.trim_angles.items()},
                 )
             )
 
@@ -105,7 +109,7 @@ class TrimVariables:
             keys = [f"f{i}" for i in range(f_clamp.shape[0])]
             entries = "  ".join(f"[{k}]: {{{k}:>{val_w}.2f}}" for k in keys)
             rendered_len = _entries_rendered_len(keys)
-            kwargs = {k: f_clamp[i] for i, k in enumerate(keys)}
+            kwargs = {k: _scalar(f_clamp[i]) for i, k in enumerate(keys)}
             rows.append((label, entries, rendered_len, kwargs))
 
         for label, fmt, rendered_len, kwargs in rows:

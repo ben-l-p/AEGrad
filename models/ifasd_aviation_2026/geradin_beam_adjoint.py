@@ -5,7 +5,7 @@ from aegrad.utils.print_utils import set_verbosity
 from aegrad.structure import StructureFullStates
 from aegrad.utils.data_structures import ConvergenceSettings
 from aegrad.algebra.so3 import log_so3
-from models.geradin_beam import geradin_beam
+from models.geradin_beam import generate_geradin_beam
 from aegrad.structure import BeamStructure, StaticStructure
 from aegrad.utils.print_utils import VerbosityLevel
 
@@ -19,7 +19,7 @@ if __name__ == "__main__":
     set_verbosity(VerbosityLevel.SILENT)
 
     n_nodes = 20
-    struct = geradin_beam(n_nodes, "x_target")
+    struct = generate_geradin_beam(n_nodes, "x_target")
 
     # convergence very strict, forces 100 structural iterations
     struct.struct_convergence_settings = ConvergenceSettings(

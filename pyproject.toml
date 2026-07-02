@@ -16,6 +16,7 @@ dependencies = [
     # testing and linting
     "pytest>=9.0",
     "pytest-cov>=7.1",
+    "pytest-xdist>=3.6",
     "ruff>=0.15",
 ]
 
