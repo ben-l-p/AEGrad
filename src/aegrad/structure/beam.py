@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Optional, Sequence, Literal, overload, TYPE_CHECKING, cast
 from functools import partial
 
+import jax
 from jax import numpy as jnp
 from jax import Array, vmap
-import jax
 from jax.scipy.linalg import block_diag
 from jax.scipy.spatial.transform import Rotation
 
@@ -24,6 +24,7 @@ from aegrad.utils.print_utils import (
     VerbosityLevel,
     VERBOSITY_LEVEL,
     jax_print,
+    print_table_line,
 )
 from aegrad.structure.utils import (
     _check_connectivity,
@@ -51,6 +52,9 @@ from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 if TYPE_CHECKING:
     from aegrad.coupled.data_structures import DynamicAeroelastic
     from aegrad.aero.uvlm import UVLM
+
+BASE_LOBATTO_ORDER: Literal[3, 4, 5] = 3
+BASE_LEGENDRE_ORDER: Literal[1, 2, 3] = 1
 
 
 @make_pytree
@@ -754,7 +758,9 @@ class BaseBeamStructure:
         # computes dm/dd @ p @ g_ab
         d_mg = vmap(
             lambda m_cs_, d_, ad_, l_, p_d_g_: jax.jvp(
-                lambda d__: _integrate_m_l(m_cs_, d__, ad_, l_, int_order=3),
+                lambda d__: _integrate_m_l(
+                    m_cs_, d__, ad_, l_, int_order=BASE_LOBATTO_ORDER
+                ),
                 primals=[d_],
                 tangents=[p_d_g_],
             )[1],
@@ -839,7 +845,9 @@ class BaseBeamStructure:
                 )
         return k_t
 
-    def make_m_t(self, d: Array, int_order: Literal[3, 4, 5] = 3) -> Array:
+    def make_m_t(
+        self, d: Array, int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER
+    ) -> Array:
         r"""
         Assemble tangent mass matrix as a function of the element relative configuration vectors. This does not include
         the lumped mass contribution.
@@ -851,12 +859,118 @@ class BaseBeamStructure:
             self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0
         )
 
+    def modal(
+        self,
+        case: StaticStructure,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+        n_print: int = 20,
+    ) -> tuple[Array, Array, Array]:
+        r"""
+        Perform modal analysis on the structure.
+        :param case: The static structure case for which to perform modal analysis.
+        :param int_order: Integration order for mass matrix computation.
+        :param n_print: Number of modes to print to console.
+        :return: Tuple of natural frequencies [n_free_dof], damping ratios [n_free_dof], and mode shapes [n_free_dof,
+        n_free_dof].
+        """
+
+        warn_if_32_bit()
+
+        # extract variables from case
+        d = case.d
+        eps = self.make_eps(d=d)
+        p_d = self.make_p_d(d=d)
+        t_varphi = vmap(t_se3)(case.varphi)  # [n_node, 6, 6]
+        rmat = case.hg[:, :3, :3]  # [n_node, 3, 3]
+
+        # get dead external forcing as this has a stiffness contribution
+        f_ext_dead: Optional[Array]
+        if case.f_ext_dead is not None and case.f_ext_aero is not None:
+            f_ext_dead = case.f_ext_dead + case.f_ext_aero
+        else:
+            f_ext_dead = (
+                case.f_ext_dead if case.f_ext_dead is not None else case.f_ext_aero
+            )
+        free_dofs = jnp.array(
+            get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=case.prescribed_dofs)
+        )
+
+        # mass
+        m_t = self.assemble_matrix_from_entries(
+            self.make_m_t(d=d, int_order=int_order)
+        )  # [n_dof, n_dof]
+        if self.use_lumped_mass:
+            m_t = self.add_lumped_contributions_to_arr(
+                arr=m_t, lumped_arr=self.m_lumped
+            )
+        m_modal = jnp.einsum(
+            "ijk,jkl->ijl", m_t.reshape(self.n_dof, -1, 6), t_varphi
+        ).reshape(self.n_dof, self.n_dof)[jnp.ix_(free_dofs, free_dofs)]
+
+        # stiffness
+        k_t = self.make_k_t_full(
+            d=case.d, p_d=p_d, eps=eps, f_ext_dead=f_ext_dead, rmat=rmat, m_t=m_t
+        )
+        k_modal = jnp.einsum(
+            "ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_varphi
+        ).reshape(self.n_dof, self.n_dof)[jnp.ix_(free_dofs, free_dofs)]
+
+        # reduce generalised problem K phi = omega^2 M phi to standard form and solve
+        if jnp.any(case.varphi):
+            # non-zero deformation: K, M are not symmetric — use non-symmetric solver
+            m_inv_k = jnp.linalg.solve(m_modal, k_modal)
+            omega_sq, modes = jnp.linalg.eig(m_inv_k)
+
+            # map omega^2 to state-space root s (s^2 = -omega^2), choosing the positive-imaginary branch
+            s = jnp.sqrt(-omega_sq)
+            s = jnp.where(jnp.imag(s) < 0, -s, s)
+
+            # undamped natural frequency (Hz) and damping ratio for each mode
+            s_mag = jnp.abs(s)
+            freq_hz = s_mag / (2.0 * jnp.pi)
+            damping = -jnp.real(s) / s_mag
+
+        else:
+            # zero deformation: K, M symmetric and so we can use a symmetric solver
+            cholesky_l = jnp.linalg.cholesky(m_modal)
+            a = jax.scipy.linalg.solve_triangular(
+                cholesky_l,
+                jax.scipy.linalg.solve_triangular(cholesky_l, k_modal, lower=True).T,
+                lower=True,
+            ).T
+            omega_sq, phi = jnp.linalg.eigh(a)
+            modes = jax.scipy.linalg.solve_triangular(cholesky_l.T, phi, lower=False)
+
+            freq_hz = jnp.sqrt(jnp.maximum(omega_sq, 0.0)) / (2.0 * jnp.pi)
+            damping = jnp.zeros_like(freq_hz)
+
+        # sort by ascending natural frequency
+        idx = jnp.argsort(freq_hz)
+        ordered_freq = freq_hz[idx]
+        out_damping = damping[idx]
+        out_modes = modes[:, idx]
+
+        # write to console
+        print_table_line(inner_width=39)
+        jax_print(
+            "| Mode | Frequency [Hz] | Damping Ratio |",
+            verbose_level=VerbosityLevel.NORMAL,
+        )
+        print_table_line(inner_width=39)
+        for i_mode in range(n_print):
+            jax_print(
+                f"| {i_mode + 1:>4d} | {ordered_freq[i_mode]:>14.3f} | {out_damping[i_mode]:>13.6f} |",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+        print_table_line(inner_width=39)
+        return ordered_freq[:n_print], out_damping[:n_print], out_modes[:, :n_print]
+
     def _make_c_t(
         self,
         d: Array,
         d_dot: Array,
         v: Array,
-        int_order: Literal[1, 2, 3] = 3,
+        int_order: Literal[1, 2, 3] = BASE_LEGENDRE_ORDER,
     ) -> tuple[Array, Array]:
         r"""
         Assemble tangent gyroscopic matrix. This does not include the lumped mass contribution.
@@ -1641,7 +1755,9 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                converge_status.print_struct_message(None, i_load_step)
+                converge_status.print_struct_message(
+                    i_ts=None, t=None, i_load_step=i_load_step
+                )
 
             return i_load_step, converge_status, hg_np1_full
 
@@ -1668,7 +1784,9 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
-                convergence_status.print_struct_message(None, i_load_step)
+                convergence_status.print_struct_message(
+                    i_ts=None, t=None, i_load_step=i_load_step
+                )
 
             return hg_solve
 
@@ -1923,7 +2041,9 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                struct_convergence_status_.print_struct_message(t[i_ts], i_load_step)
+                struct_convergence_status_.print_struct_message(
+                    i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
+                )
 
             q_alpha_update = StructureMinimalStates(
                 varphi=None, v=v_np1, v_dot=v_dot_np1, a=q_alpha.a
@@ -2112,10 +2232,12 @@ class BaseBeamStructure:
             # print message where we only require one message per timestep
             if VERBOSITY_LEVEL.value == VerbosityLevel.NORMAL.value:
                 struct_convergence_status_.print_struct_message(
-                    t=struct_sol.t[i_ts], i_load_step=load_steps - 1
+                    i_ts=i_ts, t=struct_sol.t[i_ts], i_load_step=load_steps - 1
                 )
                 if include_aero and fsi_convergence_status_ is not None:
-                    fsi_convergence_status_.print_fsi_message(t=struct_sol.t[i_ts])
+                    fsi_convergence_status_.print_fsi_message(
+                        i_ts=i_ts, t=struct_sol.t[i_ts]
+                    )
 
             # postprocess results for time step and store in solution object
             q_n, phi_n = self.time_integrator.calculate_q_n_from_q_alpha(
@@ -2332,7 +2454,7 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                fsi_convergence_status_.print_fsi_message(t=t[i_ts])
+                fsi_convergence_status_.print_fsi_message(i_ts=i_ts, t=t[i_ts])
 
             return (
                 i_ts,
@@ -2403,7 +2525,9 @@ class BaseBeamStructure:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
-                struct_convergence_status_.print_struct_message(t[i_ts], i_load_step)
+                struct_convergence_status_.print_struct_message(
+                    i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
+                )
 
             return (
                 i_ts,

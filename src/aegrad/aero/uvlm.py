@@ -283,6 +283,11 @@ class UVLM:
             raise ValueError("Time step length dt has not been set.")
         return self._dt
 
+    @dt.setter
+    def dt(self, value):
+        warn("Setting a custom dt may reduce simulation accuracy.")
+        self._dt = value
+
     @property
     def delta_w(self) -> list[Optional[Array]]:
         r"""
@@ -711,7 +716,7 @@ class UVLM:
         Optional[ArrayList],
     ]:
         r"""
-        Solve the UVLM equations for a single time step. Can be used for both static and dynamic solves.
+        Solve the UVLM equations for a single time step from beam coordinate inputs.
         :param q_nm1: Minimal aerodynamic states from timestep n-1.
         :param t_n: Time at timestep n.
         :param hg_n: Beam global grid coordinates at time step n, [n_nodes, 4, 4].
@@ -725,7 +730,80 @@ class UVLM:
         :param cs_ang_nm1: Control surface angle at timestep n - 1, {name, []}.
         :param cs_vel_n: Control surface velocity at timestep n, {name, []}.
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
-        derivative, bound grid, wake grid, bound grid time derivattive, steady forcing and unsteady forcing.
+        derivative, bound grid, wake grid, bound grid time derivative, steady forcing and unsteady forcing.
+        """
+        zeta_b_n = self.hg_to_zeta_b(
+            hg_n=hg_n if hg_n is not None else self.hg0, cs_ang_n=cs_ang_n
+        )
+
+        if hg_dot_n is None:
+            zeta_b_dot_n: Optional[ArrayList] = None
+            zeta_b_nm1: Optional[ArrayList] = None
+        else:
+            assert (
+                hg_n is not None
+                and cs_vel_n is not None
+                and hg_nm1 is not None
+                and cs_ang_nm1 is not None
+            )
+            zeta_b_dot_n = self.hg_dot_to_zeta_b_dot(
+                hg_n=hg_n, hg_dot_n=hg_dot_n, cs_ang_n=cs_ang_n, cs_vel_n=cs_vel_n
+            )
+            zeta_b_nm1 = self.hg_to_zeta_b(hg_n=hg_nm1, cs_ang_n=cs_ang_nm1)
+
+        return self.base_solve_from_grid(
+            q_nm1=q_nm1,
+            t_n=t_n,
+            zeta_b_n=zeta_b_n,
+            zeta_b_nm1=zeta_b_nm1,
+            zeta_b_dot_n=zeta_b_dot_n,
+            static=static,
+            horseshoe=horseshoe,
+        )
+
+    def base_solve_from_grid(
+        self,
+        q_nm1: Optional[AeroStates],
+        t_n: Array,
+        zeta_b_n: ArrayList,
+        zeta_b_nm1: Optional[ArrayList],
+        zeta_b_dot_n: Optional[ArrayList],
+        static: bool,
+        horseshoe: bool,
+        *,
+        linearise_variable_wake: bool = False,
+        nu_b: Optional[ArrayList] = None,
+        nu_w: Optional[ArrayList] = None,
+    ) -> tuple[
+        ArrayList,
+        ArrayList,
+        ArrayList,
+        ArrayList,
+        Optional[ArrayList],
+        ArrayList,
+        ArrayList,
+        Optional[ArrayList],
+        ArrayList,
+        Optional[ArrayList],
+    ]:
+        r"""
+        Solve the UVLM equations for a single time step from aerodynamic grid inputs.
+        :param q_nm1: Aerodynamic states carried from timestep n-1. Required for dynamic (``static=False``) solves.
+        :param t_n: Time at timestep n.
+        :param zeta_b_n: Bound aerodynamic grid at timestep n, [n_surf][zeta_m, zeta_n, 3].
+        :param zeta_b_nm1: Bound aerodynamic grid at timestep n-1, used to seed the wake-convection velocity for the
+        free-wake case. Required for dynamic solves.
+        :param zeta_b_dot_n: Bound grid velocity at timestep n, or ``None`` for a static solve.
+        :param static: If True, perform a static solve (initialise wake, skip wake propagation and unsteady forcing).
+        :param horseshoe: If True, replace the wake with a horseshoe wake in the static solve.
+        :param linearise_variable_wake: If True, block gradients through the arc-length discretisation in wake
+        propagation so it acts as a linear operator when differentiated. Used by the linear system; default False.
+        :param nu_b: Optional additive bound upwash velocity at bound vertices, [n_surf][zeta_m, zeta_n, 3]. Used by
+        the linear system; ignored (equivalent to zero) if not supplied.
+        :param nu_w: Optional additive wake-convection velocity at wake vertices, [n_surf][zeta_m_star, zeta_n, 3].
+        Used by the linear system; ignored if not supplied.
+        :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
+        derivative, bound grid, wake grid, bound grid velocity, steady forcing, unsteady forcing.
         """
         if not (0.0 < self.gamma_dot_relaxation <= 1.0):
             warn("Gamma_dot relaxation factor not in (0, 1]")
@@ -739,37 +817,17 @@ class UVLM:
         if not static and q_nm1 is None:
             raise ValueError("q_nm1 needs to be specified for dynamic solve")
 
-        zeta_b_n = self.hg_to_zeta_b(
-            hg_n=hg_n if hg_n is not None else self.hg0, cs_ang_n=cs_ang_n
-        )
-
         c_n = compute_c(zetas=zeta_b_n)
         nc_n = compute_nc(zetas=zeta_b_n)
 
-        if hg_dot_n is None:
-            zeta_b_dot_n: Optional[ArrayList] = None
+        if zeta_b_dot_n is None:
             c_dot_n: Optional[ArrayList] = None
-            zeta_b_nm1: Optional[ArrayList] = None
         else:
-            assert (
-                hg_n is not None
-                and cs_vel_n is not None
-                and hg_nm1 is not None
-                and cs_ang_nm1 is not None
-            )
-            zeta_b_dot_n = self.hg_dot_to_zeta_b_dot(
-                hg_n=hg_n, hg_dot_n=hg_dot_n, cs_ang_n=cs_ang_n, cs_vel_n=cs_vel_n
-            )
-
-            zeta_b_nm1 = self.hg_to_zeta_b(hg_n=hg_nm1, cs_ang_n=cs_ang_nm1)
-
             c_dot_n = ArrayList(
                 [neighbour_average(zeta_dot, axes=(0, 1)) for zeta_dot in zeta_b_dot_n]
             )
 
         if static:
-            # initialise wake
-            # update zeta0_w
             if horseshoe:
                 zeta_w_n = ArrayList(
                     [
@@ -782,9 +840,6 @@ class UVLM:
                     ]
                 )
             else:
-                # Re-initialise wake. This is wasteful when there is no coupled structure as zeta_ws will equal zeta0_w.
-                # It is necessary to update the wake grid coordinates when there is a coupled structure as the bound
-                # grid coordinates will have changed from the initial configuration.
                 zeta_w_n = self.initialise_wake(zeta_b_n)
 
             gamma_w_n = None  # allocate later from gamma_b
@@ -808,7 +863,6 @@ class UVLM:
                     )
                 return v
 
-            # propagate wake
             zeta_w_n, gamma_w_n = propagate_wake(
                 gamma_b_nm1=q_nm1.gamma_b,
                 gamma_w_nm1=q_nm1.gamma_w,
@@ -818,8 +872,14 @@ class UVLM:
                 v_func=v_wake_prop,
                 dt=self.dt,
                 frozen_wake=False,
-                linearise_variable_wake=False,
+                linearise_variable_wake=linearise_variable_wake,
             )
+
+            # for the linearised case, add wake upwash from input
+            if nu_w is not None:
+                zeta_w_n = ArrayList(
+                    [zw + nub * self.dt for zw, nub in zip(zeta_w_n, nu_w)]
+                )
 
         aic_solve = compute_aic_solve(
             cs=c_n,
@@ -836,13 +896,11 @@ class UVLM:
         v_bc_n = self.flowfield.surf_vmap_call(xs=c_n, t=t_n)  # [n_surf][m, varphi, 3]
 
         if not static:
-            # structural component
             v_bc_n -= c_dot_n
 
             if zeta_w_n is None or gamma_w_n is None:
                 raise ValueError("zeta_w_nm1 and gamma_w_nm1 are None")
 
-            # find wake component
             v_bc_n += compute_v_ind(
                 cs=c_n,
                 zetas=zeta_w_n,
@@ -853,11 +911,14 @@ class UVLM:
                 mirror_point=self.mirror_point,
             )
 
+        # for linearised case, add bound grid upwash
+        if nu_b is not None:
+            v_bc_n += compute_c(nu_b)
+
         v_bc_n = ArrayList.einsum("ijk,ijk->ij", v_bc_n, nc_n)  # [c_tot]
 
         gamma_b_vec_n = jnp.linalg.solve(aic_solve, -v_bc_n.ravel())
 
-        # assemble back to surface ArrayList
         gamma_b_n = ArrayList([])
         for i_surf in range(self.n_surf):
             gamma_b_n.append(
@@ -880,7 +941,7 @@ class UVLM:
                 dt=self.dt,
                 gamma_dot_relaxation=self.gamma_dot_relaxation,
             )
-            f_unsteady: Optional[ArrayList] = ArrayList(
+            f_unsteady = ArrayList(
                 [
                     split_to_vertex(
                         self.flowfield.rho
@@ -893,8 +954,7 @@ class UVLM:
             )
 
         if static:
-            # wake circulation is the same as trailing edge bound circulation
-            gamma_w_n: ArrayList = ArrayList(
+            gamma_w_n = ArrayList(
                 [
                     jnp.broadcast_to(
                         gb[[-1], ...], shape=(1 if horseshoe else gd.m_star, gd.n)
@@ -908,8 +968,6 @@ class UVLM:
         if zeta_w_n is None:
             raise ValueError("zeta_w_nm1 is None")
 
-        # Steady forces: total velocity (background + all-surface induced) minus grid velocity.
-        # Use zeros for grid velocity in the static case (fixed grid).
         zeta_b_dot_for_forces = (
             zeta_b_dot_n
             if zeta_b_dot_n is not None
@@ -934,7 +992,7 @@ class UVLM:
             gamma_w=gamma_w_n,
             rho=self.flowfield.rho,
             v_func=v_total_func,
-            v_inputs=None,
+            v_inputs=nu_b,
         )
 
         return (

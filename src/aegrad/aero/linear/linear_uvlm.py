@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from aegrad.aero.data_structures import DynamicAeroCase, AeroSnapshot
+from aegrad.aero.gradients.data_structures import AeroStates
 from aegrad.aero.linear.data_structures import (
     InputUnflattened,
     StateUnflattened,
@@ -25,9 +26,6 @@ from aegrad.aero.linear.data_structures import (
     AeroLinearResult,
 )
 from aegrad.aero.utils import (
-    compute_c,
-    compute_nc,
-    propagate_wake,
     calculate_steady_forcing,
 )
 from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
@@ -36,7 +34,7 @@ from aegrad.aero.flowfields import FlowField
 from aegrad.aero.utils import biot_savart_cutoff, KernelFunction
 from aegrad.utils.utils import shallow_as_dict
 from aegrad.utils.print_utils import warn
-from aegrad.aero.aic import compute_aic_solve, compute_v_ind
+from aegrad.aero.aic import compute_v_ind
 
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
@@ -81,15 +79,6 @@ class LinearUVLM:
         self.bound_upwash: bool = bound_upwash
         self.wake_upwash: bool = wake_upwash
         self.gamma_dot_state: bool = gamma_dot_state
-        self.batch_size: int = case.batch_size
-
-        # save names from case
-        self.surf_b_names: list[str] = [f"linear_{name}" for name in case.surf_b_names]
-        self.surf_w_names: list[str] = [f"linear_{name}" for name in case.surf_w_names]
-
-        # mirroring info
-        self.mirror_point: Optional[Array] = case.mirror_point
-        self.mirror_normal: Optional[Array] = case.mirror_normal
 
         # time info
         self.dt: Array = case.dt
@@ -125,7 +114,7 @@ class LinearUVLM:
         ]
 
         # wake propagation deltas
-        self.delta_w: Sequence[Optional[Array]] = case.delta_w
+        self.case: UVLM = case
 
         # linear operators for system
         self.base_sys: LinearSystem = self.linearise()
@@ -665,557 +654,176 @@ class LinearUVLM:
             arrs.append(vec[cnt : cnt + size].reshape(component.shapes[i_surf]))
         return arrs
 
-    def linearise(self) -> LinearSystem:
+    def _f_step(self, x_vec: Array, u_vec: Array) -> tuple[Array, Array]:
         r"""
-        Linearise the UVLM system about the reference state.
-        :return: LinearSystem object representing the linearised system.
+        Combined state/output step in vector form, operating on total (reference + perturbation) quantities and
+        returning perturbations relative to the reference.
+        :param x_vec: State vector, [n_states]
+        :param u_vec: Input vector, [n_inputs]
+        :return: Tuple of (state perturbation vector, output perturbation vector).
         """
+        ref = self.reference
+        x = self._unpack_state_vector(x_vec)
+        u = self._unpack_input_vector(u_vec)
 
-        def _make_inv_solve_mat(zeta_bs: ArrayList) -> Array:
-            r"""
-            Gives the matrix :math:`[A(\zeta_c, \zeta_b) \cdot varphi]^{-1}`
-            :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :return: Solve matrix, [m_tot*n_tot, m_tot*n_tot]
-            """
-            cs = compute_c(zeta_bs)
-            ns = compute_nc(zeta_bs)
-            aic_sys = compute_aic_solve(
-                cs=cs,
-                ns=ns,
-                zetas_b=self.reference.zeta_b,
-                zetas_w=None,
-                kernels_b=self.kernels_b,
-                kernels_w=None,
-                batch_size=self.batch_size,
-                mirror_point=self.mirror_point,
-                mirror_normal=self.mirror_normal,
-            )
-
-            return jnp.linalg.inv(aic_sys)
-
-        def _make_v_bc(
-            zeta_bs: ArrayList,
-            zeta_ws: ArrayList,
-            gamma_ws: ArrayList,
-            zeta_bs_dot: ArrayList,
-        ) -> Array:
-            r"""
-            Boundary condition velocity at collocation points.
-            :param zeta_bs: Bound vertex positions at time=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :param zeta_ws: Wake vertex positions at time=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :param gamma_ws: Wake strengths at time=varphi+1, [n_surf][m_star, varphi, 3].
-            :param zeta_bs_dot: Wake vertex velocities at time=varphi+1, [n_surf][zetas_m, zeta_n, 3].
-            :return: Boundary condition velocity at collocation points, [m_tot * n_tot].
-            """
-            # all values given at time=varphi+1
-            cs = compute_c(zeta_bs)
-            cs_dot = compute_c(zeta_bs_dot)
-
-            ns = compute_nc(zeta_bs)
-
-            v_bc = (
-                compute_v_ind(
-                    cs=cs,
-                    zetas=zeta_ws,
-                    gammas=gamma_ws,
-                    kernels=self.kernels_w,
-                    batch_size=self.batch_size,
-                    mirror_normal=self.mirror_normal,
-                    mirror_point=self.mirror_point,
-                )
-                + self.reference.flowfield.surf_vmap_call(
-                    cs, jnp.array(self.reference.t)
-                )
-                - cs_dot
-            )
-
-            return ArrayList.einsum("ijk,ijk->ij", v_bc, ns).ravel()
-
-        def _v_flow(
-            x: Array,
-            gamma_b: Optional[ArrayList],
-            gamma_w: Optional[ArrayList],
-            zeta_b: Optional[ArrayList],
-            zeta_w: Optional[ArrayList],
-        ) -> Array:
-            r"""
-            Flow velocity at points x_target due to the flowfield and the bound and wake surfaces. Entries of None are replaced
-            with the reference value.
-            :param x: Points to evaluate flow velocity at, [..., 3]
-            :param gamma_b: Bound circulation strengths at t=varphi+1, [n_surf][m, varphi, 3]
-            :param gamma_w: Wake circulation strengths at t=varphi+1, [n_surf][m_star, varphi, 3]
-            :param zeta_b: Bound vertex positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :param zeta_w: Wake vertex positions at t=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :return: Flow velocity at points x_target, [..., 3]
-            """
-            # sample flowfield
-            v_x = self.reference.flowfield.vmap_call(x, jnp.array(self.reference.t))
-
-            # add influence from elements if gamma is provided
-            if gamma_b is not None and gamma_w is not None:
-                v_x += compute_v_ind(
-                    cs=x,
-                    zetas=ArrayList([*zeta_b, *zeta_w]),
-                    gammas=ArrayList([*gamma_b, *gamma_w]),
-                    kernels=[*self.kernels_b, *self.kernels_w],
-                    batch_size=self.batch_size,
-                    mirror_normal=self.mirror_normal,
-                    mirror_point=self.mirror_point,
-                )
-            return v_x
-
-        def _propagate_linear_wake(
-            u_np1: InputUnflattened, x_n: StateUnflattened
-        ) -> tuple[Optional[ArrayList], ArrayList]:
-            r"""
-            Propagate the linear wake from t=varphi to t=varphi+1. Uses jax.jvp through the wake propagation
-            with blocked arc-length gradients so that the re-discretisation is treated as a linear operator.
-            :param u_np1: Inputs at time=varphi+1
-            :param x_n: States at time=varphi
-            :return: Wake grid perturbations and wake circulation perturbations at time=varphi+1
-            """
-
-            def _v_wake_prop_ref(x: Array) -> Array:
-                # flow at reference state (for prescribed/frozen wake)
-                return _v_flow(
-                    x,
-                    self.reference.gamma_b if self.free_wake else None,
-                    self.reference.gamma_w if self.free_wake else None,
-                    self.reference.zeta_b if self.free_wake else None,
-                    self.reference.zeta_w if self.free_wake else None,
-                )
-
-            def _wake_prop_func(
-                gamma_b: ArrayList,
-                gamma_w: ArrayList,
-                zeta_b: ArrayList,
-                zeta_w: ArrayList,
-            ) -> tuple[Optional[ArrayList], ArrayList]:
-                return propagate_wake(  # type: ignore
-                    gamma_b,
-                    gamma_w,
-                    zeta_b,
-                    zeta_w,
-                    self.delta_w,
-                    _v_wake_prop_ref,
-                    self.dt,
-                    not self.prescribed_wake,
-                    linearise_variable_wake=True,
-                )
-
-            # reference primals
-            ref_zeta_b = self.reference.zeta_b
-            ref_zeta_w = self.reference.zeta_w
-
-            # tangent vectors (perturbations)
-            d_gamma_b = x_n.gamma_b
-            d_gamma_w = x_n.gamma_w
-            d_zeta_b = (
-                u_np1.zeta_b
-                if self.prescribed_wake
-                else ArrayList.zeros_like(ref_zeta_b)
-            )
-            d_zeta_w = (
-                x_n.zeta_w
-                if self.prescribed_wake and x_n.zeta_w is not None
-                else ArrayList.zeros_like(ref_zeta_w)
-            )
-
-            # linearise via jvp with stopped arc-length gradients
-            _, (d_zeta_w_np1, d_gamma_w_np1) = jax.jvp(
-                _wake_prop_func,
-                (
-                    self.reference.gamma_b,
-                    self.reference.gamma_w,
-                    ref_zeta_b,
-                    ref_zeta_w,
-                ),
-                (d_gamma_b, d_gamma_w, d_zeta_b, d_zeta_w),
-            )
-
-            # discard zeta perturbation if not using prescribed wake
-            if not self.prescribed_wake:
-                d_zeta_w_np1 = None
-
-            # add perturbations from input velocities
-            # note that we here use the inputs at t=varphi+1 to convect the wake to t=varphi+1, as this best suits the linear
-            # system structure. For the full nonlinear UVLM, we use the inputs at t=varphi, which can lead to a discrepancy.
-            if self.prescribed_wake and self.wake_upwash:
-                if u_np1.nu_w is None:
-                    raise ValueError("Nu_w is None")
-                d_zeta_w_np1 += u_np1.nu_w * self.dt
-
-            return d_zeta_w_np1, d_gamma_w_np1
-
-        def _get_dn(d_zeta_b: ArrayList) -> ArrayList:
-            r"""
-            Get the perturbation in varphi vectors due to perturbations in bound grid positions.
-            :param d_zeta_b: Perturbations in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :return: Perturbations in varphi vectors at t=varphi+1, [n_surf][m, varphi, 3]
-            """
-            zeta_b_full = d_zeta_b + self.reference.zeta_b
-            n_full = compute_nc(zeta_b_full)
-            return n_full - self.reference.nc
-
-        # boundary condition velocity and its derivatives [n_c]
-        v_bc0 = _make_v_bc(
-            self.reference.zeta_b,
-            self.reference.zeta_w,
-            self.reference.gamma_w,
-            self.reference.zeta_b_dot,
+        # total quantities
+        zeta_b_tot = ArrayList([zr + du for zr, du in zip(ref.zeta_b, u.zeta_b)])
+        zeta_b_dot_tot = ArrayList(
+            [zr + du for zr, du in zip(ref.zeta_b_dot, u.zeta_b_dot)]
         )
 
-        def d_v_bc_d_zeta_b(d_zeta_b: ArrayList) -> Array:
-            r"""
-            Obtain the Jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_b} \cdot \delta\zeta_b`
-            :param d_zeta_b: Perturbation in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :return: Perturbation in boundary condition velocity, [n_c]
-            """
+        gamma_b_tot = ArrayList([gr + dg for gr, dg in zip(ref.gamma_b, x.gamma_b)])
+        gamma_w_tot = ArrayList([gr + dg for gr, dg in zip(ref.gamma_w, x.gamma_w)])
+        gamma_b_dot_tot = (
+            ArrayList([gr + dg for gr, dg in zip(ref.gamma_b_dot, x.gamma_b_dot)])
+            if x.gamma_b_dot is not None
+            else ref.gamma_b_dot
+        )
+        zeta_w_tot = (
+            ArrayList([zr + dz for zr, dz in zip(ref.zeta_w, x.zeta_w)])
+            if x.zeta_w is not None
+            else ref.zeta_w
+        )
 
-            primals, tangents = jax.jvp(
-                lambda dzb_: _make_v_bc(
-                    zeta_bs=dzb_,
-                    zeta_ws=self.reference.zeta_w,
-                    gamma_ws=self.reference.gamma_w,
-                    zeta_bs_dot=self.reference.zeta_b_dot,
-                ),
-                [self.reference.zeta_b],
-                [d_zeta_b],
+        q_nm1 = AeroStates(
+            gamma_b=gamma_b_tot,
+            gamma_w=gamma_w_tot,
+            gamma_b_dot=gamma_b_dot_tot,
+            zeta_w=zeta_w_tot,
+        )
+        (
+            _,
+            _,
+            gamma_b_np1,
+            gamma_w_np1,
+            gamma_b_dot_np1,
+            _,
+            zeta_w_np1,
+            _,
+            _,
+            _,
+        ) = self.case.base_solve_from_grid(
+            q_nm1=q_nm1,
+            t_n=ref.t,
+            zeta_b_n=zeta_b_tot,
+            zeta_b_nm1=ref.zeta_b,
+            zeta_b_dot_n=zeta_b_dot_tot,
+            static=False,
+            horseshoe=False,
+            linearise_variable_wake=True,
+            nu_b=u.nu_b if self.bound_upwash else None,
+            nu_w=u.nu_w if (self.prescribed_wake and self.wake_upwash) else None,
+        )
+
+        rho = ref.flowfield.rho
+
+        def v_out_func(x_target: Array) -> Array:
+            return ref.flowfield.vmap_call(x=x_target, t=ref.t) + compute_v_ind(
+                cs=x_target,
+                zetas=ArrayList([*zeta_b_tot, *zeta_w_tot]),
+                gammas=ArrayList([*gamma_b_tot, *gamma_w_tot]),
+                kernels=[*self.kernels_b, *self.kernels_w],
+                batch_size=self.case.batch_size,
+                mirror_normal=self.case.mirror_normal,
+                mirror_point=self.case.mirror_point,
             )
 
-            return ArrayList(tangents).ravel()
+        f_steady_out = calculate_steady_forcing(
+            zeta_b=zeta_b_tot,
+            zeta_dot_b=zeta_b_dot_tot,
+            gamma_b=gamma_b_tot,
+            gamma_w=gamma_w_tot,
+            rho=rho,
+            v_func=v_out_func,
+            v_inputs=u.nu_b if self.bound_upwash else None,
+        )
 
-        def d_v_bc_d_zeta_w(d_zeta_w: ArrayList) -> Array:
-            r"""
-            Obtain the Jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \zeta_w} \cdot \delta\zeta_w`
-            :param d_zeta_w: Perturbation in wake grid positions at t=varphi+1, [n_surf][zeta_m_star, zeta_n, 3]
-            :return: Perturbation in boundary condition velocity, [n_c]
-            """
-            primals, tangents = jax.jvp(
-                lambda dzw_: _make_v_bc(
-                    zeta_bs=self.reference.zeta_b,
-                    zeta_ws=dzw_,
-                    gamma_ws=self.reference.gamma_w,
-                    zeta_bs_dot=self.reference.zeta_b_dot,
-                ),
-                [self.reference.zeta_w],
-                [d_zeta_w],
-            )
-
-            return ArrayList(tangents).ravel()
-
-        def d_v_bc_d_gamma_w(d_gamma_w: ArrayList) -> Array:
-            r"""
-            Obtain the Jacobian vector product :math:`\frac{\partial v_{bc}}{\partial \Gamma_w} \cdot \delta\Gamma_w`
-            :param d_gamma_w: Perturbation in wake circulation at t=varphi+1, [n_surf][m_star, varphi, 3]
-            :return: Perturbation in boundary condition velocity, [n_c]
-            """
-            primals, tangents = jax.jvp(
-                lambda dgw_: _make_v_bc(
-                    zeta_bs=self.reference.zeta_b,
-                    zeta_ws=self.reference.zeta_w,
-                    gamma_ws=dgw_,
-                    zeta_bs_dot=self.reference.zeta_b_dot,
-                ),
-                [self.reference.gamma_w],
-                [d_gamma_w],
-            )
-            return ArrayList(tangents).ravel()
-
-        # solve matrix and its derivative, [n_c, n_c]
-        solve_mat0 = _make_inv_solve_mat(self.reference.zeta_b)
-
-        def d_solve_mat_d_zeta_b(d_zeta_b: ArrayList) -> Array:
-            r"""
-            Obtain the Jacobian vector product :math:`\frac{\partial [A(\zeta_c, \zeta_b) \cdot varphi]^{-1}}{\partial \zeta_b} \cdot \delta\zeta_b`
-            :param d_zeta_b: Perturbation in bound grid positions at t=varphi+1, [n_surf][zeta_m, zeta_n, 3]
-            :return: Perturbation in solve matrix, [n_c, n_c]
-            """
-            primals, tangents = jax.jvp(
-                _make_inv_solve_mat, [self.reference.zeta_b], [d_zeta_b]
-            )
-            return tangents
-
-        @jit
-        def _a_func(x_n_vec: Array) -> Array:
-            r"""
-            State update function for the A matrix in the linear system.
-            :param x_n_vec: State vector at time=varphi, [n_states]
-            :return: State vector at time=varphi+1, [n_states]
-            """
-            x_n = self._unpack_state_vector(x_n_vec)
-
-            # set previous bound circulation
-            d_gamma_bm1_np1 = x_n.gamma_b  # working
-
-            # no contribution to bound grid
-            if (
-                self.prescribed_wake
-                and (zb_shapes := self.state_slices.zeta_b.shapes) is not None
-            ):
-                d_zeta_b_np1: Optional[ArrayList] = ArrayList(
-                    [jnp.zeros(shapes) for shapes in zb_shapes]
+        if self.unsteady_force:
+            if self.gamma_dot_state:
+                assert x.gamma_b_dot is not None
+                gamma_b_dot_at_n = ArrayList(
+                    [gr + dg for gr, dg in zip(ref.gamma_b_dot, x.gamma_b_dot)]
                 )
             else:
-                d_zeta_b_np1 = None
-
-            # use wake routines to get new wake circulation, factoring in variable discretisation
-            d_zeta_w_np1, d_gamma_w_np1 = _propagate_linear_wake(
-                self.get_zero_input(), x_n
-            )
-
-            # influence of states on bound circulation
-            d_v_bc = d_v_bc_d_gamma_w(d_gamma_w_np1)
-
-            if self.prescribed_wake:
-                if d_zeta_w_np1 is None:
-                    raise ValueError("d_zeta_b_np1 is None")
-                d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1)
-
-            # resulting bound circulation perturbation
-            d_gamma_b_np1 = self._unflatten_sub_vec(
-                -solve_mat0 @ d_v_bc, self.state_slices.gamma_b
-            )
-
-            d_gamma_b_dot_np1 = (
-                (d_gamma_b_np1 - d_gamma_bm1_np1) / self.dt
-                if self.gamma_dot_state
-                else None
-            )
-
-            state_np1 = StateUnflattened(
-                d_gamma_b_np1,
-                d_gamma_w_np1,
-                d_gamma_bm1_np1,
-                d_gamma_b_dot_np1,
-                d_zeta_w_np1,
-                d_zeta_b_np1,
-            )
-            return self._pack_state_vector(state_np1)
-
-        @jit
-        def _b_func(u_np1_vec: Array) -> Array:
-            r"""
-            Input to state function for the B matrix in the linear system.
-            :param u_np1_vec: Input vector at time=varphi+1, [n_input]
-            :return: State vector at time=varphi+1, [n_states]
-            """
-            u_np1 = self._unpack_input_vector(u_np1_vec)
-
-            # perturbations in wake (must be computed first, as they affect d_v_bc and hence d_gamma_b)
-            d_zeta_w_np1, d_gamma_w_np1 = _propagate_linear_wake(
-                u_np1, self.get_zero_state()
-            )
-
-            # influence of grid perturbations on boundary condition velocity
-            d_v_bc = d_v_bc_d_zeta_b(u_np1.zeta_b)
-
-            # influence of input-driven wake perturbations on boundary condition velocity
-            d_v_bc += d_v_bc_d_gamma_w(d_gamma_w_np1)
-            if self.prescribed_wake:
-                if d_zeta_w_np1 is None:
-                    raise ValueError("d_zeta_w_np1 is None")
-                d_v_bc += d_v_bc_d_zeta_w(d_zeta_w_np1)
-
-            # perturbations in flow and bound grid at zeta_b
-            d_n = _get_dn(u_np1.zeta_b)
-            d_zeta_dot_c = compute_c(u_np1.zeta_b_dot)
-            zeta0_c_dot = compute_c(self.reference.zeta_b_dot)
-
-            if self.bound_upwash:
-                if u_np1.nu_b is None:
-                    raise ValueError("u_np1.nu_b is None")
-                d_nu_c = compute_c(u_np1.nu_b)
-                d_v_bc += (
-                    ArrayList.einsum(
-                        "ijk,ijk->ij", d_nu_c - d_zeta_dot_c, self.reference.nc
+                assert x.gamma_bm1 is not None
+                gamma_b_dot_at_n = ArrayList(
+                    [(gn - gm1) / self.dt for gn, gm1 in zip(x.gamma_b, x.gamma_bm1)]
+                )
+            f_unsteady_out = ArrayList(
+                [
+                    split_to_vertex(
+                        rho * gamma_b_dot_at_n[i][..., None] * ref.nc[i], (0, 1)
                     )
-                    + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
-                ).ravel()
-            else:
-                d_v_bc += (
-                    ArrayList.einsum("ijk,ijk->ij", -d_zeta_dot_c, self.reference.nc)
-                    + ArrayList.einsum("ijk,ijk->ij", -zeta0_c_dot, d_n)
-                ).ravel()
-
-            d_gamma_b_np1_vec = -solve_mat0 @ d_v_bc
-
-            # perturbations in E matrix [n_c, n_c]
-            d_e = d_solve_mat_d_zeta_b(u_np1.zeta_b)
-            d_gamma_b_np1_vec -= d_e @ v_bc0
-
-            # perturbations in solve matrix
-            d_gamma_b_np1 = self._unflatten_sub_vec(
-                d_gamma_b_np1_vec, self.state_slices.gamma_b
+                    for i in range(ref.n_surf)
+                ]
             )
+        else:
+            f_unsteady_out = None
 
-            # perturbations in gamma dot state
-            d_gamma_dot_np1 = d_gamma_b_np1 / self.dt if self.gamma_dot_state else None
+        # pack perturbations
+        d_gamma_b = ArrayList([gn - gr for gn, gr in zip(gamma_b_np1, ref.gamma_b)])
+        d_gamma_w = ArrayList([gn - gr for gn, gr in zip(gamma_w_np1, ref.gamma_w)])
+        d_zeta_w = (
+            ArrayList([zn - zr for zn, zr in zip(zeta_w_np1, ref.zeta_w)])
+            if self.prescribed_wake
+            else None
+        )
 
-            state_np1 = StateUnflattened(
-                d_gamma_b_np1,
-                d_gamma_w_np1,
-                ArrayList(
-                    [jnp.zeros(shapes) for shapes in self.state_slices.gamma_bm1.shapes]
-                )
-                if self.unsteady_force
-                and self.state_slices.gamma_bm1.shapes is not None
-                else None,
-                d_gamma_dot_np1,
-                d_zeta_w_np1,
-                u_np1.zeta_b,
+        assert gamma_b_dot_np1 is not None
+        d_gamma_bm1 = x.gamma_b if self.unsteady_force else None
+        d_gamma_b_dot = (
+            ArrayList([gn - gr for gn, gr in zip(gamma_b_dot_np1, ref.gamma_b_dot)])
+            if self.gamma_dot_state
+            else None
+        )
+        d_zeta_b_state = u.zeta_b if self.prescribed_wake else None
+
+        d_f_steady = ArrayList([fn - fr for fn, fr in zip(f_steady_out, ref.f_steady)])
+        if self.unsteady_force:
+            assert f_unsteady_out is not None and ref.f_unsteady is not None
+            d_f_unsteady = ArrayList(
+                [fn - fr for fn, fr in zip(f_unsteady_out, ref.f_unsteady)]
             )
+        else:
+            d_f_unsteady = None
 
-            return self._pack_state_vector(state_np1)
+        state_new = StateUnflattened(
+            gamma_b=d_gamma_b,
+            gamma_w=d_gamma_w,
+            gamma_bm1=d_gamma_bm1,
+            gamma_b_dot=d_gamma_b_dot,
+            zeta_w=d_zeta_w,
+            zeta_b=d_zeta_b_state,
+        )
+        out_new = OutputUnflattened(f_steady=d_f_steady, f_unsteady=d_f_unsteady)
 
-        @jit
-        def _c_func(x_n_vec: Array) -> Array:
-            r"""
-            State to output function for the C matrix in the linear system.
-            :param x_n_vec: State vector time=varphi, [n_state]
-            :return: Output vector at time=varphi, [n_outputs]
-            """
-            x_n = self._unpack_state_vector(x_n_vec)
+        return self._pack_state_vector(state_new), self._pack_output_vector(out_new)
 
-            if self.unsteady_force:
-                if x_n.gamma_bm1 is None:
-                    raise ValueError("x_n.gamma_bm1 is None")
+    def linearise(self) -> LinearSystem:
+        r"""
+        Build the linear state-space system.
+        """
+        x_ref = jnp.zeros(self.n_states)
+        u_ref = jnp.zeros(self.n_inputs)
 
-                d_gamma_dot_n = (
-                    x_n.gamma_b_dot
-                    if self.gamma_dot_state
-                    else (x_n.gamma_b - x_n.gamma_bm1) / self.dt
-                )
+        _, f_lin = jax.linearize(self._f_step, x_ref, u_ref)
 
-                if d_gamma_dot_n is None:
-                    raise ValueError("d_gamma_dot_n is None")
-                d_f_unsteady_n = self.reference.flowfield.rho * ArrayList(
-                    [
-                        split_to_vertex(arr, (0, 1))
-                        for arr in ArrayList.einsum(
-                            "ij,ijk->ijk", d_gamma_dot_n, self.reference.nc
-                        )
-                    ]
-                )
-            else:
-                d_f_unsteady_n = None
+        def a_func(dx: Array) -> Array:
+            return f_lin(dx, jnp.zeros_like(u_ref))[0]
 
-            def steady_forcing_c(
-                gamma_b: ArrayList,
-                gamma_w: ArrayList,
-                zeta_w: Optional[ArrayList] = None,
-            ):
-                r"""
-                Steady forcing at time=varphi due to perturbations in the states.
-                """
+        def b_func(du: Array) -> Array:
+            return f_lin(jnp.zeros_like(x_ref), du)[0]
 
-                def _v_forcing(x: Array) -> Array:
-                    r"""
-                    Flow velocity at points x_target due to the flowfield and the bound and wake surfaces.
-                    :param x: Points to evaluate flow velocity at, [..., 3]
-                    :return: Flow velocity at points x_target, [..., 3]
-                    """
-                    return _v_flow(
-                        x,
-                        gamma_b,
-                        gamma_w,
-                        self.reference.zeta_b,
-                        zeta_w if zeta_w is not None else self.reference.zeta_w,
-                    )
+        def c_func(dx: Array) -> Array:
+            return f_lin(dx, jnp.zeros_like(u_ref))[1]
 
-                return calculate_steady_forcing(
-                    zeta_b=self.reference.zeta_b,
-                    zeta_dot_b=self.reference.zeta_b_dot,
-                    gamma_b=gamma_b,
-                    gamma_w=gamma_w,
-                    v_func=_v_forcing,
-                    v_inputs=None,
-                    rho=self.reference.flowfield.rho,
-                )
+        def d_func(du: Array) -> Array:
+            return f_lin(jnp.zeros_like(x_ref), du)[1]
 
-            # obtain perturbation in steady forces due to states
-            d_f_steady_n = jax.jvp(
-                steady_forcing_c,
-                [self.reference.gamma_b, self.reference.gamma_w, self.reference.zeta_w]
-                if self.prescribed_wake
-                else [self.reference.gamma_b, self.reference.gamma_w],
-                [x_n.gamma_b, x_n.gamma_w, x_n.zeta_w]
-                if self.prescribed_wake
-                else [x_n.gamma_b, x_n.gamma_w],
-            )[1]
-
-            return self._pack_output_vector(
-                OutputUnflattened(d_f_steady_n, d_f_unsteady_n)
-            )
-
-        @jit
-        def _d_func(u_n_vec: Array) -> Array:
-            r"""
-            Input to output function for the D matrix in the linear system.
-            :param u_n_vec: Input vector time=varphi, [n_input]
-            :return: Output vector at time=varphi, [n_outputs]
-            """
-            u_n = self._unpack_input_vector(u_n_vec)
-
-            def steady_forcing_d(
-                zeta_b: ArrayList, zeta_b_dot: ArrayList, nu_b: Optional[ArrayList]
-            ) -> ArrayList:
-                def _v_forcing(x: Array) -> Array:
-                    r"""
-                    Flow velocity at points x_target due to the flowfield and the bound and wake surfaces.
-                    :param x: Points to evaluate flow velocity at, [..., 3]
-                    :return: Flow velocity at points x_target, [..., 3]
-                    """
-                    return _v_flow(
-                        x,
-                        self.reference.gamma_b,
-                        self.reference.gamma_w,
-                        zeta_b,
-                        self.reference.zeta_w,
-                    )
-
-                return calculate_steady_forcing(
-                    zeta_b=zeta_b,
-                    zeta_dot_b=zeta_b_dot,
-                    gamma_b=self.reference.gamma_b,
-                    gamma_w=self.reference.gamma_w,
-                    v_func=_v_forcing,
-                    v_inputs=nu_b,
-                    rho=self.reference.flowfield.rho,
-                )
-
-            if self.bound_upwash:
-                d_f_steady_n = jax.jvp(
-                    steady_forcing_d,
-                    [
-                        self.reference.zeta_b,
-                        self.reference.zeta_b_dot,
-                        ArrayList.zeros_like(self.reference.zeta_b),
-                    ],
-                    [u_n.zeta_b, u_n.zeta_b_dot, u_n.nu_b],
-                )[1]
-            else:
-                d_f_steady_n = jax.jvp(
-                    lambda zb, zbd: steady_forcing_d(zb, zbd, None),
-                    [self.reference.zeta_b, self.reference.zeta_b_dot],
-                    [u_n.zeta_b, u_n.zeta_b_dot],
-                )[1]
-
-            if self.unsteady_force:
-                # no contribution from input_ to unsteady forces, assuming that gamma0_b_dot is zero
-                d_f_unsteady_n = ArrayList.zeros_like(d_f_steady_n)
-            else:
-                d_f_unsteady_n = None
-
-            return self._pack_output_vector(
-                OutputUnflattened(d_f_steady_n, d_f_unsteady_n)
-            )
-
-        # create linear operators
-        a = LinearOperator(_a_func, shape=(self.n_states, self.n_states))
-        b = LinearOperator(_b_func, shape=(self.n_states, self.n_inputs))
-        c = LinearOperator(_c_func, shape=(self.n_outputs, self.n_states))
-        d = LinearOperator(_d_func, shape=(self.n_outputs, self.n_inputs))
+        a = LinearOperator(jit(a_func), shape=(self.n_states, self.n_states))
+        b = LinearOperator(jit(b_func), shape=(self.n_states, self.n_inputs))
+        c = LinearOperator(jit(c_func), shape=(self.n_outputs, self.n_states))
+        d = LinearOperator(jit(d_func), shape=(self.n_outputs, self.n_inputs))
 
         return LinearSystem(a, b, c, d)
 
@@ -1323,8 +931,8 @@ class LinearUVLM:
             n_tstep=n_tstep,
             t=t,
             n_surf=self.reference.n_surf,
-            surf_b_names=self.surf_b_names,
-            surf_w_names=self.surf_w_names,
+            surf_b_names=self.case.surf_b_names,
+            surf_w_names=self.case.surf_w_names,
         )
 
     def eigenvalues(self, to_components: bool = True) -> Array:
@@ -1356,8 +964,8 @@ class LinearUVLM:
             f_unsteady=self.reference.f_unsteady,
             cs_ang=self.reference.cs_ang,
             cs_vel=self.reference.cs_vel,
-            surf_b_names=self.surf_b_names,
-            surf_w_names=self.surf_w_names,
+            surf_b_names=self.case.surf_b_names,
+            surf_w_names=self.case.surf_w_names,
             i_ts=jnp.atleast_1d(-1),
             t=jnp.zeros(()),
             c=self.reference.c,
@@ -1370,7 +978,7 @@ class LinearUVLM:
             free_wake=self.reference.free_wake,
             gamma_dot_relaxation=self.reference.gamma_dot_relaxation,
             static_horseshoe=self.reference.static_horseshoe,
-            batch_size=self.batch_size,
+            batch_size=self.case.batch_size,
         )
 
     def plot_reference(

@@ -275,7 +275,7 @@ class BaseCoupledAeroelastic:
             )
 
             if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
-                converge_status_.print_fsi_message(None)
+                converge_status_.print_fsi_message(i_ts=None, t=None)
 
             return converge_status_, struct_case_np1, aero_case_np1, omega, r_curr
 
