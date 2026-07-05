@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
 
 BASE_LOBATTO_ORDER: Literal[3, 4, 5] = 3
-BASE_LEGENDRE_ORDER: Literal[1, 2, 3] = 1
+BASE_LEGENDRE_ORDER: Literal[1, 2, 3] = 3
 
 
 @make_pytree

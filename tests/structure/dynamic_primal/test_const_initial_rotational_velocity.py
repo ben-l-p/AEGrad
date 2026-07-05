@@ -48,12 +48,10 @@ class TestXBeamConstXRotVelocity:
         m_cs = block_diag(jnp.eye(3) * m_bar, jnp.eye(3) * j_bar)[None, :]
 
         struct = BeamStructure(
-            3,
-            conn,
-            cls.y_vect,
-            None,
+            num_nodes=3,
+            connectivity=conn,
+            y_vector=cls.y_vect,
             spectral_radius=1.0,
-            relaxation_factor=1.0,
         )
         struct.set_design_variables(coords, jnp.diag(k_coeffs), m_cs)
 
@@ -81,9 +79,6 @@ class TestXBeamConstXRotVelocity:
             n_tstep=n_tstep,
             dt=dt,
             prescribed_dofs=None,
-            f_ext_follower=None,
-            f_ext_dead=None,
-            f_ext_aero=None,
         )
 
         expected_theta = omega * jnp.arange(n_tstep) * dt
