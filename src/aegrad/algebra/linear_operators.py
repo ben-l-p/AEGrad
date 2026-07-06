@@ -1,8 +1,9 @@
 from __future__ import annotations
-from typing import Optional, Callable, Sequence, overload
+from typing import Optional, Callable, Sequence, overload, Literal
 
 import jax
 from jax import Array, numpy as jnp, jacobian
+from jax.scipy.linalg import expm
 
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.utils.print_utils import warn, jax_print
@@ -23,8 +24,8 @@ class LinearOperator:
         mat: Optional[Array] = None,
     ):
         r"""
-        :param func: Function which represents the linear operator, [varphi] -> [m]
-        :param shape: Shape of the equivalent matrix, (m, varphi)
+        :param func: Function which represents the linear operator, [n] -> [m]
+        :param shape: Shape of the equivalent matrix, (m, n)
         :param mat: If available, the explicit matrix representation of the operator
         """
         if mat is not None:
@@ -262,10 +263,12 @@ class LinearSystem:
 
     def __init__(
         self,
-        a: LinearOperator,
-        b: LinearOperator,
-        c: LinearOperator,
-        d: LinearOperator,
+        a: LinearOperator | Array,
+        b: LinearOperator | Array,
+        c: LinearOperator | Array,
+        d: LinearOperator | Array,
+        dt: float,
+        continuous_time: bool = False,
         removed_u_np1: bool = False,
     ) -> None:
         r"""
@@ -274,25 +277,31 @@ class LinearSystem:
         :param b: Input matrix B
         :param c: Output matrix C
         :param d: Feedthrough matrix D
-        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time varphi only.
+        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time step n only.
         """
-        self.a: LinearOperator = a
-        self.b: LinearOperator = b
-        self.c: LinearOperator = c
-        self.d: LinearOperator = d
+        self.a: LinearOperator | Array = a
+        self.b: LinearOperator | Array = b
+        self.c: LinearOperator | Array = c
+        self.d: LinearOperator | Array = d
+        self.dt: float = dt
         self.n_inputs: int = b.shape[1]
         self.n_states: int = a.shape[0]
         self.n_outputs: int = c.shape[0]
+        self.continuous_time: bool = continuous_time
         self.removed_u_np1: bool = removed_u_np1
 
     def generate_matrices(self) -> None:
         r"""
         Compute the matrix representations of the linear operators in the system.
         """
-        self.a.generate_matrix()
-        self.b.generate_matrix()
-        self.c.generate_matrix()
-        self.d.generate_matrix()
+        if isinstance(self.a, LinearOperator):
+            self.a.generate_matrix()
+        if isinstance(self.b, LinearOperator):
+            self.b.generate_matrix()
+        if isinstance(self.c, LinearOperator):
+            self.c.generate_matrix()
+        if isinstance(self.d, LinearOperator):
+            self.d.generate_matrix()
 
     def remove_u_np1(self) -> None:
         r"""
@@ -306,6 +315,55 @@ class LinearSystem:
             self.b = self.a @ self.b
             self.removed_u_np1 = True
 
+    def continuous_to_discrete(
+        self, method: Literal["zoh", "tustin"] = "tustin"
+    ) -> None:
+        r"""
+        Convert the continuous-time linear system to a discrete-time linear system.
+        """
+        jax_print(
+            "Converting continuous-time system to discrete-time system.",
+            verbose_level=VerbosityLevel.NORMAL,
+        )
+        if not self.continuous_time:
+            warn("System is already discrete-time.")
+            return
+
+        self.generate_matrices()
+
+        a_c = self.a.matrix if isinstance(self.a, LinearOperator) else self.a
+        b_c = self.b.matrix if isinstance(self.b, LinearOperator) else self.b
+
+        match method:
+            case "zoh":
+                # perform a ZOH conversion
+                # create a matrix aug = [[A, B], [0, 0]], exp(aug * dt) = [[Ad, Bd], [0, I]]
+                aug = jnp.block(
+                    [
+                        [a_c, b_c],
+                        [
+                            jnp.zeros(
+                                (self.b.shape[1], self.a.shape[0] + self.b.shape[1])
+                            )
+                        ],
+                    ]
+                )
+                assert aug.shape[0] == aug.shape[1], (
+                    "Augmented matrix must be square for matrix exponential."
+                )
+
+                exp_aug = expm(self.dt * aug)
+
+                self.a = exp_aug[: self.a.shape[0], : self.a.shape[1]]
+                self.b = exp_aug[: self.a.shape[0], self.a.shape[1] :]
+            case "tustin":
+                # Tustin bilinear transformation
+                mat_inv = jnp.linalg.inv(jnp.eye(self.a.shape[0]) - a_c * 0.5 * self.dt)
+                self.a = mat_inv @ (jnp.eye(self.a.shape[0]) + a_c * 0.5 * self.dt)
+                self.b = mat_inv @ (b_c * self.dt)
+
+        self.continuous_time = False
+
     def run(
         self, u: Array, x0: Optional[Array] = None, use_matrix=False
     ) -> tuple[Array, Array]:
@@ -317,14 +375,34 @@ class LinearSystem:
         :return: State history and output history, arr_list_shapes [n_tstep, n_states] and [n_tstep, n_outputs]
         """
         if x0 is not None:
-            check_arr_shape(x0, (None, self.n_states), "x0")
+            check_arr_shape(x0, (self.n_states,), "x0")
         check_arr_shape(u, (None, self.n_inputs), "u")
         n_tstep = u.shape[0]
 
-        if use_matrix:
-            a, b, c, d = self.a.matrix, self.b.matrix, self.c.matrix, self.d.matrix
-        else:
-            a, b, c, d = self.a, self.b, self.c, self.d
+        if self.continuous_time:
+            self.continuous_to_discrete()
+
+        # is use_matrix is False and a matrix is passed, it will default to the matrix
+        a = (
+            self.a.matrix
+            if isinstance(self.a, LinearOperator) and use_matrix
+            else self.a
+        )
+        b = (
+            self.b.matrix
+            if isinstance(self.b, LinearOperator) and use_matrix
+            else self.b
+        )
+        c = (
+            self.c.matrix
+            if isinstance(self.c, LinearOperator) and use_matrix
+            else self.c
+        )
+        d = (
+            self.d.matrix
+            if isinstance(self.d, LinearOperator) and use_matrix
+            else self.d
+        )
 
         def state_func(i_ts: int, x_: Array) -> Array:
             r"""
@@ -334,7 +412,7 @@ class LinearSystem:
             :return: Updated state history array, [n_tstep, n_states]
             """
             jax_print(
-                "Linear UVLM state step {i_ts}",
+                "Linear system state step {i_ts}",
                 i_ts=i_ts,
                 verbose_level=VerbosityLevel.NORMAL,
             )
@@ -353,7 +431,7 @@ class LinearSystem:
             :param y_: Output history array being updated, [n_tstep, n_outputs]
             :return: Updated output history array, [n_tstep, n_outputs]
             """
-            jax_print("Linear UVLM output step {i_ts}", i_ts=i_ts)
+            jax_print("Linear system output step {i_ts}", i_ts=i_ts)
             return y_.at[i_ts, ...].set(c @ x[i_ts, ...] + d @ u[i_ts, ...])
 
         y = jnp.zeros((n_tstep, self.n_outputs))

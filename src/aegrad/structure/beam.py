@@ -10,6 +10,8 @@ from jax.scipy.linalg import block_diag
 from jax.scipy.spatial.transform import Rotation
 
 from aegrad.aero.data_structures import DynamicAeroCase
+from aegrad.structure.linear.linear_beam import LinearBeam
+from aegrad.utils.constants import BASE_LOBATTO_ORDER, BASE_LEGENDRE_ORDER
 from aegrad.utils.utils import check_type, make_pytree, nested_list_to_tuple
 from aegrad.structure.data_structures import (
     StaticStructure,
@@ -52,9 +54,6 @@ from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 if TYPE_CHECKING:
     from aegrad.coupled.data_structures import DynamicAeroelastic
     from aegrad.aero.uvlm import UVLM
-
-BASE_LOBATTO_ORDER: Literal[3, 4, 5] = 3
-BASE_LEGENDRE_ORDER: Literal[1, 2, 3] = 3
 
 
 @make_pytree
@@ -859,23 +858,16 @@ class BaseBeamStructure:
             self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0
         )
 
-    def modal(
-        self,
-        case: StaticStructure,
-        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
-        n_print: int = 20,
-    ) -> tuple[Array, Array, Array]:
+    def make_global_m_k(
+        self, case: StaticStructure, int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER
+    ) -> tuple[Array, Array]:
         r"""
-        Perform modal analysis on the structure.
-        :param case: The static structure case for which to perform modal analysis.
+        Create the global mass and stiffness matrices for a given static structure case. These can be used for modal
+        analysis or other purposes.
+        :param case: Static structure case for which to compute the global mass and stiffness matrices.
         :param int_order: Integration order for mass matrix computation.
-        :param n_print: Number of modes to print to console.
-        :return: Tuple of natural frequencies [n_free_dof], damping ratios [n_free_dof], and mode shapes [n_free_dof,
-        n_free_dof].
+        :return: Global mass and stiffness matrices, [n_free_dof, n_free_dof].
         """
-
-        warn_if_32_bit()
-
         # extract variables from case
         d = case.d
         eps = self.make_eps(d=d)
@@ -915,6 +907,27 @@ class BaseBeamStructure:
             "ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_varphi
         ).reshape(self.n_dof, self.n_dof)[jnp.ix_(free_dofs, free_dofs)]
 
+        return m_modal, k_modal
+
+    def modal(
+        self,
+        case: StaticStructure,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+        n_modes: int = 20,
+    ) -> tuple[Array, Array, Array]:
+        r"""
+        Perform modal analysis on the structure.
+        :param case: The static structure case for which to perform modal analysis.
+        :param int_order: Integration order for mass matrix computation.
+        :param n_modes: Number of modes to preserve.
+        :return: Tuple of natural frequencies [n_free_dof], damping ratios [n_free_dof], and mode shapes [n_free_dof,
+        n_free_dof].
+        """
+
+        warn_if_32_bit()
+
+        m_modal, k_modal = self.make_global_m_k(case=case, int_order=int_order)
+
         # reduce generalised problem K phi = omega^2 M phi to standard form and solve
         if jnp.any(case.varphi):
             # non-zero deformation: K, M are not symmetric — use non-symmetric solver
@@ -931,7 +944,7 @@ class BaseBeamStructure:
             damping = -jnp.real(s) / s_mag
 
         else:
-            # zero deformation: K, M symmetric and so we can use a symmetric solver
+            # zero deformation: K, M symmetric and so we can use a symmetric solver for M^{-1} K
             cholesky_l = jnp.linalg.cholesky(m_modal)
             a = jax.scipy.linalg.solve_triangular(
                 cholesky_l,
@@ -957,13 +970,23 @@ class BaseBeamStructure:
             verbose_level=VerbosityLevel.NORMAL,
         )
         print_table_line(inner_width=39)
-        for i_mode in range(n_print):
+        for i_mode in range(n_modes):
             jax_print(
                 f"| {i_mode + 1:>4d} | {ordered_freq[i_mode]:>14.3f} | {out_damping[i_mode]:>13.6f} |",
                 verbose_level=VerbosityLevel.NORMAL,
             )
         print_table_line(inner_width=39)
-        return ordered_freq[:n_print], out_damping[:n_print], out_modes[:, :n_print]
+        return ordered_freq[:n_modes], out_damping[:n_modes], out_modes[:, :n_modes]
+
+    def linearise(self, case: StaticStructure, dt: float) -> LinearBeam:
+        r"""
+        Linearise the beam about a given static structure case. This creates a LinearBeam object which can be used for
+        linear dynamic analysis.
+        :param case: Static structure case about which to linearise the beam.
+        :param dt: Time step size, used for conversions between continuous and discrete time.
+        :return: Continuous-time linearised beam object.
+        """
+        return LinearBeam(beam=self, reference=case, dt=dt)
 
     def _make_c_t(
         self,

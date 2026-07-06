@@ -116,11 +116,8 @@ class LinearUVLM:
         # wake propagation deltas
         self.case: UVLM = case
 
-        # linear operators for system
-        self.base_sys: LinearSystem = self.linearise()
-
-        # final system - this is overwritten for updating models
-        self.sys: LinearSystem = self.base_sys
+        # linear system
+        self.sys: LinearSystem = self.linearise()
 
     def get_reference_inputs(self) -> InputUnflattened:
         r"""
@@ -825,7 +822,7 @@ class LinearUVLM:
         c = LinearOperator(jit(c_func), shape=(self.n_outputs, self.n_states))
         d = LinearOperator(jit(d_func), shape=(self.n_outputs, self.n_inputs))
 
-        return LinearSystem(a, b, c, d)
+        return LinearSystem(a=a, b=b, c=c, d=d, dt=float(self.dt))
 
     def run(
         self,
@@ -835,7 +832,7 @@ class LinearUVLM:
         use_matrix=False,
     ) -> AeroLinearResult:
         r"""
-        Run the linear system for one time step.
+        Run the linear system.
         :param u: Input perturbations over time.
         :param x0: Initial state perturbations, defaults to zero state.
         :param flowfield: FlowField object to provide flow velocities for bound and wake upwash, defaults to no flow.
@@ -942,7 +939,9 @@ class LinearUVLM:
         eigenvalues.
         :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
         """
-        evals = jnp.linalg.eigvals(self.sys.a.matrix)
+        evals = jnp.linalg.eigvals(
+            self.sys.a.matrix if isinstance(self.sys.a, LinearOperator) else self.sys.a
+        )
         if to_components:
             return jnp.stack((evals.real, evals.imag), axis=-1)
         else:
