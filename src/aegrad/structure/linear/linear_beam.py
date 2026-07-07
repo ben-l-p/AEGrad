@@ -6,8 +6,8 @@ from jax import numpy as jnp
 
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.algebra.linear_operators import LinearSystem, LinearOperator
-from aegrad.algebra.se3 import log_se3, exp_se3
-from aegrad.structure.utils import get_solve_dofs
+from aegrad.algebra.se3 import exp_se3
+from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
 from aegrad.utils.constants import BASE_LOBATTO_ORDER
 from aegrad.structure.data_structures import StaticStructure
 
@@ -19,16 +19,18 @@ class BeamLinearResult:
     def __init__(
         self,
         reference: StaticStructure,
-        f_ext: Array,
-        q: Array,
-        q_dot: Array,
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        delta_q: Array,
+        delta_q_dot: Array,
         hg: Array,
         t: Array,
     ) -> None:
         # system results, if simulated
-        self.f_ext_t: Array = f_ext
-        self.q: Array = q
-        self.q_dot: Array = q_dot
+        self.f_ext_follower: Optional[Array] = f_ext_follower
+        self.f_ext_dead: Optional[Array] = f_ext_dead
+        self.delta_q: Array = delta_q
+        self.delta_q_dot: Array = delta_q_dot
         self.hg: Array = hg
         self.n_tstep: int = len(t)
         self.t: Array = t
@@ -45,6 +47,7 @@ class LinearBeam:
         beam: BaseBeamStructure,
         reference: StaticStructure,
         dt: float | Array,
+        local_forcing: bool = True,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
     ):
         self.n_dof: int = beam.n_dof - len(reference.prescribed_dofs)
@@ -54,18 +57,15 @@ class LinearBeam:
         )
 
         self.reference: StaticStructure = reference
+        self.local_forcing: bool = local_forcing
 
         self.m_global, self.k_global = beam.make_global_m_k(
-            case=reference, int_order=int_order
+            case=reference, int_order=int_order, local_forcing=local_forcing
         )
 
         self.dt: float = float(dt)
 
         self.sys: LinearSystem = self.linearise_continuous()
-
-        self.q_ref = vmap(log_se3)(
-            self.reference.hg
-        )  # reference coordinates, [n_nodes, 6]
 
     def linearise_continuous(self) -> LinearSystem:
         r"""
@@ -104,14 +104,18 @@ class LinearBeam:
 
     def run(
         self,
-        f_ext_t: Array,
+        n_tstep: int,
+        f_ext_follower_t: Optional[Array],
+        f_ext_dead_t: Optional[Array],
         q0: Optional[Array] = None,
         q0_dot: Optional[Array] = None,
         use_matrix=False,
     ) -> BeamLinearResult:
         r"""
         Run the linear system.
-        :param f_ext_t: External forces applied to the system at each time step, [n_tstep, n_nodes, 6].
+        :param n_tstep. Number of time steps to simulate.
+        :param f_ext_follower_t: External follower forces applied to the system at each time step, [n_tstep, n_nodes, 6].
+        :param f_ext_dead_t: External dead forces applied to the system at each time step, [n_tstep, n_nodes, 6].
         :param q0: Initial displacements, [n_nodes, 6]. Set as None to use zero initial displacements.
         :param q0_dot: Initial velocities, [n_nodes, 6]. Set as None to use zero initial velocities.
         :param use_matrix: If true, use explicit matrix representation for linear system, otherwise use operator form.
@@ -130,36 +134,95 @@ class LinearBeam:
             q0_dot = q0_dot.ravel()[self.free_dofs]
             check_arr_shape(q0_dot, (self.n_dof,), name="q0_dot")
 
-        n_tstep: int = f_ext_t.shape[0]
+        def create_delta_forcing(
+            reference_f: Optional[Array],
+            input_f_t: Optional[Array],
+            name: str,
+            transformation: Optional[Array],
+        ) -> Array:
+            r"""
+            Function to compute the forcing perturbations to pass to the linear system. This accounts for the reference
+            forcing and any transformations to local or global coordinates.
+            :param reference_f: Reference forcing vector, [n_nodes, 6] or None.
+            :param input_f_t: Input forcing vector, [n_tstep, n_nodes, 6] or None.
+            :param name: Name of the forcing vector for error messages.
+            :param transformation: Transformation matrix for coordinate transformation or None.
+            :return: Delta forcing vector, [n_tstep, n_nodes, 6].
+            """
+            if input_f_t is None:
+                if reference_f is None:
+                    return jnp.zeros((n_tstep, self.n_nodes, 6))
+                else:
+                    return -jnp.broadcast_to(
+                        self.reference.f_ext_dead[None, :, :],
+                        (n_tstep, self.n_nodes, 6),
+                    )
+            else:
+                check_arr_shape(input_f_t, (n_tstep, self.n_nodes, 6), name=name)
+                if transformation is not None:
+                    f_t_tot = transform_nodal_vect(
+                        vect=input_f_t,
+                        rmat=jnp.swapaxes(self.reference.hg[:, :3, :3], -1, -2),
+                    )
+                else:
+                    f_t_tot = input_f_t
 
-        check_arr_shape(f_ext_t, (n_tstep, self.n_nodes, 6), name="f_ext_t")
+                if reference_f is None:
+                    return f_t_tot
+                else:
+                    return f_t_tot - reference_f[None, :, :]
 
-        f_ext_t_free = f_ext_t.reshape(n_tstep, -1)[
-            :, self.free_dofs
-        ]  # flatten to (n_tstep, n_dof)
+        delta_f_ext_follower_t = create_delta_forcing(
+            reference_f=self.reference.f_ext_follower,
+            input_f_t=f_ext_follower_t,
+            name="f_ext_follower_t",
+            transformation=None if self.local_forcing else self.reference.hg[:, :3, :3],
+        )
+
+        delta_f_ext_dead_t = create_delta_forcing(
+            reference_f=self.reference.f_ext_dead,
+            input_f_t=f_ext_dead_t,
+            name="f_ext_dead_t",
+            transformation=jnp.swapaxes(self.reference.hg[:, :3, :3], -1, -2)
+            if self.local_forcing
+            else None,
+        )
+
+        delta_f_ext_t_free = (delta_f_ext_follower_t + delta_f_ext_dead_t).reshape(
+            n_tstep, -1
+        )[:, self.free_dofs]  # flatten to (n_tstep, n_dof)
 
         # run linear system
         x_t, y_t = self.sys.run(
-            u=f_ext_t_free, x0=jnp.concatenate((q0, q0_dot)), use_matrix=use_matrix
+            u=delta_f_ext_t_free,
+            x0=jnp.concatenate((q0, q0_dot)),
+            use_matrix=use_matrix,
         )
 
-        q_t = x_t[:, : self.n_dof]
-        q_dot_t = x_t[:, self.n_dof :]
+        # extract perturbations in displacements and velocities
+        delta_q_t = x_t[:, : self.n_dof]
+        delta_q_dot_t = x_t[:, self.n_dof :]
 
-        q_tot_t = (
-            jnp.broadcast_to(self.q_ref.ravel()[None, :], (n_tstep, self.n_nodes * 6))
+        # add in zeros for dofs not solved for to allow for reconstructing the full configuration
+        delta_q_t_full = (
+            jnp.zeros((n_tstep, self.n_nodes * 6))
             .at[:, self.free_dofs]
-            .set(q_t)
-            .reshape(n_tstep, *self.q_ref.shape)
+            .set(delta_q_t)
+            .reshape(n_tstep, self.n_nodes, 6)
         )
 
-        hg_t = vmap(vmap(exp_se3, 0, 0), 1, 1)(q_tot_t)  # [n_tstep, n_nodes, 4, 4]
+        delta_hg_t = vmap(vmap(exp_se3, 0, 0), 1, 1)(
+            delta_q_t_full
+        )  # [n_tstep, n_nodes, 4, 4]
+
+        hg_t = jnp.einsum("ijk,hikl->hijl", self.reference.hg, delta_hg_t)
 
         return BeamLinearResult(
             reference=self.reference,
-            f_ext=f_ext_t,
-            q=q_t,
-            q_dot=q_dot_t,
+            f_ext_follower=f_ext_follower_t,
+            f_ext_dead=f_ext_dead_t,
+            delta_q=delta_q_t,
+            delta_q_dot=delta_q_dot_t,
             hg=hg_t,
             t=jnp.arange(n_tstep) * self.dt,
         )

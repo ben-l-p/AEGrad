@@ -859,13 +859,19 @@ class BaseBeamStructure:
         )
 
     def make_global_m_k(
-        self, case: StaticStructure, int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER
+        self,
+        case: StaticStructure,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+        local_forcing: bool = True,
     ) -> tuple[Array, Array]:
         r"""
         Create the global mass and stiffness matrices for a given static structure case. These can be used for modal
-        analysis or other purposes.
+        analysis or other purposes. These matrices are the Jacobians of the local forcing residual with respect to
+        global perturbations in acceleration and displacement, respectively.
         :param case: Static structure case for which to compute the global mass and stiffness matrices.
         :param int_order: Integration order for mass matrix computation.
+        :param local_forcing: Flag to indicate the frame for which the forcing is defined. This will determine if the
+        linear system naturally takes follower or dead loads.
         :return: Global mass and stiffness matrices, [n_free_dof, n_free_dof].
         """
         # extract variables from case
@@ -876,16 +882,32 @@ class BaseBeamStructure:
         rmat = case.hg[:, :3, :3]  # [n_node, 3, 3]
 
         # get dead external forcing as this has a stiffness contribution
-        f_ext_dead: Optional[Array]
+        f_ext_dead_local: Optional[Array]
         if case.f_ext_dead is not None and case.f_ext_aero is not None:
-            f_ext_dead = case.f_ext_dead + case.f_ext_aero
+            f_ext_dead_local = case.f_ext_dead + case.f_ext_aero
         else:
-            f_ext_dead = (
+            f_ext_dead_local = (
                 case.f_ext_dead if case.f_ext_dead is not None else case.f_ext_aero
             )
+
+        # convert to global frame, as it required for creating the stiffness matrix
+        f_ext_dead: Optional[Array] = (
+            transform_nodal_vect(f_ext_dead_local, rmat)
+            if f_ext_dead_local is not None
+            else None
+        )
         free_dofs = jnp.array(
             get_solve_dofs(n_dof=self.n_dof, prescribed_dofs=case.prescribed_dofs)
         )
+
+        def transform_mat_to_global(mat: Array) -> Array:
+            # function to rotate a forcing Jacobian matrix from the local frame to the global frame.
+            mat_reshaped = mat.reshape(self.n_nodes, 6, self.n_dof)
+            m_lin = jnp.einsum("nij,njk->nik", rmat, mat_reshaped[:, :3, :])
+            m_rot = jnp.einsum("nij,njk->nik", rmat, mat_reshaped[:, 3:, :])
+            return jnp.concatenate((m_lin, m_rot), axis=1).reshape(
+                self.n_dof, self.n_dof
+            )
 
         # mass
         m_t = self.assemble_matrix_from_entries(
@@ -895,17 +917,31 @@ class BaseBeamStructure:
             m_t = self.add_lumped_contributions_to_arr(
                 arr=m_t, lumped_arr=self.m_lumped
             )
-        m_modal = jnp.einsum(
+
+        m_modal_full = jnp.einsum(
             "ijk,jkl->ijl", m_t.reshape(self.n_dof, -1, 6), t_varphi
-        ).reshape(self.n_dof, self.n_dof)[jnp.ix_(free_dofs, free_dofs)]
+        )
+        if not local_forcing:
+            m_modal_full = transform_mat_to_global(mat=m_modal_full)
+
+        m_modal = m_modal_full.reshape(self.n_dof, self.n_dof)[
+            jnp.ix_(free_dofs, free_dofs)
+        ]
 
         # stiffness
         k_t = self.make_k_t_full(
             d=case.d, p_d=p_d, eps=eps, f_ext_dead=f_ext_dead, rmat=rmat, m_t=m_t
         )
-        k_modal = jnp.einsum(
+
+        k_modal_full = jnp.einsum(
             "ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_varphi
-        ).reshape(self.n_dof, self.n_dof)[jnp.ix_(free_dofs, free_dofs)]
+        )
+        if not local_forcing:
+            k_modal_full = transform_mat_to_global(mat=k_modal_full)
+
+        k_modal = k_modal_full.reshape(self.n_dof, self.n_dof)[
+            jnp.ix_(free_dofs, free_dofs)
+        ]
 
         return m_modal, k_modal
 
@@ -978,15 +1014,19 @@ class BaseBeamStructure:
         print_table_line(inner_width=39)
         return ordered_freq[:n_modes], out_damping[:n_modes], out_modes[:, :n_modes]
 
-    def linearise(self, case: StaticStructure, dt: float) -> LinearBeam:
+    def linearise(
+        self, case: StaticStructure, dt: float, local_forcing: bool = True
+    ) -> LinearBeam:
         r"""
         Linearise the beam about a given static structure case. This creates a LinearBeam object which can be used for
         linear dynamic analysis.
         :param case: Static structure case about which to linearise the beam.
         :param dt: Time step size, used for conversions between continuous and discrete time.
+        :param local_forcing: Flag to indicate the frame for which the forcing is defined. This allows for linearising
+        either the local or global forcing residuals.
         :return: Continuous-time linearised beam object.
         """
-        return LinearBeam(beam=self, reference=case, dt=dt)
+        return LinearBeam(beam=self, reference=case, dt=dt, local_forcing=local_forcing)
 
     def _make_c_t(
         self,
