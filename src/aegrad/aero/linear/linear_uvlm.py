@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from math import prod
 from typing import Sequence, TYPE_CHECKING, Optional
 from enum import Enum
 
-from jax import Array, jit, vmap
-import jax
+from jax import Array, vmap
 import jax.numpy as jnp
 import os
 from pathlib import Path
@@ -13,26 +11,22 @@ from pathlib import Path
 from aegrad.aero.data_structures import DynamicAeroCase, AeroSnapshot
 from aegrad.aero.gradients.data_structures import AeroStates
 from aegrad.aero.linear.data_structures import (
-    InputUnflattened,
-    StateUnflattened,
-    OutputUnflattened,
-)
-from aegrad.aero.linear.data_structures import (
-    _LinearComponent,
-    _SliceEntry,
-    InputSlices,
-    StateSlices,
-    OutputSlices,
     AeroLinearResult,
+    AeroInputUnflattened,
+    AeroStateUnflattened,
+    AeroOutputUnflattened,
 )
 from aegrad.aero.utils import (
     calculate_steady_forcing,
 )
-from aegrad.algebra.linear_operators import LinearOperator, LinearSystem
 from aegrad.algebra.array_utils import ArrayList, split_to_vertex
 from aegrad.aero.flowfields import FlowField
 from aegrad.aero.utils import biot_savart_cutoff, KernelFunction
-from aegrad.utils.utils import shallow_as_dict
+from aegrad.utils.linear import (
+    LinearModel,
+    SliceEntry,
+    LinearComponent,
+)
 from aegrad.utils.print_utils import warn
 from aegrad.aero.aic import compute_v_ind
 
@@ -47,7 +41,7 @@ class LinearWakeType(Enum):
     FREE = (True, True)
 
 
-class LinearUVLM:
+class LinearUVLM(LinearModel):
     r"""
     Class to represent a linearised UVLM aerodynamic system about a reference state.
     """
@@ -61,6 +55,9 @@ class LinearUVLM:
         wake_upwash: bool = True,
         unsteady_force: bool = True,
         gamma_dot_state: bool = False,
+        *,
+        skip_checks: bool = False,
+        skip_linearisation: bool = False,
     ):
         r"""
         Initialise linear UVLM system about a reference state.
@@ -81,35 +78,33 @@ class LinearUVLM:
         self.gamma_dot_state: bool = gamma_dot_state
 
         # time info
-        self.dt: Array = case.dt
+        super().__init__(reference=reference, dt=case.dt)
 
         # check that the reference state is steady
         # whilst linearisation can be performed about unsteady states, the current implementation omits some terms
         # required for this, however, cannot see a practical use case for such a model. Warn the user if the reference
         # state appears unsteady.
-        if max([jnp.abs(zbd).max() for zbd in reference.zeta_b_dot]) > 1e-6:
+        if (
+            not skip_checks
+            and max([jnp.abs(zbd).max() for zbd in reference.zeta_b_dot]) > 1e-6
+        ):
             warn(
                 "Reference bound surface velocities are non-zero. Ensure that the reference state is steady for linearisation."
             )
 
-        if max([jnp.abs(gbd).max() for gbd in reference.gamma_b_dot]) > 1e-6:
+        if (
+            not skip_checks
+            and max([jnp.abs(gbd).max() for gbd in reference.gamma_b_dot]) > 1e-6
+        ):
             warn(
                 "Reference bound circulation time derivative is non-zero. Ensure that the reference state is steady for linearisation."
             )
 
-        # reference state
-        self.reference: AeroSnapshot = reference
-
-        # slices of individual surface components in full vector
-        self.input_slices, self.n_inputs = self._make_input_slices()
-        self.state_slices, self.n_states = self._make_state_slices()
-        self.output_slices, self.n_outputs = self._make_output_slices()
-
         # kernels
-        self.kernels_b: Sequence[KernelFunction] = self.reference.n_surf * [
+        self.kernels_b: Sequence[KernelFunction] = reference.n_surf * [
             biot_savart_cutoff
         ]
-        self.kernels_w: Sequence[KernelFunction] = self.reference.n_surf * [
+        self.kernels_w: Sequence[KernelFunction] = reference.n_surf * [
             biot_savart_cutoff
         ]
 
@@ -117,541 +112,156 @@ class LinearUVLM:
         self.case: UVLM = case
 
         # linear system
-        self.sys: LinearSystem = self.linearise()
+        if not skip_linearisation:
+            self.sys = self.linearise()
 
-    def get_reference_inputs(self) -> InputUnflattened:
-        r"""
-        Get the reference input state about which the system is linearised.
-        :return: InputUnflattened object representing the reference inputs.
-        """
-        return InputUnflattened(
-            self.reference.zeta_b,
-            self.reference.zeta_b_dot,
-            ArrayList.zeros_like(self.reference.zeta_b) if self.bound_upwash else None,
-            ArrayList.zeros_like(self.reference.zeta_w) if self.wake_upwash else None,
-        )
+    def extract_reference_inputs(
+        self,
+    ) -> dict[str, Optional[Array | ArrayList]]:
+        return {
+            "zeta_b": self.reference.zeta_b,
+            "zeta_b_dot": self.reference.zeta_b_dot,
+            "nu_b": ArrayList.zeros_like(self.reference.zeta_b)
+            if self.bound_upwash
+            else None,
+            "nu_w": ArrayList.zeros_like(self.reference.zeta_w)
+            if self.wake_upwash
+            else None,
+        }
 
-    def get_reference_states(self) -> StateUnflattened:
-        r"""
-        Get the reference state about which the system is linearised.
-        :return: StateUnflattened object representing the reference states.
-        """
-        return StateUnflattened(
-            self.reference.gamma_b,
-            self.reference.gamma_w,
-            self.reference.gamma_b if self.unsteady_force else None,
-            self.reference.gamma_b_dot if self.gamma_dot_state else None,
-            self.reference.zeta_w if self.prescribed_wake else None,
-            self.reference.zeta_b if self.prescribed_wake else None,
-        )
+    def extract_reference_states(
+        self,
+    ) -> dict[str, Optional[Array | ArrayList]]:
+        return {
+            "gamma_b": self.reference.gamma_b,
+            "gamma_w": self.reference.gamma_w,
+            "gamma_bm1": self.reference.gamma_b if self.unsteady_force else None,
+            "gamma_b_dot": self.reference.gamma_b_dot
+            if self.gamma_dot_state and self.unsteady_force
+            else None,
+            "zeta_w": self.reference.zeta_w if self.prescribed_wake else None,
+            "zeta_b": self.reference.zeta_b if self.prescribed_wake else None,
+        }
 
-    def get_reference_outputs(self) -> OutputUnflattened:
-        r"""
-        Get the reference outputs about which the system is linearised.
-        :return: OutputUnflattened object representing the reference outputs.
-        """
-        return OutputUnflattened(
-            self.reference.f_steady,
-            self.reference.f_unsteady if self.unsteady_force else None,
-        )
+    def extract_reference_outputs(
+        self,
+    ) -> dict[str, Optional[Array | ArrayList]]:
+        return {
+            "f_steady": self.reference.f_steady,
+            "f_unsteady": self.reference.f_unsteady if self.unsteady_force else None,
+        }
 
-    @staticmethod
-    def _make_slices[T](
-        slice_entries: Sequence[_SliceEntry], cls: type[T]
-    ) -> tuple[T, int]:
-        r"""
-        Helper function to create slices classes for the vectors, and count the number of elements.
-        Blocks should be passed in the int_order they are in the dataclass.
-        :param slice_entries: Sequence of _SliceEntry objects defining the slices.
-        :param cls: The class type to instantiate for the slices, e.g. InputSlices.
-        :return: Tuple of (slices class instance, total number of elements).
-        """
-        # make slices
-        cnt = 0
-        out_dict = {}
-        for entry in slice_entries:
-            if not entry.enabled:  # if disabled
-                out_dict[entry.name] = _LinearComponent(False, None, None)
-            else:
-                if entry.shapes is None:
-                    raise ValueError("Entry.shapes is None")
-                slices: list[slice] = []
-                for shape in entry.shapes:
-                    size: int = prod(shape)
-                    slices.append(slice(cnt, cnt + size))
-                    cnt += size
-                out_dict[entry.name] = _LinearComponent(True, slices, entry.shapes)
-        return cls(**out_dict), cnt
+    @property
+    def input_object(self) -> type[AeroInputUnflattened]:
+        return AeroInputUnflattened
 
-    def _make_input_slices(self) -> tuple[InputSlices, int]:
+    @property
+    def state_object(
+        self,
+    ) -> type[AeroStateUnflattened]:
+        return AeroStateUnflattened
+
+    @property
+    def output_object(
+        self,
+    ) -> type[AeroOutputUnflattened]:
+        return AeroOutputUnflattened
+
+    def _make_input_slices(
+        self, reference: AeroSnapshot
+    ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create input slices for the input vector.
         :return: InputSlices instance and total number of input elements.
         """
         slice_entries = (
-            _SliceEntry("zeta_b", True, self.reference.zeta_b.shape),
-            _SliceEntry("zeta_b_dot", True, self.reference.zeta_b.shape),
-            _SliceEntry(
+            SliceEntry("zeta_b", True, reference.zeta_b.shape),
+            SliceEntry("zeta_b_dot", True, reference.zeta_b.shape),
+            SliceEntry(
                 "nu_b",
                 *(
-                    (True, self.reference.zeta_b.shape)
+                    (True, reference.zeta_b.shape)
                     if self.bound_upwash
                     else (False, None)
                 ),
             ),
-            _SliceEntry(
+            SliceEntry(
                 "nu_w",
                 *(
-                    (True, self.reference.zeta_w.shape)
+                    (True, reference.zeta_w.shape)
                     if self.wake_upwash
                     else (False, None)
                 ),
             ),
         )
-        return self._make_slices(slice_entries, InputSlices)
+        return self._make_slices(slice_entries)
 
-    def _make_state_slices(self) -> tuple[StateSlices, int]:
+    def _make_state_slices(
+        self, reference: AeroSnapshot
+    ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create state slices for the state vector.
         :return: StateSlices instance and total number of state elements.
         """
         slice_entries = (
-            _SliceEntry("gamma_b", True, self.reference.gamma_b.shape),
-            _SliceEntry("gamma_w", True, self.reference.gamma_w.shape),
-            _SliceEntry(
+            SliceEntry("gamma_b", True, reference.gamma_b.shape),
+            SliceEntry("gamma_w", True, reference.gamma_w.shape),
+            SliceEntry(
                 "gamma_bm1",
                 *(
-                    (True, self.reference.gamma_b.shape)
+                    (True, reference.gamma_b.shape)
                     if self.unsteady_force
                     else (False, None)
                 ),
             ),
-            _SliceEntry(
+            SliceEntry(
                 "gamma_b_dot",
                 *(
-                    (True, self.reference.gamma_b.shape)
+                    (True, reference.gamma_b.shape)
                     if self.gamma_dot_state
                     else (False, None)
                 ),
             ),
-            _SliceEntry(
+            SliceEntry(
                 "zeta_w",
                 *(
-                    (True, self.reference.zeta_w.shape)
+                    (True, reference.zeta_w.shape)
                     if self.prescribed_wake
                     else (False, None)
                 ),
             ),
-            _SliceEntry(
+            SliceEntry(
                 "zeta_b",
                 *(
-                    (True, self.reference.zeta_b.shape)
+                    (True, reference.zeta_b.shape)
                     if self.prescribed_wake
                     else (False, None)
                 ),
             ),
         )
-        return self._make_slices(slice_entries, StateSlices)
+        return self._make_slices(slice_entries)
 
-    def _make_output_slices(self) -> tuple[OutputSlices, int]:
+    def _make_output_slices(
+        self, reference: AeroSnapshot
+    ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create output slices for the output vector.
         :return: OutputSlices instance and total number of output elements.
         """
         slice_entries = (
-            _SliceEntry("f_steady", True, self.reference.zeta_b.shape),
-            _SliceEntry(
+            SliceEntry("f_steady", True, reference.zeta_b.shape),
+            SliceEntry(
                 "f_unsteady",
                 *(
-                    (True, self.reference.zeta_b.shape)
+                    (True, reference.zeta_b.shape)
                     if self.unsteady_force
                     else (False, None)
                 ),
             ),
         )
-        return self._make_slices(slice_entries, OutputSlices)
+        return self._make_slices(slice_entries)
 
-    def _unpack_vector(
-        self, x: Array, slices: dict[str, _LinearComponent], add_t: bool = False
-    ) -> dict[str, Optional[ArrayList]]:
-        r"""
-        Unpack a vector into its components based on the provided slices.
-        :param x: Vector to unpack, [n_elements] or [n_tstep, n_elements]
-        :param slices: Slice name and linear component mapping.
-        :param add_t: If true, the first dimension of x_target is time steps.
-        :return: Dictionary mapping of names to unpacked ArrayLists.
-        """
-        out = {}
-        for name, entry in slices.items():
-            if not entry.enabled:
-                out[name] = None
-            else:
-                if entry.shapes is None or entry.slices is None:
-                    raise ValueError("Invalid shape")
-                if add_t:
-                    n_tstep = x.shape[0]
-                    out[name] = ArrayList(
-                        [
-                            x[:, entry.slices[i_surf]].reshape(
-                                n_tstep, *entry.shapes[i_surf]
-                            )
-                            for i_surf in range(self.reference.n_surf)
-                        ]
-                    )
-                else:
-                    out[name] = ArrayList(
-                        [
-                            x[entry.slices[i_surf]].reshape(entry.shapes[i_surf])
-                            for i_surf in range(self.reference.n_surf)
-                        ]
-                    )
-        return out
-
-    def _unpack_input_vector(self, u: Array) -> InputUnflattened:
-        r"""
-        Unpack an input vector into its components.
-        :param u: Input vector, [n_inputs]
-        :return: InputUnflattened object.
-        """
-        return InputUnflattened(
-            **self._unpack_vector(u, shallow_as_dict(self.input_slices))
-        )
-
-    def _unpack_state_vector(self, x: Array) -> StateUnflattened:
-        r"""
-        Unpack a state vector into its components.
-        :param x: State vector, [n_states]
-        :return: StateUnflattened object.
-        """
-        return StateUnflattened(
-            **self._unpack_vector(x, shallow_as_dict(self.state_slices))
-        )
-
-    def _unpack_output_vector(self, y: Array) -> OutputUnflattened:
-        r"""
-        Unpack an output vector into its components.
-        :param y: Output vector, [n_outputs]
-        :return: OutputUnflattened object.
-        """
-        return OutputUnflattened(
-            **self._unpack_vector(y, shallow_as_dict(self.output_slices))
-        )
-
-    def _unpack_input_vector_t(self, u_t: Array) -> InputUnflattened:
-        r"""
-        Unpack a time history of input vectors into its components.
-        :param u_t: Input vector time history, [n_tstep, n_inputs]
-        :return: InputUnflattened object.
-        """
-        return InputUnflattened(
-            **self._unpack_vector(u_t, shallow_as_dict(self.input_slices), add_t=True)
-        )
-
-    def _unpack_state_vector_t(self, x_t: Array) -> StateUnflattened:
-        r"""
-        Unpack a time history of state vectors into its components.
-        :param x_t: State vector time history, [n_tstep, n_states]
-        :return: StateUnflattened object.
-        """
-        return StateUnflattened(
-            **self._unpack_vector(x_t, shallow_as_dict(self.state_slices), add_t=True)
-        )
-
-    def _unpack_output_vector_t(self, y_t: Array) -> OutputUnflattened:
-        r"""
-        Unpack a time history of output vectors into its components.
-        :param y_t: Output vector time history, [n_tstep, n_outputs]
-        :return: OutputUnflattened object.
-        """
-        return OutputUnflattened(
-            **self._unpack_vector(y_t, shallow_as_dict(self.output_slices), add_t=True)
-        )
-
-    def _pack_vector(
-        self,
-        slices: dict[str, _LinearComponent],
-        vec_length: int,
-        arrs: dict[str, Optional[ArrayList]],
-    ) -> Array:
-        r"""
-        Pack an unflattened object into a vector based on the provided slices.
-        :param slices: Mapping of names to linear components.
-        :param vec_length: Size of the output vector.
-        :param arrs: Mapping of names to ArrayLists to pack.
-        :return: Vector, [vec_length]
-        """
-        vec = jnp.zeros(vec_length)
-        for name, entry in slices.items():
-            if entry.enabled:
-                if entry.slices is None:
-                    raise ValueError("Invalid shape")
-                if (this_arr := arrs[name]) is None:
-                    raise ValueError("Invalid array")
-                for i_surf in range(self.reference.n_surf):
-                    vec = vec.at[entry.slices[i_surf]].set(this_arr[i_surf].ravel())
-        return vec
-
-    def _pack_input_vector(self, u_input: InputUnflattened) -> Array:
-        r"""
-        Pack an input unflattened object into a vector.
-        :param u_input: InputUnflattened object.
-        :return: Input vector, [n_inputs]
-        """
-        return self._pack_vector(
-            shallow_as_dict(self.input_slices), self.n_inputs, shallow_as_dict(u_input)
-        )
-
-    def _pack_state_vector(self, x_state: StateUnflattened) -> Array:
-        r"""
-        Pack a state unflattened object into a vector.
-        :param x_state: StateUnflattened object.
-        :return: State vector, [n_states]
-        """
-        return self._pack_vector(
-            shallow_as_dict(self.state_slices), self.n_states, shallow_as_dict(x_state)
-        )
-
-    def _pack_output_vector(self, y_output: OutputUnflattened) -> Array:
-        r"""
-        Pack an output unflattened object into a vector.
-        :param y_output: OutputUnflattened object.
-        :return: Output vector, [n_outputs]
-        """
-        return self._pack_vector(
-            shallow_as_dict(self.output_slices),
-            self.n_outputs,
-            shallow_as_dict(y_output),
-        )
-
-    def _pack_vector_t(
-        self,
-        slices: dict[str, _LinearComponent],
-        vec_length: int,
-        arrs: dict[str, Optional[ArrayList]],
-    ) -> Array:
-        r"""
-        Pack a time history of unflattened objects into a time history of vectors.
-        :param slices: Dictionary mapping names to linear components.
-        :param vec_length: Length of the output vector.
-        :param arrs: Dictionary mapping names to ArrayLists to pack.
-        :return: Array, [n_tstep, vec_length]
-        """
-
-        # find number of timesteps from first surface with valid entry
-        n_tstep: int = [arr[0].shape[0] for arr in arrs.values() if arr is not None][0]
-
-        vec_t = jnp.zeros((n_tstep, vec_length))
-        for name, entry in slices.items():
-            if entry.enabled:
-                for i_surf in range(self.reference.n_surf):
-                    if entry.slices is None:
-                        raise ValueError("Invalid shape")
-                    if (this_arr := arrs[name]) is None:
-                        raise ValueError("Invalid array")
-                    vec_t = vec_t.at[:, entry.slices[i_surf]].set(
-                        this_arr[i_surf].reshape(n_tstep, -1)
-                    )
-        return vec_t
-
-    def _pack_input_vector_t(self, u_input: InputUnflattened) -> Array:
-        r"""
-        Pack a time history of input unflattened objects into a time history of input vectors.
-        :param u_input: InputUnflattened object.
-        :return: Input vector time history, [n_tstep, n_inputs]
-        """
-        return self._pack_vector_t(
-            shallow_as_dict(self.input_slices), self.n_inputs, shallow_as_dict(u_input)
-        )
-
-    def _pack_state_vector_t(self, x_state: StateUnflattened) -> Array:
-        r"""
-        Pack a time history of state unflattened objects into a time history of state vectors.
-        :param x_state: StateUnflattened object.
-        :return: State vector time history, [n_tstep, n_states]
-        """
-        return self._pack_vector_t(
-            shallow_as_dict(self.state_slices), self.n_states, shallow_as_dict(x_state)
-        )
-
-    def _pack_output_vector_t(self, y_output: OutputUnflattened) -> Array:
-        r"""
-        Pack a time history of output unflattened objects into a time history of output vectors.
-        :param y_output: OutputUnflattened object.
-        :return: Output vector time history, [n_tstep, n_outputs]
-        """
-        return self._pack_vector_t(
-            shallow_as_dict(self.output_slices),
-            self.n_outputs,
-            shallow_as_dict(y_output),
-        )
-
-    def _get_total(
-        self,
-        input_: dict[str, Optional[ArrayList]],
-        reference: dict[str, Optional[ArrayList]],
-        add_t: bool = False,
-    ) -> dict[str, Optional[ArrayList]]:
-        r"""
-        Get the total value by adding the reference to the input perturbation.
-        :param input_: Dictionary mapping of names to ArrayList perturbation entries
-        :param reference: Dictionary mapping of names to ArrayList reference entries
-        :param add_t: If true, the first dimension of the arrays is time steps.
-        :return: Dictionary mapping of names to total ArrayList entries.
-        """
-        out = {}
-        for name, entry in reference.items():
-            if entry is None:
-                out[name] = None
-            else:
-                arrs = ArrayList([])
-                for i_surf in range(self.reference.n_surf):
-                    if (this_input := input_[name]) is None:
-                        raise ValueError("Invalid input")
-                    if add_t:
-                        arrs.append(entry[i_surf][None, ...] + this_input[i_surf])
-                    else:
-                        arrs.append(entry[i_surf] + this_input[i_surf])
-                out[name] = arrs
-        return out
-
-    def get_total_input(self, u: InputUnflattened) -> InputUnflattened:
-        r"""
-        Get the total input by adding the reference to the input perturbation.
-        :param u: InputUnflattened perturbation object.
-        :return: InputUnflattened total object.
-        """
-        return InputUnflattened(
-            **self._get_total(
-                shallow_as_dict(u), shallow_as_dict(self.get_reference_inputs())
-            )
-        )
-
-    def get_total_state(self, x: StateUnflattened) -> StateUnflattened:
-        r"""
-        Get the total state by adding the reference to the state perturbation.
-        :param x: StateUnflattened perturbation object.
-        :return: StateUnflattened total object.
-        """
-        return StateUnflattened(
-            **self._get_total(
-                shallow_as_dict(x), shallow_as_dict(self.get_reference_states())
-            )
-        )
-
-    def get_total_output(self, y: OutputUnflattened) -> OutputUnflattened:
-        r"""
-        Get the total output by adding the reference to the output perturbation.
-        :param y: OutputUnflattened perturbation object.
-        :return: OutputUnflattened total object.
-        """
-        return OutputUnflattened(
-            **self._get_total(
-                shallow_as_dict(y), shallow_as_dict(self.get_reference_outputs())
-            )
-        )
-
-    def get_total_input_t(self, u_t: InputUnflattened) -> InputUnflattened:
-        r"""
-        Get the total input time history by adding the reference to the input perturbation time history.
-        :param u_t: InputUnflattened perturbation time history object.
-        :return: InputUnflattened total time history object.
-        """
-        return InputUnflattened(
-            **self._get_total(
-                shallow_as_dict(u_t),
-                shallow_as_dict(self.get_reference_inputs()),
-                add_t=True,
-            )
-        )
-
-    def get_total_state_t(self, x_t: StateUnflattened) -> StateUnflattened:
-        r"""
-        Get the total state time history by adding the reference to the state perturbation time history.
-        :param x_t: StateUnflattened perturbation time history object.
-        :return: StateUnflattened total time history object.
-        """
-        return StateUnflattened(
-            **self._get_total(
-                shallow_as_dict(x_t),
-                shallow_as_dict(self.get_reference_states()),
-                add_t=True,
-            )
-        )
-
-    def get_total_output_t(self, y_t: OutputUnflattened) -> OutputUnflattened:
-        r"""
-        Get the total output time history by adding the reference to the output perturbation time history.
-        :param y_t: OutputUnflattened perturbation time history object.
-        :return: OutputUnflattened total time history object.
-        """
-        return OutputUnflattened(
-            **self._get_total(
-                shallow_as_dict(y_t),
-                shallow_as_dict(self.get_reference_outputs()),
-                add_t=True,
-            )
-        )
-
-    def _get_zero(
-        self, slices: dict[str, _LinearComponent]
-    ) -> dict[str, Optional[ArrayList]]:
-        r"""
-        Get a zero unflattened object based on the provided slices.
-        :param slices: Dictionary mapping of names to linear components.
-        :return: unflattened object with zero arrays.
-        """
-        out = {}
-        for name, entry in slices.items():
-            if not entry.enabled:
-                out[name] = None
-            else:
-                if entry.shapes is None:
-                    raise ValueError("Invalid shape for unflattened object")
-                out[name] = entry
-                arrs = ArrayList([])
-                for i_surf in range(self.reference.n_surf):
-                    arrs.append(jnp.zeros(entry.shapes[i_surf]))
-                out[name] = arrs
-        return out
-
-    def get_zero_input(self) -> InputUnflattened:
-        r"""
-        Get a zero input unflattened object.
-        :return: InputUnflattened object with zero arrays.
-        """
-        return InputUnflattened(**self._get_zero(shallow_as_dict(self.input_slices)))
-
-    def get_zero_state(self) -> StateUnflattened:
-        r"""
-        Get a zero state unflattened object.
-        :return: StateUnflattened object with zero arrays.
-        """
-        return StateUnflattened(**self._get_zero(shallow_as_dict(self.state_slices)))
-
-    def get_zero_output(self) -> OutputUnflattened:
-        r"""
-        Get a zero output unflattened object.
-        :return: OutputUnflattened object with zero arrays.
-        """
-        return OutputUnflattened(**self._get_zero(shallow_as_dict(self.output_slices)))
-
-    def _unflatten_sub_vec(self, vec: Array, component: _LinearComponent) -> ArrayList:
-        r"""
-        Obtain an ArrayList of arrays from a subvector based on the provided component.
-        :param vec: Total vector, [n_elements]
-        :param component: LinearComponent defining the slices and arr_list_shapes.
-        :return: ArrayList of arrays for each surface for the given component.
-        """
-        arrs = ArrayList([])
-        cnt = 0
-        if component.shapes is None:
-            raise ValueError("Invalid shape for unflattened object")
-        for i_surf in range(self.reference.n_surf):
-            size = prod(component.shapes[i_surf])
-            arrs.append(vec[cnt : cnt + size].reshape(component.shapes[i_surf]))
-        return arrs
-
-    def _f_step(self, x_vec: Array, u_vec: Array) -> tuple[Array, Array]:
+    def f_step(self, x_vec: Array, u_vec: Array) -> tuple[Array, Array]:
         r"""
         Combined state/output step in vector form, operating on total (reference + perturbation) quantities and
         returning perturbations relative to the reference.
@@ -660,8 +270,14 @@ class LinearUVLM:
         :return: Tuple of (state perturbation vector, output perturbation vector).
         """
         ref = self.reference
-        x = self._unpack_state_vector(x_vec)
         u = self._unpack_input_vector(u_vec)
+        x = self._unpack_state_vector(x_vec)
+
+        assert isinstance(x, AeroStateUnflattened) and isinstance(
+            u, AeroInputUnflattened
+        ), (
+            "Unpacked state and input must be of type AeroStateUnflattened and AeroInputUnflattened."
+        )
 
         # total quantities
         zeta_b_tot = ArrayList([zr + du for zr, du in zip(ref.zeta_b, u.zeta_b)])
@@ -784,7 +400,7 @@ class LinearUVLM:
         else:
             d_f_unsteady = None
 
-        state_new = StateUnflattened(
+        state_new = AeroStateUnflattened(
             gamma_b=d_gamma_b,
             gamma_w=d_gamma_w,
             gamma_bm1=d_gamma_bm1,
@@ -792,48 +408,20 @@ class LinearUVLM:
             zeta_w=d_zeta_w,
             zeta_b=d_zeta_b_state,
         )
-        out_new = OutputUnflattened(f_steady=d_f_steady, f_unsteady=d_f_unsteady)
+        out_new = AeroOutputUnflattened(f_steady=d_f_steady, f_unsteady=d_f_unsteady)
 
         return self._pack_state_vector(state_new), self._pack_output_vector(out_new)
 
-    def linearise(self) -> LinearSystem:
-        r"""
-        Build the linear state-space system.
-        """
-        x_ref = jnp.zeros(self.n_states)
-        u_ref = jnp.zeros(self.n_inputs)
-
-        _, f_lin = jax.linearize(self._f_step, x_ref, u_ref)
-
-        def a_func(dx: Array) -> Array:
-            return f_lin(dx, jnp.zeros_like(u_ref))[0]
-
-        def b_func(du: Array) -> Array:
-            return f_lin(jnp.zeros_like(x_ref), du)[0]
-
-        def c_func(dx: Array) -> Array:
-            return f_lin(dx, jnp.zeros_like(u_ref))[1]
-
-        def d_func(du: Array) -> Array:
-            return f_lin(jnp.zeros_like(x_ref), du)[1]
-
-        a = LinearOperator(jit(a_func), shape=(self.n_states, self.n_states))
-        b = LinearOperator(jit(b_func), shape=(self.n_states, self.n_inputs))
-        c = LinearOperator(jit(c_func), shape=(self.n_outputs, self.n_states))
-        d = LinearOperator(jit(d_func), shape=(self.n_outputs, self.n_inputs))
-
-        return LinearSystem(a=a, b=b, c=c, d=d, dt=float(self.dt))
-
     def run(
         self,
-        u: InputUnflattened,
-        x0: Optional[StateUnflattened] = None,
+        u: AeroInputUnflattened,
+        x0: Optional[AeroStateUnflattened] = None,
         flowfield: Optional[FlowField] = None,
         use_matrix=False,
     ) -> AeroLinearResult:
         r"""
         Run the linear system.
-        :param u: Input perturbations over time.
+        :param u: Total input over time (reference + pertubation).
         :param x0: Initial state perturbations, defaults to zero state.
         :param flowfield: FlowField object to provide flow velocities for bound and wake upwash, defaults to no flow.
         :param use_matrix: If true, use explicit matrix representation for linear system, otherwise use operator form.
@@ -912,9 +500,28 @@ class LinearUVLM:
 
         x_t_obj = self._unpack_state_vector_t(x_t)
         y_t_obj = self._unpack_output_vector_t(y_t)
-        u_t_tot_obj = self.get_total_input_t(u_tot)
+
+        assert isinstance(x_t_obj, AeroStateUnflattened) and isinstance(
+            y_t_obj, AeroOutputUnflattened
+        ), (
+            "Unpacked state and output must be of type AeroStateUnflattened and AeroOutputUnflattened."
+        )
+
         x_t_tot_obj = self.get_total_state_t(x_t_obj)
         y_t_tot_obj = self.get_total_output_t(y_t_obj)
+        u_t_tot_obj = self.get_total_input_t(u_tot)
+
+        assert (
+            isinstance(u_t_tot_obj, AeroInputUnflattened)
+            and isinstance(x_t_tot_obj, AeroStateUnflattened)
+            and isinstance(y_t_tot_obj, AeroOutputUnflattened)
+        ), (
+            "Unpacked total state and output must be of type AeroStateUnflattened and AeroOutputUnflattened."
+        )
+
+        assert isinstance(self.reference, AeroSnapshot), (
+            "Reference state must be of type AeroSnapshot."
+        )
 
         # save results to object
         return AeroLinearResult(
@@ -931,21 +538,6 @@ class LinearUVLM:
             surf_b_names=self.case.surf_b_names,
             surf_w_names=self.case.surf_w_names,
         )
-
-    def eigenvalues(self, to_components: bool = True) -> Array:
-        r"""
-        Compute stability eigenvalues of the linear system A matrix.
-        :param to_components: If true, return real and imaginary parts as separate components. If false, return complex
-        eigenvalues.
-        :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
-        """
-        evals = jnp.linalg.eigvals(
-            self.sys.a.matrix if isinstance(self.sys.a, LinearOperator) else self.sys.a
-        )
-        if to_components:
-            return jnp.stack((evals.real, evals.imag), axis=-1)
-        else:
-            return evals
 
     def reference_snapshot(self) -> DynamicAeroCase:
         r"""

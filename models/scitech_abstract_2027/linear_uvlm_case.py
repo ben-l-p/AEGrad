@@ -9,7 +9,8 @@ from jax import Array, vmap
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.uvlm import UVLM
-from aegrad.aero.linear import LinearWakeType, InputUnflattened
+from aegrad.aero.linear import LinearWakeType
+from aegrad.aero.linear.data_structures import AeroInputUnflattened
 from aegrad.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import Constant
 from aegrad.structure.data_structures import DynamicStructure
@@ -121,7 +122,7 @@ if __name__ == "__main__":
     delta_zeta_b = nonlinear_case.zeta_b - ArrayList(
         [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
     )
-    u_linear = InputUnflattened(
+    u_linear = AeroInputUnflattened(
         zeta_b=delta_zeta_b,
         zeta_b_dot=nonlinear_case.zeta_b_dot,
         nu_b=None,

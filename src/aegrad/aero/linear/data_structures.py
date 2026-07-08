@@ -7,97 +7,13 @@ from typing import Optional, Sequence
 
 from jax import Array, numpy as jnp
 
+from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import AeroSnapshot
-from aegrad.algebra.array_utils import ArrayList, ArrayListShape
 from aegrad.plotting.pvd import write_pvd
 
 
 @dataclass
-class _LinearComponent:
-    r"""
-    Data class to hold information about components of a linear system.
-    :param enabled: Whether this component is enabled
-    :param slices: Optional sequence of slices to extract this component from a flattened array
-    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, varphi, ...]
-    """
-
-    enabled: bool
-    slices: Optional[Sequence[slice]]
-    shapes: Optional[Sequence[tuple[int, ...]] | ArrayListShape]
-
-
-@dataclass
-class _SliceEntry:
-    r"""
-    Data class to hold information about a single slice entry
-    :param name: Name of the component
-    :param enabled: Whether this component is enabled
-    :param shapes: Optional sequence of arr_list_shapes for unflattening this component, [n_surf][m, varphi, ...]
-    """
-
-    name: str
-    enabled: bool
-    shapes: Optional[Sequence[tuple[int, ...]] | ArrayListShape]
-
-
-@dataclass
-class InputSlices:
-    r"""
-    Data class to hold linear components for input components
-    :param zeta_b: Slices for bound grid coordinates
-    :param zeta_b_dot: Slices for bound grid velocities
-    :param nu_b: Slices for bound upwash
-    :param nu_w: Slices for wake upwash
-    """
-
-    zeta_b: _LinearComponent
-    zeta_b_dot: _LinearComponent
-    nu_b: _LinearComponent
-    nu_w: _LinearComponent
-
-
-@dataclass
-class StateSlices:
-    r"""
-    Data class to hold linear components for state components
-    :param gamma_b: Slices for bound circulation strengths
-    :param gamma_w: Slices for wake circulation strengths
-    :param gamma_bm1: Slices for previous time step bound circulation strengths
-    :param gamma_b_dot: Slices for bound circulation time derivatives
-    :param zeta_w: Slices for wake grid coordinates
-    :param zeta_b: Slices for bound grid coordinates
-    """
-
-    gamma_b: _LinearComponent
-    gamma_w: _LinearComponent
-    gamma_bm1: _LinearComponent
-    gamma_b_dot: _LinearComponent
-    zeta_w: _LinearComponent
-    zeta_b: _LinearComponent
-
-
-@dataclass
-class OutputSlices:
-    r"""
-    Data class to hold linear components for output components
-    :param f_steady: Slices for steady force contributions
-    :param f_unsteady: Slices for unsteady force contributions
-    """
-
-    f_steady: _LinearComponent
-    f_unsteady: _LinearComponent
-
-
-@dataclass
-class InputUnflattened:
-    r"""
-    Data class to hold unflattened input components, for either a single initial_snapshot or a time series.
-    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
-    :param zeta_b_dot: Bound grid velocities, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
-    :param nu_b: Bound upwash, [n_surf][m, varphi, 3] or [n_surf][n_ts, m, varphi, 3].
-    :param nu_w: Wake upwash, [n_surf][m_star, varphi, 3] or [n_surf][n_ts, m_star, varphi, 3].
-    """
-
+class AeroInputUnflattened:
     zeta_b: ArrayList
     zeta_b_dot: ArrayList
     nu_b: Optional[ArrayList]
@@ -105,17 +21,7 @@ class InputUnflattened:
 
 
 @dataclass
-class StateUnflattened:
-    r"""
-    Data class to hold unflattened state components, for either a single initial_snapshot or a time series.
-    :param gamma_b: Bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
-    :param gamma_w: Wake circulation strengths, [n_surf][m_star, varphi] or [n_surf][n_ts, m_star, varphi].
-    :param gamma_bm1: Previous time step bound circulation strengths, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
-    :param gamma_b_dot: Bound circulation time derivatives, [n_surf][m, varphi] or [n_surf][n_ts, m, varphi].
-    :param zeta_w: Wake grid coordinates, [n_surf][zeta_m_star, zeta_n, 3] or [n_surf][n_ts, zeta_m_star, zeta_n, 3].
-    :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
-    """
-
+class AeroStateUnflattened:
     gamma_b: ArrayList
     gamma_w: ArrayList
     gamma_bm1: Optional[ArrayList]
@@ -125,13 +31,7 @@ class StateUnflattened:
 
 
 @dataclass
-class OutputUnflattened:
-    r"""
-    Data class to hold unflattened output components, for either a single initial_snapshot or a time series.
-    :param f_steady: Steady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
-    :param f_unsteady: Unsteady force contributions, [n_surf][zeta_m, zeta_n, 3] or [n_surf][n_ts, zeta_m, zeta_n, 3].
-    """
-
+class AeroOutputUnflattened:
     f_steady: ArrayList
     f_unsteady: Optional[ArrayList]
 
@@ -140,12 +40,12 @@ class AeroLinearResult:
     def __init__(
         self,
         reference: AeroSnapshot,
-        u_t: InputUnflattened,
-        x_t: StateUnflattened,
-        y_t: OutputUnflattened,
-        u_t_tot: InputUnflattened,
-        x_t_tot: StateUnflattened,
-        y_t_tot: OutputUnflattened,
+        u_t: AeroInputUnflattened,
+        x_t: AeroStateUnflattened,
+        y_t: AeroOutputUnflattened,
+        u_t_tot: AeroInputUnflattened,
+        x_t_tot: AeroStateUnflattened,
+        y_t_tot: AeroOutputUnflattened,
         n_tstep: int,
         n_surf: int,
         t: Array,
@@ -153,12 +53,12 @@ class AeroLinearResult:
         surf_w_names: list[str],
     ) -> None:
         # system results, if simulated
-        self.u_t: InputUnflattened = u_t
-        self.x_t: StateUnflattened = x_t
-        self.y_t: OutputUnflattened = y_t
-        self.u_t_tot: InputUnflattened = u_t_tot
-        self.x_t_tot: StateUnflattened = x_t_tot
-        self.y_t_tot: OutputUnflattened = y_t_tot
+        self.u_t: AeroInputUnflattened = u_t
+        self.x_t: AeroStateUnflattened = x_t
+        self.y_t: AeroOutputUnflattened = y_t
+        self.u_t_tot: AeroInputUnflattened = u_t_tot
+        self.x_t_tot: AeroStateUnflattened = x_t_tot
+        self.y_t_tot: AeroOutputUnflattened = y_t_tot
         self.n_tstep: int = n_tstep
         self.n_surf: int = n_surf
         self.t: Array = t

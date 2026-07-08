@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING, Literal
 
 import jax
 from jax import Array, vmap
 from jax import numpy as jnp
 
+from aegrad.aero.linear import LinearWakeType
 from aegrad.algebra.se3 import hg_to_d
 from aegrad.algebra.array_utils import ArrayList, check_arr_shape
 from aegrad.aero.flowfields import FlowField
+from aegrad.coupled.linear.linear_coupled import LinearCoupled
 from aegrad.structure import BeamStructure
 from aegrad.aero.data_structures import DynamicAeroCase
+from aegrad.utils.constants import BASE_LOBATTO_ORDER
 from aegrad.utils.data_structures import ConvergenceSettings, ConvergenceStatus
 from aegrad.coupled.data_structures import (
     StaticAeroelastic,
@@ -474,6 +477,32 @@ class BaseCoupledAeroelastic:
         dynamic_case.structure.v = dynamic_case.structure.v.at[:, :3].set(v_local)
 
         return dynamic_case
+
+    def linearise(
+        self,
+        reference: StaticAeroelastic,
+        wake_type: LinearWakeType = LinearWakeType.FROZEN,
+        bound_upwash: bool = True,
+        wake_upwash: bool = False,
+        unsteady_force: bool = True,
+        gamma_dot_state: bool = False,
+        local_forcing: bool = False,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+        *,
+        skip_checks: bool = False,
+    ) -> LinearCoupled:
+        return LinearCoupled(
+            case=self,
+            reference=reference,
+            wake_type=wake_type,
+            bound_upwash=bound_upwash,
+            wake_upwash=wake_upwash,
+            unsteady_force=unsteady_force,
+            gamma_dot_state=gamma_dot_state,
+            local_forcing=local_forcing,
+            int_order=int_order,
+            skip_checks=skip_checks,
+        )
 
     @staticmethod
     def _dynamic_names() -> Sequence[str]:

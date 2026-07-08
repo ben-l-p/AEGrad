@@ -16,7 +16,7 @@ from aegrad.plotting.pvd import write_pvd
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree, index_to_arr
 from aegrad.structure.gradients.data_structures import StructureFullStates
-from aegrad.structure.utils import input_dof_index_to_tuple
+from aegrad.structure.utils import input_dof_index_to_tuple, get_solve_dofs
 
 
 @dataclass
@@ -73,6 +73,9 @@ class StaticStructure:
             thrust_direction
         )
         self.prescribed_dofs: tuple[int, ...] = prescribed_dofs
+        self.free_dofs: tuple[int, ...] = get_solve_dofs(
+            n_dof=varphi.shape[0] * 6, prescribed_dofs=prescribed_dofs
+        )
         self.local: bool = local
 
     @overload
@@ -205,6 +208,7 @@ class StaticStructure:
     def _static_names() -> Sequence[str]:
         return (
             "prescribed_dofs",
+            "free_dofs",
             "local",
             "conn",
             "thrust_nodes",
@@ -286,6 +290,9 @@ class DynamicStructureSnapshot:
         self.i_ts: int = i_ts  # Time step index
         self.prescribed_dofs: tuple[int, ...] = input_dof_index_to_tuple(
             prescribed_dofs
+        )
+        self.free_dofs: tuple[int, ...] = get_solve_dofs(
+            n_dof=varphi.shape[0] * 6, prescribed_dofs=prescribed_dofs
         )
         self.local: bool = local
 
@@ -548,6 +555,9 @@ class DynamicStructure:
         self.t: Array = t  # [n_tstep]
         self.n_tstep: int = n_tstep
         self.prescribed_dofs: tuple[int, ...] = prescribed_dofs
+        self.free_dofs: tuple[int, ...] = get_solve_dofs(
+            n_dof=varphi.shape[0] * 6, prescribed_dofs=prescribed_dofs
+        )
         self.local: bool = True
 
     def to_static(self, i_ts: int) -> StaticStructure:
@@ -820,6 +830,7 @@ class DynamicStructure:
         return (
             "n_tstep",
             "prescribed_dofs",
+            "free_dofs",
             "conn",
             "thrust_nodes",
             "thrust_direction",

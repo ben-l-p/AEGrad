@@ -2,6 +2,7 @@ from jax import numpy as jnp, vmap
 
 from aegrad.algebra.se3 import log_se3
 from aegrad.structure import BeamStructure
+from aegrad.structure.linear.data_structures import BeamInputUnflattened
 
 
 class TestOscillatingCantileverDeadLocal:
@@ -53,7 +54,7 @@ class TestOscillatingCantileverDeadLocal:
         )
 
         linear_beam = cls.beam.linearise(
-            case=ref, dt=cls.dt, local_forcing=cls.local_force_linearisation
+            reference=ref, dt=cls.dt, local_forcing=cls.local_force_linearisation
         )
 
         # nonlinear case
@@ -69,10 +70,14 @@ class TestOscillatingCantileverDeadLocal:
             dt=cls.dt,
         )
 
-        lin_sol = linear_beam.run(
+        u_beam = BeamInputUnflattened(
             n_tstep=cls.n_tstep,
-            f_ext_follower_t=None if cls.is_dead else f_beam,
-            f_ext_dead_t=f_beam if cls.is_dead else None,
+            f_ext_follower=None if cls.is_dead else f_beam,
+            f_ext_dead=f_beam if cls.is_dead else None,
+        )
+
+        lin_sol = linear_beam.run(
+            u=u_beam,
         )
 
         nl_tip_z = nl_sol.hg[:, -1, 2, 3]
@@ -110,7 +115,7 @@ class TestOscillatingCantileverDeadLocal:
             f_ext_follower=None if cls.is_dead else f_ext_base,
         )
 
-        linear_beam = cls.beam.linearise(case=ref, dt=cls.dt)
+        linear_beam = cls.beam.linearise(reference=ref, dt=cls.dt)
 
         # nonlinear case
         nl_sol = cls.beam.dynamic_solve(
@@ -122,10 +127,14 @@ class TestOscillatingCantileverDeadLocal:
             dt=cls.dt,
         )
 
-        lin_sol = linear_beam.run(
-            f_ext_follower_t=None if cls.is_dead else f_ext_perturb,
-            f_ext_dead_t=f_ext_perturb if cls.is_dead else None,
+        u_beam = BeamInputUnflattened(
             n_tstep=cls.n_tstep,
+            f_ext_dead=f_ext_perturb if cls.is_dead else None,
+            f_ext_follower=None if cls.is_dead else f_ext_perturb,
+        )
+
+        lin_sol = linear_beam.run(
+            u=u_beam,
         )
 
         nl_tip_z = nl_sol.hg[:, -1, 2, 3]

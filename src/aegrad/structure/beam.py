@@ -1015,18 +1015,20 @@ class BaseBeamStructure:
         return ordered_freq[:n_modes], out_damping[:n_modes], out_modes[:, :n_modes]
 
     def linearise(
-        self, case: StaticStructure, dt: float, local_forcing: bool = True
+        self, reference: StaticStructure, dt: float, local_forcing: bool = True
     ) -> LinearBeam:
         r"""
         Linearise the beam about a given static structure case. This creates a LinearBeam object which can be used for
         linear dynamic analysis.
-        :param case: Static structure case about which to linearise the beam.
+        :param reference: Static structure case about which to linearise the beam.
         :param dt: Time step size, used for conversions between continuous and discrete time.
         :param local_forcing: Flag to indicate the frame for which the forcing is defined. This allows for linearising
         either the local or global forcing residuals.
         :return: Continuous-time linearised beam object.
         """
-        return LinearBeam(beam=self, reference=case, dt=dt, local_forcing=local_forcing)
+        return LinearBeam(
+            beam=self, reference=reference, dt=dt, local_forcing=local_forcing
+        )
 
     def _make_c_t(
         self,

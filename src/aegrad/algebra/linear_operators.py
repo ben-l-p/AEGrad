@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, Callable, Sequence, overload, Literal
 
 import jax
-from jax import Array, numpy as jnp, jacobian
+from jax import Array, numpy as jnp
 from jax.scipy.linalg import expm
 
 from aegrad.algebra.array_utils import check_arr_shape
@@ -48,14 +48,14 @@ class LinearOperator:
             self.generate_matrix()
         return self._matrix  # type: ignore
 
-    def generate_matrix(self) -> None:
+    def generate_matrix(self, reverse_mode: bool = True) -> None:
         r"""
         Generate the matrix representation of the linear operator.
         """
         # dL/dx at x_target at any point is the same, and should be independent of x_target
-        self._matrix = jacobian(lambda x_: self.func(x_), argnums=0)(
-            jnp.full(self.shape[1], 1.0)
-        )
+        self._matrix = (jax.jacrev if reverse_mode else jax.jacfwd)(
+            lambda x_: self.func(x_), argnums=0
+        )(jnp.full(self.shape[1], 1.0))
 
     def __call__[T: Array | LinearOperator](self, rhs: T) -> T:
         r"""
@@ -267,7 +267,7 @@ class LinearSystem:
         b: LinearOperator | Array,
         c: LinearOperator | Array,
         d: LinearOperator | Array,
-        dt: float,
+        dt: float | Array,
         continuous_time: bool = False,
         removed_u_np1: bool = False,
     ) -> None:
@@ -283,7 +283,7 @@ class LinearSystem:
         self.b: LinearOperator | Array = b
         self.c: LinearOperator | Array = c
         self.d: LinearOperator | Array = d
-        self.dt: float = dt
+        self.dt: float | Array = dt
         self.n_inputs: int = b.shape[1]
         self.n_states: int = a.shape[0]
         self.n_outputs: int = c.shape[0]
@@ -317,7 +317,7 @@ class LinearSystem:
 
     def continuous_to_discrete(
         self, method: Literal["zoh", "tustin"] = "tustin"
-    ) -> None:
+    ) -> LinearSystem:
         r"""
         Convert the continuous-time linear system to a discrete-time linear system.
         """
@@ -327,7 +327,7 @@ class LinearSystem:
         )
         if not self.continuous_time:
             warn("System is already discrete-time.")
-            return
+            return self
 
         self.generate_matrices()
 
@@ -354,15 +354,17 @@ class LinearSystem:
 
                 exp_aug = expm(self.dt * aug)
 
-                self.a = exp_aug[: self.a.shape[0], : self.a.shape[1]]
-                self.b = exp_aug[: self.a.shape[0], self.a.shape[1] :]
+                a_d = exp_aug[: self.a.shape[0], : self.a.shape[1]]
+                b_d = exp_aug[: self.a.shape[0], self.a.shape[1] :]
             case "tustin":
                 # Tustin bilinear transformation
                 mat_inv = jnp.linalg.inv(jnp.eye(self.a.shape[0]) - a_c * 0.5 * self.dt)
-                self.a = mat_inv @ (jnp.eye(self.a.shape[0]) + a_c * 0.5 * self.dt)
-                self.b = mat_inv @ (b_c * self.dt)
+                a_d = mat_inv @ (jnp.eye(self.a.shape[0]) + a_c * 0.5 * self.dt)
+                b_d = mat_inv @ (b_c * self.dt)
 
-        self.continuous_time = False
+        return LinearSystem(
+            a=a_d, b=b_d, c=self.c, d=self.d, dt=self.dt, continuous_time=False
+        )
 
     def run(
         self, u: Array, x0: Optional[Array] = None, use_matrix=False

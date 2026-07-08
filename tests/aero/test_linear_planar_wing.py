@@ -9,7 +9,8 @@ from jax import Array, vmap
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.uvlm import UVLM
-from aegrad.aero.linear import LinearWakeType, InputUnflattened
+from aegrad.aero.linear import LinearWakeType
+from aegrad.aero.linear.data_structures import AeroInputUnflattened
 from aegrad.aero.data_structures import AeroSnapshot
 from aegrad.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import FlowField, Constant, OneMinusCosine
@@ -108,7 +109,7 @@ class TestLinearAero:
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
             [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
-        u_linear = InputUnflattened(
+        u_linear = AeroInputUnflattened(
             zeta_b=delta_zeta_b,
             zeta_b_dot=dynamic_case.zeta_b_dot,
             nu_b=None,
@@ -116,7 +117,7 @@ class TestLinearAero:
         )
 
         # Run linear case with and without matrix form
-        linear_case = linear_model.run(u_linear, use_matrix=use_matrix)
+        linear_case = linear_model.run(u=u_linear, use_matrix=use_matrix)
 
         if plot:
             linear_case.plot(
@@ -198,7 +199,7 @@ class TestLinearAero:
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
             [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
-        u_linear = InputUnflattened(
+        u_linear = AeroInputUnflattened(
             zeta_b=delta_zeta_b,
             zeta_b_dot=dynamic_case.zeta_b_dot,
             nu_b=None,
@@ -290,7 +291,7 @@ class TestLinearAero:
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
             [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
-        u_linear = InputUnflattened(
+        u_linear = AeroInputUnflattened(
             zeta_b=delta_zeta_b,
             zeta_b_dot=dynamic_case.zeta_b_dot,
             nu_b=None,
@@ -366,7 +367,7 @@ class TestLinearAero:
         delta_zeta_b = dynamic_case.zeta_b - ArrayList(
             [zeta[None, ...] for zeta in linear_model.reference.zeta_b]
         )
-        u_linear = InputUnflattened(
+        u_linear = AeroInputUnflattened(
             zeta_b=delta_zeta_b,
             zeta_b_dot=dynamic_case.zeta_b_dot,
             nu_b=None,
