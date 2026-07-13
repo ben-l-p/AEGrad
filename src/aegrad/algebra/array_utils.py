@@ -402,7 +402,7 @@ def vect_to_arrs(
 
 def construct_named_block_jacobian(
     entries: tuple[dict, ...],
-    keys: tuple[str, ...],
+    keys: Sequence[str],
     widths: Sequence[int],
     heights: Sequence[int],
 ) -> Array:

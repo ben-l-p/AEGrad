@@ -7,7 +7,7 @@ from aegrad.structure.linear.data_structures import BeamInputUnflattened
 
 class TestOscillatingCantileverDeadLocal:
     n_nodes = 10
-    l = 1.0
+    length = 1.0
     m_bar = 1.0
     j_bar = 0.1
     ea, ga, gj, eay, eaz = 1e4, 1e4, 1e4, 10.0, 10.0
@@ -16,7 +16,7 @@ class TestOscillatingCantileverDeadLocal:
     m_cs = jnp.diag(jnp.array((m_bar, m_bar, m_bar, j_bar, j_bar, j_bar)))
 
     coords = jnp.zeros((n_nodes, 3))
-    coords = coords.at[:, 0].set(jnp.linspace(0.0, l, n_nodes))
+    coords = coords.at[:, 0].set(jnp.linspace(0.0, length, n_nodes))
 
     conn = jnp.zeros((n_nodes - 1, 2), dtype=int)
     conn = conn.at[:, 0].set(jnp.arange(n_nodes - 1))

@@ -67,9 +67,7 @@ class TestLinearAero:
         return uvlm, case, hg
 
     @classmethod
-    def test_linear_operator_heaving_wing(
-        cls, plot: bool = False, use_matrix: bool = False
-    ):
+    def test_linear_heaving_wing(cls, plot: bool = False, use_matrix: bool = False):
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
@@ -117,7 +115,7 @@ class TestLinearAero:
         )
 
         # Run linear case with and without matrix form
-        linear_case = linear_model.run(u=u_linear, use_matrix=use_matrix)
+        linear_case = linear_model.run(u=u_linear)
 
         if plot:
             linear_case.plot(
@@ -146,14 +144,8 @@ class TestLinearAero:
             atol=2e-2,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
-    @staticmethod
-    def test_linear_matrix_heaving_wing(plot: bool = False):
-        TestLinearAero.test_linear_operator_heaving_wing(plot=plot, use_matrix=True)
-
     @classmethod
-    def test_linear_operator_pitching_wing(
-        cls, plot: bool = False, use_matrix: bool = False
-    ):
+    def test_linear_pitching_wing(cls, plot: bool = False, use_matrix: bool = False):
 
         flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
@@ -207,7 +199,7 @@ class TestLinearAero:
         )
 
         # Run linear case with and without matrix form
-        linear_case = linear_model.run(u_linear, use_matrix=use_matrix)
+        linear_case = linear_model.run(u_linear)
 
         if plot:
             linear_case.plot(
@@ -236,12 +228,8 @@ class TestLinearAero:
             atol=1e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
-    @staticmethod
-    def test_linear_matrix_pitching_wing(plot: bool = False):
-        TestLinearAero.test_linear_operator_pitching_wing(plot=plot, use_matrix=True)
-
     @classmethod
-    def test_linear_operator_pitching_wing_frozen_wake(
+    def test_linear_pitching_wing_frozen_wake(
         cls, plot: bool = False, use_matrix: bool = False
     ):
 
@@ -299,7 +287,7 @@ class TestLinearAero:
         )
 
         # Run linear case with and without matrix form
-        linear_case = linear_model.run(u_linear, use_matrix=use_matrix)
+        linear_case = linear_model.run(u_linear)
 
         if plot:
             linear_case.plot(
@@ -323,16 +311,8 @@ class TestLinearAero:
             atol=1e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
 
-    @staticmethod
-    def test_linear_matrix_pitching_wing_frozen_wake(plot: bool = False):
-        TestLinearAero.test_linear_operator_pitching_wing_frozen_wake(
-            plot=plot, use_matrix=True
-        )
-
     @classmethod
-    def test_linear_operator_cosine_gust(
-        cls, plot: bool = False, use_matrix: bool = False
-    ):
+    def test_linear_cosine_gust(cls, plot: bool = False, use_matrix: bool = False):
 
         flowfield = OneMinusCosine(
             TestLinearAero.u_inf,
@@ -375,9 +355,7 @@ class TestLinearAero:
         )
 
         # Run linear case with and without matrix form
-        linear_case = linear_model.run(
-            u_linear, use_matrix=use_matrix, flowfield=flowfield
-        )
+        linear_case = linear_model.run(u_linear, flowfield=flowfield)
 
         if plot:
             linear_case.plot(
@@ -405,7 +383,3 @@ class TestLinearAero:
             cast(ArrayList, linear_case.y_t_tot.f_unsteady)[0],
             atol=8e-1,
         ), "Unsteady forces do not match between nonlinear and linear cases."
-
-    @staticmethod
-    def test_linear_matrix_cosine_gust(plot: bool = False):
-        TestLinearAero.test_linear_operator_cosine_gust(plot=plot, use_matrix=True)

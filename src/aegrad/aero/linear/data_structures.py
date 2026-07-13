@@ -24,8 +24,7 @@ class AeroInputUnflattened:
 class AeroStateUnflattened:
     gamma_b: ArrayList
     gamma_w: ArrayList
-    gamma_bm1: Optional[ArrayList]
-    gamma_b_dot: Optional[ArrayList]
+    gamma_b_nm1: Optional[ArrayList]
     zeta_w: Optional[ArrayList]
     zeta_b: Optional[ArrayList]
 
@@ -124,12 +123,6 @@ class AeroLinearResult:
         gamma_w_tot = self.x_t_tot.gamma_w.index_all(i_ts, ...)
         f_steady_tot = self.y_t_tot.f_steady.index_all(i_ts, ...)
 
-        # optional
-        gamma_b_dot_tot = (
-            self.x_t_tot.gamma_b_dot.index_all(i_ts, ...)
-            if self.x_t_tot.gamma_b_dot is not None
-            else None
-        )
         # put in the reference grid for the frozen wake case
         zeta_w_tot = (
             self.x_t_tot.zeta_w.index_all(i_ts, ...)
@@ -147,7 +140,7 @@ class AeroLinearResult:
             zeta_b_dot=zeta_b_dot_tot,
             zeta_w=zeta_w_tot,
             gamma_b=gamma_b_tot,
-            gamma_b_dot=gamma_b_dot_tot,
+            gamma_b_dot=None,
             gamma_w=gamma_w_tot,
             f_steady=f_steady_tot,
             f_unsteady=f_unsteady_tot,

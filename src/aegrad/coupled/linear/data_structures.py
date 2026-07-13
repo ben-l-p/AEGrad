@@ -19,8 +19,7 @@ class AeroelasticInputUnflattened:
 class AeroelasticStateUnflattened:
     gamma_b: ArrayList
     gamma_w: ArrayList
-    gamma_bm1: Optional[ArrayList]
-    gamma_b_dot: Optional[ArrayList]
+    gamma_b_nm1: Optional[ArrayList]
     zeta_w: Optional[ArrayList]
     q: Array
     q_dot: Array

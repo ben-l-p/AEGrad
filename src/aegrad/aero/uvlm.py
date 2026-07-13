@@ -339,7 +339,6 @@ class UVLM:
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
             unsteady_force=unsteady_force,
-            gamma_dot_state=gamma_dot_state,
         )
 
     def set_design_variables(

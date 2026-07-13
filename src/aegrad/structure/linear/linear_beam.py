@@ -4,8 +4,9 @@ from typing import Literal, TYPE_CHECKING, Optional
 from jax import Array, vmap
 from jax import numpy as jnp
 
+from jax.scipy.linalg import block_diag
+
 from aegrad.algebra.array_utils import check_arr_shape
-from aegrad.algebra.linear_operators import LinearSystem, LinearOperator
 from aegrad.algebra.se3 import exp_se3
 from aegrad.structure.linear.data_structures import (
     BeamLinearResult,
@@ -16,7 +17,7 @@ from aegrad.structure.linear.data_structures import (
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.constants import BASE_LOBATTO_ORDER
 from aegrad.structure.data_structures import StaticStructure
-from aegrad.utils.linear import LinearModel, LinearComponent, SliceEntry
+from aegrad.utils.linear import LinearModel, LinearComponent, SliceEntry, LinearSystem
 
 if TYPE_CHECKING:
     from aegrad.structure.beam import BaseBeamStructure
@@ -39,18 +40,22 @@ class LinearBeam(LinearModel):
         self.n_free_dof: int = len(reference.free_dofs)
         self.n_nodes: int = beam.n_nodes
 
-        self.f_ext_follower_input: bool = reference.f_ext_follower is not None
-        self.f_ext_dead_input: bool = reference.f_ext_dead is not None
+        self.local_forcing: bool = local_forcing
 
         super().__init__(reference=reference, dt=dt)
-
-        self.local_forcing: bool = local_forcing
 
         self.m_global, self.k_global = beam.make_global_m_k(
             case=reference, int_order=int_order, local_forcing=local_forcing
         )
 
         self.sys: LinearSystem = self.linearise()
+
+    @property
+    def reference(self) -> StaticStructure:
+        assert isinstance(self._reference, StaticStructure), (
+            "Reference state must be of type StaticStructure."
+        )
+        return self._reference
 
     def extract_reference_inputs(
         self,
@@ -103,13 +108,13 @@ class LinearBeam(LinearModel):
         """
         slice_entries = (
             SliceEntry(
-                name="f_ext_dead",
-                enabled=self.f_ext_dead_input,
+                name="f_ext_follower",
+                enabled=True,
                 shapes=(self.n_nodes, 6),
             ),
             SliceEntry(
-                name="f_ext_follower",
-                enabled=self.f_ext_follower_input,
+                name="f_ext_dead",
+                enabled=True,
                 shapes=(self.n_nodes, 6),
             ),
         )
@@ -149,33 +154,61 @@ class LinearBeam(LinearModel):
         r"""
         Form a system of linear equations about a reference state. The system is of the form:
         :math:`\dot{\mathbf{x}} = \mathbf{A~x + B~u}, \mathbf{y} = \mathbf{C~x + D~u}`. Input vector :math:`\mathbf{u}`
-        is the vector of applied forces, output vector :math:`\mathbf{y}` is the vector of displacements, and state
-        vector :math:`\mathbf{x}` is the vector of displacements and velocities.
+        is the packed vector of follower and dead applied force perturbations at nodal degrees of freedom (each
+        [n_nodes, 6]). Output vector :math:`\mathbf{y}` is the vector of displacements, and state vector
+        :math:`\mathbf{x}` is the vector of displacements and velocities.
+
+        The :math:`\mathbf{B}` operator applies the frame rotation between the user-facing follower/dead force inputs
+        and the internal beam frame determined by ``local_forcing``:
+
+        * ``local_forcing=True``: internal frame is local. Follower forces pass through unchanged and dead forces are
+          rotated global-to-local via :math:`\mathbf{R}^T`.
+        * ``local_forcing=False``: internal frame is global. Dead forces pass through unchanged and follower forces are
+          rotated local-to-global via :math:`\mathbf{R}`.
+
         :return: Linearised system.
         """
 
         m_inv = jnp.linalg.inv(self.m_global)
 
-        a = LinearOperator(
-            lambda x: jnp.concatenate(
-                (x[self.n_free_dof :], -m_inv @ self.k_global @ x[: self.n_free_dof])
-            ),
-            shape=(2 * self.n_free_dof, 2 * self.n_free_dof),
+        rmat = self.reference.hg[:, :3, :3]  # per-node local-to-global rotation
+        rmat_t = jnp.swapaxes(rmat, -1, -2)  # per-node global-to-local rotation
+
+        free_dofs_arr = jnp.array(self.free_dofs)
+
+        def _block_rot(rmat_per_node: Array) -> Array:
+            chi = jnp.zeros((self.n_nodes, 6, 6))
+            chi = chi.at[:, :3, :3].set(rmat_per_node)
+            chi = chi.at[:, 3:, 3:].set(rmat_per_node)
+            return block_diag(*chi)
+
+        eye_nodal = jnp.eye(self.n_nodes * 6)
+        if self.local_forcing:
+            follower_rot = eye_nodal
+            dead_rot = _block_rot(rmat_t)
+        else:
+            follower_rot = _block_rot(rmat)
+            dead_rot = eye_nodal
+
+        p_free = eye_nodal[free_dofs_arr, :]  # (n_free_dof, n_nodes * 6)
+
+        zero_ff = jnp.zeros((self.n_free_dof, self.n_free_dof))
+        eye_ff = jnp.eye(self.n_free_dof)
+
+        a = jnp.block(
+            [
+                [zero_ff, eye_ff],
+                [-m_inv @ self.k_global, zero_ff],
+            ]
         )
 
-        b = LinearOperator(
-            lambda u: jnp.concatenate((jnp.zeros((self.n_free_dof,)), m_inv @ u)),
-            shape=(2 * self.n_free_dof, self.n_free_dof),
+        b_bottom = m_inv @ p_free @ jnp.concatenate([follower_rot, dead_rot], axis=1)
+        b = jnp.concatenate(
+            [jnp.zeros((self.n_free_dof, self.n_inputs)), b_bottom], axis=0
         )
 
-        c = LinearOperator(
-            lambda x: x[: self.n_free_dof], shape=(self.n_free_dof, 2 * self.n_free_dof)
-        )
-
-        d = LinearOperator(
-            lambda u: jnp.zeros((self.n_free_dof,)),
-            shape=(self.n_free_dof, self.n_free_dof),
-        )
+        c = jnp.concatenate([eye_ff, zero_ff], axis=1)
+        d = jnp.zeros((self.n_free_dof, self.n_inputs))
 
         return LinearSystem(
             a=a, b=b, c=c, d=d, dt=self.dt, continuous_time=True, removed_u_np1=False
@@ -185,13 +218,11 @@ class LinearBeam(LinearModel):
         self,
         u: BeamInputUnflattened,
         x0: Optional[BeamStateUnflattened] = None,
-        use_matrix=False,
     ) -> BeamLinearResult:
         r"""
         Run the linear system.
         :param u: Total input over time (reference + pertubation).
         :param x0: Initial state perturbations, defaults to zero state.
-        :param use_matrix: If true, use explicit matrix representation for linear system, otherwise use operator form.
         :return: Linear system results.
         """
 
@@ -227,65 +258,57 @@ class LinearBeam(LinearModel):
             reference_f: Optional[Array],
             input_f_t: Optional[Array],
             name: str,
-            transformation: Optional[Array],
         ) -> Array:
             r"""
-            Function to compute the forcing perturbations to pass to the linear system. This accounts for the reference
-            forcing and any transformations to local or global coordinates.
+            Compute the perturbation forcing time history relative to the reference.
             :param reference_f: Reference forcing vector, [n_nodes, 6] or None.
             :param input_f_t: Input forcing vector, [n_tstep, n_nodes, 6] or None.
             :param name: Name of the forcing vector for error messages.
-            :param transformation: Transformation matrix for coordinate transformation or None.
             :return: Delta forcing vector, [n_tstep, n_nodes, 6].
             """
             if input_f_t is None:
                 if reference_f is None:
                     return jnp.zeros((n_tstep, self.n_nodes, 6))
-                else:
-                    return -jnp.broadcast_to(
-                        reference_f[None, :, :],
-                        (n_tstep, self.n_nodes, 6),
-                    )
-            else:
-                check_arr_shape(input_f_t, (n_tstep, self.n_nodes, 6), name=name)
-                if transformation is not None:
-                    f_t_tot = transform_nodal_vect(
-                        vect=input_f_t,
-                        rmat=jnp.swapaxes(self.reference.hg[:, :3, :3], -1, -2),
-                    )
-                else:
-                    f_t_tot = input_f_t
+                return -jnp.broadcast_to(
+                    reference_f[None, :, :],
+                    (n_tstep, self.n_nodes, 6),
+                )
+            check_arr_shape(input_f_t, (n_tstep, self.n_nodes, 6), name=name)
+            if reference_f is None:
+                return input_f_t
+            return input_f_t - reference_f[None, :, :]
 
-                if reference_f is None:
-                    return f_t_tot
-                else:
-                    return f_t_tot - reference_f[None, :, :]
+        # reference dead forces are stored in the local frame and so are rotated back
+        rmat_ref = self.reference.hg[:, :3, :3]
+        reference_dead_global = (
+            transform_nodal_vect(self.reference.f_ext_dead, rmat_ref)
+            if self.reference.f_ext_dead is not None
+            else None
+        )
 
         delta_f_ext_follower_t = create_delta_forcing(
             reference_f=self.reference.f_ext_follower,
             input_f_t=u.f_ext_follower,
             name="f_ext_follower_t",
-            transformation=None if self.local_forcing else self.reference.hg[:, :3, :3],
         )
 
         delta_f_ext_dead_t = create_delta_forcing(
-            reference_f=self.reference.f_ext_dead,
+            reference_f=reference_dead_global,
             input_f_t=u.f_ext_dead,
             name="f_ext_dead_t",
-            transformation=jnp.swapaxes(self.reference.hg[:, :3, :3], -1, -2)
-            if self.local_forcing
-            else None,
         )
 
-        delta_f_ext_t_free = (delta_f_ext_follower_t + delta_f_ext_dead_t).reshape(
-            n_tstep, -1
-        )[:, self.free_dofs]  # flatten to (n_tstep, n_dof)
+        delta_u = BeamInputUnflattened(
+            n_tstep=n_tstep,
+            f_ext_follower=delta_f_ext_follower_t,
+            f_ext_dead=delta_f_ext_dead_t,
+        )
+        delta_u_vec = self._pack_input_vector_t(delta_u)
 
         # run linear system
         x_t, y_t = self.sys.run(
-            u=delta_f_ext_t_free,
+            u=delta_u_vec,
             x0=jnp.concatenate((q0, q0_dot)),
-            use_matrix=use_matrix,
         )
 
         # extract perturbations in displacements and velocities

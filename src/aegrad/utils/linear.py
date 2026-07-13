@@ -3,20 +3,20 @@ from __future__ import annotations
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from math import prod
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING, Literal
+from matplotlib import pyplot as plt
 
 import jax
+from jax.scipy.linalg import expm
+from jax import Array, numpy as jnp
 
-from aegrad.utils.utils import shallow_as_dict
-
-
-from jax import Array, numpy as jnp, jit
-
+from aegrad.utils.print_utils import warn, jax_print, VerbosityLevel
+from aegrad.utils.utils import shallow_as_dict, make_pytree
 from aegrad.algebra.array_utils import (
     ArrayList,
     ArrayListShape,
+    check_arr_shape,
 )
-from aegrad.algebra.linear_operators import LinearSystem, LinearOperator
 
 if TYPE_CHECKING:
     from aegrad.coupled.data_structures import StaticAeroelastic
@@ -84,7 +84,7 @@ class LinearModel(ABC):
         )
         self.dt: float | Array = dt
 
-        self.reference: ReferenceObject = reference
+        self._reference: ReferenceObject = reference
 
         self.reference_inputs: dict[str, Optional[Array | ArrayList]] = (
             self.extract_reference_inputs()
@@ -107,6 +107,10 @@ class LinearModel(ABC):
     @sys.setter
     def sys(self, sys: LinearSystem):
         self._sys = sys
+
+    @property
+    @abstractmethod
+    def reference(self) -> ReferenceObject: ...
 
     @abstractmethod
     def extract_reference_inputs(self) -> dict[str, Optional[Array | ArrayList]]: ...
@@ -150,55 +154,47 @@ class LinearModel(ABC):
         self, reference: ReferenceObject
     ) -> tuple[dict[str, LinearComponent], int]: ...
 
-    def f_step(self, x_vec: Array, u_vec: Array) -> tuple[Array, Array]:
-        raise NotImplementedError
-
-    def linearise(self) -> LinearSystem:
-        r"""
-        Build the linear state-space system.
-        """
-        x_ref = jnp.zeros(self.n_states)
-        u_ref = jnp.zeros(self.n_inputs)
-
-        _, f_lin = jax.linearize(self.f_step, x_ref, u_ref)
-
-        def a_func(dx: Array) -> Array:
-            return f_lin(dx, jnp.zeros_like(u_ref))[0]
-
-        def b_func(du: Array) -> Array:
-            return f_lin(jnp.zeros_like(x_ref), du)[0]
-
-        def c_func(dx: Array) -> Array:
-            return f_lin(dx, jnp.zeros_like(u_ref))[1]
-
-        def d_func(du: Array) -> Array:
-            return f_lin(jnp.zeros_like(x_ref), du)[1]
-
-        a = LinearOperator(jit(a_func), shape=(self.n_states, self.n_states))
-        b = LinearOperator(jit(b_func), shape=(self.n_states, self.n_inputs))
-        c = LinearOperator(jit(c_func), shape=(self.n_outputs, self.n_states))
-        d = LinearOperator(jit(d_func), shape=(self.n_outputs, self.n_inputs))
-
-        return LinearSystem(a=a, b=b, c=c, d=d, dt=self.dt)
+    @abstractmethod
+    def linearise(self) -> LinearSystem: ...
 
     def eigenvalues(
-        self, to_components: bool = False, to_continuous_time: bool = True
+        self,
+        to_components: bool = False,
+        to_continuous_time: bool = True,
+        plot: bool = True,
+        plot_xlim: tuple[float, float] = (-500.0, 50.0),
+        plot_ylim: tuple[float, float] = (-400.0, 400.0),
     ) -> Array:
         r"""
         Compute stability eigenvalues of the linear system A matrix.
+
         :param to_components: If true, return real and imaginary parts as separate components. If false, return complex
         eigenvalues.
         :param to_continuous_time: If true, convert from discrete to continuous time eigenvalues using the formula:
-        lambda_c = log(lambda_d) / dt
+        lambda_c = log(lambda_d) / dt.
+        :param plot: If true, plot the eigenvalues with Matplotlib.
+        :param plot_xlim: Range of real component to be used for plotting.
+        :param plot_ylim: Range of imaginary component to be used for plotting.
         :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
         """
 
-        evals = jnp.linalg.eigvals(
-            self.sys.a.matrix if isinstance(self.sys.a, LinearOperator) else self.sys.a
-        )
+        evals = jnp.linalg.eigvals(self.sys.a)
 
         if to_continuous_time:
             evals = jnp.log(evals) / self.dt
+
+        if plot:
+            fig, ax = plt.subplots()
+            ax.scatter(
+                evals.real,
+                evals.imag,
+            )
+            ax.set_xlim(*plot_xlim)
+            ax.set_ylim(*plot_ylim)
+            ax.set_xlabel("Re(λ) [1/s]")
+            ax.set_ylabel("Im(λ) [1/s]")
+            ax.set_title("Eigenvalues")
+            plt.show()
 
         if to_components:
             return jnp.stack((evals.real, evals.imag), axis=-1)
@@ -704,3 +700,165 @@ class LinearModel(ABC):
             return arrs
         else:
             raise ValueError("Invalid shape for unflattened object")
+
+
+@make_pytree
+class LinearSystem:
+    r"""
+    Linear system represented in state-space form, with tools for time-stepping
+    """
+
+    def __init__(
+        self,
+        a: Array,
+        b: Array,
+        c: Array,
+        d: Array,
+        dt: float | Array,
+        continuous_time: bool = False,
+        removed_u_np1: bool = False,
+    ) -> None:
+        r"""
+        Initialise the LinearSystem with state-space linear operators.
+        :param a: System matrix A
+        :param b: Input matrix B
+        :param c: Output matrix C
+        :param d: Feedthrough matrix D
+        :param removed_u_np1: If true, indicates that the system is in terms of inputs at time step n only.
+        """
+        self.a: Array = a
+        self.b: Array = b
+        self.c: Array = c
+        self.d: Array = d
+        self.dt: float | Array = dt
+        self.n_inputs: int = b.shape[1]
+        self.n_states: int = a.shape[0]
+        self.n_outputs: int = c.shape[0]
+        self.continuous_time: bool = continuous_time
+        self.removed_u_np1: bool = removed_u_np1
+
+    def remove_u_np1(self) -> None:
+        r"""
+        Remove the dependence on u at time varphi+1 from the linear system, modifying b and d accordingly.
+        :math:`D_{new} = C B + D` and :math:`B_{new} = A B`
+        """
+        if self.removed_u_np1:
+            warn("u_np1 has already been removed from the system. Skipping.")
+        else:
+            self.d = (self.c @ self.b) + self.d
+            self.b = self.a @ self.b
+            self.removed_u_np1 = True
+
+    def continuous_to_discrete(
+        self, method: Literal["zoh", "tustin"] = "tustin"
+    ) -> LinearSystem:
+        r"""
+        Convert the continuous-time linear system to a discrete-time linear system.
+        """
+        jax_print(
+            "Converting continuous-time system to discrete-time system.",
+            verbose_level=VerbosityLevel.NORMAL,
+        )
+        if not self.continuous_time:
+            warn("System is already discrete-time.")
+            return self
+
+        a_c = self.a
+        b_c = self.b
+
+        match method:
+            case "zoh":
+                # perform a ZOH conversion
+                # create a matrix aug = [[A, B], [0, 0]], exp(aug * dt) = [[Ad, Bd], [0, I]]
+                aug = jnp.block(
+                    [
+                        [a_c, b_c],
+                        [
+                            jnp.zeros(
+                                (self.b.shape[1], self.a.shape[0] + self.b.shape[1])
+                            )
+                        ],
+                    ]
+                )
+                assert aug.shape[0] == aug.shape[1], (
+                    "Augmented matrix must be square for matrix exponential."
+                )
+
+                exp_aug = expm(self.dt * aug)
+
+                a_d = exp_aug[: self.a.shape[0], : self.a.shape[1]]
+                b_d = exp_aug[: self.a.shape[0], self.a.shape[1] :]
+            case "tustin":
+                # Tustin bilinear transformation
+                mat_inv = jnp.linalg.inv(jnp.eye(self.a.shape[0]) - a_c * 0.5 * self.dt)
+                a_d = mat_inv @ (jnp.eye(self.a.shape[0]) + a_c * 0.5 * self.dt)
+                b_d = mat_inv @ (b_c * self.dt)
+
+        return LinearSystem(
+            a=a_d, b=b_d, c=self.c, d=self.d, dt=self.dt, continuous_time=False
+        )
+
+    def run(self, u: Array, x0: Optional[Array] = None) -> tuple[Array, Array]:
+        r"""
+        Run the linear system for a time history of input vector u.
+        :param u: Time history of input vectors, shape [n_tstep, n_inputs]
+        :param x0: Initial state vector, [n_states]. If None, assumed to be zero.
+        :return: State history and output history, arr_list_shapes [n_tstep, n_states] and [n_tstep, n_outputs]
+        """
+        if x0 is not None:
+            check_arr_shape(x0, (self.n_states,), "x0")
+        check_arr_shape(u, (None, self.n_inputs), "u")
+        n_tstep = u.shape[0]
+
+        if self.continuous_time:
+            self.continuous_to_discrete()
+
+        def state_func(i_ts: int, x_: Array) -> Array:
+            r"""
+            State update function for time step i_ts, given as :math:`x_{varphi} = A x_{varphi-1} + B u_{varphi-1}` or :math:`x_n = A x_{varphi-1} + B u_n`.
+            :param i_ts: Time step index to obtain new states for.
+            :param x_: State history array being updated, [n_tstep, n_states]
+            :return: Updated state history array, [n_tstep, n_states]
+            """
+            jax_print(
+                "Linear system state step {i_ts}",
+                i_ts=i_ts,
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+            this_u = u[i_ts - 1, ...] if self.removed_u_np1 else u[i_ts, ...]
+            return x_.at[i_ts, ...].set(self.a @ x_[i_ts - 1, ...] + self.b @ this_u)
+
+        x = jnp.zeros((n_tstep, self.n_states))
+        if x0 is not None:
+            x = x.at[0, ...].set(x0)
+        x = jax.lax.fori_loop(1, n_tstep, state_func, x)
+
+        def output_func(i_ts: int, y_: Array) -> Array:
+            r"""
+            Output computation function for time step i_ts, given as :math:`y_n = C x_n + D u_n`.
+            :param i_ts: Time step index to obtain outputs for.
+            :param y_: Output history array being updated, [n_tstep, n_outputs]
+            :return: Updated output history array, [n_tstep, n_outputs]
+            """
+            jax_print("Linear system output step {i_ts}", i_ts=i_ts)
+            return y_.at[i_ts, ...].set(self.c @ x[i_ts, ...] + self.d @ u[i_ts, ...])
+
+        y = jnp.zeros((n_tstep, self.n_outputs))
+        y = jax.lax.fori_loop(0, n_tstep, output_func, y)
+        return x, y
+
+    @staticmethod
+    def _static_names() -> Sequence[str]:
+        r"""
+        Output the names of all static attributes for pytree serialization.
+        :return: Sequence of static attribute names.
+        """
+        return "n_inputs", "n_states", "n_outputs"
+
+    @staticmethod
+    def _dynamic_names() -> Sequence[str]:
+        r"""
+        Output the names of all dynamic attributes for pytree serialization.
+        :return: Sequence of dynamic attribute names.
+        """
+        return "a", "b", "c", "d", "removed_u_np1"

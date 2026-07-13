@@ -130,7 +130,7 @@ if __name__ == "__main__":
     )
 
     # run linear case
-    linear_case = linear_model.run(u_linear, use_matrix=True)
+    linear_case = linear_model.run(u_linear)
 
     # save linear wing time history
     linear_case.plot(Path(f"./test_outputs/heaving_test_linear_ampl_{ampl:.02f}"))
