@@ -330,9 +330,12 @@ class BeamStructure(BaseBeamStructure):
         dt = self.time_integrator.dt
         gamma = self.time_integrator.gamma
 
-        return (v_nm1 + (1.0 - gamma) * dt * a_nm1 + gamma * dt * a_n - v_n).ravel()[
+        v_res = (v_nm1 + (1.0 - gamma) * dt * a_nm1 + gamma * dt * a_n - v_n).ravel()[
             jnp.array(solve_dofs)
         ]
+
+        # scale by gamma_prime to scale order of magnitude for a better conditioned problem
+        return v_res / self.time_integrator.gamma_prime
 
     def a_res_func(
         self,
@@ -347,11 +350,14 @@ class BeamStructure(BaseBeamStructure):
         alpha_f = self.time_integrator.alpha_f
         alpha_m = self.time_integrator.alpha_m
 
-        return (
+        a_res = (
             ((1.0 - alpha_f) * v_dot_n + alpha_f * v_dot_nm1 - alpha_m * a_nm1)
             / (1.0 - alpha_m)
             - a_n
         ).ravel()[jnp.array(solve_dofs)]
+
+        # scale by gamma_prime to scale order of magnitude for a better conditioned problem
+        return a_res / self.time_integrator.gamma_prime
 
     def v_dot_res_func(
         self,
@@ -488,10 +494,13 @@ class BeamStructure(BaseBeamStructure):
         m_alpha = m_alpha[jnp.ix_(solve_dofs, solve_dofs)]
 
         # find the v_dot residual to satisfy the structural problem
-        return f_res_non_iner.ravel()[solve_dofs] / (1.0 - alpha_f) - m_alpha @ (
+        v_dot_res = f_res_non_iner.ravel()[solve_dofs] / (1.0 - alpha_f) - m_alpha @ (
             alpha_f / (1.0 - alpha_f) * v_dot_nm1.ravel()[solve_dofs]
             + v_dot_n.ravel()[solve_dofs]
         )
+
+        # scale by beta_prime to scale order of magnitude for a better conditioned problem
+        return v_dot_res / self.time_integrator.beta_prime
 
     def timestep_residual(
         self,
@@ -775,13 +784,13 @@ class BeamStructure(BaseBeamStructure):
 
         return cast(Array, p_j_n_p_q_n), cast(StructuralDesignVariables, p_j_n_p_x)
 
-    @jax.jit(static_argnums=(0, 6, 7, 8, 9, 11, 12, 13, 14))
     def adjoint_time_loop(
         self,
         rev_i_ts: int,
         d_j_d_x_: StructuralDesignVariables,
         adj_: Array,
-        p_r_np1_p_q_n: Array,
+        p_r_np1_p_q_n: Optional[Array],
+        adj_t_p_r_np1_p_q_n: Optional[Array],
         q_n: StructureMinimalStates,
         structure: DynamicStructure,
         objective: StructuralObjectiveFunction,
@@ -791,6 +800,7 @@ class BeamStructure(BaseBeamStructure):
         solve_dofs: tuple[int, ...],
         approx_grads: bool,
         save_adjoint: bool,
+        matrix_free: bool,
         n_j: int,
         jac_options: dict[str, dict[str, Optional[Callable[..., Any]]]],
     ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
@@ -800,7 +810,10 @@ class BeamStructure(BaseBeamStructure):
         explicitly reversed within the function body to obtain i_ts.
         :param d_j_d_x_: Design gradient to accumulate.
         :param adj_: Full grads matrix which is updated inplace, [n_tstep, *j_shape, 5*n_dof].
-        :param p_r_np1_p_q_n: Gradient of future step with respect to current state, [5*n_dof, 5*n_dof].
+        :param p_r_np1_p_q_n: Gradient of future step with respect to current state, used when computing the full
+        Jacobian [5*n_dof, 5*n_dof].
+        :param adj_t_p_r_np1_p_q_n: VJP of the future adjoint step and the Jacobian of the future residual with respect
+        to the current state, [n_adj_dof].
         :param q_n: Current minimal states.
         :param structure: Dynamic structure solution.
         :param objective: Objective function.
@@ -810,6 +823,7 @@ class BeamStructure(BaseBeamStructure):
         :param solve_dofs: Tuple of dof index to solve.
         :param approx_grads: Whether to approximate the gradient or not.
         :param save_adjoint: Whether to save the full adjoint time history.
+        :param matrix_free: If False, solve the system using the residual Jacobian-vector product using GMRES.
         :param n_j: Number of objective function outputs.
         :param jac_options: Input which passes functions which can be used to approximate the Jacobians. If entries are
         None, AD is used.
@@ -822,55 +836,146 @@ class BeamStructure(BaseBeamStructure):
 
         i_ts_nm1 = jnp.maximum(i_ts - 1, 0)  # index for timestep varphi-1
 
+        solve_idx = jnp.array(solve_dofs)
+
         # find minimal states for timestep varphi-1
         q_nm1 = structure.get_minimal_states(i_ts_nm1)
 
-        # gradient of objective at current timestep with respect to current minimal states and design variables
-        # for i_ts=0, these will not be useful
+        # Objective sensitivities
         p_j_n_p_q_n, p_j_n_p_x = self.p_j(
             objective=objective, i_ts=i_ts, dv=dv, dv_full=dv_full, q_n=q_n
         )
 
-        # find gradients of residual function (state Jacobians only)
-        p_r_n_p_q_nm1, p_r_n_p_q_n, p_r_v_dot_n_p_dv, *_ = (
-            self.timestep_residual_jacobians(
-                i_ts=i_ts,
-                q_n=q_n,
-                q_nm1=q_nm1,
-                dv=dv,
-                solve_dofs=solve_dofs,
-                approx_grads=approx_grads,
-                f_ext_aero_nm1=None,
-                f_ext_aero_n=None,
-                thrust_t=thrust_t,
-                n_profile_loops=None,
-                jac_options=jac_options,
+        if matrix_free:
+
+            def _residual_states(
+                q_n_: StructureMinimalStates, q_nm1_: StructureMinimalStates
+            ):
+                return self.timestep_residual(
+                    i_ts=i_ts,
+                    q_nm1=q_nm1_,
+                    q_n=q_n_,
+                    dv_=dv,
+                    thrust_t=thrust_t,
+                    solve_dofs=solve_dofs,
+                    approx_grads=approx_grads,
+                )
+
+            # Linearise the timestep residual around (q_n, q_nm1). This single VJP returns:
+            # p_r_n_dot_v(v)[0] = (p_r_n/p_q_n).T @ v, p_r_n_dot_v(v)[1] = (p_r_n/p_q_nm1).T @ v
+            _, p_r_n_dot_v = jax.vjp(_residual_states, q_n, q_nm1)
+
+            def _cot_to_solve_vec(cot: StructureMinimalStates) -> Array:
+                # collapse cotangent to [n_adj_dof]
+                mat = cot.to_mat()  # [4, n_nodes, 6]
+                return mat.reshape(mat.shape[0], -1)[:, solve_idx].ravel()
+
+            def matvec_qn_t(v: Array) -> Array:
+                # function to compute (p_r_n/p_q_n).T @ v for some vector v
+                return _cot_to_solve_vec(p_r_n_dot_v(v)[0])
+
+            # sensitivity of objective to degrees of freedom, [n_j, n_adj_dof]
+            p_j_solve = (
+                p_j_n_p_q_n.reshape(n_j, 4, -1, 6)
+                .reshape(n_j, 4, -1)[..., solve_idx]
+                .reshape(n_j, -1)
             )
-        )
+            assert adj_t_p_r_np1_p_q_n is not None, (
+                "The adjoint-Jacobian product has not been passed"
+            )
+            b_rhs = -(p_j_solve + adj_t_p_r_np1_p_q_n)  # [n_j, n_adj_dof]
 
-        # solve for adjoint at current timestep
-        prev_adjoint = adj_[i_ts + 1, ...] if save_adjoint else adj_
-        b: Array = -(p_j_n_p_q_n.reshape(n_j, -1) + prev_adjoint @ p_r_np1_p_q_n).T
-        adj_n = jnp.linalg.solve(p_r_n_p_q_n.T, b).T
+            # solve for the adjoint vector at timestep n, batched along the size of the objective.
+            def _solve_row(b_row: Array) -> Array:
+                x, _ = jax.scipy.sparse.linalg.gmres(
+                    matvec_qn_t,
+                    b_row,
+                    tol=1e-10,
+                    atol=1e-10,
+                    maxiter=50,
+                    solve_method="batched",
+                )
+                return x
 
+            adj_n = jax.vmap(_solve_row)(b_rhs)  # [n_j, n_adj_dof]
+
+            # Design gradient accumulation via a separate VJP to obtain adj.T @ p_r_v_dot_n_p_dv.
+            def _residual_dv(dv_: StructuralDesignVariables) -> Array:
+                return self.timestep_residual(
+                    i_ts=i_ts,
+                    q_nm1=q_nm1,
+                    q_n=q_n,
+                    dv_=dv_,
+                    thrust_t=thrust_t,
+                    solve_dofs=solve_dofs,
+                    approx_grads=approx_grads,
+                )
+
+            _, pull_dv = jax.vjp(_residual_dv, dv)
+            dv_grads = jax.vmap(pull_dv)(adj_n)[0]
+
+            # accumulate with seperate statements as there is no __add__ member
+            d_j_d_x_ += dv_grads
+            d_j_d_x_ += p_j_n_p_x
+
+            # compute adj_n @ p_r_n/p_q_nm1 for next iteration
+            def _coupling_row(a: Array) -> Array:
+                _, cot_qnm1 = p_r_n_dot_v(a)
+                return _cot_to_solve_vec(cot_qnm1)
+
+            adj_t_p_r_n_p_q_nm1 = jax.vmap(_coupling_row)(adj_n)  # [n_j, n_adj_dof]
+
+            p_r_n_p_q_nm1: Optional[Array] = None  # unused
+        else:
+            # find gradients of residual function (state Jacobians only)
+            p_r_n_p_q_nm1, p_r_n_p_q_n, p_r_v_dot_n_p_dv, *_ = (
+                self.timestep_residual_jacobians(
+                    i_ts=i_ts,
+                    q_n=q_n,
+                    q_nm1=q_nm1,
+                    dv=dv,
+                    solve_dofs=solve_dofs,
+                    approx_grads=approx_grads,
+                    f_ext_aero_nm1=None,
+                    f_ext_aero_n=None,
+                    thrust_t=thrust_t,
+                    n_profile_loops=None,
+                    jac_options=jac_options,
+                )
+            )
+
+            # solve for adjoint at current timestep
+            prev_adjoint = adj_[i_ts + 1, ...] if save_adjoint else adj_
+            b: Array = -(p_j_n_p_q_n.reshape(n_j, -1) + prev_adjoint @ p_r_np1_p_q_n).T
+            adj_n = jnp.linalg.solve(p_r_n_p_q_n.T, b).T
+
+            # accumulate design derivative
+            d_j_d_x_ += p_r_v_dot_n_p_dv.premultiply_adj(
+                adj_n[:, solve_idx + 2 * len(solve_dofs)]
+            )
+
+            # add on direct contribution from objective
+            d_j_d_x_ += p_j_n_p_x
+
+            adj_t_p_r_n_p_q_nm1 = None  # unused
+
+        # update adjoint vector time history if requested
         if save_adjoint:
             adj_ = adj_.at[i_ts, ...].set(adj_n)
 
-        # accumulate design derivative
-        d_j_d_x_ += p_r_v_dot_n_p_dv.premultiply_adj(
-            adj_n[:, jnp.array(solve_dofs) + 2 * len(solve_dofs)]
-        )
-
-        # add on direct contribution from objective
-        d_j_d_x_ += p_j_n_p_x
-
+        # print to console
         jax_print(
             "Adjoint step: {i_ts}",
             i_ts=i_ts,
             verbose_level=VerbosityLevel.NORMAL,
         )
 
-        return d_j_d_x_, adj_ if save_adjoint else adj_n, p_r_n_p_q_nm1, q_nm1
+        if matrix_free:
+            assert adj_t_p_r_n_p_q_nm1 is not None
+            return d_j_d_x_, adj_ if save_adjoint else adj_n, adj_t_p_r_n_p_q_nm1, q_nm1
+        else:
+            assert p_r_n_p_q_nm1 is not None
+            return d_j_d_x_, adj_ if save_adjoint else adj_n, p_r_n_p_q_nm1, q_nm1
 
     def construct_approximate_jacobians(
         self,
@@ -967,6 +1072,7 @@ class BeamStructure(BaseBeamStructure):
         self,
         structure: DynamicStructure,
         objective: StructuralObjectiveFunction,
+        matrix_free: bool = False,
         jacobian_approximations: BeamJacobianApproximations = BeamJacobianApproximations(),
         p_q0_p_x: Optional[StructuralDesignVariables] = None,
         save_adjoint: bool = False,
@@ -989,6 +1095,8 @@ class BeamStructure(BaseBeamStructure):
         states, and then using these to compute the gradient w.r.t. design variables in a forward pass.
         :param structure: Dynamic structure solution object.
         :param objective: Objective function :math:`j(\mathbf{x}, \mathbf{y}_i)`.
+        :param matrix_free: Whether to use matrix-free methods for solving the linear systems. Default is False, as
+        structural problems generally do not benefit from this solve.
         :param jacobian_approximations: Data structure which specifies Jacobian approximations to use for each part of
         the problem. The value can either be None for no approximation, `constant` for the assumption that the Jacobian
         does not vary with any variables. Alternatively, it can be tuple pairs with first entry being `dense_linear` or
@@ -1069,16 +1177,17 @@ class BeamStructure(BaseBeamStructure):
         @jax.jit
         def adjoint_step(
             rev_i_ts_: int,
-            d_j_d_x_: Array,
+            d_j_d_x_: StructuralDesignVariables,
             adj_: Array,
-            p_r_np1_p_q_n: Array,
+            coupling_arr: Array,
             q_n: StructureMinimalStates,
-        ) -> tuple[Array, Array, Array, StructureMinimalStates]:
+        ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
             return self.adjoint_time_loop(
                 rev_i_ts=rev_i_ts_,
                 d_j_d_x_=d_j_d_x_,
                 adj_=adj_,
-                p_r_np1_p_q_n=p_r_np1_p_q_n,
+                p_r_np1_p_q_n=None if matrix_free else coupling_arr,
+                adj_t_p_r_np1_p_q_n=coupling_arr if matrix_free else None,
                 q_n=q_n,
                 structure=structure,
                 objective=objective,
@@ -1088,12 +1197,21 @@ class BeamStructure(BaseBeamStructure):
                 solve_dofs=solve_dofs,
                 approx_grads=approx_grads,
                 save_adjoint=save_adjoint,
+                matrix_free=matrix_free,
                 n_j=n_j,
                 jac_options=jac_options,
             )
 
+        # coupling array is either a Jacobian or a VJP depending on if using matrix free or not
+        coupling_init = (
+            jnp.zeros((n_j, n_adj_dof))
+            if matrix_free
+            else jnp.zeros((n_adj_dof, n_adj_dof))
+        )
+
         # pass through time steps backwards to obtain adjoints
-        d_j_d_x, adj, p_r1_p_q0, _ = jax.lax.fori_loop(
+        # coupling0 is p_r1_p_q0 when matrix_free is False, and adj_1 @ p_r1_p_q0 when matrix_free is True
+        d_j_d_x, adj, coupling0, _ = jax.lax.fori_loop(
             lower=0,
             upper=structure.n_tstep - 1,
             body_fun=lambda i_ts_, args: adjoint_step(i_ts_, *args),
@@ -1102,7 +1220,7 @@ class BeamStructure(BaseBeamStructure):
                 jnp.zeros((structure.n_tstep + 1, n_j, n_adj_dof))
                 if save_adjoint
                 else jnp.zeros((n_j, n_adj_dof)),
-                jnp.zeros((n_adj_dof, n_adj_dof)),
+                coupling_init,
                 structure.get_minimal_states(-1),
             ),
         )
@@ -1116,10 +1234,13 @@ class BeamStructure(BaseBeamStructure):
             q_n=structure.get_minimal_states(0),
         )
 
-        adj0 = (
-            -p_j0_p_q0.reshape(n_j, -1)
-            - (adj[1, ...] if save_adjoint else adj) @ p_r1_p_q0
-        )
+        if matrix_free:
+            adj0 = -p_j0_p_q0.reshape(n_j, -1) - coupling0
+        else:
+            adj0 = (
+                -p_j0_p_q0.reshape(n_j, -1)
+                - (adj[1, ...] if save_adjoint else adj) @ coupling0
+            )
 
         # add initial direct sensitivity
         d_j_d_x += p_j0_p_x
@@ -1135,7 +1256,7 @@ class BeamStructure(BaseBeamStructure):
         else:
             return d_j_d_x, None
 
-    def dynamic_adjoint_profile(
+    def dynamic_adjoint_jacobian_profile(
         self,
         sol: DynamicStructure,
         approx_grads: bool,

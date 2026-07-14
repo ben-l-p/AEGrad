@@ -11,7 +11,7 @@ from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 class TestLumpedMassTranslationAdjoint:
     @staticmethod
-    def test_adjoint():
+    def run_(matrix_free: bool):
         n_nodes = 1
         conn = jnp.zeros((0, 2), dtype=int)
         y_vect = jnp.zeros((0, 3))
@@ -89,6 +89,7 @@ class TestLumpedMassTranslationAdjoint:
                 f_ext_follower=True,
                 f_ext_dead=True,
             ),
+            matrix_free=matrix_free,
         )
 
         f_follower_grad = cast(Array, grads.f_ext_follower)[0, :, 0, 0].sum()
@@ -107,3 +108,9 @@ class TestLumpedMassTranslationAdjoint:
         assert jnp.allclose(m_cs_grad, expected_m_cs_grad), (
             "Mass gradient does not match analytical solution"
         )
+
+    def test_adjoint(self):
+        self.run_(matrix_free=False)
+
+    def test_adjoint_matrix_free(self):
+        self.run_(matrix_free=True)

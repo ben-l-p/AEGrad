@@ -14,7 +14,7 @@ from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 class TestBeamTranslationAdjoint:
     @staticmethod
-    def test_adjoint():
+    def _run(matrix_free: bool):
         n_nodes = 5
         conn = jnp.stack((jnp.arange(n_nodes - 1), jnp.arange(1, n_nodes)), axis=1)
         y_vect = jnp.array((0.0, 1.0, 0.0))
@@ -97,6 +97,7 @@ class TestBeamTranslationAdjoint:
         grads, adj = beam.dynamic_adjoint(
             structure=solution,
             objective=objective,
+            matrix_free=matrix_free,
             p_q0_p_x=None,
             grads_to_compute=StructuralGradsToCompute(
                 k_cs=True,
@@ -122,3 +123,9 @@ class TestBeamTranslationAdjoint:
         assert jnp.allclose(m_cs_grad, expected_m_cs_grad, atol=1e-2), (
             "Mass gradient does not match analytical solution"
         )
+
+    def test_adjoint(self):
+        self._run(matrix_free=False)
+
+    def test_adjoint_matrix_free(self):
+        self._run(matrix_free=True)
