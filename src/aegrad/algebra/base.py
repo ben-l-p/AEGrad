@@ -8,7 +8,9 @@ import jax
 from jax import numpy as jnp, Array
 from jax.scipy.special import bernoulli
 from jax.lax import cond
-from jax import jacrev
+from jax import jacfwd, jacrev
+
+ADMode = Literal["reverse", "forward"]
 
 from aegrad.utils.constants import BASE_SUMMATION_ORDER
 from aegrad.utils.utils import conditional_profile
@@ -178,7 +180,30 @@ def jacrev_kwargs(
     :param allow_int: As `jax.jacrev`.
     :return: Function that accepts keyword arguments and returns a dictionary of argname: Jacobian pairs.
     """
+    return _jac_kwargs(func, argnames=argnames, mode="reverse", allow_int=allow_int)
 
+
+def jacfwd_kwargs(
+    func: Callable[..., Array],
+    argnames: str | Sequence[str],
+) -> Callable[..., dict[str, Any]]:
+    r"""
+    Forward-mode counterpart of :func:`jacrev_kwargs`. Prefer this when the input dimension for the selected
+    arguments is smaller than the output dimension of ``func``, which happens for design-variable Jacobians and for
+    dynamic-adjoint residual blocks whose input state size is smaller than the residual dimension.
+    :param func: Function for which to obtain Jacobians.
+    :param argnames: Argument names of variables for which to obtain Jacobians.
+    :return: Function that accepts keyword arguments and returns a dictionary of argname: Jacobian pairs.
+    """
+    return _jac_kwargs(func, argnames=argnames, mode="forward", allow_int=False)
+
+
+def _jac_kwargs(
+    func: Callable[..., Array],
+    argnames: str | Sequence[str],
+    mode: ADMode,
+    allow_int: bool,
+) -> Callable[..., dict[str, Any]]:
     argnames = (argnames,) if isinstance(argnames, str) else tuple(argnames)
 
     def inner_func(**kwargs: Any) -> dict[str, Array]:
@@ -189,12 +214,77 @@ def jacrev_kwargs(
         def positional_adapter(*args: Any) -> Array:
             return func(**dict(zip(full_argnames, args)))
 
-        out_jacs = jacrev(positional_adapter, argnums=argnums, allow_int=allow_int)(
-            *argvals
-        )
+        if mode == "reverse":
+            out_jacs = jacrev(positional_adapter, argnums=argnums, allow_int=allow_int)(
+                *argvals
+            )
+        else:
+            out_jacs = _jacfwd_allow_int(
+                positional_adapter, argnums=argnums, args=argvals
+            )
         return dict(zip(argnames, out_jacs))
 
     return inner_func
+
+
+def _jacfwd_allow_int(
+    func: Callable[..., Array], argnums: Sequence[int], args: Sequence[Any]
+) -> tuple[Any, ...]:
+    r"""
+    Forward-mode Jacobian that tolerates integer leaves in the argnums-selected pytrees, matching the semantics of
+    :func:`jax.jacrev` with ``allow_int=True`` (integer leaves receive zero Jacobian columns).
+    """
+    # Splits: for each argnum, (leaves, treedef, float_mask)
+    splits = []
+    for arg_i in argnums:
+        leaves, treedef = jax.tree_util.tree_flatten(args[arg_i])
+        float_mask = [jnp.issubdtype(leaf.dtype, jnp.floating) for leaf in leaves]
+        splits.append((leaves, treedef, float_mask))
+
+    def call_from_float_leaves(*float_leaves_per_arg_: tuple[Any, ...]) -> Array:
+        new_args = list(args)
+        for arg_i_, (leaves_, treedef_, mask), float_leaves in zip(
+            argnums, splits, float_leaves_per_arg_
+        ):
+            it = iter(float_leaves)
+            merged = [next(it) if m else leaf for leaf, m in zip(leaves_, mask)]
+            new_args[arg_i_] = jax.tree_util.tree_unflatten(treedef_, merged)
+        return func(*new_args)
+
+    float_leaves_per_arg = tuple(
+        tuple(leaf for leaf, m in zip(leaves, mask) if m)
+        for (leaves, _, mask) in splits
+    )
+
+    # jacfwd across the flat tuple of tuples of float leaves
+    jac_float = jacfwd(call_from_float_leaves, argnums=tuple(range(len(argnums))))(
+        *float_leaves_per_arg
+    )
+
+    # Recover output_shape from any produced Jacobian slab by stripping the trailing leaf-shape dims.
+    out_shape: Optional[tuple[int, ...]] = None
+    for arg_i, float_jacs in enumerate(jac_float):
+        for slab, leaf in zip(float_jacs, float_leaves_per_arg[arg_i]):
+            out_shape = slab.shape[: slab.ndim - leaf.ndim]
+            break
+        if out_shape is not None:
+            break
+    assert out_shape is not None, (
+        "cannot compute jacfwd Jacobian shape with no floating-point leaves"
+    )
+
+    # Splice zeros in for int leaves
+    output = []
+    for (leaves, treedef, mask), float_jacs in zip(splits, jac_float):
+        merged_jacs: list[Array] = []
+        float_iter = iter(float_jacs)
+        for leaf, m in zip(leaves, mask):
+            if m:
+                merged_jacs.append(next(float_iter))
+            else:
+                merged_jacs.append(jnp.zeros(out_shape + leaf.shape, dtype=leaf.dtype))
+        output.append(jax.tree_util.tree_unflatten(treedef, merged_jacs))
+    return tuple(output)
 
 
 def jacrev_custom(
@@ -203,24 +293,37 @@ def jacrev_custom(
     n_profile_loops: Optional[int],
     func_name: str,
     static_argnames: Sequence[str] = (),
+    mode: ADMode = "reverse",
 ) -> Callable[
     ..., tuple[dict[str, Any], Optional[dict[str, float]], Optional[dict[str, float]]]
 ]:
     r"""
-    Obtain the Jacobians of the function `func` with respect to
+    Obtain the Jacobians of the function `func` with respect to a chosen set of arguments.
+
     :param func: Function for which to obtain the Jacobians.
     :param jac_options: Dictionary with variable names as keys, with values being a tuple of the argument number in
     `func`, and an optional function which can be used to compute the given Jacobian. If this is None, the Jacobian is
-    computed by applying reverse-mode AD with no approximations.
+    computed by applying AD with no approximations.
     :param n_profile_loops: Number of profile loops. If None, no profiling is done.
     :param func_name: Name of the function to be called, used for console prints during profiling.
     :param static_argnames: Argument names to treat as static when JIT-compiling the AD Jacobian. Needed so the
     profile loop hits a cached jaxpr instead of re-tracing on every call.
+    :param mode: ``"reverse"`` (default) or ``"forward"``.
     :return: Function to obtain Jacobians, as well as respective compile and run times for
     Jacobians if `n_profile_loops` is not None.
     """
 
     static_argnames_t = tuple(static_argnames)
+    if mode == "reverse":
+
+        def _build_jac(argnames):
+            return jacrev_kwargs(func, argnames=argnames, allow_int=True)
+    elif mode == "forward":
+
+        def _build_jac(argnames):
+            return jacfwd_kwargs(func, argnames=argnames)
+    else:
+        raise ValueError('Invalid mode, use "forward" or "reverse"')
 
     def inner_func(
         **args: Any,
@@ -250,7 +353,7 @@ def jacrev_custom(
                 for ad_arg in ad_args:
                     # profile for individual Jacobians
                     jac_func = jax.jit(
-                        jacrev_kwargs(func, argnames=ad_arg, allow_int=True),
+                        _build_jac(ad_arg),
                         static_argnames=static_argnames_t,
                     )
                     val, compile_time[ad_arg], run_time[ad_arg] = conditional_profile(
@@ -261,7 +364,7 @@ def jacrev_custom(
                     )(**args)
 
             # compute case for all arguments
-            jac_func = jacrev_kwargs(func, argnames=ad_args, allow_int=True)
+            jac_func = _build_jac(ad_args)
             if n_profile_loops is not None:
                 jac_func = jax.jit(jac_func, static_argnames=static_argnames_t)
 
