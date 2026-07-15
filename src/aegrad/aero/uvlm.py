@@ -93,7 +93,7 @@ class UVLM:
         free_wake: bool = False,
         gamma_dot_relaxation: float = 0.7,
         include_unsteady_force: bool = True,
-        batch_size: int = 1,
+        batch_size: int = 64,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters.
@@ -1412,7 +1412,7 @@ class UVLM:
 
     def gamma_b_res_func(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         t_n: Array,
         varphi_n: Array,
         v_n: Array,
@@ -1532,7 +1532,7 @@ class UVLM:
 
     def wake_prop_res_func(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         t_n: Array,
         varphi_nm1: Array,
         varphi_n: Array,
@@ -1692,7 +1692,7 @@ class UVLM:
 
     def f_aero_res_func(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         t_n: Array,
         varphi_n: Array,
         v_n: Array,
@@ -1837,7 +1837,7 @@ class UVLM:
 
     def timestep_residual(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         varphi_nm1: Array,
         varphi_n: Array,
         v_n: Array,

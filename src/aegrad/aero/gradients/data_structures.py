@@ -259,7 +259,7 @@ class AeroDesignVariables(DesignVariables):
 
     def get_cs_n(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         dv_full: AeroDesignVariables,
     ) -> tuple[dict[str, Array], dict[str, Array]]:
         r"""

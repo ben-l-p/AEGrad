@@ -89,6 +89,8 @@ def _total_objective(
 
 
 class TestDynamicGustAdjoint:
+    matrix_free: bool = False
+
     @classmethod
     def setup_class(cls):
         cls.wing, cls.static_sol, cls.dynamic_sol = _run_primal(
@@ -117,6 +119,7 @@ class TestDynamicGustAdjoint:
             p_varphi_p_x=-static_adj,
             approx_grads=False,
             grads_to_compute=grads_to_compute,
+            matrix_free=cls.matrix_free,
         )
 
     def test_gust_amplitude_gradient(self):
@@ -154,3 +157,7 @@ class TestDynamicGustAdjoint:
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
             f"Gradient mismatch w.r.t. k_cs[3,3]: adjoint={adj_grad:.6f}, FD={fd_grad:.6f}"
         )
+
+
+class TestDynamicGustAdjointMatrixFree(TestDynamicGustAdjoint):
+    matrix_free: bool = True

@@ -252,7 +252,7 @@ class ConvergenceStatus:
     @classmethod
     def print_header(cls, dynamic: bool) -> None:
         if dynamic:
-            print_table_title(title="Dynamic Solve", inner_width=93)
+            print_table_title(title="Dynamic Solve", inner_width=104)
             jax_print(
                 "| Timestep |   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
                 verbose_level=VerbosityLevel.NORMAL,
@@ -267,7 +267,7 @@ class ConvergenceStatus:
 
     @staticmethod
     def print_line(dynamic: bool) -> None:
-        print_table_line(inner_width=93 if dynamic else 81)
+        print_table_line(inner_width=104 if dynamic else 81)
 
     @staticmethod
     def _static_names() -> Sequence[str]:

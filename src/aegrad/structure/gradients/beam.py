@@ -361,7 +361,7 @@ class BeamStructure(BaseBeamStructure):
 
     def v_dot_res_func(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         varphi_nm1: Array,
         varphi_n: Array,
         v_nm1: Array,
@@ -504,7 +504,7 @@ class BeamStructure(BaseBeamStructure):
 
     def timestep_residual(
         self,
-        i_ts: int,
+        i_ts: int | Array,
         q_nm1: StructureMinimalStates,
         q_n: StructureMinimalStates,
         dv_: StructuralDesignVariables,
