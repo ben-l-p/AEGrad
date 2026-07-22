@@ -33,6 +33,14 @@ class StructureFullStates:
     f_elem: Array
     f_res: Array  # residual forcing at nodes, added as it is used for trim
 
+    @property
+    def x(self) -> Array:
+        return self.hg[:, :3, 3]
+
+    @property
+    def rmat(self) -> Array:
+        return self.hg[:, :3, :3]
+
 
 @dataclass(frozen=True)
 class StructuralGradsToCompute:

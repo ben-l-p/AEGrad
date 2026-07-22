@@ -39,6 +39,7 @@ def compute_aic_grid(
     if not c_m or not c_n or not m_panels or not n_panels:
         return jnp.zeros((c_m, c_n, m_panels, n_panels))
 
+    @jax.checkpoint
     def row(args: tuple) -> Array:
         # compute the influence of all spanwise (m) and chordwise (n) filaments before combining. This prevents any
         # duplicate computations.
@@ -67,7 +68,7 @@ def compute_aic_sys(
     cs: ArrayList,
     ns: ArrayList,
     kernels: Sequence[KernelFunction],
-    batch_size: int,
+    batch_size: Optional[int],
     mirror_point: Optional[Array],
     mirror_normal: Optional[Array],
 ) -> list[list[Array]]:
@@ -140,7 +141,7 @@ def compute_aic_solve(
     zetas_w: Optional[ArrayList],
     kernels_b: Sequence[KernelFunction],
     kernels_w: Optional[Sequence[KernelFunction]],
-    batch_size: int,
+    batch_size: Optional[int],
     mirror_point: Optional[Array],
     mirror_normal: Optional[Array],
 ) -> Array:
@@ -227,6 +228,7 @@ def v_ind_vmap(
     zeta_flat = zeta.reshape(-1, 2, 3)
     gamma_flat = gamma.ravel()  # [zeta_m * zeta_n]
 
+    @jax.checkpoint
     def row(ci: Array) -> Array:
         influence = vmap(kernel, (None, 0), 0)(ci, zeta_flat)  # [zeta_m * zeta_n, 3]
         return jnp.einsum("lm,l->m", influence, gamma_flat)  # [3]

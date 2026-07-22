@@ -12,6 +12,7 @@ from jax import Array, numpy as jnp
 from aegrad.aero.data_structures import DynamicAeroCase, AeroSnapshot
 from aegrad.aero.gradients.data_structures import AeroStates, AeroDesignVariables
 from aegrad.algebra.array_utils import ArrayListShape, ArrayList
+from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.utils.data_structures import DesignVariables
 from aegrad.utils.utils import make_pytree
 from aegrad.structure.gradients.data_structures import StructuralDesignVariables
@@ -247,6 +248,15 @@ class AeroelasticMinimalStates:
     def ravel(self) -> Array:
         return jnp.concatenate([self.structure.ravel(), self.aero.ravel()])
 
+    def to_free_dofs(self, solve_dofs_arr: Array) -> Array:
+        # convert state object to vector with only free degrees of freedom
+        struct_stack = self.structure.to_mat()  # [5, n_nodes, 6]
+        struct_flat = struct_stack.reshape(struct_stack.shape[0], -1)  # [5, n_dof]
+        struct_free = struct_flat[:4][:, solve_dofs_arr].ravel()  # [4 * n_solve]
+        f_ext_aero_free = struct_flat[4, solve_dofs_arr]  # [n_solve]
+        aero_flat = self.aero.ravel()  # [n_aero_states]
+        return jnp.concatenate((struct_free, aero_flat, f_ext_aero_free))
+
     @property
     def n_states(self) -> int:
         return self.structure.n_states + self.aero.n_states
@@ -319,6 +329,81 @@ class AeroelasticDesignVariables(DesignVariables):
         return AeroelasticDesignVariables(
             structure_dv=structure_dv,
             aero_dv=self.aero,
+        )
+
+    @staticmethod
+    def zeros(
+        system: BaseCoupledAeroelastic,
+        case: DynamicAeroelastic,
+        grads_to_compute: Optional[AeroelasticGradsToCompute],
+        j_shape: tuple[int, ...],
+    ) -> AeroelasticDesignVariables:
+        return AeroelasticDesignVariables(
+            structure_dv=StructuralDesignVariables(
+                x0=jnp.zeros((*j_shape, *system.structure.x0.shape))
+                if grads_to_compute is None or grads_to_compute.structure.x0
+                else None,
+                orientation_euler=jnp.zeros((*j_shape, 3))
+                if grads_to_compute is None
+                or grads_to_compute.structure.orientation_euler
+                else None,
+                k_cs=jnp.zeros((*j_shape, *system.structure.k_cs.shape))
+                if grads_to_compute is None or grads_to_compute.structure.k_cs
+                else None,
+                m_cs=jnp.zeros((*j_shape, *system.structure.m_cs.shape))
+                if grads_to_compute is None or grads_to_compute.structure.m_cs
+                else None,
+                m_lumped=jnp.zeros((*j_shape, *system.structure.m_lumped.shape))
+                if system.structure.use_lumped_mass
+                and (grads_to_compute is None or grads_to_compute.structure.m_lumped)
+                else None,
+                f_ext_dead=jnp.zeros((*j_shape, *case.structure.f_ext_dead.shape))
+                if case.structure.f_ext_dead is not None
+                and (grads_to_compute is None or grads_to_compute.structure.f_ext_dead)
+                else None,
+                f_ext_follower=jnp.zeros(
+                    (*j_shape, *case.structure.f_ext_follower.shape)
+                )
+                if case.structure.f_ext_follower is not None
+                and (
+                    grads_to_compute is None
+                    or grads_to_compute.structure.f_ext_follower
+                )
+                else None,
+                thrust_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in case.structure.thrust.items()
+                }
+                if grads_to_compute is None or grads_to_compute.structure.thrust_t
+                else None,
+                f_shape=j_shape,
+            ),
+            aero_dv=AeroDesignVariables(
+                x0_b=ArrayList(
+                    [jnp.zeros((*j_shape, *arr.shape)) for arr in system.aero.x0_b]
+                )
+                if (grads_to_compute is None or grads_to_compute.aero.x0_aero)
+                else None,
+                flowfield={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in system.aero.flowfield.to_design_variables().items()
+                }
+                if (grads_to_compute is None or grads_to_compute.aero.flowfield)
+                else None,
+                cs_ang_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in case.aero.cs_ang.items()
+                }
+                if (grads_to_compute is None or grads_to_compute.aero.cs_ang_t)
+                else None,
+                cs_vel_t={
+                    k: jnp.zeros((*j_shape, *v.shape))
+                    for k, v in case.aero.cs_vel.items()
+                }
+                if (grads_to_compute is None or grads_to_compute.aero.cs_vel_t)
+                else None,
+                f_shape=j_shape,
+            ),
         )
 
     @classmethod

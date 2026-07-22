@@ -69,7 +69,7 @@ class DynamicAeroCase:
         static_horseshoe: bool,
         free_wake: bool,
         gamma_dot_relaxation: float,
-        batch_size: int,
+        batch_size: Optional[int],
     ) -> None:
         r"""
         :param zeta_b: Bound grid coordinates, [n_surf][n_tstep, zeta_m, zeta_n, 3].
@@ -128,7 +128,7 @@ class DynamicAeroCase:
         self.static_horseshoe: bool = static_horseshoe
         self.free_wake: bool = free_wake
         self.gamma_dot_relaxation: float = gamma_dot_relaxation
-        self.batch_size: int = batch_size
+        self.batch_size: Optional[int] = batch_size
 
     # we use properties here to allow for subclasses where there are only a single time step, and so the output data
     # is preferred to have different dimensionality.
@@ -628,7 +628,7 @@ class AeroSnapshot(DynamicAeroCase):
         static_horseshoe: bool,
         free_wake: bool,
         gamma_dot_relaxation: float,
-        batch_size: int,
+        batch_size: Optional[int],
     ) -> None:
         r"""
         :param zeta_b: Bound grid coordinates, [n_surf][zeta_m, zeta_n, 3].

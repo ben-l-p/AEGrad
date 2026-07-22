@@ -35,7 +35,7 @@ class AeroGradsToCompute:
 
 
 type ApproxJacobianEntry = Optional[
-    Literal["zero", "constant"]
+    Literal["zero", "constant", "identity"]
     | tuple[Literal["dense_linear", "lazy_linear"], str | Sequence[str]]
 ]
 

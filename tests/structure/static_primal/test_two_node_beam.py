@@ -220,7 +220,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, 1:], 0.0), (
@@ -265,7 +265,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 4, 5))], 0.0), (
@@ -312,7 +312,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 3, 5))], 0.0), (
@@ -327,7 +327,7 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal bending moment at loaded end incorrect, expected {-load}, got {f_int_rot[1, 4]}"
         )
 
-        coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
+        coord_tip = cls.struct.o0[0, ...].T @ result.x[1, :]
 
         expected_coord_tip = const_curvature_beam(
             expected_curvature, cls.length, direction="y"
@@ -373,7 +373,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 2, 3, 4))], 0.0), (
@@ -388,7 +388,7 @@ class TestTwoNodeXBeamStrainsForces:
             f"Internal z-moment at loaded end incorrect, expected {-load}, got {f_int_rot[1, 5]}"
         )
 
-        coord_tip = cls.struct.o0[0, ...].T @ result.hg[1, :3, 3]
+        coord_tip = cls.struct.o0[0, ...].T @ result.x[1, :3]
 
         expected_coord_tip = const_curvature_beam(
             expected_curvature, cls.length, direction="z"
@@ -434,7 +434,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 2, 3, 4))], 0.0), (
@@ -489,7 +489,7 @@ class TestTwoNodeXBeamStrainsForces:
         )
 
         f_int_rot = (
-                chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
+            chi(chi(cls.struct.o0[0, ...].T)) @ result.f_int.flatten()
         ).reshape(-1, 6)
 
         assert jnp.allclose(f_int_rot[:, jnp.array((0, 1, 3, 5))], 0.0), (

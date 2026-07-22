@@ -227,6 +227,40 @@ def _jac_kwargs(
     return inner_func
 
 
+def _jacrev_via_map_kwargs(
+    func: Callable[..., Array],
+    argnames: str | Sequence[str],
+    map_batch_size: Optional[int],
+) -> Callable[..., dict[str, Any]]:
+    r"""
+    Reverse-mode Jacobian assembly that uses map to reduce memory usage compared to jax.jacrev.
+    """
+    argnames = (argnames,) if isinstance(argnames, str) else tuple(argnames)
+
+    def inner_func(**kwargs: Any) -> dict[str, Array]:
+        full_argnames = list(kwargs.keys())
+        argvals = list(kwargs.values())
+        argnums = tuple(full_argnames.index(name) for name in argnames)
+        dyn_vals = tuple(argvals[i] for i in argnums)
+
+        def positional_adapter(*dyn_args_: Any) -> Array:
+            merged = list(argvals)
+            for i, val in zip(argnums, dyn_args_):
+                merged[i] = val
+            return func(**dict(zip(full_argnames, merged)))
+
+        y, pullback = jax.vjp(positional_adapter, *dyn_vals)
+        assert isinstance(y, jax.Array), (
+            "_jacrev_via_map_kwargs currently only supports Array-valued outputs"
+        )
+        m = int(y.size)
+        basis = jnp.eye(m, dtype=y.dtype).reshape((m,) + y.shape)
+        cotangents = jax.lax.map(pullback, basis, batch_size=map_batch_size)
+        return dict(zip(argnames, cotangents))
+
+    return inner_func
+
+
 def _jacfwd_allow_int(
     func: Callable[..., Array], argnums: Sequence[int], args: Sequence[Any]
 ) -> tuple[Any, ...]:
@@ -294,6 +328,7 @@ def jacrev_custom(
     func_name: str,
     static_argnames: Sequence[str] = (),
     mode: ADMode = "reverse",
+    map_batch_size: Optional[int] = None,
 ) -> Callable[
     ..., tuple[dict[str, Any], Optional[dict[str, float]], Optional[dict[str, float]]]
 ]:
@@ -309,15 +344,27 @@ def jacrev_custom(
     :param static_argnames: Argument names to treat as static when JIT-compiling the AD Jacobian. Needed so the
     profile loop hits a cached jaxpr instead of re-tracing on every call.
     :param mode: ``"reverse"`` (default) or ``"forward"``.
+    :param map_batch_size: When set, batch passes to obtain Jacobian rather than vmapping, reducing memory at the
+    expense of computation time.
     :return: Function to obtain Jacobians, as well as respective compile and run times for
     Jacobians if `n_profile_loops` is not None.
     """
 
     static_argnames_t = tuple(static_argnames)
-    if mode == "reverse":
+    if map_batch_size is not None and mode != "reverse":
+        raise ValueError("map_batch_size is only supported with mode='reverse'")
 
-        def _build_jac(argnames):
-            return jacrev_kwargs(func, argnames=argnames, allow_int=True)
+    if mode == "reverse":
+        if map_batch_size is not None:
+
+            def _build_jac(argnames):
+                return _jacrev_via_map_kwargs(
+                    func, argnames=argnames, map_batch_size=map_batch_size
+                )
+        else:
+
+            def _build_jac(argnames):
+                return jacrev_kwargs(func, argnames=argnames, allow_int=True)
     elif mode == "forward":
 
         def _build_jac(argnames):
@@ -385,10 +432,33 @@ def jacrev_custom(
     return inner_func
 
 
+def _split_dyn_static(
+    args: dict[str, Any], keep_dynamic: Sequence[str]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    r"""
+    Split args into static and dynamic so that we can apply closure over the static arguments.
+    """
+    dynamic: dict[str, Any] = {}
+    static: dict[str, Any] = {}
+    keep = set(keep_dynamic)
+    for name, val in args.items():
+        if name in keep:
+            dynamic[name] = val
+            continue
+        leaves = jax.tree.leaves(val)
+        if any(hasattr(leaf, "shape") and hasattr(leaf, "dtype") for leaf in leaves):
+            dynamic[name] = val
+        else:
+            static[name] = val
+    return dynamic, static
+
+
 def jacobian_approximation(
     func: Callable[..., Any],
     args: Any,
-    approx_type: Optional[Literal["zero", "constant", "dense_linear", "lazy_linear"]],
+    approx_type: Optional[
+        Literal["zero", "constant", "identity", "dense_linear", "lazy_linear"]
+    ],
     jacobian_argname: str,
     hessian_argnames: str | Sequence[str],
 ) -> Optional[Callable[..., Any]]:
@@ -396,6 +466,7 @@ def jacobian_approximation(
     Compute approximations of Jacobians. The following options for approximation are available:
     `None` - No approximation is computed.
     `zero` - Assume that the Jacobian is zero.
+    `identity` - Assume that the Jacobian is the identity matrix. Valid only for 2D square entries.
     `constant` - Assume that the Jacobian is constant across all time steps.
      Alongside these, options are also available to compute the Jacobians by a linear approximation by using a
      Hessian-vector product, where the Hessian is constant. This introduces additional options:
@@ -418,6 +489,12 @@ def jacobian_approximation(
         else tuple(hessian_argnames)
     )
 
+    # closure over non-array arguments
+    _dyn_args, _static_args = _split_dyn_static(
+        args, keep_dynamic=(jacobian_argname, *hessian_argnames_t)
+    )
+    _func = func if not _static_args else (lambda **_dk: func(**_dk, **_static_args))
+
     match approx_type:
         case None:
             # no approximation, and so we will compute the exact Jacobian using AD later
@@ -426,15 +503,35 @@ def jacobian_approximation(
             # assume that the Jacobian is zero, avoiding any Jacobian computation. In practice, this is only useful
             # when the `constant` path would be slow to linearise.
             jac_shape = jax.eval_shape(
-                jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True),
-                **args,
+                jacrev_kwargs(_func, argnames=jacobian_argname, allow_int=True),
+                **_dyn_args,
             )[jacobian_argname]
-            zero_jac = jnp.zeros(jac_shape.shape)
+            zero_jac = jax.tree.map(
+                lambda s: jnp.zeros(s.shape, dtype=s.dtype), jac_shape
+            )
             return lambda *_, **__: zero_jac
+        case "identity":
+            # assume that the Jacobian is the identity matrix
+            jac_shape = jax.eval_shape(
+                jacrev_kwargs(_func, argnames=jacobian_argname, allow_int=True),
+                **_dyn_args,
+            )[jacobian_argname]
+            if not isinstance(jac_shape, jax.ShapeDtypeStruct):
+                raise TypeError(
+                    "identity approximation requires an Array-valued Jacobian, got a pytree"
+                )
+            shape = jac_shape.shape
+            if len(shape) != 2 or shape[0] != shape[1]:
+                raise ValueError(
+                    f"identity approximation expected a 2-D square Jacobian for "
+                    f"{jacobian_argname}, got shape {shape}"
+                )
+            identity_jac = jnp.eye(shape[0], dtype=jac_shape.dtype)
+            return lambda *_, **__: identity_jac
         case "constant":
             # assume that the Jacobian stays constant for all time
-            jac = jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
-                **args
+            jac = jacrev_kwargs(_func, argnames=jacobian_argname, allow_int=True)(
+                **_dyn_args
             )[jacobian_argname]
             return lambda *_, **__: jac
         case "lazy_linear":
@@ -442,21 +539,21 @@ def jacobian_approximation(
             # uses the JAX linearise function which means that the dense Hessian is never computed
             # reduced memory cost at the expense of increased computation cost
             def _jac_at(*y_vals: Any) -> Array:
-                new_args = dict(args)
+                new_args = dict(_dyn_args)
                 for name, val in zip(hessian_argnames_t, y_vals):
                     new_args[name] = val
-                return jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
+                return jacrev_kwargs(_func, argnames=jacobian_argname, allow_int=True)(
                     **new_args
                 )[jacobian_argname]
 
-            y0_vals = tuple(args[name] for name in hessian_argnames_t)
+            y0_vals = tuple(_dyn_args[name] for name in hessian_argnames_t)
             j0, jac_jvp = jax.linearize(_jac_at, *y0_vals)
 
             def lazy_linear_approx(
                 new_args: dict[str, Any], *_: Any, **__: Any
             ) -> Array:
                 dy_vals = tuple(
-                    new_args[name] - args[name] for name in hessian_argnames_t
+                    new_args[name] - _dyn_args[name] for name in hessian_argnames_t
                 )
                 return j0 + jac_jvp(*dy_vals)
 
@@ -464,13 +561,13 @@ def jacobian_approximation(
         case "dense_linear":
             # as `lazy_linear`, except that the dense Hessian is explicitly computed.
             def _jac_at_kwargs(**kw: Any) -> Array:
-                new_args = dict(args)
+                new_args = dict(_dyn_args)
                 new_args.update(kw)
-                return jacrev_kwargs(func, argnames=jacobian_argname, allow_int=True)(
+                return jacrev_kwargs(_func, argnames=jacobian_argname, allow_int=True)(
                     **new_args
                 )[jacobian_argname]
 
-            y0_kwargs = {name: args[name] for name in hessian_argnames_t}
+            y0_kwargs = {name: _dyn_args[name] for name in hessian_argnames_t}
             j0 = _jac_at_kwargs(**y0_kwargs)
             hessians = jacrev_kwargs(
                 _jac_at_kwargs, argnames=hessian_argnames_t, allow_int=True
@@ -481,7 +578,7 @@ def jacobian_approximation(
             ) -> Array:
                 result = j0
                 for name in hessian_argnames_t:
-                    dy = new_args[name] - args[name]
+                    dy = new_args[name] - _dyn_args[name]
                     result += jnp.tensordot(hessians[name], dy, axes=dy.ndim)
                 return result
 
@@ -504,7 +601,7 @@ def construct_approximation(
         for arg_name, entry in asdict(approx_class).items():
             if entry is None:
                 inner[arg_name] = None
-            elif entry == "zero" or entry == "constant":
+            elif entry in ("zero", "constant", "identity"):
                 inner[arg_name] = jacobian_approximation(
                     func=func,
                     args=args,

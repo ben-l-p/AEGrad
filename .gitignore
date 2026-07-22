@@ -25,5 +25,6 @@ uv.lock
 
 # testing files
 tests/test_outputs/
+tests/.jax_cache/
 tmp/
-plan.md
+*.prof

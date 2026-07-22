@@ -17,7 +17,11 @@ from models.cantilever_wing import generate_cantilever_wing
 
 class TestDynamicEquilibriumAdjoint:
     @staticmethod
-    def _run(matrix_free: bool, plot: bool = False):
+    def _run(
+        matrix_free: bool,
+        precondition: bool,
+        plot=False,
+    ):
         m = 2
         n = 4
         m_star = 3
@@ -87,7 +91,6 @@ class TestDynamicEquilibriumAdjoint:
         static_grad, static_adj = wing.static_adjoint(
             case=static_sol,
             objective=static_objective,
-            forward_adjoint=True,
             grads_to_compute=grads_to_compute,
         )
 
@@ -98,6 +101,7 @@ class TestDynamicEquilibriumAdjoint:
             p_varphi_p_x=-static_adj,
             approx_grads=False,
             grads_to_compute=grads_to_compute,
+            gmres_precond=precondition,
         )
 
         assert (
@@ -125,8 +129,11 @@ class TestDynamicEquilibriumAdjoint:
             "Mismatch in stiffness gradient"
         )
 
-    def test_dynamic_equilibrium_adjoint(self):
-        self._run(matrix_free=False)
+    def test_dynamic_equilibrium_adjoint_dense(self):
+        self._run(matrix_free=False, precondition=False)
 
     def test_dynamic_equilibrium_adjoint_matrix_free(self):
-        self._run(matrix_free=True)
+        self._run(matrix_free=True, precondition=False)
+
+    def test_dynamic_equilibrium_adjoint_matrix_free_preconditioned(self):
+        self._run(matrix_free=True, precondition=True)

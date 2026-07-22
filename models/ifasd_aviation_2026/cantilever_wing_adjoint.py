@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
     # compute static adjoint
     static_grad, static_adj = wing.static_adjoint(
-        case=static_sol, objective=objective, forward_adjoint=True
+        case=static_sol, objective=objective, ad_mode="forward"
     )
 
     # compute dynamic adjoint with the static adjoint as input to account for initial degree of freedom gradients

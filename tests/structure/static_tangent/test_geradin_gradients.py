@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Literal
 
 from jax import Array, numpy as jnp
 from aegrad.structure import StructureFullStates
@@ -31,17 +32,17 @@ class TestGeradinBeamGradients:
 
     @staticmethod
     def _objective(states: StructureFullStates, *_) -> Array:
-        return states.hg[-1, 2, 3]  # tip vertical displacement
+        return states.x[-1, 2]  # tip vertical displacement
 
     @classmethod
-    def test_stiffness_gradient(cls):
+    def _stiffness_gradient(cls, ad_mode: Literal["forward", "reverse"]):
         r"""
         Check the adjoint gradient of tip displacement w.r.t. bending stiffness (eay)
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
         grads_adj, adj = cls.struct.static_adjoint(
-            structure=result, objective=cls._objective
+            structure=result, objective=cls._objective, ad_mode=ad_mode
         )
 
         eps = 10.0  # large epsilon as stiffness values are large
@@ -63,14 +64,22 @@ class TestGeradinBeamGradients:
         )
 
     @classmethod
-    def test_force_gradient(cls):
+    def test_stiffness_gradient_forward(cls):
+        cls._stiffness_gradient(ad_mode="forward")
+
+    @classmethod
+    def test_stiffness_gradient_reverse(cls):
+        cls._stiffness_gradient(ad_mode="reverse")
+
+    @classmethod
+    def _force_gradient(cls, ad_mode: Literal["forward", "reverse"] = "forward"):
         r"""
         Check the adjoint gradient of tip displacement w.r.t. the applied tip load
         against a finite difference estimate.
         """
         result = cls._solve(cls.struct, cls.f_ext)
         grads_adj, adj = cls.struct.static_adjoint(
-            structure=result, objective=cls._objective
+            structure=result, objective=cls._objective, ad_mode=ad_mode
         )
 
         eps = 1.0
@@ -88,3 +97,11 @@ class TestGeradinBeamGradients:
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)
         assert err < 1e-5, f"Force gradient relative error {err:.2e} exceeds tolerance"
+
+    @classmethod
+    def test_force_gradient_reverse(cls):
+        cls._force_gradient(ad_mode="reverse")
+
+    @classmethod
+    def test_force_gradient_forward(cls):
+        cls._force_gradient(ad_mode="forward")

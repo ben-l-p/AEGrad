@@ -85,7 +85,7 @@ class TestLinXForcePoint:
         v_expected = jnp.arange(n_tstep) * dt * v_dot_expected
         x_expected = 0.5 * v_dot_expected * (jnp.arange(n_tstep) * dt) ** 2
 
-        disp_measured = output.hg[:, 0, :3, 3]
+        disp_measured = output.x[:, 0, :]
         theta_measured = vmap(log_se3)(output.hg[:, 0, :, :])[:, 3:]
         x_measured = jnp.concatenate((disp_measured, theta_measured), axis=-1)[
             :, cls.f_direction_index

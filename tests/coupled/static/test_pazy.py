@@ -64,7 +64,7 @@ class TestPazy:
         wing.structure.m_lumped = m_lumped[None, ...]
 
         static_beam = wing.structure.static_solve(prescribed_dofs=jnp.arange(6))
-        z_tip = static_beam.hg[-1, 2, 3]
+        z_tip = static_beam.x[-1, 2]
         z_tip_sharpy = -0.283929
         assert jnp.isclose(z_tip, z_tip_sharpy, rtol=2e-5)
 
@@ -102,7 +102,7 @@ class TestPazy:
             prescribed_dofs=jnp.arange(6), load_steps=10
         )
 
-        tip_coord = static_beam.hg[-1, :3, 3]
+        tip_coord = static_beam.x[-1, :]
         tip_coord_sharpy = jnp.array([0.0358353, 0.480385, -0.241945])
 
         assert jnp.allclose(tip_coord, tip_coord_sharpy, rtol=2e-4)

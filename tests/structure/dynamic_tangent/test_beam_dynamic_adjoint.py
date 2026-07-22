@@ -73,7 +73,7 @@ class TestBeamTranslationAdjoint:
         )
 
         # extract x coordinate
-        x_t_out = solution.hg[:, :, 0, 3].sum(axis=1) / n_nodes
+        x_t_out = solution.x[:, :, 0].sum(axis=1) / n_nodes
 
         def objective(
             ss: StructureFullStates,

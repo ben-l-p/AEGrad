@@ -32,6 +32,7 @@ from aegrad.structure.gradients.data_structures import (
 )
 from aegrad.algebra.se3 import exp_se3, log_se3
 from aegrad.algebra.base import (
+    ADMode,
     jacrev_custom,
     construct_approximation,
 )
@@ -189,7 +190,7 @@ class BeamStructure(BaseBeamStructure):
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
-        forward_adjoint: bool = False,
+        ad_mode: ADMode = "reverse",
     ) -> tuple[StructuralDesignVariables, Array]:
         r"""
         Computes the static grads of the structure, which is used to compute gradients of the loss with respect to
@@ -197,7 +198,7 @@ class BeamStructure(BaseBeamStructure):
         :param structure: StaticStructure containing the current state of the structure.
         :param objective: Objective function that takes the structure and design variables and returns an array
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
-        :param forward_adjoint: Flag on which to use of the forward or reverse adjoint.
+        :param ad_mode: Flag on which to use of the forward or reverse adjoint.
         :return: Gradient of objective function output with respect to design variables, and adjoint states.
         """
 
@@ -272,16 +273,16 @@ class BeamStructure(BaseBeamStructure):
             jnp.ix_(solve_dofs, solve_dofs)
         ]  # [n_u, n_u]
 
-        if forward_adjoint:
+        if ad_mode == "forward":
             # forward mode
-            adj = jnp.linalg.solve(p_res_p_varphi, p_res_p_x).reshape(
-                self.n_nodes, 6, n_x
-            )  # [n_u, n_x]
-            rhs = jnp.einsum("ij,ijk->k", p_f_p_n, adj)  # [n_f, n_x]
-        else:
+            adj = jnp.linalg.solve(p_res_p_varphi, p_res_p_x)  # [n_u, n_x]
+            rhs = p_f_p_n @ adj  # [n_f, n_x]
+        elif ad_mode == "reverse":
             # reverse mode
             adj = jnp.linalg.solve(p_res_p_varphi.T, p_f_p_n.T).T  # [n_f, n_u]
             rhs = adj @ p_res_p_x  # [n_f, n_x]
+        else:
+            raise ValueError("AD mode must be either 'forward' or 'reverse'")
 
         return StructuralDesignVariables(
             **dv.from_adjoint(f_shape, p_f_p_x - rhs), f_shape=f_shape
@@ -579,6 +580,7 @@ class BeamStructure(BaseBeamStructure):
         approx_grads: bool,
         n_profile_loops: Optional[int],
         jac_options: dict[str, dict[str, Optional[Callable[..., Any]]]],
+        mode: ADMode = "reverse",
     ) -> tuple[
         Array,
         Array,
@@ -602,6 +604,7 @@ class BeamStructure(BaseBeamStructure):
         :param n_profile_loops: Number of profile loops to run for timing function. If None, no profiling is done.
         :param jac_options: Input which passes functions which can be used to approximate the Jacobians. If entries are
         None, AD is used.
+        :param mode: AD mode used for Jacobian construction.
         :return: Jacobians with respect to previous state and current state, gradients with respect to design variables,
         previous, and current aerodynamic forces respectively, and profiling times for compilation and run time.
         """
@@ -620,6 +623,7 @@ class BeamStructure(BaseBeamStructure):
             n_profile_loops=n_profile_loops,
             func_name="varphi",
             static_argnames=("solve_dofs",),
+            mode=mode,
         )(
             varphi_nm1=q_nm1.varphi.ravel(),
             varphi_n=q_n.varphi.ravel(),
@@ -636,6 +640,7 @@ class BeamStructure(BaseBeamStructure):
             n_profile_loops=n_profile_loops,
             func_name="v",
             static_argnames=("solve_dofs",),
+            mode=mode,
         )(
             v_nm1=q_nm1.v.ravel(),
             v_n=q_n.v.ravel(),
@@ -651,6 +656,7 @@ class BeamStructure(BaseBeamStructure):
             n_profile_loops=n_profile_loops,
             func_name="v_dot",
             static_argnames=("solve_dofs", "approx_grads"),
+            mode=mode,
         )(
             i_ts=i_ts,
             varphi_nm1=q_nm1.varphi.ravel(),
@@ -678,6 +684,7 @@ class BeamStructure(BaseBeamStructure):
             n_profile_loops=n_profile_loops,
             func_name="a",
             static_argnames=("solve_dofs",),
+            mode=mode,
         )(
             v_dot_nm1=q_nm1.v_dot.ravel(),
             v_dot_n=q_n.v_dot.ravel(),

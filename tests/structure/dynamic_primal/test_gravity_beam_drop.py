@@ -60,11 +60,11 @@ class TestXGravityXBeamDrop:
 
         assert jnp.allclose(
             expected_x0,
-            output.hg[1:, 0, cls.g_direction_index, 3],
+            output.x[1:, 0, cls.g_direction_index],
         ), "Node 0 positions do not match expected values"
         assert jnp.allclose(
             expected_x1,
-            output.hg[1:, 1, cls.g_direction_index, 3],
+            output.x[1:, 1, cls.g_direction_index],
         ), "Node 1 positions do not match expected values"
         assert jnp.allclose(expected_v, output.v[1:, 0, cls.g_direction_index]), (
             "Node 0 velocities do not match expected values"

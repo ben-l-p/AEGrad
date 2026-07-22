@@ -15,10 +15,10 @@ class TestStiffness:
         k_uu = jnp.linspace(0.1, 0.9, 9).reshape(3, 3)
         k_ww = jnp.linspace(1.1, 1.9, 9).reshape(3, 3)
         k_cs = jnp.block([[k_uu, jnp.zeros((3, 3))], [jnp.zeros((3, 3)), k_ww]])
-        l = 3.45
+        length = 3.45
 
         x = jnp.zeros((2, 3))
-        x = x.at[1, 0].set(l)
+        x = x.at[1, 0].set(length)
 
         conn = jnp.array(((0, 1),))
         y_vect = jnp.array(((0.0, 1.0, 0.0),))
@@ -26,7 +26,7 @@ class TestStiffness:
         struct = BaseBeamStructure(2, conn, y_vect)
         struct.set_design_variables(x, k_cs[None, ...], None)
 
-        du0 = jnp.zeros(6).at[0].set(l)
+        du0 = jnp.zeros(6).at[0].set(length)
 
         k_t = struct.make_k_t(
             du0[None, :], p(du0, jnp.eye(6))[None, :], jnp.zeros((1, 6))
@@ -52,7 +52,7 @@ class TestStiffness:
                     ],
                 ]
             )
-            / l
+            / length
         )
 
         assert jnp.allclose(k_t, k_t_exp), (

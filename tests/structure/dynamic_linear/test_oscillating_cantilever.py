@@ -80,8 +80,8 @@ class TestOscillatingCantileverDeadLocal:
             u=u_beam,
         )
 
-        nl_tip_z = nl_sol.hg[:, -1, 2, 3]
-        lin_tip_z = lin_sol.hg[:, -1, 2, 3]
+        nl_tip_z = nl_sol.x[:, -1, 2]
+        lin_tip_z = lin_sol.x[:, -1, 2]
 
         # chosen tolerances that are considerably smaller than the maximum displacements and rotations
         assert jnp.allclose(nl_tip_z, lin_tip_z, atol=6e-4), (
@@ -137,8 +137,8 @@ class TestOscillatingCantileverDeadLocal:
             u=u_beam,
         )
 
-        nl_tip_z = nl_sol.hg[:, -1, 2, 3]
-        lin_tip_z = lin_sol.hg[:, -1, 2, 3]
+        nl_tip_z = nl_sol.x[:, -1, 2]
+        lin_tip_z = lin_sol.x[:, -1, 2]
 
         # chosen tolerances that are considerably smaller than the maximum displacements and rotations
         assert jnp.allclose(nl_tip_z, lin_tip_z, atol=7e-5), (

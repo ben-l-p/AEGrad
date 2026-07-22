@@ -55,7 +55,7 @@ class TestConstLinXVelocityLumpedMass:
 
         x_expected = v * jnp.arange(n_tstep) * dt
 
-        disp_measured = output.hg[:, 0, :3, 3]
+        disp_measured = output.x[:, 0, :]
         theta_measured = vmap(log_se3)(output.hg[:, 0, :, :])[:, 3:]
         x_measured = jnp.concatenate((disp_measured, theta_measured), axis=-1)[
             :, cls.v_direction_index

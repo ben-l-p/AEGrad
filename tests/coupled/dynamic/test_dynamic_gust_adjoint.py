@@ -90,6 +90,7 @@ def _total_objective(
 
 class TestDynamicGustAdjoint:
     matrix_free: bool = False
+    precondition: bool = False
 
     @classmethod
     def setup_class(cls):
@@ -109,7 +110,6 @@ class TestDynamicGustAdjoint:
         _, static_adj = cls.wing.static_adjoint(
             case=cls.static_sol,
             objective=_dynamic_objective,
-            forward_adjoint=True,
             grads_to_compute=grads_to_compute,
         )
 

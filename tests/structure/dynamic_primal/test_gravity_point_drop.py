@@ -56,7 +56,7 @@ class TestXGravityPointDrop:
         expected_v = jnp.arange(1, n_tstep) * dt * cls.g
         expected_x = 0.5 * cls.g * (jnp.arange(1, n_tstep) * dt) ** 2
 
-        output_x = output.hg[1:, 0, cls.g_direction_index, 3]
+        output_x = output.x[1:, 0, cls.g_direction_index]
         output_v = output.v[1:, 0, cls.g_direction_index]
         output_f = cast(Array, output.f_grav)[1:, 0, :]
 

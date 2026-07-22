@@ -391,7 +391,7 @@ class TestMultiXElementStrainsForces:
             f"Internal moment at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 4]}"
         )
 
-        coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
+        coord_tip = cls.struct.o0[-1, :, :].T @ result.x[-1, :]
 
         expected_coord_tip = const_curvature_beam(
             expected_strain, cls.length, direction="y"
@@ -459,7 +459,7 @@ class TestMultiXElementStrainsForces:
             f"Internal moment at loaded end incorrect, expected {-load}, got {f_int_rot[-1, 5]}"
         )
 
-        coord_tip = cls.struct.o0[-1, :, :].T @ result.hg[-1, :3, 3]
+        coord_tip = cls.struct.o0[-1, :, :].T @ result.x[-1, :]
 
         expected_coord_tip = const_curvature_beam(
             expected_strain, cls.length, direction="z"

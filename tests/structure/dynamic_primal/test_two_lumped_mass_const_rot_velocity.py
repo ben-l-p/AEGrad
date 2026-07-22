@@ -133,10 +133,10 @@ class TestTwoXLumpedMassConstXRotVelocity:
         assert jnp.allclose(
             output.f_iner_gyr[:, 1, cls.beam_direction_index], expected_f
         ), "Inertial force does not match expected force at node 1"
-        assert jnp.allclose(output.hg[:, 0, :3, 3], x0_expected), (
+        assert jnp.allclose(output.x[:, 0, :], x0_expected), (
             "Node 0 position does not match expected position"
         )
-        assert jnp.allclose(output.hg[:, 1, :3, 3], x2_expected), (
+        assert jnp.allclose(output.x[:, 1, :], x2_expected), (
             "Node 1 position does not match expected position"
         )
 

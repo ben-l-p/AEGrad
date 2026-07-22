@@ -47,3 +47,11 @@ class BeamLinearResult:
         self.n_tstep: int = len(t)
         self.t: Array = t
         self.reference: StaticStructure = reference
+
+    @property
+    def x(self) -> Array:
+        return self.hg[..., :3, 3]
+
+    @property
+    def rmat(self) -> Array:
+        return self.hg[..., :3, :3]

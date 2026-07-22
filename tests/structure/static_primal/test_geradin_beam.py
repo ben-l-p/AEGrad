@@ -20,8 +20,8 @@ class TestGeradinBeam:
             load_steps=3,
         )
 
-        z_tip = result.hg[-1, 2, 3]
-        rot = -log_so3(result.hg[-1, :3, :3])[1]
+        z_tip = result.x[-1, 2]
+        rot = -log_so3(result.rmat[-1, ...])[1]
 
         return float(z_tip), float(rot)
 

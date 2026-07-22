@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 from jax.lax import fori_loop
 
-from aegrad.algebra.base import construct_approximation, jacrev_custom
+from aegrad.algebra.base import ADMode, construct_approximation, jacrev_custom
 from aegrad.structure.utils import transform_nodal_vect
 from aegrad.utils.utils import make_pytree
 from aegrad.algebra.test_routines import check_if_all_se3_g, check_if_all_se3_a
@@ -93,7 +93,7 @@ class UVLM:
         free_wake: bool = False,
         gamma_dot_relaxation: float = 0.7,
         include_unsteady_force: bool = True,
-        batch_size: int = 64,
+        batch_size: Optional[int] = 64,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters.
@@ -114,7 +114,7 @@ class UVLM:
         strengths.
         :param include_unsteady_force: If True, include forces due to apparent mass for simulation.
         :param batch_size: Batch size for vectorising AIC computations. Larger values may result in faster computations,
-        at the expense of increased memory usage.
+        at the expense of increased memory usage. Setting to None is equivelant to a vmap.
         """
 
         # case for single inputs
@@ -197,7 +197,7 @@ class UVLM:
         self.free_wake: bool = free_wake
         self.gamma_dot_relaxation: float = gamma_dot_relaxation
         self.include_unsteady_force: bool = include_unsteady_force
-        self.batch_size: int = batch_size
+        self.batch_size: Optional[int] = batch_size
 
         # mirror definitions
         if (mirror_point is None and mirror_normal is not None) or (
@@ -2092,7 +2092,10 @@ class UVLM:
         approx_grads: bool,
         solve_dofs: tuple[int, ...],
         n_profile_loops: Optional[int],
-        jac_options: dict,
+        jac_options: dict[str, dict[str, Any]],
+        compute_wake_gradients: bool = True,
+        mode: ADMode = "reverse",
+        map_batch_size: Optional[int] = None,
     ) -> tuple[
         Array,
         Array,
@@ -2120,6 +2123,9 @@ class UVLM:
         :param n_profile_loops: Optional number of loops for profiling function.
         :param jac_options: Dictionary of optional functions which can be used to substitute Jacobian evaluations from
         AD.
+        :param compute_wake_gradients: If False, skip Jacobians involving the wake for ``zeta_w`` and ``gamma_w``.
+        :param mode: AD mode for obtaining gradients, either ``forward`` or ``reverse``.
+        :param map_batch_size: Batch size for vectorising Jacobian construction.
         :return: Gradients of aerodynamic residual with respect to previous states, current states, and design
         variables. Additionally, includes Jacobians of the aerodynamic residual with respect to the structural
         displacement and velocity, and profiling times for compilation and run time.
@@ -2140,63 +2146,99 @@ class UVLM:
         zeta_w_nm1 = q_nm1.zeta_w.ravel()
         zeta_w_n = q_n.zeta_w.ravel()
 
+        if not compute_wake_gradients:
+            # optionally omit wake computations
+            jac_options: dict[str, dict[str, Callable[..., Array] | None]] = {
+                k: dict(v) for k, v in jac_options.items()
+            }
+
+            # remove entries that involve the wake
+            for res_name, wake_keys in (
+                ("gamma_b", ("zeta_w_n", "gamma_w_n")),
+                ("gamma_w", ("zeta_w_n", "zeta_w_nm1")),
+                ("f_aero", ("zeta_w_n", "gamma_w_n")),
+            ):
+                for key in wake_keys:
+                    jac_options[res_name].pop(key, None)
+
+        # stop AD tape where required
+        gamma_b_gamma_w_n_input = (
+            jax.lax.stop_gradient(gamma_w_n)
+            if not compute_wake_gradients
+            else gamma_w_n
+        )
+        gamma_b_zeta_w_n_input = (
+            jax.lax.stop_gradient(zeta_w_n) if not compute_wake_gradients else zeta_w_n
+        )
+
         d_gamma_b, compile_time["gamma_b"], run_time["gamma_b"] = jacrev_custom(
             func=self.gamma_b_res_func,
             jac_options=jac_options["gamma_b"],
             n_profile_loops=n_profile_loops,
             func_name="gamma_b",
+            mode=mode,
+            map_batch_size=map_batch_size,
         )(
             i_ts=i_ts,
             t_n=t_n,
             varphi_n=varphi_n,
             v_n=v_n,
             gamma_b_n=gamma_b_n,
-            gamma_w_n=gamma_w_n,
-            zeta_w_n=zeta_w_n,
+            gamma_w_n=gamma_b_gamma_w_n_input,
+            zeta_w_n=gamma_b_zeta_w_n_input,
             dv=dv,
             dv_full=dv_full,
             struct_obj=struct_obj,
         )
 
-        d_gamma_w, compile_time["gamma_w"], run_time["gamma_w"] = jacrev_custom(
-            func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
-            jac_options=jac_options["gamma_w"],
-            n_profile_loops=n_profile_loops,
-            func_name="gamma_w",
-        )(
-            i_ts=i_ts,
-            t_n=t_n,
-            varphi_nm1=varphi_nm1,
-            varphi_n=varphi_n,
-            gamma_b_nm1=gamma_b_nm1,
-            gamma_w_nm1=gamma_w_nm1,
-            gamma_w_n=gamma_w_n,
-            zeta_w_nm1=zeta_w_nm1,
-            zeta_w_n=zeta_w_n,
-            dv=dv,
-            dv_full=dv_full,
-            struct_obj=struct_obj,
-        )
+        if compute_wake_gradients:
+            d_gamma_w, compile_time["gamma_w"], run_time["gamma_w"] = jacrev_custom(
+                func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[1],
+                jac_options=jac_options["gamma_w"],
+                n_profile_loops=n_profile_loops,
+                func_name="gamma_w",
+                mode=mode,
+                map_batch_size=map_batch_size,
+            )(
+                i_ts=i_ts,
+                t_n=t_n,
+                varphi_nm1=varphi_nm1,
+                varphi_n=varphi_n,
+                gamma_b_nm1=gamma_b_nm1,
+                gamma_w_nm1=gamma_w_nm1,
+                gamma_w_n=gamma_w_n,
+                zeta_w_nm1=zeta_w_nm1,
+                zeta_w_n=zeta_w_n,
+                dv=dv,
+                dv_full=dv_full,
+                struct_obj=struct_obj,
+            )
 
-        d_zeta_w, compile_time["zeta_w"], run_time["zeta_w"] = jacrev_custom(
-            func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
-            jac_options=jac_options["zeta_w"],
-            n_profile_loops=n_profile_loops,
-            func_name="zeta_w",
-        )(
-            i_ts=i_ts,
-            t_n=t_n,
-            varphi_nm1=varphi_nm1,
-            varphi_n=varphi_n,
-            gamma_b_nm1=gamma_b_nm1,
-            gamma_w_nm1=gamma_w_nm1,
-            gamma_w_n=gamma_w_n,
-            zeta_w_nm1=zeta_w_nm1,
-            zeta_w_n=zeta_w_n,
-            dv=dv,
-            dv_full=dv_full,
-            struct_obj=struct_obj,
-        )
+            d_zeta_w, compile_time["zeta_w"], run_time["zeta_w"] = jacrev_custom(
+                func=lambda **kwargs: self.wake_prop_res_func(**kwargs)[0],
+                jac_options=jac_options["zeta_w"],
+                n_profile_loops=n_profile_loops,
+                func_name="zeta_w",
+                mode=mode,
+                map_batch_size=map_batch_size,
+            )(
+                i_ts=i_ts,
+                t_n=t_n,
+                varphi_nm1=varphi_nm1,
+                varphi_n=varphi_n,
+                gamma_b_nm1=gamma_b_nm1,
+                gamma_w_nm1=gamma_w_nm1,
+                gamma_w_n=gamma_w_n,
+                zeta_w_nm1=zeta_w_nm1,
+                zeta_w_n=zeta_w_n,
+                dv=dv,
+                dv_full=dv_full,
+                struct_obj=struct_obj,
+            )
+        else:
+            # skip computations
+            d_gamma_w = {}
+            d_zeta_w = {}
 
         d_gamma_b_dot, compile_time["gamma_b_dot"], run_time["gamma_b_dot"] = (
             jacrev_custom(
@@ -2204,6 +2246,8 @@ class UVLM:
                 jac_options=jac_options["gamma_b_dot"],
                 n_profile_loops=n_profile_loops,
                 func_name="gamma_b_dot",
+                mode=mode,
+                map_batch_size=map_batch_size,
             )(
                 gamma_b_nm1=gamma_b_nm1,
                 gamma_b_n=gamma_b_n,
@@ -2213,21 +2257,32 @@ class UVLM:
             )
         )
 
+        f_aero_gamma_w_n_input = (
+            jax.lax.stop_gradient(gamma_w_n)
+            if not compute_wake_gradients
+            else gamma_w_n
+        )
+        f_aero_zeta_w_n_input = (
+            jax.lax.stop_gradient(zeta_w_n) if not compute_wake_gradients else zeta_w_n
+        )
+
         d_f_aero, compile_time["f_aero"], run_time["f_aero"] = jacrev_custom(
             func=self.f_aero_res_func,
             jac_options=jac_options["f_aero"],
             n_profile_loops=n_profile_loops,
             func_name="f_aero",
             static_argnames=("block_grid_gradients", "solve_dofs"),
+            mode=mode,
+            map_batch_size=map_batch_size,
         )(
             i_ts=i_ts,
             t_n=t_n,
             varphi_n=varphi_n,
             v_n=v_n,
             gamma_b_n=gamma_b_n,
-            gamma_w_n=gamma_w_n,
+            gamma_w_n=f_aero_gamma_w_n_input,
             gamma_b_dot_n=gamma_b_dot_n,
-            zeta_w_n=zeta_w_n,
+            zeta_w_n=f_aero_zeta_w_n_input,
             dv=dv,
             dv_full=dv_full,
             struct_obj=struct_obj,
@@ -2235,18 +2290,40 @@ class UVLM:
             block_grid_gradients=approx_grads,
             solve_dofs=solve_dofs,
         )
-        # slice f_aero Jacobian to solve_dofs columns (input is full n_dof, state is n_solve)
+        # slice f_aero Jacobian to get forcing only on active degrees of freedom
         d_f_aero["f_aero_beam_n"] = d_f_aero["f_aero_beam_n"][:, jnp.array(solve_dofs)]
 
-        # Jacobians block widths and heights
+        # Jacobians block widths and heights, assembled in degree of freedom order
         n_solve_dof = len(solve_dofs)
-        aero_sizes = (
-            gamma_b_n.size,
-            gamma_w_n.size,
-            gamma_b_n.size,
-            zeta_w_n.size,
-            n_solve_dof,
-        )
+        aero_entries_list: list[dict[str, Any]] = [d_gamma_b]
+        aero_heights_list: list[int] = [gamma_b_n.size]
+        aero_n_keys_list: list[str] = ["gamma_b_n"]
+        aero_nm1_keys_list: list[str] = ["gamma_b_nm1"]
+        if compute_wake_gradients:
+            aero_entries_list.append(d_gamma_w)
+            aero_heights_list.append(gamma_w_n.size)
+            aero_n_keys_list.append("gamma_w_n")
+            aero_nm1_keys_list.append("gamma_w_nm1")
+        aero_entries_list.append(d_gamma_b_dot)
+        aero_heights_list.append(gamma_b_n.size)
+        aero_n_keys_list.append("gamma_b_dot_n")
+        aero_nm1_keys_list.append("gamma_b_dot_nm1")
+
+        if compute_wake_gradients:
+            aero_entries_list.append(d_zeta_w)
+            aero_heights_list.append(zeta_w_n.size)
+            aero_n_keys_list.append("zeta_w_n")
+            aero_nm1_keys_list.append("zeta_w_nm1")
+        aero_entries_list.append(d_f_aero)
+        aero_heights_list.append(n_solve_dof)
+        aero_n_keys_list.append("f_aero_beam_n")
+        aero_nm1_keys_list.append("f_aero_beam_nm1")
+
+        aero_entries = tuple(aero_entries_list)
+        aero_heights: tuple[int, ...] = tuple(aero_heights_list)
+        aero_n_keys = tuple(aero_n_keys_list)
+        aero_nm1_keys = tuple(aero_nm1_keys_list)
+        aero_widths = aero_heights
 
         struct_sizes = (
             struct_obj.n_dof,
@@ -2256,54 +2333,44 @@ class UVLM:
         )
 
         d_aero_res_d_q_nm1 = construct_named_block_jacobian(
-            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
-            keys=(
-                "gamma_b_nm1",
-                "gamma_w_nm1",
-                "gamma_b_dot_nm1",
-                "zeta_w_nm1",
-                "f_aero_beam_nm1",
-            ),
-            widths=aero_sizes,
-            heights=aero_sizes,
+            entries=aero_entries,
+            keys=aero_nm1_keys,
+            widths=aero_widths,
+            heights=aero_heights,
         )
 
         d_aero_res_d_q_n = construct_named_block_jacobian(
-            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
-            keys=(
-                "gamma_b_n",
-                "gamma_w_n",
-                "gamma_b_dot_n",
-                "zeta_w_n",
-                "f_aero_beam_n",
-            ),
-            widths=aero_sizes,
-            heights=aero_sizes,
+            entries=aero_entries,
+            keys=aero_n_keys,
+            widths=aero_widths,
+            heights=aero_heights,
         )
 
         # residual of aero problem w.r.t. structural states
         d_struct_res_d_q_nm1 = construct_named_block_jacobian(
-            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            entries=aero_entries,
             keys=("varphi_nm1", "v_nm1", "v_dot_nm1", "a_nm1"),
             widths=struct_sizes,
-            heights=aero_sizes,
+            heights=aero_heights,
         )
 
         d_struct_res_d_q_n = construct_named_block_jacobian(
-            entries=(d_gamma_b, d_gamma_w, d_gamma_b_dot, d_zeta_w, d_f_aero),
+            entries=aero_entries,
             keys=("varphi_n", "v_n", "v_dot_n", "a_n"),
             widths=struct_sizes,
-            heights=aero_sizes,
+            heights=aero_heights,
         )
 
-        # handle design gradients
-        d_res_d_dv = AeroelasticDesignVariables.concatenate(
-            d_gamma_b["dv"],
-            d_gamma_w["dv"],
-            d_gamma_b_dot["dv"],
-            d_zeta_w["dv"],
-            d_f_aero["dv"],
-        )
+        # handle design gradients: include a row per included residual, mirroring
+        # the aero block layout above.
+        dv_rows: list[Any] = [d_gamma_b["dv"]]
+        if compute_wake_gradients:
+            dv_rows.append(d_gamma_w["dv"])
+        dv_rows.append(d_gamma_b_dot["dv"])
+        if compute_wake_gradients:
+            dv_rows.append(d_zeta_w["dv"])
+        dv_rows.append(d_f_aero["dv"])
+        d_res_d_dv = AeroelasticDesignVariables.concatenate(*dv_rows)
 
         return (
             d_aero_res_d_q_nm1,

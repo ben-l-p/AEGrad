@@ -61,7 +61,7 @@ class TestLumpedMassTranslationAdjoint:
         )
 
         # extract x coordinate
-        x_t_out = solution.hg[:, 0, 0, 3]
+        x_t_out = solution.x[:, 0, 0]
 
         def objective(
             ss: StructureFullStates,

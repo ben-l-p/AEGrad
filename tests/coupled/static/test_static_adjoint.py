@@ -1,3 +1,5 @@
+from typing import Literal
+
 from jax import numpy as jnp
 from jax import Array
 
@@ -51,7 +53,7 @@ def _solve(u_inf: Array, k_cs: Array):
 
 
 class TestForwardStaticAeroelasticAdjoint:
-    forward_mode: bool = True
+    ad_mode: Literal["forward", "reverse"] = "forward"
 
     grads_to_compute: AeroelasticGradsToCompute = AeroelasticGradsToCompute(
         structure=StructuralGradsToCompute(k_cs=True),
@@ -64,7 +66,7 @@ class TestForwardStaticAeroelasticAdjoint:
         cls.grad: AeroelasticDesignVariables = cls.wing.static_adjoint(
             case=cls.sol,
             objective=_objective,
-            forward_adjoint=cls.forward_mode,
+            ad_mode=cls.ad_mode,
             grads_to_compute=cls.grads_to_compute,
         )[0]
         cls.objective_val: Array = _objective(
@@ -123,4 +125,4 @@ class TestForwardStaticAeroelasticAdjoint:
 
 
 class TestReverseStaticAeroelasticAdjoint(TestForwardStaticAeroelasticAdjoint):
-    forward_mode: bool = False
+    ad_mode = "reverse"

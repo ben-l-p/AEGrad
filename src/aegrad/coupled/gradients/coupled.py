@@ -1,17 +1,12 @@
 from __future__ import annotations
+import sys
 from copy import deepcopy
-from typing import (
-    Any,
-    Optional,
-    Callable,
-    TYPE_CHECKING,
-    Sequence,
-    Final,
-)
+from typing import Any, Optional, Callable, TYPE_CHECKING, Sequence, Final, Literal
 
 import jax
 from jax import numpy as jnp
 from jax import Array, vmap
+
 
 from aegrad.aero.gradients.data_structures import (
     AeroDesignVariables,
@@ -20,7 +15,9 @@ from aegrad.aero.gradients.data_structures import (
 )
 from aegrad.aero.utils import project_forcing_to_beam
 from aegrad.algebra.array_utils import ArrayList
+from aegrad.algebra.base import ADMode
 from aegrad.coupled import DynamicAeroelastic
+from aegrad.utils import print_utils
 from aegrad.utils.print_utils import jax_print, VerbosityLevel, verbosity
 from aegrad.structure import StructuralDesignVariables
 from aegrad.structure.data_structures import OptionalJacobians, StructureMinimalStates
@@ -32,9 +29,11 @@ from aegrad.coupled.data_structures import (
 )
 
 from aegrad.coupled.coupled import BaseCoupledAeroelastic
-from aegrad.utils.utils import make_pytree, conditional_profile
+from aegrad.utils.utils import make_pytree
 from aegrad.algebra.se3 import exp_se3
-from aegrad.structure.gradients.data_structures import StructureFullStates
+from aegrad.structure.gradients.data_structures import (
+    StructureFullStates,
+)
 from aegrad.structure.utils import get_solve_dofs, transform_nodal_vect
 from aegrad.coupled.gradients.data_structures import (
     AeroelasticGradsToCompute,
@@ -112,10 +111,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             remove_checks=True,
         )
 
-        exp_varphi = vmap(exp_se3)(varphi.reshape(-1, 6))  # [n_nodes_, 4, 4]
+        exp_varphi = vmap(exp_se3)(varphi.reshape(-1, 6))  # [n_nodes, 4, 4]
         hg = jnp.einsum(
             "ijk,ikl->ijl", inner_case.structure.hg0, exp_varphi
-        )  # [n_nodes_, 4, 4]
+        )  # [n_nodes, 4, 4]
 
         # evaluate aero forcing and project to beam nodes
         aero_sol = inner_case.aero.solve_static(hg=hg, t=t, horseshoe=use_horseshoe)
@@ -190,7 +189,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             aero=q.aero,
         )
 
-    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5))
+    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 6))
     def static_adjoint(
         self,
         case: StaticAeroelastic,
@@ -199,7 +198,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         optional_jacobians: Optional[OptionalJacobians] = OptionalJacobians(
             True, True, True, True
         ),
-        forward_adjoint: bool = False,
+        ad_mode: ADMode = "forward",
+        batch_size: Optional[int] = 32,
     ) -> tuple[AeroelasticDesignVariables, Array]:
         r"""
         Computes the static grads of the structure, which is used to compute gradients of the loss with respect to
@@ -209,9 +209,15 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param grads_to_compute: Data structure which specifies which gradients to compute. This is used to speed up the
         adjoint solve by only computing the necessary Jacobian blocks.
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
-        :param forward_adjoint: If True, will use the forward adjoint. If false, will use the reverse adjoint.
+        :param ad_mode: Optional use of either forward or reverse adjoint. For passing the initial state sensitivities
+        to a dynamic solve, only forward mode can be used to give the required adjoint.
+        :param batch_size: Batch size for computing p_res_p_varphi to reduce memory usage. Ignored when
+        ``matrix_free`` is True.
         :return: Gradient of objective function output with respect to design variables.
         """
+
+        if ad_mode not in ("forward", "reverse"):
+            raise ValueError("ad_mode must be either 'forward' or 'reverse'")
 
         jax_print("Computing static adjoint", verbose_level=VerbosityLevel.NORMAL)
 
@@ -231,6 +237,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         # find shape of objective function output without evaluating function
         f_properties = jax.eval_shape(lambda: objective(states, dv, None))
         f_shape = f_properties.shape
+        j0_shape = f_shape if len(f_shape) > 0 else (1,)
         n_f = f_properties.size
         n_x = dv.structure.n_x + dv.aero.n_x
         n_u_full = self.structure.n_dof
@@ -241,40 +248,58 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             raise ValueError("static_horseshoe not defined")
         static_horseshoe: bool = case.aero.static_horseshoe
 
-        # gradient of objective w.r.t. minimal states and design variables
-        p_f_p_varphi, p_f_p_x = jax.jacrev(
-            lambda flat_varphi, dv_: objective(
-                self._aeroelastic_states_res_from_dv_varphi(
-                    dv=dv_,
-                    varphi=flat_varphi.reshape(self.structure.n_nodes, 6),
-                    thrust=case.structure.thrust,
-                    t=case.aero.t,
-                    i_ts=0,
-                    use_horseshoe=static_horseshoe,
-                )[0],
-                dv_,
-                None,
-            ),
-            argnums=(0, 1),
-            allow_int=True,
-        )(varphi.ravel(), dv)  # [n_f, n_u_full], [n_f, n_x]
+        # function for computing sensitivity of objective to design variables and degrees of freedom
+        # to obtain the actual Jacobian we must pull back the identity through it
+        vjp_fn = self.compute_p_j0_p_x(
+            case=case,
+            objective=objective,
+            grads_to_compute=grads_to_compute,
+            horseshoe=static_horseshoe,
+        )
 
-        # gradient of residual w.r.t. minimal states and design variables (used by linear solves)
-        p_res_p_varphi, p_res_p_x = jax.jacrev(
-            lambda flat_varphi, dv_: self._aeroelastic_states_res_from_dv_varphi(
+        cot_j0 = jnp.eye(n_f).reshape(n_f, *j0_shape)  # seed for backpropogation
+        p_j_p_varphi_raw, p_j_p_x_raw = jax.vmap(vjp_fn)(cot_j0)  # sensitivities
+
+        p_j_p_varphi_flat = p_j_p_varphi_raw.reshape(n_f, -1)  # (n_f, n_dof)
+        p_j_p_x_flat = AeroelasticDesignVariables(
+            structure_dv=StructuralDesignVariables(
+                **{
+                    k: getattr(p_j_p_x_raw.structure, k) for k in dv.structure.to_dict()
+                },
+                f_shape=(n_f,),
+            ),
+            aero_dv=AeroDesignVariables(
+                **{k: getattr(p_j_p_x_raw.aero, k) for k in dv.aero.to_dict()},
+                f_shape=(n_f,),
+            ),
+        ).ravel_jacobian(f_size=n_f, x_size=n_x)
+
+        def _residual(varphi_vec: Array, dv_: AeroelasticDesignVariables) -> Array:
+            r"""
+            Helper function to give the static aeroelastic residual for a given deformation and design variables.
+            """
+            return self._aeroelastic_states_res_from_dv_varphi(
                 dv=dv_,
-                varphi=flat_varphi.reshape(self.structure.n_nodes, 6),
+                varphi=varphi_vec.reshape(self.structure.n_nodes, 6),
                 thrust=case.structure.thrust,
                 t=case.aero.t,
                 i_ts=0,
                 use_horseshoe=static_horseshoe,
-            )[1],
-            argnums=(0, 1),
-            allow_int=True,
-        )(varphi.ravel(), dv)
+            )[1]
 
-        if forward_adjoint:
-            # forward mode — restrict to free DOFs to avoid singularity from prescribed DOF constraints
+        _, vjp_res_varphi = jax.vjp(lambda v: _residual(v, dv), varphi.ravel())
+
+        if ad_mode == "forward":
+            # materialise p_res_p_x using map to save memory
+            p_res_p_varphi = jax.lax.map(
+                lambda cot: vjp_res_varphi(cot)[0],
+                jnp.eye(n_u_full),
+                batch_size=batch_size,
+            )
+            p_res_p_x = jax.jacrev(_residual, argnums=1, allow_int=True)(
+                varphi.ravel(), dv
+            )
+            # solve for adjoint
             adj = jnp.linalg.solve(
                 p_res_p_varphi[jnp.ix_(solve_dofs, solve_dofs)],
                 p_res_p_x.ravel_jacobian(f_size=n_u_full, x_size=n_x)[solve_dofs, :],
@@ -282,48 +307,71 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             d_f_d_x_dict = dv.from_adjoint(
                 f_shape,
-                p_f_p_x.ravel_jacobian(f_size=n_f, x_size=n_x)
-                - p_f_p_varphi.reshape(n_f, -1)[:, solve_dofs] @ adj,
+                p_j_p_x_flat - p_j_p_varphi_flat[:, solve_dofs] @ adj,
             )
         else:
-            # reverse_mode
+            # construct residual Jacobian
+            p_res_p_varphi = jax.lax.map(
+                lambda cot: vjp_res_varphi(cot)[0],
+                jnp.eye(n_u_full),
+                batch_size=batch_size,
+            )
             adj = jnp.linalg.solve(
                 p_res_p_varphi[jnp.ix_(solve_dofs, solve_dofs)].T,
-                p_f_p_varphi.reshape(n_f, -1)[:, solve_dofs].T,
-            ).T
+                p_j_p_varphi_flat[:, solve_dofs].T,
+            ).T  # [n_f, n_solve_dofs]
+
+            adj_full = (
+                jnp.zeros((n_f, n_u_full), dtype=adj.dtype).at[:, solve_dofs].set(adj)
+            )
+
+            # sensitivity of residual w.r.t. design variables
+            _, vjp_res_dv = jax.vjp(lambda dv_: _residual(varphi.ravel(), dv_), dv)
+            (adj_p_res_p_x_raw,) = jax.vmap(vjp_res_dv)(adj_full)
+
+            adj_p_res_p_x_flat = AeroelasticDesignVariables(
+                structure_dv=StructuralDesignVariables(
+                    **{
+                        k: getattr(adj_p_res_p_x_raw.structure, k)
+                        for k in dv.structure.to_dict()
+                    },
+                    f_shape=(n_f,),
+                ),
+                aero_dv=AeroDesignVariables(
+                    **{
+                        k: getattr(adj_p_res_p_x_raw.aero, k) for k in dv.aero.to_dict()
+                    },
+                    f_shape=(n_f,),
+                ),
+            ).ravel_jacobian(f_size=n_f, x_size=n_x)
 
             d_f_d_x_dict = dv.from_adjoint(
                 f_shape,
-                p_f_p_x.ravel_jacobian(f_size=n_f, x_size=n_x)
-                - adj
-                @ p_res_p_x.ravel_jacobian(f_size=n_u_full, x_size=n_x)[solve_dofs, :],
+                p_j_p_x_flat - adj_p_res_p_x_flat,
             )
 
         return dv.split_adjoint(d_f_d_x=d_f_d_x_dict, f_shape=f_shape), adj
 
-    @jax.jit(static_argnums=(0, 1, 2, 3, 7))
     def compute_p_j0_p_x(
         self,
         case: StaticAeroelastic,
         objective: AeroelasticObjectiveFunction,
         grads_to_compute: Optional[AeroelasticGradsToCompute],
-        p_varphi_p_x: Optional[Array],
-        solve_dofs: Array,
-        future_cot_q0_full: Array,
         horseshoe: bool = False,
-    ) -> AeroelasticDesignVariables:
+        include_q0: bool = False,
+    ) -> Callable[
+        ...,
+        tuple[Array, AeroelasticDesignVariables],
+    ]:
         r"""
-        Compute the initial-timestep contribution to ``d_j_d_x``, namely ``d j_0/d x + future_cot_q0 @ d q_0/d x``,
-        with inclusion of initial deformation sensitivity included if ``p_varphi_p_x`` is passed.
-        :param case: StaticAeroelastic solution for which to obtain the gradient.
+        Build the VJP of the initial-timestep objective for pertubations in the design variables, and optionally the
+        initial states.
+        :param case: StaticAeroelastic solution for the initial timestep.
         :param objective: Objective function which takes the system full states, design variables and timestep index.
         :param grads_to_compute: Grads to compute when computing design gradient.
-        :param p_varphi_p_x: Optional Jacobian to account for sensitivity of initial deformation to design variables.
-        :param solve_dofs: Array of degree of freedom indices which are solved for.
-        :param future_cot_q0_full: Cotangent on the initial minimal states from the time-loop adjoint
-        (i.e. ``adj_1 @ p_r_1/p_q_0`` for free DOFs, zero on prescribed DOFs), shape ``(n_j, n_q0)``.
         :param horseshoe: Flag for using horseshoe wake.
-        :return: Initial-timestep contribution to the total design-variable gradient.
+        :param include_q0: If True, the returned VJP also propagates a cotangent through ``q0``.
+        :return: VJP for cotangents of the design variables, and optionally the initial states.
         """
 
         # design variables with variables that we don't require gradients omitted to speed up computations.
@@ -333,11 +381,14 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         dv_full = self.get_design_variables(case=case, grads_to_compute=None)
 
         varphi = case.structure.varphi
+        n_dof = self.structure.n_dof
+        aero_shapes = case.aero.get_states(i_ts=0).shapes()
 
+        @jax.checkpoint
         def objective_from_varphi(
             varphi_: Array,
             dv_: AeroelasticDesignVariables,
-        ) -> tuple[Array, Array]:
+        ) -> Array | tuple[Array, Array]:
             inner_case = self.case_from_dv(dv=dv_)
 
             assert (
@@ -414,15 +465,47 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 dv_full=dv_full,
             )
             j0 = jnp.atleast_1d(objective(q0_full, dv_, 0))
-            return j0, q0
-
-        n_j = future_cot_q0_full.shape[0]
-        f_shape = (n_j,)
-        n_dof = self.structure.n_dof
-        aero_shapes = case.aero.get_states(i_ts=0).shapes()
+            if include_q0:
+                return j0, q0
+            return j0
 
         _, vjp_fn = jax.vjp(objective_from_varphi, varphi, dv)
-        adj_varphi, adj_dv_raw = jax.vmap(vjp_fn)((jnp.eye(n_j), future_cot_q0_full))
+        return vjp_fn
+
+    def _initial_timestep_grad_contribution(
+        self,
+        case: StaticAeroelastic,
+        objective: AeroelasticObjectiveFunction,
+        grads_to_compute: Optional[AeroelasticGradsToCompute],
+        p_varphi_p_x: Optional[Array],
+        solve_dofs: Array,
+        adj_t_p_r1_p_q0: Array,
+        horseshoe: bool = False,
+    ) -> AeroelasticDesignVariables:
+        r"""
+        Assemble the initial-timestep contribution to ``d_j_d_x``.
+        :param case: StaticAeroelastic case.
+        :param objective: Aeroelastic objective function.
+        :param grads_to_compute: Class outlining the gradients to be computed.
+        :param p_varphi_p_x: Sensitivity of initial deformation to design variables.
+        :param solve_dofs: Array of dofs to be solved.
+        :param adj_t_p_r1_p_q0: Initial adjoint-Jacobian product adj^T @ p_r1_p_q0, which is returned from the time
+        domain adjoint propagation.
+        :param horseshoe: Whether to use horseshoe or not for the VLM.
+        :return: Assembled initial timestep contribution.
+        """
+        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
+        vjp_fn = self.compute_p_j0_p_x(
+            case=case,
+            objective=objective,
+            grads_to_compute=grads_to_compute,
+            horseshoe=horseshoe,
+            include_q0=True,
+        )
+
+        n_j = adj_t_p_r1_p_q0.shape[0]
+        f_shape = (n_j,)
+        adj_varphi, adj_dv_raw = jax.vmap(vjp_fn)((jnp.eye(n_j), adj_t_p_r1_p_q0))
 
         # direct term
         adj_dv = AeroelasticDesignVariables(
@@ -440,9 +523,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         if p_varphi_p_x is not None:
             indirect_mat = (
                 adj_varphi.reshape(n_j, -1)[:, solve_dofs] @ p_varphi_p_x
-            )  # (n_j, n_x)
+            )  # [n_j, n_x]
             indirect_dict = dv.from_adjoint(f_shape, indirect_mat)
-            indirect_term = AeroelasticDesignVariables(
+            adj_dv += AeroelasticDesignVariables(
                 structure_dv=StructuralDesignVariables(
                     **{k: indirect_dict[k] for k in dv.structure.to_dict()},
                     f_shape=f_shape,
@@ -452,7 +535,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     f_shape=f_shape,
                 ),
             )
-            adj_dv += indirect_term
 
         return adj_dv
 
@@ -469,7 +551,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         approx_grads: bool,
     ) -> Array:
         r"""
-        Compute the coupled aeroelastic residual vector.
+        Compute the coupled aeroelastic residual vector. This is used for the matrix-free time domain case by applying
+        VJP to this function.
         :param i_ts: Time step index.
         :param t: Time at step n.
         :param q_nm1: Minimal states at step n-1.
@@ -496,19 +579,45 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             approx_grads=approx_grads,
         )
 
-        aero_res = self.aero.timestep_residual(
-            i_ts=i_ts,
-            varphi_nm1=q_nm1.structure.varphi,
-            varphi_n=q_n.structure.varphi,
-            v_n=q_n.structure.v,
-            t_n=t,
-            q_n=q_n.aero,
-            q_nm1=q_nm1.aero,
-            dv=dv_,
-            dv_full=dv_full,
-            f_aero_beam_n=q_n.structure.f_ext_aero,
-            struct_obj=self.structure,
-            approx_grads=approx_grads,
+        # Rematerialise the aero pass to reduce memory usage
+        @jax.checkpoint
+        def _aero_forward(
+            varphi_nm1_: Array,
+            varphi_n_: Array,
+            v_n_: Array,
+            t_n_: Array,
+            q_nm1_aero_: AeroStates,
+            q_n_aero_: AeroStates,
+            dv__: AeroelasticDesignVariables,
+            dv_full_: AeroelasticDesignVariables,
+            f_aero_beam_n_: Array,
+        ) -> Array:
+            return self.aero.timestep_residual(
+                i_ts=i_ts,
+                varphi_nm1=varphi_nm1_,
+                varphi_n=varphi_n_,
+                v_n=v_n_,
+                t_n=t_n_,
+                q_n=q_n_aero_,
+                q_nm1=q_nm1_aero_,
+                dv=dv__,
+                dv_full=dv_full_,
+                f_aero_beam_n=f_aero_beam_n_,
+                struct_obj=self.structure,
+                approx_grads=approx_grads,
+            )
+
+        # evaluate checkpointed function
+        aero_res = _aero_forward(
+            varphi_nm1_=q_nm1.structure.varphi,
+            varphi_n_=q_n.structure.varphi,
+            v_n_=q_n.structure.v,
+            t_n_=t,
+            q_nm1_aero_=q_nm1.aero,
+            q_n_aero_=q_n.aero,
+            dv__=dv_,
+            dv_full_=dv_full,
+            f_aero_beam_n_=q_n.structure.f_ext_aero,
         )
 
         # remove forces from degrees of freedom which are not solved for
@@ -533,6 +642,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         approx_grads: bool,
         n_profile_loops: Optional[int],
         jac_options: dict,
+        mode: ADMode = "reverse",
+        map_batch_size: Optional[int] = None,
     ) -> tuple[
         Array,
         Array,
@@ -541,6 +652,26 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         Optional[dict[str, dict[str, float]]],
         Optional[dict[str, dict[str, float]]],
     ]:
+        r"""
+        Compute the required time-domain residual Jacobians for the adjoint solution.
+        :param i_ts: Time step index.
+        :param t: Time.
+        :param q_nm1: Minimal degrees of freedom at timestep n-1.
+        :param q_n: Minimal degrees of freedom at timestep n.
+        :param dv_: Design variables for which to obtain gradients.
+        :param dv_full: All design variables.
+        :param thrust_t: Thrust at each time step.
+        :param solve_dofs: Degrees of freedom to solve for.
+        :param approx_grads: Whether to use approximate gradients for the structural dynamic subproblem.
+        :param n_profile_loops: Number of profile loops. Used for profiling routines only.
+        :param jac_options: Options for Jacobian computation, allowing for approximations to be introduced.
+        :param mode: Mode for automatic differentiation, either ``forward`` or ``reverse``.
+        :param map_batch_size: Batch size used for vectorising Jacobian construction.
+        :return: Jacobian of residual with respect to previous degrees of freedom, Jacobian of residual with respect to
+        current degrees of freedom, Jacobian of v_dot residual with respect to structural design variables, Jacobian of
+        aero residual with respect to design variables. Can also include compile time and run time when profiling is
+        used.
+        """
 
         assert (
             q_n.structure.f_ext_aero is not None
@@ -571,6 +702,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             solve_dofs=solve_dofs,
             n_profile_loops=n_profile_loops,
             jac_options=jac_options,
+            mode=mode,
+            map_batch_size=map_batch_size,
         )
 
         n_aero_dof, n_struct_dof = p_aero_res_p_q_struct_nm1.shape
@@ -595,6 +728,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             approx_grads=approx_grads,
             n_profile_loops=n_profile_loops,
             jac_options=jac_options,
+            mode=mode,
         )
 
         assert p_v_dot_res_p_f_ext_nm1 is not None and p_v_dot_res_p_f_ext_n is not None
@@ -663,20 +797,17 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     ) -> dict[str, dict[str, Optional[Callable[..., Any]]]]:
         r"""
         Compute approximations for Jacobians which are specified in the jacobian_approximations data structure. The
-        aerodynamic residual approximations are delegated to :meth:`UVLM.construct_approximate_jacobians`, and the
-        structural residual approximations to :meth:`BeamStructure.construct_approximate_jacobians`. The two
+        aerodynamic residual approximations are delegated to ``UVLM.construct_approximate_jacobians``, and the
+        structural residual approximations to ``BeamStructure.construct_approximate_jacobians``. The two
         dictionaries are merged into a single result.
         :param sol: Solution for which approximations will be created for the initial time step.
         :param jacobian_approximations: Data structure which defines which approximations to create.
         :return: Dictionary of approximations keyed by residual name.
         """
         dv = self.get_design_variables(case=sol, grads_to_compute=None)
-        solve_dofs = tuple(
-            int(i)
-            for i in get_solve_dofs(
-                n_dof=self.structure.n_dof,
-                prescribed_dofs=sol.structure.prescribed_dofs,
-            )
+        solve_dofs = get_solve_dofs(
+            n_dof=self.structure.n_dof,
+            prescribed_dofs=sol.structure.prescribed_dofs,
         )
 
         aero_options = self.aero.construct_approximate_jacobians(
@@ -715,6 +846,150 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
         )(jnp.arange(n_tstep)).reshape(n_tstep, -1)
 
+    def make_frozen_wake_preconditioner(
+        self,
+        case: DynamicAeroelastic,
+        dv_full: AeroelasticDesignVariables,
+        solve_dofs: tuple[int, ...],
+        approx_grads: bool = False,
+        precond_i_ts: int = 0,
+    ) -> Callable[[Array], Array]:
+        r"""
+        Build a preconditioner for the coupled aeroelastic system which skips the wake grid and circulation. When
+        applied to the matrix-free system GMRES, this found a good reduction in the number of iterations required whilst
+        avoiding the large memory overhead involved in computing the full Jacobian due to the large number of wake
+        states.
+        :param case: Dynamic aeroelastic case object.
+        :param dv_full: Full dynamic aeroelastic design variables.
+        :param solve_dofs: Solve degree of freedom index.
+        :param approx_grads: Approximate gradient of the coupled aeroelastic system, removing some negligible terms.
+        :param precond_i_ts: Time step index for which to create the preconditioner. Defaults to 0.
+        """
+        precond_q_nm1 = case.get_minimal_states(i_ts=max(precond_i_ts - 1, 0))
+        precond_q_n = case.get_minimal_states(i_ts=precond_i_ts)
+        precond_t_n = case.structure.t[precond_i_ts]
+
+        dv_precond = self.get_design_variables(case=case, grads_to_compute=None)
+
+        assert precond_q_n.structure.f_ext_aero is not None
+        assert precond_q_nm1.structure.f_ext_aero is not None
+
+        # populate jac_options with the expected residual/argname keys, all mapped to None so AD is used everywhere
+        jac_options = self.construct_approximate_jacobians(
+            sol=case,
+            jacobian_approximations=AeroelasticJacobianApproximations(),
+        )
+
+        # compute structural Jacobians
+        (
+            _,
+            p_struct_res_p_q_struct_n,
+            _,
+            _,
+            p_v_dot_res_p_f_ext_n,
+            *_,
+        ) = self.structure.timestep_residual_jacobians(
+            i_ts=precond_i_ts,
+            q_nm1=precond_q_nm1.structure,
+            q_n=precond_q_n.structure,
+            f_ext_aero_n=precond_q_n.structure.f_ext_aero,
+            f_ext_aero_nm1=precond_q_nm1.structure.f_ext_aero,
+            thrust_t=case.structure.thrust,
+            dv=dv_precond.structure,
+            solve_dofs=solve_dofs,
+            approx_grads=approx_grads,
+            n_profile_loops=None,
+            jac_options=jac_options,
+        )
+
+        # compute aero Jacobians
+        (
+            _,
+            p_aero_res_p_q_aero_n,
+            _,
+            _,
+            p_aero_res_p_q_struct_n,
+            *_,
+        ) = self.aero.timestep_residual_jacobians(
+            i_ts=precond_i_ts,
+            varphi_nm1=precond_q_nm1.structure.varphi,
+            varphi_n=precond_q_n.structure.varphi,
+            v_n=precond_q_n.structure.v,
+            t_n=precond_t_n,
+            q_n=precond_q_n.aero,
+            q_nm1=precond_q_nm1.aero,
+            dv=dv_precond,
+            dv_full=dv_full,
+            f_aero_beam_n=precond_q_n.structure.f_ext_aero,
+            struct_obj=self.structure,
+            approx_grads=approx_grads,
+            solve_dofs=solve_dofs,
+            n_profile_loops=None,
+            jac_options=jac_options,
+            compute_wake_gradients=False,
+            map_batch_size=32,
+        )
+
+        solve_dofs_arr = jnp.array(solve_dofs)
+        struct_col_ix = jnp.concatenate(
+            [solve_dofs_arr + i * self.structure.n_dof for i in range(4)]
+        )
+        p_aero_res_p_q_struct_n = p_aero_res_p_q_struct_n[:, struct_col_ix]
+
+        # assemble Jacobians
+        n_solve = len(solve_dofs)
+        n_struct_res = p_struct_res_p_q_struct_n.shape[0]
+        n_aero_reduced = p_aero_res_p_q_aero_n.shape[0]
+        p_struct_res_p_q_aero_n = jnp.zeros((n_struct_res, n_aero_reduced))
+        p_struct_res_p_q_aero_n = p_struct_res_p_q_aero_n.at[
+            jnp.arange(n_solve) + 2 * n_solve, -n_solve:
+        ].set(p_v_dot_res_p_f_ext_n[:, solve_dofs_arr])
+
+        p_res_p_q_n_reduced = jnp.block(
+            [
+                [p_struct_res_p_q_struct_n, p_struct_res_p_q_aero_n],
+                [p_aero_res_p_q_struct_n, p_aero_res_p_q_aero_n],
+            ]
+        )
+
+        # compute the LU decomposition for fast reuse when solving
+        precond_lu = jax.scipy.linalg.lu_factor(p_res_p_q_n_reduced.T)
+
+        # adjoint state counts and placement
+        n_struct = 4 * n_solve
+        n_gamma_b = int(precond_q_n.aero.gamma_b.ravel().size)
+        n_gamma_w = int(precond_q_n.aero.gamma_w.ravel().size)
+        n_gamma_b_dot = int(precond_q_n.aero.gamma_b_dot.ravel().size)
+        n_zeta_w = int(precond_q_n.aero.zeta_w.ravel().size)
+
+        gamma_w_start = n_struct + n_gamma_b
+        gamma_w_end = gamma_w_start + n_gamma_w
+        zeta_w_start = gamma_w_end + n_gamma_b_dot
+        zeta_w_end = zeta_w_start + n_zeta_w
+
+        def apply_precond(vec: Array) -> Array:
+            # function for applying the preconditioner to a vector or matrix
+            # split the system into three parts to remove gamma_w and zeta_w. The removed blocks are treated as having
+            # preconditioner being the negative identity
+            vec_pre_gw = vec[:gamma_w_start]  # struct + gamma_b
+            vec_gw = vec[gamma_w_start:gamma_w_end]  # gamma_w (identity)
+            vec_mid = vec[gamma_w_end:zeta_w_start]  # gamma_b_dot
+            vec_zw = vec[zeta_w_start:zeta_w_end]  # zeta_w (identity)
+            vec_post_zw = vec[zeta_w_end:]  # f_ext_aero
+            vec_reduced = jnp.concatenate([vec_pre_gw, vec_mid, vec_post_zw])
+            x_reduced = jax.scipy.linalg.lu_solve(precond_lu, vec_reduced)
+
+            # split the reduced solve output back into its three source slices
+            x_pre_gw = x_reduced[:gamma_w_start]
+            x_mid = x_reduced[gamma_w_start : gamma_w_start + n_gamma_b_dot]
+            x_post_zw = x_reduced[gamma_w_start + n_gamma_b_dot :]
+
+            # add negatives here
+            return jnp.concatenate([x_pre_gw, -vec_gw, x_mid, -vec_zw, x_post_zw])
+
+        return apply_precond
+
+    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14))
     def dynamic_adjoint(
         self,
         case: DynamicAeroelastic,
@@ -727,8 +1002,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         p_varphi_p_x: Optional[Array] = None,
         save_adjoint: bool = False,
         approx_grads: bool = True,
-        n_parallel_steps: int = 1,
         n_tstep_adjoint: Optional[int] = None,
+        include_initial_state_grad: bool = True,
+        gmres_mode: Literal["batched", "incremental"] = "batched",
+        gmres_warm_start: bool = True,
+        gmres_precond: bool = True,
+        gmres_restart: int = 50,
     ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
@@ -744,12 +1023,20 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param p_varphi_p_x: Gradient of initial twists with respect to design variables. In practice, this is found
         from the static solve.
         :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
-        :param approx_grads: Whether to use gradient approximation or not.
-        :param n_parallel_steps: Number of time steps whose residual and objective Jacobians are evaluated together in
-        a single vmap call before the adjoint linear solves are stepped sequentially across them. Larger values
-        expose more parallelism but linearly increase peak memory.
+        :param approx_grads: Whether to use gradient approximation or not. This removes some negligible contributions
+        in the structural dynamic system.
         :param n_tstep_adjoint: Optional integer giving the last time step at which the objective contributes to the
         gradient. When provided, skips computation of the adjoint solution for time steps after this index.
+        :param include_initial_state_grad: If False, skip the ``_initial_timestep_grad_contribution`` call that solves
+        the static adjoint at ``t = 0`` and propagates ``p_varphi_p_x``. Intended for profiling only.
+        :param gmres_mode: If using matrix free, sets the mode for GMRES. Batched is preferred for GPU, whereas
+        incremental may be preferred on CPU.
+        :param gmres_warm_start: If True, use the previous timestep adjoint vector as the first guess for the current
+        value. Otherwise, initialise with the zero vector.
+        :param gmres_precond: If True, build a preconditioner for the GMRES system to reduce the number of iterations
+        required for convergence. This comes with the time penalty of the initial construction cost, however should
+        be a net benefit for longer cases.
+        :param gmres_restart: Number of times to restart the GMRES algorithm.
         :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
         step, and optional adjoint states.
         """
@@ -804,6 +1091,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         def objective_jacobians(
             i_ts: int, q_n: AeroelasticMinimalStates
         ) -> tuple[Array, AeroelasticDesignVariables]:
+            # function to obtain the Jacobians of the objective w.r.t. the minimal states and the design variables
             p_j_n_p_q_n, p_j_n_p_x = jax.jacrev(
                 lambda q_free, dv__: jnp.atleast_1d(
                     objective(
@@ -826,106 +1114,155 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )(q_n.ravel()[free_state_ix], dv)
             return p_j_n_p_q_n, p_j_n_p_x
 
-        def time_loop(
-            rev_i_ts_: int,
-            d_j_d_x_: AeroelasticDesignVariables,
-            adj_np1: Array,
-            p_aero_res_d_dv: AeroelasticDesignVariables,
-            p_v_dot_res_p_struct_dv: StructuralDesignVariables,
-            p_r_n_p_q_n: Array,
-            p_r_np1_p_q_n: Array,
-            p_j_n_p_x: AeroelasticDesignVariables,
-            p_j_n_p_q_n: Array,
-        ) -> tuple[AeroelasticDesignVariables, Array]:
-            r"""
-            Function to update the adjoint solution for a single timestep.
-            :param rev_i_ts_: Reversed timestep index. JAX loop does not allow for reverse indexing, and so this is.
-            explicitly reversed within the function body to obtain i_ts.
-            :param d_j_d_x_: Design gradient to accumulate.
-            :param adj_np1: Adjoint vector for n+1 time step.
-            :param p_aero_res_d_dv: Jacobian of aerodynamic residual with respect to aeroelastic design variables.
-            :param p_v_dot_res_p_struct_dv: Jacobian of `v_dot` residual with respect to structural design variables.
-            :param p_r_n_p_q_n: Jacobian of current residual with respect to current degrees of freedom.
-            :param p_r_np1_p_q_n: Jacobian of future residual with respect to current degrees of freedom.
-            :param p_j_n_p_x: Jacobian of current objective with respect to aeroelastic design variables.
-            :param p_j_n_p_q_n: Jacobian of current objective with respect to current degrees of freedom.
-            :return: Updated design gradient `d_j_d_x_` and adjoint vector `adj_n` for current time step.
-            """
+        assert dv_full.aero.cs_ang_t is not None and dv_full.aero.cs_vel_t is not None
 
-            i_ts = (
-                n_tstep_adjoint_ - rev_i_ts_
-            )  # index for timestep varphi, which decrements
+        # create the initial d_j_d_x sensitivites which are accumulated though the solve process
+        dv_grad_init = AeroelasticDesignVariables.zeros(
+            system=self, case=case, grads_to_compute=grads_to_compute, j_shape=j_shape
+        )
 
-            # solve for adjoint at current timestep
-            b: Array = -(p_j_n_p_q_n.reshape(n_j, -1) + adj_np1 @ p_r_np1_p_q_n).T
+        n_dof: int = self.structure.n_dof
+        n_aero_states: int = minimal_states_init.aero.n_states
+        free_state_ix: Array = jnp.concatenate(
+            [solve_dofs_arr + i * n_dof for i in range(4)]
+            + [jnp.arange(5 * n_dof, 5 * n_dof + n_aero_states)]
+            + [solve_dofs_arr + 4 * n_dof]
+        )
+        n_adj_dof = 4 * n_solve + n_aero_states + n_solve
 
-            adj_n = jnp.linalg.solve(
-                p_r_n_p_q_n.T,
-                b,
-            ).T
+        adj_full_init: Optional[Array] = (
+            jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
+            if save_adjoint
+            else None
+        )
 
-            jax_print(
-                "Solved adjoint for timestep {i_ts}",
-                i_ts=i_ts,
-                verbose_level=VerbosityLevel.NORMAL,
+        d_j_d_x: AeroelasticDesignVariables
+        if matrix_free:
+            # optional preconditioner for the matrix-free GMRES solves.
+            if gmres_precond:
+                apply_precond = self.make_frozen_wake_preconditioner(
+                    case=case,
+                    dv_full=dv_full,
+                    solve_dofs=solve_dofs,
+                    approx_grads=approx_grads,
+                )
+                jax_print(
+                    "Built frozen-wake preconditioner",
+                    verbose_level=VerbosityLevel.NORMAL,
+                )
+            else:
+                apply_precond = None
+
+            def matrix_free_body(
+                rev_i_ts_: int,
+                carry: tuple[AeroelasticDesignVariables, Array, Array, Array],
+            ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
+                d_j_d_x_, adj_np1, adj_t_p_r_np1_p_q_n, adj_full_ = carry
+
+                i_ts = n_tstep_adjoint_ - rev_i_ts_
+                i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
+                q_nm1 = case.get_minimal_states(i_ts=i_ts_nm1)
+                q_n = case.get_minimal_states(i_ts=i_ts)
+                t_n = case.structure.t[i_ts]
+
+                p_j_n_p_q_n, p_j_n_p_x = objective_jacobians(i_ts=i_ts, q_n=q_n)
+
+                def _residual_all(
+                    q_n_: AeroelasticMinimalStates,
+                    q_nm1_: AeroelasticMinimalStates,
+                    dv_: AeroelasticDesignVariables,
+                ) -> Array:
+                    return self.timestep_residual(
+                        i_ts=i_ts,
+                        t=t_n,
+                        q_nm1=q_nm1_,
+                        q_n=q_n_,
+                        dv_=dv_,
+                        dv_full=dv_full,
+                        thrust_t=case.structure.thrust,
+                        solve_dofs=solve_dofs,
+                        approx_grads=approx_grads,
+                    )
+
+                # single VJP shared between the GMRES matvec, the coupling term and the design-variable pull
+                _, pull_all = jax.vjp(_residual_all, q_n, q_nm1, dv)
+
+                def matvec_qn_t(v: Array) -> Array:
+                    if print_utils.VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
+                        # print a dot for every GMRES iteration. Due to the jax GMRES function not returning the number
+                        # of iterations, this at least allows us to count the dots!
+                        def _print_gmres_dot() -> None:
+                            sys.stdout.write(".")
+                            sys.stdout.flush()
+
+                        jax.debug.callback(_print_gmres_dot, ordered=True)
+
+                    d_q: AeroelasticMinimalStates = pull_all(v)[0]
+                    return d_q.to_free_dofs(solve_dofs_arr=solve_dofs_arr)
+
+                b_rhs = -(p_j_n_p_q_n.reshape(n_j, -1) + adj_t_p_r_np1_p_q_n)
+
+                def _solve_row(b_row: Array, x0_row: Array) -> tuple[Array, Array]:
+                    x, info = jax.scipy.sparse.linalg.gmres(
+                        matvec_qn_t,
+                        b_row,
+                        x0=x0_row if gmres_warm_start else None,
+                        tol=1e-6,
+                        atol=1e-6,
+                        restart=gmres_restart,
+                        maxiter=50,
+                        M=apply_precond,
+                        solve_method=gmres_mode,
+                    )
+                    return x, info
+
+                adj_n, gmres_info = jax.vmap(_solve_row)(b_rhs, adj_np1)
+
+                def _pull_row(
+                    a: Array,
+                ) -> tuple[Array, AeroelasticDesignVariables]:
+                    q_nm1_cot: AeroelasticMinimalStates
+                    _, q_nm1_cot, dv_cot = pull_all(a)
+
+                    return q_nm1_cot.to_free_dofs(solve_dofs_arr=solve_dofs_arr), dv_cot
+
+                adj_t_p_r_n_p_q_nm1, dv_grads = jax.vmap(_pull_row)(adj_n)
+
+                d_j_d_x_ += dv_grads
+                d_j_d_x_ += p_j_n_p_x
+
+                jax_print(
+                    "\nSolved adjoint for timestep {i_ts} (GMRES converged={converged})",
+                    i_ts=i_ts,
+                    converged=jnp.max(gmres_info) == 0,
+                    verbose_level=VerbosityLevel.NORMAL,
+                )
+
+                if save_adjoint:
+                    adj_full_ = adj_full_.at[i_ts].set(adj_n)
+
+                return d_j_d_x_, adj_n, adj_t_p_r_n_p_q_nm1, adj_full_
+
+            d_j_d_x, _, future_row, adj_full = jax.lax.fori_loop(
+                lower=0,
+                upper=n_tstep_adjoint_,
+                body_fun=matrix_free_body,
+                init_val=(
+                    dv_grad_init,
+                    jnp.zeros((n_j, n_adj_dof)),
+                    jnp.zeros((n_j, n_adj_dof)),
+                    adj_full_init,
+                ),
             )
+        else:
 
-            # accumulate design derivative: adj^T @ dR/dx
-            d_j_d_x_ += p_aero_res_d_dv.premultiply_adj(adj_n[:, 4 * n_solve :])
-            d_j_d_x_.structure += p_v_dot_res_p_struct_dv.premultiply_adj(
-                adj_n[:, 2 * n_solve : 3 * n_solve]
-            )
+            def step_body(
+                rev_i_ts_: int,
+                carry: tuple[AeroelasticDesignVariables, Array, Array, Array],
+            ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
+                d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_ = carry
 
-            # add on direct contribution from objective
-            d_j_d_x_ += p_j_n_p_x
-
-            return d_j_d_x_, adj_n
-
-        def multi_timestep_loop(
-            rev_i_ts_start: int,
-            d_j_d_x_: AeroelasticDesignVariables,
-            adj_np1: Array,
-            p_r_np1_p_q_n: Array,
-            n_parallel_steps_: int,
-        ) -> tuple[AeroelasticDesignVariables, Array, Array, Optional[Array]]:
-            r"""
-            Routine to step the adjoint solution by multiple time steps. The residual and objective Jacobians for the
-            ``n_parallel_steps`` time steps in the chunk are evaluated in a single :func:`jax.vmap` call so that the
-            (often dominant) Jacobian assemblies execute in parallel. The adjoint linear solves are then performed
-            sequentially backwards in time over the precomputed Jacobians, because they are coupled through the
-            adjoint carry. Chunking keeps the peak memory bounded by ``n_parallel_steps`` worth of Jacobians rather
-            than the full ``n_tstep`` history.
-            :param rev_i_ts_start: Reversed timestep index of the first (latest in real time) step in the chunk.
-            ``rev_i_ts = 0`` corresponds to ``i_ts = n_tstep - 1``.
-            :param d_j_d_x_: Design gradient to accumulate.
-            :param adj_np1: Adjoint vector for one past the final parallel step.
-            :param p_r_np1_p_q_n: Jacobian of one past the final parallel residual with respect to the final parallel
-            degrees of freedom.
-            :param n_parallel_steps_: Number of time steps to vmap across for obtaining Jacobians. This is kept as an
-            argument to allow for the case where the total number of timesteps does not nicely divide into the chunks
-            and results in a final, smaller chunk.
-            :return: Updated design gradients, the adjoint vector for the first parallel time step (i.e. the earliest
-            in real time within the chunk), the residual Jacobian ``p_res/p_q_{n-1}`` evaluated at that earliest
-            step — to be threaded as ``p_r_np1_p_q_n`` into the next chunk — and optionally the full adjoint solution
-            time history for the chunk (shape ``(n_parallel_steps, n_j, n_adj_dof)``, with index 0 at the latest real
-            time).
-            """
-
-            # i_ts for each step in the chunk; index 0 is the latest in real time (processed first by the adjoint)
-            i_ts_chunk = (
-                n_tstep_adjoint_ - rev_i_ts_start - jnp.arange(n_parallel_steps_)
-            )
-
-            def per_step_jacobians(
-                i_ts: Array,
-            ) -> tuple[
-                Array,
-                Array,
-                StructuralDesignVariables,
-                AeroelasticDesignVariables,
-                Array,
-                AeroelasticDesignVariables,
-            ]:
+                i_ts = n_tstep_adjoint_ - rev_i_ts_
                 i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
                 q_nm1 = case.get_minimal_states(i_ts=i_ts_nm1)
                 q_n = case.get_minimal_states(i_ts=i_ts)
@@ -949,249 +1286,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     jac_options=jac_options,
                 )
                 p_j_n_p_q_n_, p_j_n_p_x_ = objective_jacobians(i_ts=i_ts, q_n=q_n)
-                return (
-                    p_res_p_q_nm1,
-                    p_res_p_q_n,
-                    p_v_dot_res_p_struct_dv_,
-                    p_aero_res_d_dv_,
-                    p_j_n_p_q_n_,
-                    p_j_n_p_x_,
-                )
 
-            (
-                p_res_p_q_nm1_batch,
-                p_res_p_q_n_batch,
-                p_v_dot_res_p_struct_dv_batch,
-                p_aero_res_d_dv_batch,
-                p_j_n_p_q_n_batch,
-                p_j_n_p_x_batch,
-            ) = jax.vmap(per_step_jacobians)(i_ts_chunk)
-
-            n_adj = adj_np1.shape[-1]
-            adj_history_init = (
-                jnp.zeros((n_parallel_steps_, n_j, n_adj))
-                if save_adjoint
-                else jnp.zeros(())
-            )
-
-            def chunk_body(
-                k: int,
-                carry: tuple[AeroelasticDesignVariables, Array, Array, Array],
-            ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
-                d_j_d_x_carry, adj_carry, p_r_np1_p_q_n_carry, adj_hist_carry = carry
-
-                d_j_d_x_carry, adj_n = time_loop(
-                    rev_i_ts_=rev_i_ts_start + k,
-                    d_j_d_x_=d_j_d_x_carry,
-                    adj_np1=adj_carry,
-                    p_aero_res_d_dv=jax.tree.map(lambda x: x[k], p_aero_res_d_dv_batch),
-                    p_v_dot_res_p_struct_dv=jax.tree.map(
-                        lambda x: x[k], p_v_dot_res_p_struct_dv_batch
-                    ),
-                    p_r_n_p_q_n=p_res_p_q_n_batch[k],
-                    p_r_np1_p_q_n=p_r_np1_p_q_n_carry,
-                    p_j_n_p_x=jax.tree.map(lambda x: x[k], p_j_n_p_x_batch),
-                    p_j_n_p_q_n=p_j_n_p_q_n_batch[k],
-                )
-
-                if save_adjoint:
-                    adj_hist_carry = adj_hist_carry.at[k].set(adj_n)
-
-                # the next iteration steps further backwards: this step's p_res/p_q_{n-1} becomes the next step's
-                # p_r_np1_p_q_n
-                return (
-                    d_j_d_x_carry,
-                    adj_n,
-                    p_res_p_q_nm1_batch[k],
-                    adj_hist_carry,
-                )
-
-            d_j_d_x_, adj_first, p_r_np1_p_q_n_first, adj_history = jax.lax.fori_loop(
-                lower=0,
-                upper=n_parallel_steps_,
-                body_fun=chunk_body,
-                init_val=(d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_history_init),
-            )
-
-            return (
-                d_j_d_x_,
-                adj_first,
-                p_r_np1_p_q_n_first,
-                adj_history if save_adjoint else None,
-            )
-
-        assert dv_full.aero.cs_ang_t is not None and dv_full.aero.cs_vel_t is not None
-        dv_grad_init = AeroelasticDesignVariables(
-            structure_dv=StructuralDesignVariables(
-                x0=jnp.zeros((*j_shape, *self.structure.x0.shape))
-                if grads_to_compute is None or grads_to_compute.structure.x0
-                else None,
-                orientation_euler=jnp.zeros((*j_shape, 3))
-                if grads_to_compute is None
-                or grads_to_compute.structure.orientation_euler
-                else None,
-                k_cs=jnp.zeros((*j_shape, *self.structure.k_cs.shape))
-                if grads_to_compute is None or grads_to_compute.structure.k_cs
-                else None,
-                m_cs=jnp.zeros((*j_shape, *self.structure.m_cs.shape))
-                if grads_to_compute is None or grads_to_compute.structure.m_cs
-                else None,
-                m_lumped=jnp.zeros((*j_shape, *self.structure.m_lumped.shape))
-                if self.structure.use_lumped_mass
-                and (grads_to_compute is None or grads_to_compute.structure.m_lumped)
-                else None,
-                f_ext_dead=jnp.zeros((*j_shape, *case.structure.f_ext_dead.shape))
-                if case.structure.f_ext_dead is not None
-                and (grads_to_compute is None or grads_to_compute.structure.f_ext_dead)
-                else None,
-                f_ext_follower=jnp.zeros(
-                    (*j_shape, *case.structure.f_ext_follower.shape)
-                )
-                if case.structure.f_ext_follower is not None
-                and (
-                    grads_to_compute is None
-                    or grads_to_compute.structure.f_ext_follower
-                )
-                else None,
-                thrust_t={
-                    k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in case.structure.thrust.items()
-                }
-                if grads_to_compute is None or grads_to_compute.structure.thrust_t
-                else None,
-                f_shape=j_shape,
-            ),
-            aero_dv=AeroDesignVariables(
-                x0_b=ArrayList(
-                    [jnp.zeros((*j_shape, *arr.shape)) for arr in self.aero.x0_b]
-                )
-                if (grads_to_compute is None or grads_to_compute.aero.x0_aero)
-                else None,
-                flowfield={
-                    k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in self.aero.flowfield.to_design_variables().items()
-                }
-                if (grads_to_compute is None or grads_to_compute.aero.flowfield)
-                else None,
-                cs_ang_t={
-                    k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in (
-                        dv.aero.cs_ang_t
-                        if dv.aero.cs_ang_t is not None
-                        else dv_full.aero.cs_ang_t
-                    ).items()
-                }
-                if (grads_to_compute is None or grads_to_compute.aero.cs_ang_t)
-                else None,
-                cs_vel_t={
-                    k: jnp.zeros((*j_shape, *v.shape))
-                    for k, v in (
-                        dv.aero.cs_vel_t
-                        if dv.aero.cs_vel_t is not None
-                        else dv_full.aero.cs_vel_t
-                    ).items()
-                }
-                if (grads_to_compute is None or grads_to_compute.aero.cs_vel_t)
-                else None,
-                f_shape=j_shape,
-            ),
-        )
-
-        n_dof: int = self.structure.n_dof
-        n_aero_states: int = minimal_states_init.aero.n_states
-        free_state_ix: Array = jnp.concatenate(
-            [solve_dofs_arr + i * n_dof for i in range(4)]
-            + [jnp.arange(5 * n_dof, 5 * n_dof + n_aero_states)]
-            + [solve_dofs_arr + 4 * n_dof]
-        )
-        n_adj_dof = 4 * n_solve + n_aero_states + n_solve
-
-        adj_full_init: Optional[Array] = (
-            jnp.zeros((case.structure.n_tstep + 1, n_j, n_adj_dof))
-            if save_adjoint
-            else None
-        )
-
-        if matrix_free:
-            # Matrix-free adjoint
-            def _cot_to_solve_vec(cot: AeroelasticMinimalStates) -> Array:
-                # convert cotangent to vector
-                struct_stack = cot.structure.to_mat()  # [5, n_nodes, 6]
-                struct_flat = struct_stack.reshape(
-                    struct_stack.shape[0], -1
-                )  # [5, n_dof]
-                struct_free = struct_flat[:4][
-                    :, solve_dofs_arr
-                ].ravel()  # [4 * n_solve]
-                f_ext_aero_free = struct_flat[4, solve_dofs_arr]  # [n_solve]
-                aero_flat = cot.aero.ravel()  # [n_aero_states]
-                return jnp.concatenate((struct_free, aero_flat, f_ext_aero_free))
-
-            @jax.jit
-            def matrix_free_step(
-                rev_i_ts_: int,
-                d_j_d_x_: AeroelasticDesignVariables,
-                adj_t_p_r_np1_p_q_n: Array,
-            ) -> tuple[AeroelasticDesignVariables, Array, Array]:
-                i_ts = n_tstep_adjoint_ - rev_i_ts_
-                i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
-                q_nm1 = case.get_minimal_states(i_ts=i_ts_nm1)
-                q_n = case.get_minimal_states(i_ts=i_ts)
-                t_n = case.structure.t[i_ts]
-
-                p_j_n_p_q_n, p_j_n_p_x = objective_jacobians(i_ts=i_ts, q_n=q_n)
-
-                def _residual_all(
-                    q_n_: AeroelasticMinimalStates,
-                    q_nm1_: AeroelasticMinimalStates,
-                    dv_: AeroelasticDesignVariables,
-                ) -> Array:
-                    # full aeroelastic residual as a function of current and previous states and design variables
-                    return self.timestep_residual(
-                        i_ts=i_ts,
-                        t=t_n,
-                        q_nm1=q_nm1_,
-                        q_n=q_n_,
-                        dv_=dv_,
-                        dv_full=dv_full,
-                        thrust_t=case.structure.thrust,
-                        solve_dofs=solve_dofs,
-                        approx_grads=approx_grads,
-                    )
-
-                # single VJP shared between the GMRES matvec, the coupling term and the design-variable pull
-                _, pull_all = jax.vjp(_residual_all, q_n, q_nm1, dv)
-
-                def matvec_qn_t(v: Array) -> Array:
-                    return _cot_to_solve_vec(pull_all(v)[0])
-
-                b_rhs = -(p_j_n_p_q_n.reshape(n_j, -1) + adj_t_p_r_np1_p_q_n)
-
-                # solve system using GMRES batched across objective size
-                def _solve_row(b_row: Array) -> Array:
-                    x, _ = jax.scipy.sparse.linalg.gmres(
-                        matvec_qn_t,
-                        b_row,
-                        tol=1e-10,
-                        atol=1e-10,
-                        maxiter=50,
-                        solve_method="batched",
-                    )
-                    return x
-
-                adj_n = jax.vmap(_solve_row)(b_rhs)  # [n_j, n_adj_dof]
-
-                # pull coupling term and design-variable gradient from the same tape in one batched sweep
-                def _pull_row(
-                    a: Array,
-                ) -> tuple[Array, AeroelasticDesignVariables]:
-                    _, q_nm1_cot, dv_cot = pull_all(a)
-                    return _cot_to_solve_vec(q_nm1_cot), dv_cot
-
-                adj_t_p_r_n_p_q_nm1, dv_grads = jax.vmap(_pull_row)(adj_n)
-
-                d_j_d_x_ += dv_grads
-                d_j_d_x_ += p_j_n_p_x
+                # solve adjoint step
+                b = -(p_j_n_p_q_n_.reshape(n_j, -1) + adj_np1 @ p_r_np1_p_q_n).T
+                adj_n = jnp.linalg.solve(p_res_p_q_n.T, b).T
 
                 jax_print(
                     "Solved adjoint for timestep {i_ts}",
@@ -1199,144 +1297,58 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     verbose_level=VerbosityLevel.NORMAL,
                 )
 
-                return d_j_d_x_, adj_n, adj_t_p_r_n_p_q_nm1
+                # add sentitivity of aerodynamic problem through full aero residual
+                d_j_d_x_ += p_aero_res_d_dv_.premultiply_adj(adj_n[:, 4 * n_solve :])
 
-            def matrix_free_body(
-                rev_i_ts_: int,
-                carry: tuple[AeroelasticDesignVariables, Array, Array, Array],
-            ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
-                d_j_d_x_, _adj_np1, adj_t_p_r_np1_p_q_n, adj_full_ = carry
-                d_j_d_x_, adj_n, adj_t_p_r_n_p_q_nm1 = matrix_free_step(
-                    rev_i_ts_=rev_i_ts_,
-                    d_j_d_x_=d_j_d_x_,
-                    adj_t_p_r_np1_p_q_n=adj_t_p_r_np1_p_q_n,
+                # add sensitivity of structural problem through v_dot residual
+                d_j_d_x_.structure += p_v_dot_res_p_struct_dv_.premultiply_adj(
+                    adj_n[:, 2 * n_solve : 3 * n_solve]
                 )
-                if save_adjoint:
-                    i_ts = n_tstep_adjoint_ - rev_i_ts_
-                    adj_full_ = adj_full_.at[i_ts].set(adj_n)
-                return d_j_d_x_, adj_n, adj_t_p_r_n_p_q_nm1, adj_full_
+                d_j_d_x_ += p_j_n_p_x_
 
-            d_j_d_x_mf: AeroelasticDesignVariables
-            d_j_d_x_mf, adj_last_mf, adj_t_p_r1_p_q0, adj_full_mf = jax.lax.fori_loop(
+                if save_adjoint:
+                    adj_full_ = adj_full_.at[i_ts].set(adj_n)
+
+                return d_j_d_x_, adj_n, p_res_p_q_nm1, adj_full_
+
+            d_j_d_x, adj_last, p_r1_p_q0, adj_full = jax.lax.fori_loop(
                 lower=0,
                 upper=n_tstep_adjoint_,
-                body_fun=matrix_free_body,
+                body_fun=step_body,
                 init_val=(
                     dv_grad_init,
                     jnp.zeros((n_j, n_adj_dof)),
-                    jnp.zeros((n_j, n_adj_dof)),
+                    jnp.zeros((n_adj_dof, n_adj_dof)),
                     adj_full_init,
                 ),
             )
+            future_row = adj_last @ p_r1_p_q0
 
+        # solve initial timestep adjoint, as there is no r0
+        if include_initial_state_grad:
             future_cot_q0_full = jnp.zeros((n_j, minimal_states_init.n_states))
             if case.structure.n_tstep > 1:
                 future_cot_q0_full = future_cot_q0_full.at[:, free_state_ix].set(
-                    adj_t_p_r1_p_q0
+                    future_row
                 )
 
-            d_j_d_x_mf += self.compute_p_j0_p_x(
+            d_j_d_x += self._initial_timestep_grad_contribution(
                 case=case[0].to_static(),
                 objective=objective,
                 grads_to_compute=grads_to_compute,
                 p_varphi_p_x=p_varphi_p_x,
                 solve_dofs=solve_dofs_arr,
-                future_cot_q0_full=future_cot_q0_full,
+                adj_t_p_r1_p_q0=future_cot_q0_full,
                 horseshoe=static_horseshoe,
             )
 
-            adj_mf = (
-                adj_full_mf.reshape(
-                    adj_full_mf.shape[0], *j_shape, *adj_full_mf.shape[2:]
-                )[1:-1]
-                if save_adjoint
-                else None
-            )
-
-            d_j_d_x_mf.mapping = dv.mapping
-            return d_j_d_x_mf, j_eval, adj_mf
-
-        # pass through time steps backwards in chunks of n_parallel_steps
-        n_full_chunks: int = n_tstep_adjoint_ // n_parallel_steps
-        remainder: int = n_tstep_adjoint_ - n_full_chunks * n_parallel_steps
-
-        def chunk_step(
-            chunk_i: int,
-            carry: tuple[AeroelasticDesignVariables, Array, Array, Array],
-        ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
-            d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_ = carry
-            rev_i_ts_start = chunk_i * n_parallel_steps
-            d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_history = multi_timestep_loop(
-                rev_i_ts_start=rev_i_ts_start,
-                d_j_d_x_=d_j_d_x_,
-                adj_np1=adj_np1,
-                p_r_np1_p_q_n=p_r_np1_p_q_n,
-                n_parallel_steps_=n_parallel_steps,
-            )
-            if save_adjoint:
-                # adj_history is ordered with index 0 at the latest real time in the chunk
-                i_ts_chunk = (
-                    n_tstep_adjoint_ - rev_i_ts_start - jnp.arange(n_parallel_steps)
-                )
-                adj_full_ = adj_full_.at[i_ts_chunk].set(adj_history)
-            return d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_
-
-        d_j_d_x: AeroelasticDesignVariables
-        d_j_d_x, adj_last, p_r1_p_q0, adj_full = jax.lax.fori_loop(
-            lower=0,
-            upper=n_full_chunks,
-            body_fun=chunk_step,
-            init_val=(
-                dv_grad_init,
-                jnp.zeros((n_j, n_adj_dof)),
-                jnp.zeros((n_adj_dof, n_adj_dof)),
-                adj_full_init,
-            ),
-        )
-
-        # trailing chunk for the remaining steps
-        if remainder > 0:
-            rev_i_ts_start_rem = n_full_chunks * n_parallel_steps
-            d_j_d_x, adj_last, p_r1_p_q0, adj_history_rem = multi_timestep_loop(
-                rev_i_ts_start=rev_i_ts_start_rem,
-                d_j_d_x_=d_j_d_x,
-                adj_np1=adj_last,
-                p_r_np1_p_q_n=p_r1_p_q0,
-                n_parallel_steps_=remainder,
-            )
-            if save_adjoint:
-                i_ts_chunk_rem = (
-                    n_tstep_adjoint_ - rev_i_ts_start_rem - jnp.arange(remainder)
-                )
-                adj_full = adj_full.at[i_ts_chunk_rem].set(adj_history_rem)
-
-        adj = adj_full if save_adjoint else adj_last
-
-        # solve initial timestep adjoint, as there is no r0
-        future_cot_q0_full = jnp.zeros((n_j, minimal_states_init.n_states))
-        if case.structure.n_tstep > 1:
-            future_cot_q0_full = future_cot_q0_full.at[:, free_state_ix].set(
-                (adj[1, :, :] if save_adjoint else adj) @ p_r1_p_q0
-            )
-
-        d_j_d_x += self.compute_p_j0_p_x(
-            case=case[0].to_static(),
-            objective=objective,
-            grads_to_compute=grads_to_compute,
-            p_varphi_p_x=p_varphi_p_x,
-            solve_dofs=solve_dofs_arr,
-            future_cot_q0_full=future_cot_q0_full,
-            horseshoe=static_horseshoe,
-        )
-
         # restore original shape of j, and cut off zeros for past-end timestep and initial timestep which are always 0
         adj = (
-            adj.reshape(adj.shape[0], *j_shape, *adj.shape[2:])[1:-1]
+            adj_full.reshape(adj_full.shape[0], *j_shape, *adj_full.shape[2:])[1:-1]
             if save_adjoint
             else None
         )
 
-        # restore gradient meta-data
         d_j_d_x.mapping = dv.mapping
 
         return d_j_d_x, j_eval, adj
@@ -1345,22 +1357,16 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         case: DynamicAeroelastic,
         approx_grads: bool,
-        matrix_free: bool = False,
         jacobian_approximations: AeroelasticJacobianApproximations = AeroelasticJacobianApproximations(),
         grads_to_compute: Optional[AeroelasticGradsToCompute] = None,
         i_ts: int = 1,
         n_profile_loops: int = 10,
     ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
         r"""
-        Function to time evaluation of the Jacobians used for the coupled aeroelastic adjoint solution. When
-        ``matrix_free`` is False (default), the structural residual Jacobians are profiled by delegating to
-        :meth:`BeamStructure.dynamic_adjoint_profile`, and the aerodynamic residual Jacobians (bound circulation, wake
-        propagation, bound circulation rate, aerodynamic forcing) are profiled here. When ``matrix_free`` is True,
-        the VJPs that back the matrix-free adjoint solve are profiled instead (equivalent to one GMRES matvec plus the
-         coupling with ``p_r_n/p_q_nm1``).
+        Function to time evaluation of the Jacobians used for the coupled aeroelastic adjoint solution for the case
+        where the full Jacobian is computed.
         :param case: Dynamic aeroelastic case from which to extract states.
         :param approx_grads: If True, neglect small gradient terms.
-        :param matrix_free: If True, profile the VJPs used by the matrix-free adjoint instead of Jacobian assembly.
         :param jacobian_approximations: Define which blocks of the adjoint Jacobians will be substituted for
         approximations.
         :param grads_to_compute: AeroelasticGradsToCompute object describing which design gradients to compute. If
@@ -1370,139 +1376,32 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :return: Dictionary of {residual_name: {gradient_argument: val}} for compile time and run time respectively.
         """
 
-        title = (
-            "Aeroelastic Adjoint Profile (matrix-free)"
-            if matrix_free
-            else "Aeroelastic Adjoint Profile"
+        print_table_title(inner_width=95, title="Aeroelastic Adjoint Profile")
+
+        jac_options = self.construct_approximate_jacobians(
+            sol=case, jacobian_approximations=jacobian_approximations
         )
-        print_table_title(inner_width=95, title=title)
 
-        if matrix_free:
-            compile_time, run_time = self._matrix_free_profile(
-                case=case,
-                approx_grads=approx_grads,
-                grads_to_compute=grads_to_compute,
-                i_ts=i_ts,
-                n_profile_loops=n_profile_loops,
-            )
-        else:
-            # compute Jacobian approximations, if requested
-            jac_options = self.construct_approximate_jacobians(
-                sol=case, jacobian_approximations=jacobian_approximations
-            )
-
-            *_, compile_time, run_time = self.timestep_residual_jacobians(
-                i_ts=i_ts,
-                t=case.aero.t[i_ts],
-                q_nm1=case.get_minimal_states(i_ts=i_ts - 1),
-                q_n=case.get_minimal_states(i_ts=i_ts),
-                dv_=self.get_design_variables(
-                    case=case, grads_to_compute=grads_to_compute
-                ),
-                dv_full=self.get_design_variables(case=case, grads_to_compute=None),
-                thrust_t=case.structure.thrust,
-                solve_dofs=get_solve_dofs(
-                    n_dof=self.structure.n_dof,
-                    prescribed_dofs=case.structure.prescribed_dofs,
-                ),
-                approx_grads=approx_grads,
-                n_profile_loops=n_profile_loops,
-                jac_options=jac_options,
-            )
+        *_, compile_time, run_time = self.timestep_residual_jacobians(
+            i_ts=i_ts,
+            t=case.aero.t[i_ts],
+            q_nm1=case.get_minimal_states(i_ts=i_ts - 1),
+            q_n=case.get_minimal_states(i_ts=i_ts),
+            dv_=self.get_design_variables(case=case, grads_to_compute=grads_to_compute),
+            dv_full=self.get_design_variables(case=case, grads_to_compute=None),
+            thrust_t=case.structure.thrust,
+            solve_dofs=get_solve_dofs(
+                n_dof=self.structure.n_dof,
+                prescribed_dofs=case.structure.prescribed_dofs,
+            ),
+            approx_grads=approx_grads,
+            n_profile_loops=n_profile_loops,
+            jac_options=jac_options,
+        )
 
         print_table_line(inner_width=95)
 
         return compile_time, run_time
-
-    def _matrix_free_profile(
-        self,
-        case: DynamicAeroelastic,
-        approx_grads: bool,
-        grads_to_compute: Optional[AeroelasticGradsToCompute],
-        i_ts: int,
-        n_profile_loops: int,
-    ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
-        r"""
-        Profile the VJPs used by the matrix-free branch of the dynamic_adjoint at a single time step.
-        :return: compile_time and run time.
-        """
-        solve_dofs = get_solve_dofs(
-            n_dof=self.structure.n_dof,
-            prescribed_dofs=case.structure.prescribed_dofs,
-        )
-        dv = self.get_design_variables(case=case, grads_to_compute=grads_to_compute)
-        dv_full = self.get_design_variables(case=case, grads_to_compute=None)
-        q_nm1 = case.get_minimal_states(i_ts=i_ts - 1)
-        q_n = case.get_minimal_states(i_ts=i_ts)
-        t_n = case.aero.t[i_ts]
-        thrust_t = case.structure.thrust
-
-        n_solve = len(solve_dofs)
-        n_aero_states = q_n.aero.n_states
-        n_r = 4 * n_solve + n_aero_states + n_solve
-        cot = jnp.ones(n_r)
-
-        @jax.jit
-        def state_vjp_apply(
-            q_n_: AeroelasticMinimalStates,
-            q_nm1_: AeroelasticMinimalStates,
-            cot_: Array,
-        ) -> tuple[AeroelasticMinimalStates, AeroelasticMinimalStates]:
-            _, pull = jax.vjp(
-                lambda a, b: self.timestep_residual(
-                    i_ts=i_ts,
-                    t=t_n,
-                    q_nm1=b,
-                    q_n=a,
-                    dv_=dv,
-                    dv_full=dv_full,
-                    thrust_t=thrust_t,
-                    solve_dofs=solve_dofs,
-                    approx_grads=approx_grads,
-                ),
-                q_n_,
-                q_nm1_,
-            )
-            return pull(cot_)
-
-        @jax.jit
-        def dv_vjp_apply(
-            dv_: AeroelasticDesignVariables, cot_: Array
-        ) -> AeroelasticDesignVariables:
-            _, pull = jax.vjp(
-                lambda d: self.timestep_residual(
-                    i_ts=i_ts,
-                    t=t_n,
-                    q_nm1=q_nm1,
-                    q_n=q_n,
-                    dv_=d,
-                    dv_full=dv_full,
-                    thrust_t=thrust_t,
-                    solve_dofs=solve_dofs,
-                    approx_grads=approx_grads,
-                ),
-                dv_,
-            )
-            return pull(cot_)[0]
-
-        compile_time: dict[str, float] = {}
-        run_time: dict[str, float] = {}
-
-        _, compile_time["q"], run_time["q"] = conditional_profile(
-            func=state_vjp_apply,
-            n_loops=n_profile_loops,
-            func_name="coupled_vjp",
-            arg_name="q",
-        )(q_n, q_nm1, cot)
-
-        _, compile_time["dv"], run_time["dv"] = conditional_profile(
-            func=dv_vjp_apply,
-            n_loops=n_profile_loops,
-            func_name="coupled_vjp",
-            arg_name="dv",
-        )(dv, cot)
-
-        return {"coupled_vjp": compile_time}, {"coupled_vjp": run_time}
 
     def trim(
         self,

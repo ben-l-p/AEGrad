@@ -78,6 +78,14 @@ class StaticStructure:
         )
         self.local: bool = local
 
+    @property
+    def x(self):
+        return self.hg[:, :3, 3]
+
+    @property
+    def rmat(self):
+        return self.hg[:, :3, :3]
+
     @overload
     def to_dynamic(self) -> DynamicStructureSnapshot: ...
 
@@ -295,6 +303,14 @@ class DynamicStructureSnapshot:
             n_dof=varphi.shape[0] * 6, prescribed_dofs=prescribed_dofs
         )
         self.local: bool = local
+
+    @property
+    def x(self):
+        return self.hg[:, :3, 3]
+
+    @property
+    def rmat(self):
+        return self.hg[:, :3, :3]
 
     def to_static(self) -> StaticStructure:
         """Convert dynamic structure initial_snapshot results to a static structure, dropping velocity/acceleration dependent
@@ -559,6 +575,14 @@ class DynamicStructure:
             n_dof=varphi.shape[0] * 6, prescribed_dofs=prescribed_dofs
         )
         self.local: bool = True
+
+    @property
+    def x(self):
+        return self.hg[..., :3, 3]
+
+    @property
+    def rmat(self):
+        return self.hg[..., :3, :3]
 
     def to_static(self, i_ts: int) -> StaticStructure:
         """Extract static structure results at a specific time index."""

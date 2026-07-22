@@ -48,7 +48,7 @@ class TestConstXVelocityXBeam:
             f_ext_dead=None,
             f_ext_aero=None,
         )
-        x_t = output.hg[:, 0, cls.v_direction_index, 3]  # [n_tstep]
+        x_t = output.x[:, 0, cls.v_direction_index]  # [n_tstep]
 
         expected_x_t = jnp.arange(n_tstep) * dt * v_mag  # [n_tstep]
 
