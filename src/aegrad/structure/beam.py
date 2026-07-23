@@ -2371,16 +2371,16 @@ class BaseBeamStructure:
                 vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_n)
             )
 
-            if f_ext_follower is not None:
+            if f_ext_follower is not None and struct_sol.f_ext_follower is not None:
                 struct_sol.f_ext_follower = struct_sol.f_ext_follower.at[i_ts, ...].set(
                     f_ext_follower[i_ts, ...]
                 )
-            if f_ext_dead is not None:
+            if f_ext_dead is not None and struct_sol.f_ext_dead is not None:
                 struct_sol.f_ext_dead = struct_sol.f_ext_dead.at[i_ts, ...].set(
                     f_ext_dead_local
                 )
 
-            if f_ext_aero is not None:
+            if f_ext_aero is not None and struct_sol.f_ext_aero is not None:
                 struct_sol.f_ext_aero = struct_sol.f_ext_aero.at[i_ts, ...].set(
                     f_ext_aero_local
                 )

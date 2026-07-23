@@ -668,7 +668,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param mode: Mode for automatic differentiation, either ``forward`` or ``reverse``.
         :param map_batch_size: Batch size used for vectorising Jacobian construction.
         :return: Jacobian of residual with respect to previous degrees of freedom, Jacobian of residual with respect to
-        current degrees of freedom, Jacobian of v_dot residual with respect to structural design variables, Jacobian of
+        current degrees of freedom. Jacobian of v_dot residual with respect to structural design variables, Jacobian of
         aero residual with respect to design variables. Can also include compile time and run time when profiling is
         used.
         """
@@ -864,6 +864,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param solve_dofs: Solve degree of freedom index.
         :param approx_grads: Approximate gradient of the coupled aeroelastic system, removing some negligible terms.
         :param precond_i_ts: Time step index for which to create the preconditioner. Defaults to 0.
+        :return: Preconditioner function.
         """
         precond_q_nm1 = case.get_minimal_states(i_ts=max(precond_i_ts - 1, 0))
         precond_q_n = case.get_minimal_states(i_ts=precond_i_ts)
@@ -968,9 +969,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         zeta_w_end = zeta_w_start + n_zeta_w
 
         def apply_precond(vec: Array) -> Array:
-            # function for applying the preconditioner to a vector or matrix
-            # split the system into three parts to remove gamma_w and zeta_w. The removed blocks are treated as having
-            # preconditioner being the negative identity
+            # split the system to remove gamma_w and zeta_w. The removed blocks use the negative identity as preconditioner.
             vec_pre_gw = vec[:gamma_w_start]  # struct + gamma_b
             vec_gw = vec[gamma_w_start:gamma_w_end]  # gamma_w (identity)
             vec_mid = vec[gamma_w_end:zeta_w_start]  # gamma_b_dot
@@ -979,17 +978,15 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             vec_reduced = jnp.concatenate([vec_pre_gw, vec_mid, vec_post_zw])
             x_reduced = jax.scipy.linalg.lu_solve(precond_lu, vec_reduced)
 
-            # split the reduced solve output back into its three source slices
             x_pre_gw = x_reduced[:gamma_w_start]
             x_mid = x_reduced[gamma_w_start : gamma_w_start + n_gamma_b_dot]
             x_post_zw = x_reduced[gamma_w_start + n_gamma_b_dot :]
 
-            # add negatives here
             return jnp.concatenate([x_pre_gw, -vec_gw, x_mid, -vec_zw, x_post_zw])
 
         return apply_precond
 
-    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14))
+    @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15))
     def dynamic_adjoint(
         self,
         case: DynamicAeroelastic,
@@ -1008,6 +1005,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         gmres_warm_start: bool = True,
         gmres_precond: bool = True,
         gmres_restart: int = 50,
+        preconditioner: Optional[Callable[[Array], Array]] = None,
     ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
         Compute the adjoint of a coupled dynamic aeroelastic system.
@@ -1033,10 +1031,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         incremental may be preferred on CPU.
         :param gmres_warm_start: If True, use the previous timestep adjoint vector as the first guess for the current
         value. Otherwise, initialise with the zero vector.
-        :param gmres_precond: If True, build a preconditioner for the GMRES system to reduce the number of iterations
-        required for convergence. This comes with the time penalty of the initial construction cost, however should
-        be a net benefit for longer cases.
+        :param gmres_precond: If True and ``preconditioner`` is None, build the frozen-wake preconditioner internally.
+        Ignored when ``preconditioner`` is supplied.
         :param gmres_restart: Number of times to restart the GMRES algorithm.
+        :param preconditioner: Optional pass a prebuild preconditioner. Useful for profiling.
         :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
         step, and optional adjoint states.
         """
@@ -1139,7 +1137,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         d_j_d_x: AeroelasticDesignVariables
         if matrix_free:
             # optional preconditioner for the matrix-free GMRES solves.
-            if gmres_precond:
+            if preconditioner is not None:
+                apply_precond = preconditioner
+            elif gmres_precond:
                 apply_precond = self.make_frozen_wake_preconditioner(
                     case=case,
                     dv_full=dv_full,

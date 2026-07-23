@@ -19,7 +19,6 @@ class TestDynamicEquilibriumAdjoint:
     @staticmethod
     def _run(
         matrix_free: bool,
-        precondition: bool,
         plot=False,
     ):
         m = 2
@@ -101,7 +100,7 @@ class TestDynamicEquilibriumAdjoint:
             p_varphi_p_x=-static_adj,
             approx_grads=False,
             grads_to_compute=grads_to_compute,
-            gmres_precond=precondition,
+            gmres_precond=matrix_free,
         )
 
         assert (
@@ -130,10 +129,7 @@ class TestDynamicEquilibriumAdjoint:
         )
 
     def test_dynamic_equilibrium_adjoint_dense(self):
-        self._run(matrix_free=False, precondition=False)
-
-    def test_dynamic_equilibrium_adjoint_matrix_free(self):
-        self._run(matrix_free=True, precondition=False)
+        self._run(matrix_free=False)
 
     def test_dynamic_equilibrium_adjoint_matrix_free_preconditioned(self):
-        self._run(matrix_free=True, precondition=True)
+        self._run(matrix_free=True)

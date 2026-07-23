@@ -256,12 +256,8 @@ class BaseCoupledAeroelastic:
 
             tot_n = vmap(hg_to_d)(struct_case_np1.hg, self.structure.hg0)
 
-            if struct_case_n.f_ext_aero is None:
-                delta_f = None
-                total_f = None
-            else:
-                delta_f = -r_curr  # f_applied_global - f_aero_new
-                total_f = jnp.where(free_mask, f_aero_new, 0.0)
+            delta_f = -r_curr  # f_applied_global - f_aero_new
+            total_f = jnp.where(free_mask, f_aero_new, 0.0)
 
             converge_status_.update(
                 delta_disp=delta_n,
@@ -392,11 +388,11 @@ class BaseCoupledAeroelastic:
 
             # set forces at timestep 0
             # this is important as the time integration scheme refers to these values when solving the first timestep
-            if f_ext_follower is not None:
+            if f_ext_follower is not None and case.structure.f_ext_follower is not None:
                 case.structure.f_ext_follower = case.structure.f_ext_follower.at[
                     0, ...
                 ].set(f_ext_follower[0, ...])
-            if f_ext_dead is not None:
+            if f_ext_dead is not None and case.structure.f_ext_dead is not None:
                 case.structure.f_ext_dead = case.structure.f_ext_dead.at[0, ...].set(
                     self.structure.make_f_dead_ext(
                         f_ext=f_ext_dead[0, ...], rmat=case.structure.hg[0, :, :3, :3]

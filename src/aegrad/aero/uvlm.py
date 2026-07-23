@@ -315,7 +315,6 @@ class UVLM:
         bound_upwash: bool = True,
         wake_upwash: bool = True,
         unsteady_force: bool = True,
-        gamma_dot_state: bool = True,
     ) -> LinearUVLM:
         r"""
         Create linearised aerodynamic model.
@@ -325,7 +324,6 @@ class UVLM:
         :param bound_upwash: If true, linearise for flowfield perturbations at the bound vortex vertex.
         :param wake_upwash: If true, linearise for flowfield perturbations at the wake vortex vertex.
         :param unsteady_force: If true, include unsteady force terms in linearisation.
-        :param gamma_dot_state: If true, include time derivative of bound circulation as a state in the linear model.
         :return: LinearUVLM model, linearised at specified time step.
         """
 
