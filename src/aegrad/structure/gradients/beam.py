@@ -894,6 +894,7 @@ class BeamStructure(BaseBeamStructure):
 
             # solve for the adjoint vector at timestep n, batched along the size of the objective.
             def _solve_row(b_row: Array) -> Array:
+                # noinspection PyTypeChecker
                 x, _ = jax.scipy.sparse.linalg.gmres(
                     matvec_qn_t,
                     b_row,
@@ -1330,5 +1331,9 @@ class BeamStructure(BaseBeamStructure):
 
         if print_header:
             print_table_line(inner_width=95)
+
+        assert compile_time is not None and run_time is not None, (
+            "No output timings passed"
+        )
 
         return compile_time, run_time

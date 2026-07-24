@@ -12,3 +12,14 @@ from aegrad.structure.gradients.data_structures import (
     StructureFullStates,
     StructuralDesignVariables,
 )
+
+__all__ = [
+    "OptionalJacobians",
+    "StaticStructure",
+    "DynamicStructure",
+    "DynamicStructureSnapshot",
+    "BeamStructure",
+    "StructuralObjectiveFunction",
+    "StructureFullStates",
+    "StructuralDesignVariables",
+]

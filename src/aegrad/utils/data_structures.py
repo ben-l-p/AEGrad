@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
-from typing import Optional, Sequence, overload, OrderedDict
+from typing import Optional, Sequence, OrderedDict
 
 import numpy as np
 from jax import Array, numpy as jnp
@@ -297,7 +297,7 @@ class DesignVariables:
         self.shapes: dict[str, Optional[tuple[int, ...] | ArrayListShape]] = {}
         self.mapping: dict[str, Optional[Array | ArrayList]] = {}
 
-    def to_dict(self) -> dict[str, Optional[Array | ArrayList]]:
+    def to_dict(self) -> dict[str, Optional[Array | ArrayList | dict[str, Array]]]:
         # should only be used in child classes
         return {}
 
@@ -370,50 +370,52 @@ class DesignVariables:
         return mapping, cnt
 
     def ravel_jacobian(self, f_size: int, x_size: int) -> Array:
-        @overload
-        def _inner_ravel(var: None) -> None: ...
-
-        @overload
-        def _inner_ravel(var: Array | ArrayList) -> Array: ...
-
         def _inner_ravel(
-            var: Optional[Array | ArrayList | OrderedDict[str, Array | ArrayList]],
+            var: Array | ArrayList | dict[str, Array | ArrayList],
         ) -> Optional[Array]:
-            if var is None:
-                return None
-            elif isinstance(var, Array):
+            if isinstance(var, Array):
                 return var.reshape(f_size, -1)
             elif isinstance(var, ArrayList):
-                return jnp.concatenate([_inner_ravel(sub_var) for sub_var in var])
+                sub_parts: list[Array] = []
+                for sub_var in var:
+                    sub_r = _inner_ravel(sub_var)
+                    if sub_r is not None:
+                        sub_parts.append(sub_r)
+                return jnp.concatenate(sub_parts)
             elif isinstance(var, dict):
-                return (
-                    jnp.concatenate(
-                        [_inner_ravel(var[k]) for k in sorted(var.keys())], axis=-1
-                    )
-                    if var
-                    else None
-                )
+                if not var:
+                    return None
+                dict_parts: list[Array] = []
+                for k in sorted(var.keys()):
+                    dict_r = _inner_ravel(var[k])
+                    if dict_r is not None:
+                        dict_parts.append(dict_r)
+                return jnp.concatenate(dict_parts, axis=-1)
             else:
                 raise ValueError("Invalid variable type in DesignVariables.")
 
-        arr = jnp.concatenate(
-            [
-                v
-                for v in [
-                    _inner_ravel(var)
-                    for var in self.to_dict().values()
-                    if var is not None
-                ]
-                if v is not None
-            ],  # type: ignore
-            axis=1,
-        )
+        parts: list[Array] = []
+        for value in self.to_dict().values():
+            if value is None:
+                continue
+            r = _inner_ravel(value)
+            if r is not None:
+                parts.append(r)
+        arr = jnp.concatenate(parts, axis=1)
         check_arr_shape(arr, (f_size, x_size), "Internal Jacobian")
         return arr
 
     def ravel(self) -> Array:
+        def _inner_func(var: Array | ArrayList | dict[str, Array | ArrayList]) -> Array:
+            if isinstance(var, Array | ArrayList):
+                return var.ravel()
+            elif isinstance(var, dict):
+                return jnp.concatenate([_inner_func(v) for v in var.values()])
+            else:
+                raise ValueError("Invalid variable type in DesignVariables.")
+
         return jnp.concatenate(
-            [var.ravel() for var in self.to_dict().values() if var is not None]
+            [_inner_func(var) for var in self.to_dict().values() if var is not None]
         )
 
     def reshape(self, *args: int) -> Array:

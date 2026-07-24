@@ -10,10 +10,10 @@ from jax.scipy.special import bernoulli
 from jax.lax import cond
 from jax import jacfwd, jacrev
 
-ADMode = Literal["reverse", "forward"]
-
 from aegrad.utils.constants import BASE_SUMMATION_ORDER
 from aegrad.utils.utils import conditional_profile
+
+ADMode = Literal["reverse", "forward"]
 
 if TYPE_CHECKING:
     from aegrad.aero.gradients.data_structures import AeroJacobianApproximations

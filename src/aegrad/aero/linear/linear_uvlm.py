@@ -44,7 +44,14 @@ class LinearWakeType(Enum):
     FREE = (True, True)
 
 
-class LinearUVLM(LinearModel):
+class LinearUVLM(
+    LinearModel[
+        AeroSnapshot,
+        AeroInputUnflattened,
+        AeroStateUnflattened,
+        AeroLinearResult,
+    ]
+):
     r"""
     Class to represent a linearised UVLM aerodynamic system about a reference state.
     """
@@ -117,9 +124,6 @@ class LinearUVLM(LinearModel):
 
     @property
     def reference(self) -> AeroSnapshot:
-        assert isinstance(self._reference, AeroSnapshot), (
-            "Reference state must be of type AeroSnapshot."
-        )
         return self._reference
 
     def extract_reference_inputs(
@@ -418,6 +422,7 @@ class LinearUVLM(LinearModel):
 
         return LinearSystem(a=a, b=b, c=c, d=d, dt=self.dt)
 
+    # noinspection PyMethodOverriding
     def run(
         self,
         u: AeroInputUnflattened,

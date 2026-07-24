@@ -119,14 +119,14 @@ class UVLM:
 
         # case for single inputs
         if isinstance(dof_mapping, Array):
-            dof_mapping_arraylist: ArrayList = ArrayList([dof_mapping])
+            dof_mapping_arrlist: ArrayList = ArrayList([dof_mapping])
         elif isinstance(dof_mapping, Sequence):
-            dof_mapping_arraylist: ArrayList = ArrayList(dof_mapping)
+            dof_mapping_arrlist = ArrayList(dof_mapping)
         elif isinstance(dof_mapping, ArrayList):
-            dof_mapping_arraylist: ArrayList = dof_mapping
+            dof_mapping_arrlist = dof_mapping
         else:
             raise TypeError("Invalid dof mapping type")
-        self.dof_mapping: ArrayList = ArrayList(dof_mapping_arraylist)
+        self.dof_mapping: ArrayList = dof_mapping_arrlist
 
         # number of aerodynamic surfaces
         self.n_surf: int = len(grid_shapes)
@@ -960,10 +960,8 @@ class UVLM:
                 ]
             )
 
-        if gamma_w_n is None:
-            raise ValueError("gamma_w_nm1 is None")
-        if zeta_w_n is None:
-            raise ValueError("zeta_w_nm1 is None")
+        assert gamma_w_n is not None
+        assert zeta_w_n is not None
 
         zeta_b_dot_for_forces = (
             zeta_b_dot_n
@@ -972,6 +970,7 @@ class UVLM:
         )
 
         def v_total_func(x_: Array) -> Array:
+            assert gamma_w_n is not None
             return self.flowfield.vmap_call(x=x_, t=t_n) + compute_v_ind(
                 cs=x_,
                 zetas=ArrayList([*zeta_b_n, *zeta_w_n]),
@@ -1638,7 +1637,6 @@ class UVLM:
             gamma_w_nm1_update - gamma_w_n
         ).ravel()
 
-    # noinspection PyUnusedLocal
     def gamma_b_dot_res_func(
         self,
         gamma_b_nm1: Array,
@@ -1661,6 +1659,7 @@ class UVLM:
         the residual design gradient.
         :return: Bound circulation time derivative residual.
         """
+        del dv  # intentionally unused
 
         gamma_b_nm1 = ArrayList.from_vector(
             vect=gamma_b_nm1,
@@ -1799,20 +1798,16 @@ class UVLM:
         )
 
         if self.include_unsteady_force:
-            f_unsteady: Optional[ArrayList] = (
-                ArrayList(
-                    [
-                        split_to_vertex(
-                            inner_case.flowfield.rho
-                            * gamma_b_dot_n[i_surf][..., None]
-                            * nc_n[i_surf],
-                            (0, 1),
-                        )
-                        for i_surf in range(inner_case.n_surf)
-                    ]
-                )
-                if self.include_unsteady_force
-                else None
+            f_unsteady: ArrayList = ArrayList(
+                [
+                    split_to_vertex(
+                        inner_case.flowfield.rho
+                        * gamma_b_dot_n[i_surf][..., None]
+                        * nc_n[i_surf],
+                        (0, 1),
+                    )
+                    for i_surf in range(inner_case.n_surf)
+                ]
             )
             f_tot = f_steady + f_unsteady
         else:

@@ -189,11 +189,11 @@ def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
     return True
 
 
-def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
+def k_t_expected(coeffs: Array | Sequence[float], length: Array | float) -> Array:
     r"""
     Compute expected two-node beam undeformed element stiffness matrix given coefficients and length
     :param coeffs: Stiffness coefficients which make up the diagonal of the local stiffness matrix, [6]
-    :param l: Beam length, []
+    :param length: Beam length, []
     :return: Beam tangent stiffness matrix, [12, 12]
     """
     if (isinstance(coeffs, Array) and coeffs.shape != (6,)) or (
@@ -201,30 +201,30 @@ def k_t_expected(coeffs: Array | Sequence[float], l: Array | float) -> Array:
     ):
         raise ValueError("Coefficients array must be of arr_list_shapes (6, )")
 
-    if isinstance(l, Array) and not jnp.isscalar(l):
+    if isinstance(length, Array) and not jnp.isscalar(length):
         raise ValueError("Length l0 must be a scalar value")
 
     eax, gay, gaz, gjx, eiy, eiz = coeffs
 
     k_upper_left = jnp.array(
         [
-            [eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-            [0.0, 12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
-            [0.0, 0.0, 12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
-            [0.0, 0.0, 0.0, gjx / l, 0.0, 0.0],
-            [0.0, 0.0, -6.0 * eiy / l**2, 0.0, 4.0 * eiy / l, 0.0],
-            [0.0, 6.0 * eiz / l**2, 0.0, 0.0, 0.0, 4.0 * eiz / l],
+            [eax / length, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 12.0 * eiz / length**3, 0.0, 0.0, 0.0, 6.0 * eiz / length**2],
+            [0.0, 0.0, 12.0 * eiy / length**3, 0.0, -6.0 * eiy / length**2, 0.0],
+            [0.0, 0.0, 0.0, gjx / length, 0.0, 0.0],
+            [0.0, 0.0, -6.0 * eiy / length**2, 0.0, 4.0 * eiy / length, 0.0],
+            [0.0, 6.0 * eiz / length**2, 0.0, 0.0, 0.0, 4.0 * eiz / length],
         ]
     )
 
     k_upper_right = jnp.array(
         [
-            [-eax / l, 0.0, 0.0, 0.0, 0.0, 0.0],
-            [0.0, -12.0 * eiz / l**3, 0.0, 0.0, 0.0, 6.0 * eiz / l**2],
-            [0.0, 0.0, -12.0 * eiy / l**3, 0.0, -6.0 * eiy / l**2, 0.0],
-            [0.0, 0.0, 0.0, -gjx / l, 0.0, 0.0],
-            [0.0, 0.0, 6.0 * eiy / l**2, 0.0, 2.0 * eiy / l, 0.0],
-            [0.0, -6.0 * eiz / l**2, 0.0, 0.0, 0.0, 2.0 * eiz / l],
+            [-eax / length, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, -12.0 * eiz / length**3, 0.0, 0.0, 0.0, 6.0 * eiz / length**2],
+            [0.0, 0.0, -12.0 * eiy / length**3, 0.0, -6.0 * eiy / length**2, 0.0],
+            [0.0, 0.0, 0.0, -gjx / length, 0.0, 0.0],
+            [0.0, 0.0, 6.0 * eiy / length**2, 0.0, 2.0 * eiy / length, 0.0],
+            [0.0, -6.0 * eiz / length**2, 0.0, 0.0, 0.0, 2.0 * eiz / length],
         ]
     )
 

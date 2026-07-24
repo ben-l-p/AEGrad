@@ -1,8 +1,7 @@
 from __future__ import annotations
 import math
 from math import prod
-from typing import Optional, Sequence, OrderedDict
-from collections import UserList
+from typing import Optional, Sequence, OrderedDict, Iterator
 from functools import singledispatch
 from types import EllipsisType
 
@@ -134,7 +133,7 @@ def neighbour_average(arr: Array, axes: int | Sequence[int]) -> Array:
 
 
 @make_pytree
-class ArrayList(UserList[Array]):
+class ArrayList:
     r"""
     Class to hold a sequence of arrays, with overloaded arithmetic operations. This allows for more elegant handling of
     non-uniform arrays in various calculations.
@@ -142,41 +141,56 @@ class ArrayList(UserList[Array]):
     """
 
     def __init__(self, arrs: Sequence[Array]) -> None:
-        super().__init__(arrs)
+        self.data: list[Array] = list(arrs)
 
     def __add__(self, other: ArrayList) -> ArrayList:
-        return ArrayList([self[i] + other[i] for i in range(len(self))])
+        return ArrayList([self.data[i] + other.data[i] for i in range(len(self.data))])
 
     def __iadd__(self, other: ArrayList) -> ArrayList:
-        for i in range(len(self)):
-            self[i] += other[i]
+        for i in range(len(self.data)):
+            self.data[i] += other.data[i]
         return self
 
     def __isub__(self, other) -> ArrayList:
-        for i in range(len(self)):
-            self[i] -= other[i]
+        for i in range(len(self.data)):
+            self.data[i] -= other[i]
         return self
 
     def __sub__(self, other: ArrayList) -> ArrayList:
-        return ArrayList([self[i] - other[i] for i in range(len(self))])
+        return ArrayList([self.data[i] - other.data[i] for i in range(len(self.data))])
 
     def __neg__(self) -> ArrayList:
-        return ArrayList([-self[i] for i in range(len(self))])
+        return ArrayList([-self.data[i] for i in range(len(self.data))])
 
     def __mul__(self, val: Array | float) -> ArrayList:
-        return ArrayList([self[i] * val for i in range(len(self))])
+        return ArrayList([self.data[i] * val for i in range(len(self.data))])
 
     def __truediv__(self, val: Array | float) -> ArrayList:
-        return ArrayList([self[i] / val for i in range(len(self))])
+        return ArrayList([self.data[i] / val for i in range(len(self.data))])
 
     def __rtruediv__(self, val: Array | float) -> ArrayList:
-        return ArrayList([val / self[i] for i in range(len(self))])
+        return ArrayList([val / self.data[i] for i in range(len(self.data))])
 
     def __rmul__(self, val: Array | float) -> ArrayList:
         return self.__mul__(val)
 
     def __matmul__(self, other: ArrayList) -> ArrayList:
-        return ArrayList([self[i] @ other[i] for i in range(len(self))])
+        return ArrayList([self.data[i] @ other.data[i] for i in range(len(self.data))])
+
+    def __iter__(self) -> Iterator[Array]:
+        return iter(self.data)
+
+    def __getitem__(self, idx: int) -> Array:
+        return self.data[idx]
+
+    def __setitem__(self, idx: int, val: Array):
+        self.data[idx] = val
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def append(self, arr: Array) -> None:
+        self.data.append(arr)
 
     def to_list(self) -> list[Array]:
         r"""
@@ -194,9 +208,9 @@ class ArrayList(UserList[Array]):
         return self.data[idx]
 
     def combine(self, *other: ArrayList) -> ArrayList:
-        new_list = list(self)
+        new_list = list(self.data)
         for o_ in other:
-            new_list.extend(list(o_))
+            new_list.extend(list(o_.data))
         return ArrayList(new_list)
 
     def ravel(self) -> Array:
@@ -204,7 +218,7 @@ class ArrayList(UserList[Array]):
         Flatten the sequence of arrays into a single 1D array.
         :return: Flattened 1D array.
         """
-        return flatten_to_1d(self)
+        return flatten_to_1d(self.data)
 
     @classmethod
     def from_vector(cls, vect: Array, arr_list_shapes: ArrayListShape) -> ArrayList:
@@ -236,7 +250,7 @@ class ArrayList(UserList[Array]):
         r"""
         Get the value of all arrays at the given index. This is equivalent to self[i][idx] for i in range(varphi).
         """
-        return ArrayList([self[i][idx] for i in range(len(self))])
+        return ArrayList([self.data[i][idx] for i in range(len(self.data))])
 
     @staticmethod
     def einsum(subscript: str, *operands: ArrayList) -> ArrayList:
@@ -246,14 +260,14 @@ class ArrayList(UserList[Array]):
         :param operands: Sequences of arrays to perform Einstein summation on.
         :return: Sequence of arrays resulting from Einstein summation.
         """
-        n_arrays = len(operands[0])
+        n_arrays = len(operands[0].data)
         for op in operands:
-            if len(op) != n_arrays:
+            if len(op.data) != n_arrays:
                 raise ValueError("All ArrayLists must have the same length.")
 
         return ArrayList(
             [
-                jnp.einsum(subscript, *(op[i] for op in operands))
+                jnp.einsum(subscript, *(op.data[i] for op in operands))
                 for i in range(n_arrays)
             ]
         )
@@ -265,7 +279,7 @@ class ArrayList(UserList[Array]):
         :param arr: Input ArrayList to create zeros like.
         :return: New ArrayList filled with zeros.
         """
-        return ArrayList([jnp.zeros_like(a) for a in arr])
+        return ArrayList([jnp.zeros_like(a) for a in arr.data])
 
     @property
     def shape(self) -> ArrayListShape:
@@ -273,11 +287,11 @@ class ArrayList(UserList[Array]):
         Get the arr_list_shapes of the arrays in the ArrayList.
         :return: ArrayListShape containing the arr_list_shapes of the arrays in the ArrayList.
         """
-        return ArrayListShape(shapes=[arr.shape for arr in self])
+        return ArrayListShape(shapes=[arr.shape for arr in self.data])
 
     @property
     def size(self) -> int:
-        return sum([arr.size for arr in self])
+        return sum([arr.size for arr in self.data])
 
     @staticmethod
     def _static_names() -> Sequence[str]:

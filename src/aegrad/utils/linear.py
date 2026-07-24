@@ -69,12 +69,17 @@ class SliceEntry:
     shapes: Optional[tuple[int, ...] | ArrayListShape]
 
 
-class LinearModel(ABC):
+class LinearModel[
+    R: ReferenceObject,
+    I: InputUnflattened,
+    S: StateUnflattened,
+    Res: LinearResult,
+](ABC):
     r"""
     Class to represent a linearised UVLM aerodynamic system about a reference state.
     """
 
-    def __init__(self, reference: ReferenceObject, dt: float | Array):
+    def __init__(self, reference: R, dt: float | Array):
 
         # slices of individual surface components in full vector
         self.input_slices, self.n_inputs = self._make_input_slices(reference=reference)
@@ -84,7 +89,7 @@ class LinearModel(ABC):
         )
         self.dt: float | Array = dt
 
-        self._reference: ReferenceObject = reference
+        self._reference: R = reference
 
         self.reference_inputs: dict[str, Optional[Array | ArrayList]] = (
             self.extract_reference_inputs()
@@ -110,7 +115,7 @@ class LinearModel(ABC):
 
     @property
     @abstractmethod
-    def reference(self) -> ReferenceObject: ...
+    def reference(self) -> R: ...
 
     @abstractmethod
     def extract_reference_inputs(self) -> dict[str, Optional[Array | ArrayList]]: ...
@@ -141,17 +146,17 @@ class LinearModel(ABC):
 
     @abstractmethod
     def _make_input_slices(
-        self, reference: ReferenceObject
+        self, reference: R
     ) -> tuple[dict[str, LinearComponent], int]: ...
 
     @abstractmethod
     def _make_state_slices(
-        self, reference: ReferenceObject
+        self, reference: R
     ) -> tuple[dict[str, LinearComponent], int]: ...
 
     @abstractmethod
     def _make_output_slices(
-        self, reference: ReferenceObject
+        self, reference: R
     ) -> tuple[dict[str, LinearComponent], int]: ...
 
     @abstractmethod
@@ -203,8 +208,10 @@ class LinearModel(ABC):
 
     @abstractmethod
     def run(
-        self, u: InputUnflattened, x0: Optional[StateUnflattened] = None
-    ) -> LinearResult: ...
+        self,
+        u: I,
+        x0: Optional[S] = None,
+    ) -> Res: ...
 
     def get_reference_inputs(
         self,

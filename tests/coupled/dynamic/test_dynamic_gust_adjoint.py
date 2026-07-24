@@ -140,7 +140,7 @@ class TestDynamicGustAdjoint:
         adj_grad = self.dynamic_grad.aero.flowfield["gust_amplitude"].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
-            f"Gradient mismatch w.r.t. gust_amplitude: adjoint={adj_grad:.6f}, FD={fd_grad:.6f}"
+            f"Gradient mismatch w.r.t. gust_amplitude: adjoint={float(adj_grad):.6f}, FD={float(fd_grad):.6f}"
         )
 
     def test_k_cs_gradient(self):
@@ -155,7 +155,7 @@ class TestDynamicGustAdjoint:
         adj_grad = self.dynamic_grad.structure.k_cs[:, :, 3, 3].sum()
 
         assert jnp.allclose(fd_grad, adj_grad, rtol=1e-2), (
-            f"Gradient mismatch w.r.t. k_cs[3,3]: adjoint={adj_grad:.6f}, FD={fd_grad:.6f}"
+            f"Gradient mismatch w.r.t. k_cs[3,3]: adjoint={float(adj_grad):.6f}, FD={float(fd_grad):.6f}"
         )
 
 

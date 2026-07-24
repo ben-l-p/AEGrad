@@ -30,7 +30,14 @@ if TYPE_CHECKING:
     from aegrad.coupled.coupled import BaseCoupledAeroelastic
 
 
-class LinearCoupled(LinearModel):
+class LinearCoupled(
+    LinearModel[
+        StaticAeroelastic,
+        AeroelasticInputUnflattened,
+        AeroelasticStateUnflattened,
+        AeroelasticLinearResult,
+    ]
+):
     def __init__(
         self,
         case: BaseCoupledAeroelastic,
@@ -76,13 +83,11 @@ class LinearCoupled(LinearModel):
 
         super().__init__(reference=reference, dt=case.aero.dt)
 
+        self.unsteady_force: bool = unsteady_force
         self.sys = self.linearise()
 
     @property
     def reference(self) -> StaticAeroelastic:
-        assert isinstance(self._reference, StaticAeroelastic), (
-            "Reference state must be of type StaticAeroelastic."
-        )
         return self._reference
 
     def extract_reference_inputs(
@@ -358,7 +363,10 @@ class LinearCoupled(LinearModel):
         )
 
         # total aero forces on the grid, from the aero step (returns totals)
-        f_aero_np1 = y_np1_aero.f_steady + y_np1_aero.f_unsteady
+        f_aero_np1 = y_np1_aero.f_steady
+        if self.unsteady_force:
+            assert y_np1_aero.f_unsteady is not None
+            f_aero_np1 += y_np1_aero.f_unsteady
 
         # project total aero forces onto the beam under the current (perturbed) rotation
         rmat = hg[:, :3, :3]
@@ -788,10 +796,10 @@ class LinearCoupled(LinearModel):
 
         return compile_time, run_time
 
+    # noinspection PyMethodOverriding
     def run(
         self,
         u: AeroelasticInputUnflattened,
         x0: Optional[AeroelasticStateUnflattened] = None,
-        use_matrix=False,
     ) -> AeroelasticLinearResult:
         raise NotImplementedError

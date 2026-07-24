@@ -68,7 +68,7 @@ class TestDynamicEquilibriumAdjoint:
             abs_force_tol=0.0,
         )
         wing.aero.include_unsteady_force = False
-        wing.aero.gamma_dot_relaxation_factor = 0.7
+        wing.aero.gamma_dot_relaxation = 0.7
         wing.structure.spectral_radius = 1.0
 
         static_sol = wing.static_solve(prescribed_dofs=jnp.arange(6))

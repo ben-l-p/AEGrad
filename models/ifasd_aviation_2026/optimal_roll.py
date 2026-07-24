@@ -282,7 +282,7 @@ if __name__ == "__main__":
         ax.plot(t[1:], objective_val_[1:])
         ax.hlines(0.0, xmin=t[1], xmax=t[-1])
         ax.set_title(
-            f"Objective integrands at iteration {i_iter}, objective = {float(total_obj):}"
+            f"Objective integrands at iteration {i_iter}, objective = {float(total_obj):02f}"
         )
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Objective integrand")
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         )
         ax.hlines(jnp.rad2deg(roll_ang_objective), xmin=t[1], xmax=t[-1])
         ax.set_title(
-            f"Roll history at iteration {i_iter}, objective = {float(total_obj):}"
+            f"Roll history at iteration {i_iter}, objective = {float(total_obj):02f}"
         )
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Roll angle (deg)")

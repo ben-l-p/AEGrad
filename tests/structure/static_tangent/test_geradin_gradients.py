@@ -60,7 +60,7 @@ class TestGeradinBeamGradients:
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)
         assert err < 1e-5, (
-            f"Stiffness gradient relative error {err:.2e} exceeds tolerance"
+            f"Stiffness gradient relative error {float(err):.2e} exceeds tolerance"
         )
 
     @classmethod
@@ -96,7 +96,9 @@ class TestGeradinBeamGradients:
         adj_grad = grads_adj.f_ext_dead[-1, 2]
 
         err = abs(fd_grad - adj_grad) / abs(adj_grad)
-        assert err < 1e-5, f"Force gradient relative error {err:.2e} exceeds tolerance"
+        assert err < 1e-5, (
+            f"Force gradient relative error {float(err):.2e} exceeds tolerance"
+        )
 
     @classmethod
     def test_force_gradient_reverse(cls):

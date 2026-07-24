@@ -853,6 +853,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         solve_dofs: tuple[int, ...],
         approx_grads: bool = False,
         precond_i_ts: int = 0,
+        aero_batch_size: Optional[int] = 32,
     ) -> Callable[[Array], Array]:
         r"""
         Build a preconditioner for the coupled aeroelastic system which skips the wake grid and circulation. When
@@ -864,6 +865,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param solve_dofs: Solve degree of freedom index.
         :param approx_grads: Approximate gradient of the coupled aeroelastic system, removing some negligible terms.
         :param precond_i_ts: Time step index for which to create the preconditioner. Defaults to 0.
+        :param aero_batch_size: Batch size for mapping the Jacobian construction.
         :return: Preconditioner function.
         """
         precond_q_nm1 = case.get_minimal_states(i_ts=max(precond_i_ts - 1, 0))
@@ -928,8 +930,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             n_profile_loops=None,
             jac_options=jac_options,
             compute_wake_gradients=False,
-            map_batch_size=32,
+            map_batch_size=aero_batch_size,
         )
+
+        assert p_v_dot_res_p_f_ext_n is not None
 
         solve_dofs_arr = jnp.array(solve_dofs)
         struct_col_ix = jnp.concatenate(
@@ -1203,6 +1207,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 b_rhs = -(p_j_n_p_q_n.reshape(n_j, -1) + adj_t_p_r_np1_p_q_n)
 
                 def _solve_row(b_row: Array, x0_row: Array) -> tuple[Array, Array]:
+                    # noinspection PyTypeChecker
                     x, info = jax.scipy.sparse.linalg.gmres(
                         matvec_qn_t,
                         b_row,
@@ -1397,6 +1402,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             approx_grads=approx_grads,
             n_profile_loops=n_profile_loops,
             jac_options=jac_options,
+        )
+
+        assert compile_time is not None and run_time is not None, (
+            "No output timings passed"
         )
 
         print_table_line(inner_width=95)

@@ -524,10 +524,16 @@ class TestIdentitiesSO3:
     # all formula are given in canonical form
     tilde = vec_to_skew  # [3] -> [3, 3]
     hat = vec_to_skew  # [3] -> [3, 3]
-    exp = lambda x_: exp_so3(skew_to_vec(x_))  # [3, 3] -> [3, 3]
-    log = lambda r_: vec_to_skew(log_so3(r_))  # [3, 3] -> [3, 3]
     t = t_so3  # [3] -> [3, 3]
     t_inv = t_inv_so3  # [3] -> [3, 3]
+
+    @staticmethod
+    def exp(x_):  # [3, 3] -> [3, 3]
+        return exp_so3(skew_to_vec(x_))
+
+    @staticmethod
+    def log(r_):  # [3, 3] -> [3, 3]
+        return vec_to_skew(log_so3(r_))
 
     @classmethod
     def test_c4(cls):
@@ -571,10 +577,16 @@ class TestIdentitiesSE3(TestIdentitiesSO3):
 
     tilde = ha_to_ha_tilde  # [6] -> [4, 4]
     hat = ha_to_ha_hat  # [6] -> [4, 4]
-    exp = lambda ha_: exp_se3(ha_tilde_to_ha(ha_))  # [4, 4] -> [4, 4]
-    log = lambda hg_: ha_to_ha_tilde(log_se3(hg_))  # [4, 4] -> [4, 4]
     t = t_se3  # [6] -> [6, 6]
     t_inv = t_inv_se3  # [6] -> [6, 6]
+
+    @staticmethod
+    def exp(x_):  # [4, 4] -> [4, 4]
+        return exp_se3(ha_tilde_to_ha(x_))
+
+    @staticmethod
+    def log(r_):  # [4, 4] -> [4, 4]
+        return ha_to_ha_tilde(log_se3(r_))
 
 
 class TestIdentitySE3Identity(TestIdentitiesSE3):

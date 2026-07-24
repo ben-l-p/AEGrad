@@ -23,7 +23,14 @@ if TYPE_CHECKING:
     from aegrad.structure.beam import BaseBeamStructure
 
 
-class LinearBeam(LinearModel):
+class LinearBeam(
+    LinearModel[
+        StaticStructure,
+        BeamInputUnflattened,
+        BeamStateUnflattened,
+        BeamLinearResult,
+    ]
+):
     r"""
     Class to represent a linearised beam system about a reference state.
     """
@@ -52,9 +59,6 @@ class LinearBeam(LinearModel):
 
     @property
     def reference(self) -> StaticStructure:
-        assert isinstance(self._reference, StaticStructure), (
-            "Reference state must be of type StaticStructure."
-        )
         return self._reference
 
     def extract_reference_inputs(
@@ -214,6 +218,7 @@ class LinearBeam(LinearModel):
             a=a, b=b, c=c, d=d, dt=self.dt, continuous_time=True, removed_u_np1=False
         )
 
+    # noinspection PyMethodOverriding
     def run(
         self,
         u: BeamInputUnflattened,

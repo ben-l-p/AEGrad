@@ -136,6 +136,7 @@ if __name__ == "__main__":
     linear_case.plot(Path(f"./test_outputs/heaving_test_linear_ampl_{ampl:.02f}"))
 
     # extract and save lift time history for both cases
+    assert linear_case.y_t_tot.f_unsteady is not None
     f_z_linear = (linear_case.y_t_tot.f_steady + linear_case.y_t_tot.f_unsteady)[0].sum(
         axis=(1, 2)
     )[:, 2]

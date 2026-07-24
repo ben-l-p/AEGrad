@@ -255,5 +255,5 @@ if __name__ == "__main__":
     z_tip = 0.5 * (
         static_sol.aero.zeta_b[0][0, -1, 2] + static_sol.aero.zeta_b[0][-1, -1, 2]
     )
-    print(f"Tip deflection at mid chord (m): {z_tip:.03f}")
-    print(f"Relative tip deflection at mid chord (z/b) {z_tip / 0.55:.03f}")
+    print(f"Tip deflection at mid chord (m): {float(z_tip):.03f}")
+    print(f"Relative tip deflection at mid chord (z/b) {float(z_tip) / 0.55:.03f}")

@@ -1008,7 +1008,10 @@ class BaseBeamStructure:
         print_table_line(inner_width=39)
         for i_mode in range(n_modes):
             jax_print(
-                f"| {i_mode + 1:>4d} | {ordered_freq[i_mode]:>14.3f} | {out_damping[i_mode]:>13.6f} |",
+                "| {mode:>4d} | {freq:>14.3f} | {damp:>13.6f} |",
+                mode=i_mode + 1,
+                freq=ordered_freq[i_mode],
+                damp=out_damping[i_mode],
                 verbose_level=VerbosityLevel.NORMAL,
             )
         print_table_line(inner_width=39)

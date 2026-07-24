@@ -506,35 +506,35 @@ class DynamicAeroCase:
             i_ts=i_ts, x_target=x_target
         )
 
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
+    def __getitem__(self, idx: int) -> AeroSnapshot:
         r"""
         Obtain a snapshot of the aerodynamic state at a given time step index.
-        :param i_ts: Time step index.
+        :param idx: Time step index.
         :return: Solution for specified time step index.
         """
         return AeroSnapshot(
-            zeta_b=self._zeta_b.index_all(i_ts, ...),
-            zeta_b_dot=self._zeta_b_dot.index_all(i_ts, ...),
-            zeta_w=self._zeta_w.index_all(i_ts, ...)
+            zeta_b=self._zeta_b.index_all(idx, ...),
+            zeta_b_dot=self._zeta_b_dot.index_all(idx, ...),
+            zeta_w=self._zeta_w.index_all(idx, ...)
             if self._zeta_w is not None
             else None,
-            c=self._c.index_all(i_ts, ...) if self._c is not None else None,
-            n=self._nc.index_all(i_ts, ...) if self._nc is not None else None,
-            gamma_b=self._gamma_b.index_all(i_ts, ...),
-            gamma_b_dot=self._gamma_b_dot.index_all(i_ts, ...)
+            c=self._c.index_all(idx, ...) if self._c is not None else None,
+            n=self._nc.index_all(idx, ...) if self._nc is not None else None,
+            gamma_b=self._gamma_b.index_all(idx, ...),
+            gamma_b_dot=self._gamma_b_dot.index_all(idx, ...)
             if self._gamma_b_dot is not None
             else None,
-            gamma_w=self._gamma_w.index_all(i_ts, ...),
-            f_steady=self._f_steady.index_all(i_ts, ...),
-            f_unsteady=self._f_unsteady.index_all(i_ts, ...)
+            gamma_w=self._gamma_w.index_all(idx, ...),
+            f_steady=self._f_steady.index_all(idx, ...),
+            f_unsteady=self._f_unsteady.index_all(idx, ...)
             if self._f_unsteady is not None
             else None,
-            cs_ang={k: jnp.atleast_1d(v)[i_ts, ...] for k, v in self.cs_ang.items()},
-            cs_vel={k: jnp.atleast_1d(v)[i_ts, ...] for k, v in self.cs_vel.items()},
+            cs_ang={k: jnp.atleast_1d(v)[idx, ...] for k, v in self.cs_ang.items()},
+            cs_vel={k: jnp.atleast_1d(v)[idx, ...] for k, v in self.cs_vel.items()},
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
-            t=self._t[i_ts],
-            i_ts=i_ts,
+            t=self._t[idx],
+            i_ts=idx,
             static_horseshoe=self.static_horseshoe,
             free_wake=self.free_wake,
             gamma_dot_relaxation=self.gamma_dot_relaxation,
@@ -856,29 +856,29 @@ class AeroSnapshot(DynamicAeroCase):
             batch_size=self.batch_size,
         )
 
-    def __getitem__(self, i_surf: int) -> AeroSurfaceSnapshot:
+    def get_surface(self, idx: int) -> AeroSurfaceSnapshot:
         """
         Return data for a single surface at the given time snapshot.
-        :param i_surf: Aerodynamic surface index.
+        :param idx: Aerodynamic surface index.
         :return: AeroSurfaceSnapshot object.
         """
         return AeroSurfaceSnapshot(
-            zeta_b=self.zeta_b[i_surf],
-            zeta_b_dot=self.zeta_b_dot[i_surf],
-            zeta_w=self.zeta_w[i_surf],
-            gamma_b=self.gamma_b[i_surf],
-            gamma_b_dot=self.gamma_b_dot[i_surf],
-            gamma_w=self.gamma_w[i_surf],
-            f_steady=self.f_steady[i_surf],
-            f_unsteady=self.f_unsteady[i_surf],
+            zeta_b=self.zeta_b[idx],
+            zeta_b_dot=self.zeta_b_dot[idx],
+            zeta_w=self.zeta_w[idx],
+            gamma_b=self.gamma_b[idx],
+            gamma_b_dot=self.gamma_b_dot[idx],
+            gamma_w=self.gamma_w[idx],
+            f_steady=self.f_steady[idx],
+            f_unsteady=self.f_unsteady[idx],
             cs_ang=self.cs_ang,
             cs_vel=self.cs_vel,
-            surf_b_name=self.surf_b_names[i_surf],
-            surf_w_name=self.surf_w_names[i_surf],
+            surf_b_name=self.surf_b_names[idx],
+            surf_w_name=self.surf_w_names[idx],
             i_ts=self.i_ts,
             t=self.t,
             static_horseshoe=self.static_horseshoe,
-            dof_mapping=self.dof_mapping[i_surf],
+            dof_mapping=self.dof_mapping[idx],
         )
 
     def plot(
@@ -886,14 +886,14 @@ class AeroSnapshot(DynamicAeroCase):
         directory: os.PathLike | str,
         plot_bound: bool = True,
         plot_wake: bool = True,
-        _=None,
+        index: Optional[int | Sequence[int] | Array | slice] = None,
     ) -> Sequence[Path]:
         r"""
         Plot aerodynamic surfaces in the time snapshot to VTU files.
         :param directory: Directory to save files.
         :param plot_bound: If True, plot the bound surfaces.
         :param plot_wake: If True, plot the wake surfaces.
-        :param _: Unused inherited argument.
+        :param index: Unused inherited argument.
         :return: Sequence of paths to the saved PVD files.
         """
 
