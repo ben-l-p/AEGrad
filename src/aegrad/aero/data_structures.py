@@ -902,7 +902,9 @@ class AeroSnapshot(DynamicAeroCase):
         paths = []
         for i_surf in range(self.n_surf):
             paths.extend(
-                self[i_surf].plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)
+                self.get_surface(idx=i_surf).plot(
+                    directory, plot_bound=plot_bound, plot_wake=plot_wake
+                )
             )
 
         return paths
