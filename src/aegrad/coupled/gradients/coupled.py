@@ -995,7 +995,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         case: DynamicAeroelastic,
         objective: AeroelasticObjectiveFunction,
-        matrix_free: bool = False,
+        matrix_free: bool = True,
         jacobian_approximations: AeroelasticJacobianApproximations = AeroelasticJacobianApproximations(),
         grads_to_compute: Optional[
             AeroelasticGradsToCompute
@@ -1003,12 +1003,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         p_varphi_p_x: Optional[Array] = None,
         save_adjoint: bool = False,
         approx_grads: bool = True,
-        n_tstep_adjoint: Optional[int] = None,
+        i_ts_adjoint_range: tuple[Optional[int], Optional[int]] = (None, None),
         include_initial_state_grad: bool = True,
         gmres_mode: Literal["batched", "incremental"] = "batched",
         gmres_warm_start: bool = True,
         gmres_precond: bool = True,
         gmres_restart: int = 50,
+        i_ts_preconditioner: int = 0,
         preconditioner: Optional[Callable[[Array], Array]] = None,
     ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
@@ -1027,8 +1028,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param save_adjoint: Whether to save the adjoint of the dynamic aeroelastic system.
         :param approx_grads: Whether to use gradient approximation or not. This removes some negligible contributions
         in the structural dynamic system.
-        :param n_tstep_adjoint: Optional integer giving the last time step at which the objective contributes to the
-        gradient. When provided, skips computation of the adjoint solution for time steps after this index.
+        :param i_ts_adjoint_range: Optional ``(start, end)`` window of time steps for which to compute the adjoint.
+         Either entry may be ``None`` to leave that side untruncated. When ``start > 1`` the initial-state gradient
+         contribution is automatically skipped.
         :param include_initial_state_grad: If False, skip the ``_initial_timestep_grad_contribution`` call that solves
         the static adjoint at ``t = 0`` and propagates ``p_varphi_p_x``. Intended for profiling only.
         :param gmres_mode: If using matrix free, sets the mode for GMRES. Batched is preferred for GPU, whereas
@@ -1038,6 +1040,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param gmres_precond: If True and ``preconditioner`` is None, build the frozen-wake preconditioner internally.
         Ignored when ``preconditioner`` is supplied.
         :param gmres_restart: Number of times to restart the GMRES algorithm.
+        :param i_ts_preconditioner: Timestep at which to build the preconditioner if requested.
         :param preconditioner: Optional pass a prebuild preconditioner. Useful for profiling.
         :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
         step, and optional adjoint states.
@@ -1084,10 +1087,25 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             sol=case, jacobian_approximations=jacobian_approximations
         )
 
-        if n_tstep_adjoint is None:
-            n_tstep_adjoint_: int = n_tstep - 1
-        else:
-            n_tstep_adjoint_ = n_tstep_adjoint
+        # define adjoint window
+        i_ts_start_adj, i_ts_end_adj = i_ts_adjoint_range
+        i_ts_start_adj_: int = 1 if i_ts_start_adj is None else i_ts_start_adj
+        i_ts_end_adj_: int = n_tstep - 1 if i_ts_end_adj is None else i_ts_end_adj
+        if i_ts_start_adj_ < 1:
+            raise ValueError(
+                f"i_ts_adjoint_range start must be >= 1, got {i_ts_start_adj_}"
+            )
+        if i_ts_end_adj_ > n_tstep - 1:
+            raise ValueError(
+                f"i_ts_adjoint_range end must be <= n_tstep - 1 = {n_tstep - 1}, got "
+                f"{i_ts_end_adj_}"
+            )
+        if i_ts_end_adj_ < i_ts_start_adj_:
+            raise ValueError(
+                f"i_ts_adjoint_range end ({i_ts_end_adj_}) must be >= start "
+                f"({i_ts_start_adj_})"
+            )
+        n_adj_iters: int = i_ts_end_adj_ - i_ts_start_adj_ + 1
 
         @jax.jit
         def objective_jacobians(
@@ -1149,6 +1167,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     dv_full=dv_full,
                     solve_dofs=solve_dofs,
                     approx_grads=approx_grads,
+                    precond_i_ts=i_ts_preconditioner,
                 )
                 jax_print(
                     "Built frozen-wake preconditioner",
@@ -1163,7 +1182,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
                 d_j_d_x_, adj_np1, adj_t_p_r_np1_p_q_n, adj_full_ = carry
 
-                i_ts = n_tstep_adjoint_ - rev_i_ts_
+                i_ts = i_ts_end_adj_ - rev_i_ts_
                 i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
                 q_nm1 = case.get_minimal_states(i_ts=i_ts_nm1)
                 q_n = case.get_minimal_states(i_ts=i_ts)
@@ -1250,7 +1269,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             d_j_d_x, _, future_row, adj_full = jax.lax.fori_loop(
                 lower=0,
-                upper=n_tstep_adjoint_,
+                upper=n_adj_iters,
                 body_fun=matrix_free_body,
                 init_val=(
                     dv_grad_init,
@@ -1267,7 +1286,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             ) -> tuple[AeroelasticDesignVariables, Array, Array, Array]:
                 d_j_d_x_, adj_np1, p_r_np1_p_q_n, adj_full_ = carry
 
-                i_ts = n_tstep_adjoint_ - rev_i_ts_
+                i_ts = i_ts_end_adj_ - rev_i_ts_
                 i_ts_nm1 = jnp.maximum(i_ts - 1, 0)
                 q_nm1 = case.get_minimal_states(i_ts=i_ts_nm1)
                 q_n = case.get_minimal_states(i_ts=i_ts)
@@ -1318,7 +1337,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             d_j_d_x, adj_last, p_r1_p_q0, adj_full = jax.lax.fori_loop(
                 lower=0,
-                upper=n_tstep_adjoint_,
+                upper=n_adj_iters,
                 body_fun=step_body,
                 init_val=(
                     dv_grad_init,
@@ -1329,8 +1348,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             )
             future_row = adj_last @ p_r1_p_q0
 
-        # solve initial timestep adjoint, as there is no r0
-        if include_initial_state_grad:
+        # solve initial timestep adjoint, as there is no r0. Skipped when the adjoint window truncates early time steps
+        if include_initial_state_grad and i_ts_start_adj_ <= 1:
             future_cot_q0_full = jnp.zeros((n_j, minimal_states_init.n_states))
             if case.structure.n_tstep > 1:
                 future_cot_q0_full = future_cot_q0_full.at[:, free_state_ix].set(

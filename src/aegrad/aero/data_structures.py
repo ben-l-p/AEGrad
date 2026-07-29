@@ -68,7 +68,7 @@ class DynamicAeroCase:
         dof_mapping: ArrayList,
         static_horseshoe: bool,
         free_wake: bool,
-        gamma_dot_relaxation: float,
+        gamma_dot_relaxation: float | Array,
         batch_size: Optional[int],
     ) -> None:
         r"""
@@ -127,7 +127,7 @@ class DynamicAeroCase:
         # settings
         self.static_horseshoe: bool = static_horseshoe
         self.free_wake: bool = free_wake
-        self.gamma_dot_relaxation: float = gamma_dot_relaxation
+        self.gamma_dot_relaxation: float | Array = gamma_dot_relaxation
         self.batch_size: Optional[int] = batch_size
 
     # we use properties here to allow for subclasses where there are only a single time step, and so the output data
@@ -566,7 +566,6 @@ class DynamicAeroCase:
             "n_surf",
             "n_tstep",
             "static_horseshoe",
-            "gamma_dot_relaxation",
             "free_wake",
             "kernels",
             "batch_size",
@@ -593,6 +592,7 @@ class DynamicAeroCase:
             "mirror_normal",
             "flowfield",
             "dof_mapping",
+            "gamma_dot_relaxation",
         )
 
 
@@ -627,7 +627,7 @@ class AeroSnapshot(DynamicAeroCase):
         dof_mapping: ArrayList,
         static_horseshoe: bool,
         free_wake: bool,
-        gamma_dot_relaxation: float,
+        gamma_dot_relaxation: float | Array,
         batch_size: Optional[int],
     ) -> None:
         r"""

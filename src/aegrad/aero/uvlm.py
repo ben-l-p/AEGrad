@@ -91,7 +91,7 @@ class UVLM:
         kernel: Optional[KernelFunction] = None,
         grid_func: Optional[AeroGridFunction] = None,
         free_wake: bool = False,
-        gamma_dot_relaxation: float = 0.7,
+        gamma_dot_relaxation: float | Array = 0.7,
         include_unsteady_force: bool = True,
         batch_size: Optional[int] = 64,
     ) -> None:
@@ -195,7 +195,7 @@ class UVLM:
 
         # settings for solvers
         self.free_wake: bool = free_wake
-        self.gamma_dot_relaxation: float = gamma_dot_relaxation
+        self.gamma_dot_relaxation: float | Array = gamma_dot_relaxation
         self.include_unsteady_force: bool = include_unsteady_force
         self.batch_size: Optional[int] = batch_size
 
@@ -639,7 +639,7 @@ class UVLM:
         gamma_b_nm1: ArrayList,
         gamma_b_dot_nm1: ArrayList,
         dt: Array,
-        gamma_dot_relaxation: float,
+        gamma_dot_relaxation: float | Array,
     ) -> ArrayList:
         r"""
         Calculate time derivative of bound circulation strengths at specified time step using finite difference.
@@ -802,7 +802,10 @@ class UVLM:
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
         derivative, bound grid, wake grid, bound grid velocity, steady forcing, unsteady forcing.
         """
-        if not (0.0 < self.gamma_dot_relaxation <= 1.0):
+        if isinstance(
+            self.gamma_dot_relaxation,
+            (int, float),  # prevents evaluating if value is traced
+        ) and not (0.0 < self.gamma_dot_relaxation <= 1.0):
             warn("Gamma_dot relaxation factor not in (0, 1]")
 
         if not static and horseshoe:
@@ -1103,7 +1106,7 @@ class UVLM:
         n_tstep: int,
         static_horseshoe: bool,
         free_wake: bool,
-        gamma_dot_relaxation: float,
+        gamma_dot_relaxation: float | Array,
         cs_ang_t: dict[str, Array],
         cs_vel_t: dict[str, Array],
     ) -> DynamicAeroCase:
@@ -2392,7 +2395,6 @@ class UVLM:
             "surf_b_names",
             "surf_w_names",
             "free_wake",
-            "gamma_dot_relaxation",
             "include_unsteady_force",
             "grid_func",
             "batch_size",
@@ -2414,4 +2416,5 @@ class UVLM:
             "cs_ang0",
             "cs_vel0",
             "dof_mapping",
+            "gamma_dot_relaxation",
         )

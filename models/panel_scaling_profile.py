@@ -171,7 +171,7 @@ def make_adjoint_step(
             preconditioner=preconditioner,
             grads_to_compute=None,
             approx_grads=True,
-            n_tstep_adjoint=n_tstep_adjoint,
+            i_ts_adjoint_range=(None, n_tstep_adjoint),
             include_initial_state_grad=False,
         )
 

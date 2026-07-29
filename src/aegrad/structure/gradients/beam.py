@@ -810,6 +810,7 @@ class BeamStructure(BaseBeamStructure):
         matrix_free: bool,
         n_j: int,
         jac_options: dict[str, dict[str, Optional[Callable[..., Any]]]],
+        i_ts_end: Optional[int] = None,
     ) -> tuple[StructuralDesignVariables, Array, Array, StructureMinimalStates]:
         r"""
         Function to obtain the grads states at timestep varphi, which is dependent on the grads at timestep varphi+1.
@@ -834,12 +835,13 @@ class BeamStructure(BaseBeamStructure):
         :param n_j: Number of objective function outputs.
         :param jac_options: Input which passes functions which can be used to approximate the Jacobians. If entries are
         None, AD is used.
+        :param i_ts_end: Largest time step index for which the adjoint is computed. Defaults to
+        ``structure.n_tstep - 1`` when ``None``
         :return: Updated grads matrix, gradient of current step with respect to previous state and current state.
         """
 
-        i_ts = (
-            structure.n_tstep - rev_i_ts - 1
-        )  # index for timestep varphi, which decrements
+        i_ts_end_ = structure.n_tstep - 1 if i_ts_end is None else i_ts_end
+        i_ts = i_ts_end_ - rev_i_ts  # index for timestep n, which decrements
 
         i_ts_nm1 = jnp.maximum(i_ts - 1, 0)  # index for timestep varphi-1
 
@@ -1093,6 +1095,7 @@ class BeamStructure(BaseBeamStructure):
             f_ext_follower=False,
             f_ext_dead=False,
         ),
+        i_ts_adjoint_range: tuple[Optional[int], Optional[int]] = (None, None),
     ) -> tuple[StructuralDesignVariables, Optional[Array]]:
         r"""
         Dynamic structure grads problem. This computes the gradient of the objective of the dynamic response with
@@ -1115,6 +1118,9 @@ class BeamStructure(BaseBeamStructure):
         :param approx_grads: If true, some gradient contributions which are assumed to be near-zero are removed to
         decrease computational cost.
         :param grads_to_compute: Design variables with which to compute design gradients for.
+        :param i_ts_adjoint_range: Optional ``(start, end)`` window of time step indices over which the objective
+        contributes to the gradient. Either entry may be ``None`` to leave that side untruncated. Defining a start
+        time step that is nonzero will  skip the initial state adjoint contribution.
         :return: Objective gradient :math:`\frac{dJ}{d\mathbf{x}}` and adjoint states
         """
 
@@ -1181,6 +1187,28 @@ class BeamStructure(BaseBeamStructure):
             sol=structure, jacobian_approximations=jacobian_approximations
         )
 
+        # check adjoint window
+        i_ts_start_adj, i_ts_end_adj = i_ts_adjoint_range
+        i_ts_start_adj_: int = 1 if i_ts_start_adj is None else i_ts_start_adj
+        i_ts_end_adj_: int = (
+            structure.n_tstep - 1 if i_ts_end_adj is None else i_ts_end_adj
+        )
+        if i_ts_start_adj_ < 1:
+            raise ValueError(
+                f"i_ts_adjoint_range start must be >= 1, got {i_ts_start_adj_}"
+            )
+        if i_ts_end_adj_ > structure.n_tstep - 1:
+            raise ValueError(
+                f"i_ts_adjoint_range end must be <= n_tstep - 1 = "
+                f"{structure.n_tstep - 1}, got {i_ts_end_adj_}"
+            )
+        if i_ts_end_adj_ < i_ts_start_adj_:
+            raise ValueError(
+                f"i_ts_adjoint_range end ({i_ts_end_adj_}) must be >= start "
+                f"({i_ts_start_adj_})"
+            )
+        n_adj_iters: int = i_ts_end_adj_ - i_ts_start_adj_ + 1
+
         # wrap in a local JIT so structure/aero_dv become closure constants
         @jax.jit
         def adjoint_step(
@@ -1208,6 +1236,7 @@ class BeamStructure(BaseBeamStructure):
                 matrix_free=matrix_free,
                 n_j=n_j,
                 jac_options=jac_options,
+                i_ts_end=i_ts_end_adj_,
             )
 
         # coupling array is either a Jacobian or a VJP depending on if using matrix free or not
@@ -1221,7 +1250,7 @@ class BeamStructure(BaseBeamStructure):
         # coupling0 is p_r1_p_q0 when matrix_free is False, and adj_1 @ p_r1_p_q0 when matrix_free is True
         d_j_d_x, adj, coupling0, _ = jax.lax.fori_loop(
             lower=0,
-            upper=structure.n_tstep - 1,
+            upper=n_adj_iters,
             body_fun=lambda i_ts_, args: adjoint_step(i_ts_, *args),
             init_val=(
                 dv_grad_init,
@@ -1229,33 +1258,36 @@ class BeamStructure(BaseBeamStructure):
                 if save_adjoint
                 else jnp.zeros((n_j, n_adj_dof)),
                 coupling_init,
-                structure.get_minimal_states(-1),
+                structure.get_minimal_states(i_ts_end_adj_),
             ),
         )
 
-        # solve initial timestep adjoint, as there is no r0
-        p_j0_p_q0, p_j0_p_x = self.p_j(
-            objective=objective,
-            i_ts=0,
-            dv=dv,
-            dv_full=dv_full,
-            q_n=structure.get_minimal_states(0),
-        )
-
-        if matrix_free:
-            adj0 = -p_j0_p_q0.reshape(n_j, -1) - coupling0
-        else:
-            adj0 = (
-                -p_j0_p_q0.reshape(n_j, -1)
-                - (adj[1, ...] if save_adjoint else adj) @ coupling0
+        # solve initial timestep adjoint, as there is no r0. Skipped when the adjoint window truncates early time steps
+        if i_ts_start_adj_ <= 1:
+            p_j0_p_q0, p_j0_p_x = self.p_j(
+                objective=objective,
+                i_ts=0,
+                dv=dv,
+                dv_full=dv_full,
+                q_n=structure.get_minimal_states(0),
             )
 
-        # add initial direct sensitivity
-        d_j_d_x += p_j0_p_x
+            if matrix_free:
+                adj0 = -p_j0_p_q0.reshape(n_j, -1) - coupling0
+            else:
+                adj0 = (
+                    -p_j0_p_q0.reshape(n_j, -1)
+                    - (adj[1, ...] if save_adjoint else adj) @ coupling0
+                )
 
-        # include initial state sensitivity
-        if p_q0_p_x is not None:
-            d_j_d_x += p_q0_p_x.premultiply_adj(-adj0)
+            # add initial direct sensitivity
+            d_j_d_x += p_j0_p_x
+
+            # include initial state sensitivity
+            if p_q0_p_x is not None:
+                d_j_d_x += p_q0_p_x.premultiply_adj(-adj0)
+        else:
+            adj0 = jnp.zeros((n_j, n_adj_dof))
 
         # restore original shape of j, and cut off zeros for past-end timestep
         if save_adjoint:
