@@ -311,7 +311,7 @@ class UVLM:
     def linearise(
         self,
         reference: AeroSnapshot,
-        wake_type: Optional[LinearWakeType] = None,
+        wake_type: LinearWakeType,
         bound_upwash: bool = True,
         wake_upwash: bool = True,
         unsteady_force: bool = True,
@@ -328,12 +328,12 @@ class UVLM:
         """
 
         # local import used to prevent circular import issues
-        from aegrad.aero.linear.linear_uvlm import LinearUVLM, LinearWakeType
+        from aegrad.aero.linear.linear_uvlm import LinearUVLM
 
         return LinearUVLM(
             self,
             reference=reference,
-            wake_type=wake_type if wake_type is not None else LinearWakeType.PRESCRIBED,
+            wake_type=wake_type,
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
             unsteady_force=unsteady_force,
@@ -729,6 +729,12 @@ class UVLM:
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
         derivative, bound grid, wake grid, bound grid time derivative, steady forcing and unsteady forcing.
         """
+
+        if horseshoe and any([gd.m_star == 0 for gd in self.grid_disc]):
+            warn(
+                "Horseshoe wake requested but m_star == 0 for at least one surface, skipping horseshoe wake."
+            )
+
         zeta_b_n = self.hg_to_zeta_b(
             hg_n=hg_n if hg_n is not None else self.hg0, cs_ang_n=cs_ang_n
         )
@@ -957,7 +963,13 @@ class UVLM:
             gamma_w_n = ArrayList(
                 [
                     jnp.broadcast_to(
-                        gb[[-1], ...], shape=(1 if horseshoe else gd.m_star, gd.n)
+                        gb[[-1], ...],
+                        shape=(
+                            1
+                            if (horseshoe and gd.m_star != 0)
+                            else gd.m_star,  # m_star of 0 will override horseshoe
+                            gd.n,
+                        ),
                     )
                     for gb, gd in zip(gamma_b_n, self.grid_disc)
                 ]

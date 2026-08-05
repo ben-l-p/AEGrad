@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence, TYPE_CHECKING, Optional
-from enum import Enum
+from typing import Sequence, TYPE_CHECKING, Optional, Literal
 
 import jax
 from jax import Array, vmap
@@ -36,12 +35,7 @@ from aegrad.aero.aic import compute_v_ind
 if TYPE_CHECKING:
     from aegrad.aero.uvlm import UVLM
 
-
-class LinearWakeType(Enum):
-    # (is prescribed, is free)
-    FROZEN = (False, False)
-    PRESCRIBED = (True, False)
-    FREE = (True, True)
+type LinearWakeType = Literal["frozen", "prescribed", "free"]
 
 
 class LinearUVLM(
@@ -49,6 +43,7 @@ class LinearUVLM(
         AeroSnapshot,
         AeroInputUnflattened,
         AeroStateUnflattened,
+        AeroOutputUnflattened,
         AeroLinearResult,
     ]
 ):
@@ -60,7 +55,7 @@ class LinearUVLM(
         self,
         case: UVLM,
         reference: AeroSnapshot,
-        wake_type: LinearWakeType = LinearWakeType.FREE,
+        wake_type: LinearWakeType = "frozen",
         bound_upwash: bool = True,
         wake_upwash: bool = True,
         unsteady_force: bool = True,
@@ -79,7 +74,11 @@ class LinearUVLM(
         """
 
         # options
-        self.prescribed_wake, self.free_wake = wake_type.value
+        self.prescribed_wake, self.free_wake = {
+            "frozen": (False, False),
+            "prescribed": (True, False),
+            "free": (True, True),
+        }[wake_type]
         self.unsteady_force: bool = unsteady_force
         self.bound_upwash: bool = bound_upwash
         self.wake_upwash: bool = wake_upwash

@@ -4,7 +4,7 @@ from jax import numpy as jnp
 
 from aegrad.aero.flowfields import Constant
 from aegrad.algebra.so3 import vec_to_skew
-from models.straight_pazy.pazy_wing import make_pazy_wing
+from models.pazy.straight.pazy_wing import make_pazy_wing
 
 
 def generate_static_aeroelastic(aoa: float | Array, q_inf: float | Array) -> Array:
@@ -52,6 +52,7 @@ class TestPazy:
             node_multiplier=4,
             gravity=jnp.array((0.0, 0.0, -9.81)),
             aoa=0.0,
+            model="prepazy",
         )
         wing.structure.use_lumped_mass = True
         wing.structure.m_lumped_index = (-1,)
@@ -82,6 +83,7 @@ class TestPazy:
             node_multiplier=4,
             gravity=jnp.array((0.0, 0.0, -9.81)),
             aoa=0.0,
+            model="prepazy",
         )
         wing.structure.use_lumped_mass = True
         wing.structure.m_lumped_index = (-1,)

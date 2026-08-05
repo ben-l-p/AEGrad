@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Optional, Sequence, Literal, overload, TYPE_CHECKING, cast
 from functools import partial
 
@@ -10,6 +11,7 @@ from jax.scipy.linalg import block_diag
 from jax.scipy.spatial.transform import Rotation
 
 from aegrad.aero.data_structures import DynamicAeroCase
+from aegrad.plotting.modal import plot_modes_vtu
 from aegrad.structure.linear.linear_beam import LinearBeam
 from aegrad.utils.constants import BASE_LOBATTO_ORDER, BASE_LEGENDRE_ORDER
 from aegrad.utils.utils import check_type, make_pytree, nested_list_to_tuple
@@ -20,6 +22,7 @@ from aegrad.structure.data_structures import (
     OptionalJacobians,
 )
 from aegrad.utils.data_structures import ConvergenceSettings, ConvergenceStatus
+from aegrad.utils.linear import conjugate_partner_mask
 from aegrad.utils.print_utils import (
     warn,
     warn_if_32_bit,
@@ -858,11 +861,10 @@ class BaseBeamStructure:
             self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0
         )
 
-    def make_global_m_k(
+    def make_nodal_m_k(
         self,
         case: StaticStructure,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
-        local_forcing: bool = True,
     ) -> tuple[Array, Array]:
         r"""
         Create the global mass and stiffness matrices for a given static structure case. These can be used for modal
@@ -870,8 +872,6 @@ class BaseBeamStructure:
         global perturbations in acceleration and displacement, respectively.
         :param case: Static structure case for which to compute the global mass and stiffness matrices.
         :param int_order: Integration order for mass matrix computation.
-        :param local_forcing: Flag to indicate the frame for which the forcing is defined. This will determine if the
-        linear system naturally takes follower or dead loads.
         :return: Global mass and stiffness matrices, [n_free_dof, n_free_dof].
         """
         # extract variables from case
@@ -918,11 +918,9 @@ class BaseBeamStructure:
                 arr=m_t, lumped_arr=self.m_lumped
             )
 
-        m_modal_full = jnp.einsum(
-            "ijk,jkl->ijl", m_t.reshape(self.n_dof, -1, 6), t_varphi
+        m_modal_full = transform_mat_to_global(
+            mat=jnp.einsum("ijk,jkl->ijl", m_t.reshape(self.n_dof, -1, 6), t_varphi)
         )
-        if not local_forcing:
-            m_modal_full = transform_mat_to_global(mat=m_modal_full)
 
         m_modal = m_modal_full.reshape(self.n_dof, self.n_dof)[
             jnp.ix_(free_dofs, free_dofs)
@@ -933,11 +931,9 @@ class BaseBeamStructure:
             d=case.d, p_d=p_d, eps=eps, f_ext_dead=f_ext_dead, rmat=rmat, m_t=m_t
         )
 
-        k_modal_full = jnp.einsum(
-            "ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_varphi
+        k_modal_full = transform_mat_to_global(
+            mat=jnp.einsum("ijk,jkl->ijl", k_t.reshape(self.n_dof, -1, 6), t_varphi)
         )
-        if not local_forcing:
-            k_modal_full = transform_mat_to_global(mat=k_modal_full)
 
         k_modal = k_modal_full.reshape(self.n_dof, self.n_dof)[
             jnp.ix_(free_dofs, free_dofs)
@@ -945,59 +941,153 @@ class BaseBeamStructure:
 
         return m_modal, k_modal
 
+    def make_modal_m_k(
+        self,
+        case: StaticStructure,
+        n_modes: int,
+        remove_complex_conjugate: bool = True,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+    ) -> tuple[Array, Array, Array]:
+        freqs, damping, modes, m_nodal, k_nodal = self.base_modal(
+            case=case,
+            int_order=int_order,
+            n_modes=n_modes,
+            remove_complex_conjugate=remove_complex_conjugate,
+        )
+
+        # modes has shape [n_modes, n_free_dof] (rows are mode shapes)
+        m_modal = modes @ m_nodal @ modes.T  # [n_modes, n_modes]
+        k_modal = modes @ k_nodal @ modes.T  # [n_modes, n_modes]
+
+        return m_modal, k_modal, modes
+
     def modal(
         self,
         case: StaticStructure,
+        remove_complex_conjugate: bool = True,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
         n_modes: int = 20,
+        freq_range: tuple[float | Array, float | Array] = (0.0, jnp.inf),
+        damp_range: tuple[float | Array, float | Array] = (-jnp.inf, jnp.inf),
+        vtu_directory: str | os.PathLike = "./modal",
+        n_plot_vtu: Optional[int] = None,
+        aero: Optional[UVLM] = None,
+        n_phase: int = 8,
+        n_interp: int = 0,
+        max_disp: float = 0.2,
+        max_ang: float = 0.2,
     ) -> tuple[Array, Array, Array]:
         r"""
         Perform modal analysis on the structure.
         :param case: The static structure case for which to perform modal analysis.
+        :param remove_complex_conjugate: If true, keep only one mode from each complex conjugate pair.
         :param int_order: Integration order for mass matrix computation.
         :param n_modes: Number of modes to preserve.
-        :return: Tuple of natural frequencies [n_free_dof], damping ratios [n_free_dof], and mode shapes [n_free_dof,
-        n_free_dof].
+        :param freq_range: Frequency range for filtering out modes.
+        :param damp_range: Damping range for filtering out modes.
+        :param vtu_directory: Directory to for saving the mode shapes to vtu files.
+        :param n_plot_vtu: Number of modes to plot to vtu files. Will default to "./modal".
+        :param aero: UVLM aerodynamic model. If passed, the vtu files will include the aerodynamic grid. If not, they
+        will just be the beam structure.
+        :param n_phase: Number of phases to use when plotting the modes to vtu files.
+        :param n_interp: Number of times to interpolate between beam nodes for vtu plotting.
+        :param max_disp: Maximum displacement of structure for plotted modes, used for scaling.
+        :param max_ang: Maximum angle of structure for plotted modes in radians, used for scaling.
+        :return: Tuple of natural frequencies [n_free_dof], damping ratios [n_free_dof], and mode shapes with no
+         normalisation [n_modes, n_free_dof].
         """
+        freqs, damping, modes, *_ = self.base_modal(
+            case=case,
+            freq_range=freq_range,
+            damp_range=damp_range,
+            int_order=int_order,
+            n_modes=n_modes,
+            remove_complex_conjugate=remove_complex_conjugate,
+        )
 
+        if n_plot_vtu is not None:
+            q_full = (
+                jnp.zeros((n_plot_vtu, self.n_nodes * 6))
+                .at[:, case.free_dofs]
+                .set(modes)
+            )
+
+            for i_mode in range(n_plot_vtu):
+                plot_modes_vtu(
+                    reference=case,
+                    directory=vtu_directory,
+                    q_full=q_full.reshape(n_plot_vtu, self.n_nodes, 6),
+                    freqs=freqs,
+                    gamma_b_full=None,
+                    gamma_w_full=None,
+                    zeta_w_full=None,
+                    uvlm=aero,
+                    n_interp=n_interp,
+                    n_phase=n_phase,
+                    max_disp=max_disp,
+                    max_ang=max_ang,
+                    max_gamma=1e6,
+                )
+
+        return freqs, damping, modes
+
+    def base_modal(
+        self,
+        case: StaticStructure,
+        remove_complex_conjugate: bool,
+        int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
+        n_modes: int = 20,
+        freq_range: tuple[float | Array, float | Array] = (0.0, jnp.inf),
+        damp_range: tuple[float | Array, float | Array] = (-jnp.inf, jnp.inf),
+    ) -> tuple[Array, Array, Array, Array, Array]:
         warn_if_32_bit()
 
-        m_modal, k_modal = self.make_global_m_k(case=case, int_order=int_order)
+        m_nodal, k_nodal = self.make_nodal_m_k(case=case, int_order=int_order)
 
-        # reduce generalised problem K phi = omega^2 M phi to standard form and solve
-        if jnp.any(case.varphi):
-            # non-zero deformation: K, M are not symmetric — use non-symmetric solver
-            m_inv_k = jnp.linalg.solve(m_modal, k_modal)
-            omega_sq, modes = jnp.linalg.eig(m_inv_k)
+        # reduce generalised problem K phi = omega^2 M phi to standard form and solve. The non-symmetric solver
+        # handles both the undeformed (symmetric) and deformed (asymmetric) cases.
+        m_inv_k = jnp.linalg.solve(m_nodal, k_nodal)
+        omega_sq, modes = jnp.linalg.eig(m_inv_k)
 
-            # map omega^2 to state-space root s (s^2 = -omega^2), choosing the positive-imaginary branch
-            s = jnp.sqrt(-omega_sq)
-            s = jnp.where(jnp.imag(s) < 0, -s, s)
+        # map omega^2 to state-space root s (s^2 = -omega^2), choosing the positive-imaginary branch
+        s = jnp.sqrt(-omega_sq)
+        s = jnp.where(jnp.imag(s) < 0, -s, s)
 
-            # undamped natural frequency (Hz) and damping ratio for each mode
-            s_mag = jnp.abs(s)
-            freq_hz = s_mag / (2.0 * jnp.pi)
-            damping = -jnp.real(s) / s_mag
+        # undamped natural frequency (Hz) and damping ratio for each mode
+        s_mag = jnp.abs(s)
+        freq_hz = s_mag / (2.0 * jnp.pi)
+        damping = -jnp.real(s) / s_mag
 
-        else:
-            # zero deformation: K, M symmetric and so we can use a symmetric solver for M^{-1} K
-            cholesky_l = jnp.linalg.cholesky(m_modal)
-            a = jax.scipy.linalg.solve_triangular(
-                cholesky_l,
-                jax.scipy.linalg.solve_triangular(cholesky_l, k_modal, lower=True).T,
-                lower=True,
-            ).T
-            omega_sq, phi = jnp.linalg.eigh(a)
-            modes = jax.scipy.linalg.solve_triangular(cholesky_l.T, phi, lower=False)
-
-            freq_hz = jnp.sqrt(jnp.maximum(omega_sq, 0.0)) / (2.0 * jnp.pi)
-            damping = jnp.zeros_like(freq_hz)
-
-        # sort by ascending natural frequency
+        # primary sort by frequency; conjugate partners and out-of-range modes are then pushed past n_modes so
+        # the existing truncation drops them. Stable-argsort preserves frequency order within the kept group.
         idx = jnp.argsort(freq_hz)
+        if remove_complex_conjugate:
+            partner = conjugate_partner_mask(
+                freq_hz=freq_hz, damping=damping, tiebreaker=jnp.real(s)
+            )
+            idx = idx[jnp.argsort(partner[idx], stable=True)]
+
         ordered_freq = freq_hz[idx]
         out_damping = damping[idx]
-        out_modes = modes[:, idx]
+
+        # push modes outside the requested frequency / damping window to the back. If the number of modes in the range
+        # is less than the number requested, then it will start passing out-of-range modes to satisfy shape requirements
+        in_range = (
+            (ordered_freq >= freq_range[0])
+            & (ordered_freq <= freq_range[1])
+            & (out_damping >= damp_range[0])
+            & (out_damping <= damp_range[1])
+        )
+        range_idx = jnp.argsort(~in_range, stable=True)
+        idx = idx[range_idx]
+        ordered_freq = ordered_freq[range_idx]
+        out_damping = out_damping[range_idx]
+
+        # cast to real for downstream use and truncate
+        out_modes = modes[:, idx].real
+
+        # normalise modes
+        out_modes /= jnp.linalg.norm(out_modes, axis=0, keepdims=True)
 
         # write to console
         print_table_line(inner_width=39)
@@ -1015,22 +1105,39 @@ class BaseBeamStructure:
                 verbose_level=VerbosityLevel.NORMAL,
             )
         print_table_line(inner_width=39)
-        return ordered_freq[:n_modes], out_damping[:n_modes], out_modes[:, :n_modes]
+        return (
+            ordered_freq[:n_modes],
+            out_damping[:n_modes],
+            out_modes[:, :n_modes].T,
+            m_nodal,
+            k_nodal,
+        )
 
     def linearise(
-        self, reference: StaticStructure, dt: float, local_forcing: bool = True
+        self,
+        reference: StaticStructure,
+        dt: float,
+        n_modes: Optional[int] = None,
+        modal_inputs: bool = False,
+        modal_outputs: bool = False,
     ) -> LinearBeam:
         r"""
         Linearise the beam about a given static structure case. This creates a LinearBeam object which can be used for
         linear dynamic analysis.
         :param reference: Static structure case about which to linearise the beam.
         :param dt: Time step size, used for conversions between continuous and discrete time.
-        :param local_forcing: Flag to indicate the frame for which the forcing is defined. This allows for linearising
-        either the local or global forcing residuals.
+        :param n_modes: If not None, the linearised system uses modal state coordinates truncated to this many modes.
+        :param modal_inputs: If True, external forcing inputs are provided as modal forces (requires n_modes).
+        :param modal_outputs: If True, outputs are exposed as modal coordinates (requires n_modes).
         :return: Continuous-time linearised beam object.
         """
         return LinearBeam(
-            beam=self, reference=reference, dt=dt, local_forcing=local_forcing
+            beam=self,
+            reference=reference,
+            dt=dt,
+            n_modes=n_modes,
+            modal_inputs=modal_inputs,
+            modal_outputs=modal_outputs,
         )
 
     def _make_c_t(

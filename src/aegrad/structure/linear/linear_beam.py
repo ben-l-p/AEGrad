@@ -3,8 +3,7 @@ from typing import Literal, TYPE_CHECKING, Optional
 
 from jax import Array, vmap
 from jax import numpy as jnp
-
-from jax.scipy.linalg import block_diag
+from jax.scipy.linalg import lu_factor, lu_solve
 
 from aegrad.algebra.array_utils import check_arr_shape
 from aegrad.algebra.se3 import exp_se3
@@ -28,6 +27,7 @@ class LinearBeam(
         StaticStructure,
         BeamInputUnflattened,
         BeamStateUnflattened,
+        BeamOutputUnflattened,
         BeamLinearResult,
     ]
 ):
@@ -39,51 +39,122 @@ class LinearBeam(
         self,
         beam: BaseBeamStructure,
         reference: StaticStructure,
+        n_modes: Optional[int],
         dt: float | Array,
-        local_forcing: bool = True,
+        modal_inputs: bool = False,
+        modal_outputs: bool = False,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
     ):
         self.free_dofs: tuple = reference.free_dofs
         self.n_free_dof: int = len(reference.free_dofs)
         self.n_nodes: int = beam.n_nodes
+        self.modal_states: bool = n_modes is not None
+        self.modal_inputs: bool = modal_inputs
+        self.modal_outputs: bool = modal_outputs
+        self._n_modes: Optional[int] = n_modes
 
-        self.local_forcing: bool = local_forcing
+        if not self.modal_states and (self.modal_inputs or self.modal_outputs):
+            raise ValueError(
+                "Modal projection for inputs or outputs requires the system states to be modal."
+            )
+
+        # compute m, k, mode_shapes so that the superclass has access when initialised
+        if self.modal_states:
+            assert n_modes is not None
+            self.m, self.k, self.mode_shapes = beam.make_modal_m_k(
+                case=reference,
+                int_order=int_order,
+                n_modes=n_modes,
+            )
+        else:
+            self.m, self.k = beam.make_nodal_m_k(case=reference, int_order=int_order)
+            self.mode_shapes = None
 
         super().__init__(reference=reference, dt=dt)
 
-        self.m_global, self.k_global = beam.make_global_m_k(
-            case=reference, int_order=int_order, local_forcing=local_forcing
-        )
-
         self.sys: LinearSystem = self.linearise()
+
+    @property
+    def n_modes(self) -> int:
+        assert self._n_modes is not None
+        return self._n_modes
 
     @property
     def reference(self) -> StaticStructure:
         return self._reference
 
+    def nodal_to_modal(self, q_nodal: Array) -> Array:
+        r"""
+        Convert a nodal property to a modal property.
+        :param q_nodal: Nodal property, [n_free_dof].
+        :return: Modal property, [n_modes].
+        """
+
+        return self.mode_shapes @ q_nodal
+
+    def modal_to_nodal(self, q_modal: Array) -> Array:
+        r"""
+        Convert a modal property to a nodal property.
+        :param q_modal: Mode property, [n_modes].
+        :return: Nodal property, [n_free_dofs].
+        """
+
+        return q_modal @ self.mode_shapes
+
     def extract_reference_inputs(
         self,
     ) -> dict[str, Optional[Array]]:
-        return {
-            "f_ext_follower": self.reference.f_ext_follower,
-            "f_ext_dead": self.reference.f_ext_dead,
-        }
+        # combine follower and dead reference forces into a single global-frame reference
+        rmat_ref = self.reference.hg[:, :3, :3]
+        follower_global = (
+            transform_nodal_vect(self.reference.f_ext_follower, rmat_ref)
+            if self.reference.f_ext_follower is not None
+            else None
+        )
+        dead_global = (
+            transform_nodal_vect(self.reference.f_ext_dead, rmat_ref)
+            if self.reference.f_ext_dead is not None
+            else None
+        )
+        if follower_global is None and dead_global is None:
+            f_ext_ref = None
+        elif follower_global is None:
+            f_ext_ref = dead_global
+        elif dead_global is None:
+            f_ext_ref = follower_global
+        else:
+            f_ext_ref = follower_global + dead_global
+
+        if not self.modal_inputs or f_ext_ref is None:
+            return {"f_ext": f_ext_ref}
+
+        # modal_inputs: project the free-dof global-frame reference onto modes
+        assert self.mode_shapes is not None
+        free_dofs_arr = jnp.array(self.free_dofs)
+        return {"f_ext": self.nodal_to_modal(f_ext_ref.ravel()[free_dofs_arr])}
 
     def extract_reference_states(
         self,
     ) -> dict[str, Optional[Array]]:
-
         return {
-            "q": jnp.zeros(len(self.reference.free_dofs)),
-            "q_dot": jnp.zeros(len(self.reference.free_dofs)),
+            "q": jnp.zeros(self.n_modes)
+            if self.modal_states
+            else jnp.zeros(len(self.reference.free_dofs)),
+            "q_dot": jnp.zeros(self.n_modes)
+            if self.modal_states
+            else jnp.zeros(len(self.reference.free_dofs)),
         }
 
     def extract_reference_outputs(
         self,
     ) -> dict[str, Optional[Array]]:
         return {
-            "q": jnp.zeros(len(self.reference.free_dofs)),
-            "q_dot": jnp.zeros(len(self.reference.free_dofs)),
+            "q": jnp.zeros(self.n_modes)
+            if self.modal_outputs
+            else jnp.zeros(len(self.reference.free_dofs)),
+            "q_dot": jnp.zeros(self.n_modes)
+            if self.modal_outputs
+            else jnp.zeros(len(self.reference.free_dofs)),
         }
 
     @property
@@ -112,16 +183,12 @@ class LinearBeam(
         """
         slice_entries = (
             SliceEntry(
-                name="f_ext_follower",
+                name="f_ext",
                 enabled=True,
-                shapes=(self.n_nodes, 6),
-            ),
-            SliceEntry(
-                name="f_ext_dead",
-                enabled=True,
-                shapes=(self.n_nodes, 6),
+                shapes=(self.n_modes,) if self.modal_inputs else (self.n_nodes, 6),
             ),
         )
+
         return self._make_slices(slice_entries)
 
     def _make_state_slices(
@@ -132,8 +199,16 @@ class LinearBeam(
         :return: StateSlices instance and total number of state elements.
         """
         slice_entries = (
-            SliceEntry(name="q", enabled=True, shapes=(self.n_free_dof,)),
-            SliceEntry(name="q_dot", enabled=True, shapes=(self.n_free_dof,)),
+            SliceEntry(
+                name="q",
+                enabled=True,
+                shapes=(self.n_modes,) if self.modal_states else (self.n_free_dof,),
+            ),
+            SliceEntry(
+                name="q_dot",
+                enabled=True,
+                shapes=(self.n_modes,) if self.modal_states else (self.n_free_dof,),
+            ),
         )
         return self._make_slices(slice_entries)
 
@@ -145,8 +220,16 @@ class LinearBeam(
         :return: OutputSlices instance and total number of output elements.
         """
         slice_entries = (
-            SliceEntry(name="q", enabled=True, shapes=(self.n_free_dof,)),
-            SliceEntry(name="q_dot", enabled=True, shapes=(self.n_free_dof,)),
+            SliceEntry(
+                name="q",
+                enabled=True,
+                shapes=(self.n_modes,) if self.modal_outputs else (self.n_free_dof,),
+            ),
+            SliceEntry(
+                name="q_dot",
+                enabled=True,
+                shapes=(self.n_modes,) if self.modal_outputs else (self.n_free_dof,),
+            ),
         )
         return self._make_slices(slice_entries)
 
@@ -157,62 +240,73 @@ class LinearBeam(
     def linearise_continuous(self) -> LinearSystem:
         r"""
         Form a system of linear equations about a reference state. The system is of the form:
-        :math:`\dot{\mathbf{x}} = \mathbf{A~x + B~u}, \mathbf{y} = \mathbf{C~x + D~u}`. Input vector :math:`\mathbf{u}`
-        is the packed vector of follower and dead applied force perturbations at nodal degrees of freedom (each
-        [n_nodes, 6]). Output vector :math:`\mathbf{y}` is the vector of displacements, and state vector
-        :math:`\mathbf{x}` is the vector of displacements and velocities.
+        :math:`\dot{\mathbf{x}} = \mathbf{A~x + B~u}, \mathbf{y} = \mathbf{C~x + D~u}`.
 
-        The :math:`\mathbf{B}` operator applies the frame rotation between the user-facing follower/dead force inputs
-        and the internal beam frame determined by ``local_forcing``:
+        The state, input and output layouts each depend on their respective ``modal_*`` flag:
 
-        * ``local_forcing=True``: internal frame is local. Follower forces pass through unchanged and dead forces are
-          rotated global-to-local via :math:`\mathbf{R}^T`.
-        * ``local_forcing=False``: internal frame is global. Dead forces pass through unchanged and follower forces are
-          rotated local-to-global via :math:`\mathbf{R}`.
+        * States: nodal-free-dof :math:`[q, \dot q]` of length ``2 * n_free_dof`` when ``n_modes is None``, or modal
+          :math:`[q_m, \dot q_m]` of length ``2 * n_modes`` when ``modal_states``. Modal mass and stiffness are the
+          projected :math:`\Phi M \Phi^T` / :math:`\Phi K \Phi^T` with ``Phi = mode_shapes`` of shape
+          ``[n_modes, n_free_dof]`` (rows are mode shapes).
+        * Inputs: a single global-frame external force ``f_ext``. Non-modal inputs are per-node ``[n_nodes, 6]``. Modal
+          inputs are direct modal forces of length ``n_modes``, requiring the user to have already applied the modal
+          projection.
+        * Outputs: :math:`[q, \dot q]` in either nodal-free-dof or modal form to match ``modal_outputs``.
 
-        :return: Linearised system.
+        :return: Linearised continuous-time system.
         """
 
-        m_inv = jnp.linalg.inv(self.m_global)
+        # single LU factorisation of M reused for every M^{-1} product below
+        m_lu = lu_factor(self.m)  # [q_state_size, q_state_size]
+        q_state_size = self.n_modes if self.modal_states else self.n_free_dof
 
-        rmat = self.reference.hg[:, :3, :3]  # per-node local-to-global rotation
-        rmat_t = jnp.swapaxes(rmat, -1, -2)  # per-node global-to-local rotation
-
-        free_dofs_arr = jnp.array(self.free_dofs)
-
-        def _block_rot(rmat_per_node: Array) -> Array:
-            chi = jnp.zeros((self.n_nodes, 6, 6))
-            chi = chi.at[:, :3, :3].set(rmat_per_node)
-            chi = chi.at[:, 3:, 3:].set(rmat_per_node)
-            return block_diag(*chi)
-
-        eye_nodal = jnp.eye(self.n_nodes * 6)
-        if self.local_forcing:
-            follower_rot = eye_nodal
-            dead_rot = _block_rot(rmat_t)
-        else:
-            follower_rot = _block_rot(rmat)
-            dead_rot = eye_nodal
-
-        p_free = eye_nodal[free_dofs_arr, :]  # (n_free_dof, n_nodes * 6)
-
-        zero_ff = jnp.zeros((self.n_free_dof, self.n_free_dof))
-        eye_ff = jnp.eye(self.n_free_dof)
-
+        # dynamics matrix: [q_dot; q_ddot] = A [q; q_dot]
         a = jnp.block(
             [
-                [zero_ff, eye_ff],
-                [-m_inv @ self.k_global, zero_ff],
+                [jnp.zeros((q_state_size, q_state_size)), jnp.eye(q_state_size)],
+                [-lu_solve(m_lu, self.k), jnp.zeros((q_state_size, q_state_size))],
             ]
         )
 
-        b_bottom = m_inv @ p_free @ jnp.concatenate([follower_rot, dead_rot], axis=1)
+        # input matrix: maps a single global-frame external force to state derivative
+        if self.modal_inputs:
+            assert self.modal_states, "modal_inputs requires modal_states"
+            # user supplies modal forces directly
+            b_bottom = lu_solve(m_lu, jnp.eye(q_state_size))  # [n_modes, n_modes]
+        else:
+            p_free = jnp.eye(self.n_nodes * 6)[
+                jnp.array(self.free_dofs), :
+            ]  # [n_free_dof, n_nodes * 6]
+
+            if self.modal_states:
+                nodal_to_state = self.nodal_to_modal(p_free)  # [n_modes, n_nodes * 6]
+            else:
+                nodal_to_state = p_free  # [n_free_dof, n_nodes * 6]
+            b_bottom = lu_solve(
+                m_lu, nodal_to_state
+            )  # [n_modes | n_free_dof, n_nodes * 6]
+
         b = jnp.concatenate(
-            [jnp.zeros((self.n_free_dof, self.n_inputs)), b_bottom], axis=0
+            [jnp.zeros((q_state_size, b_bottom.shape[1])), b_bottom], axis=0
         )
 
-        c = jnp.concatenate([eye_ff, zero_ff], axis=1)
-        d = jnp.zeros((self.n_free_dof, self.n_inputs))
+        if self.modal_states and not self.modal_outputs:
+            assert self.mode_shapes is not None
+            state_to_output = (
+                self.mode_shapes.T
+            )  # projects force to modes, [n_free_dof, n_modes]
+        else:
+            state_to_output = jnp.eye(
+                q_state_size
+            )  # direct projection, [n_free_dof, n_free_dof] or [n_modes, n_modes]
+
+        c = jnp.block(
+            [
+                [state_to_output, jnp.zeros_like(state_to_output)],
+                [jnp.zeros_like(state_to_output), state_to_output],
+            ]
+        )  # pass state (q, q_dot) to output (q, q_dot)
+        d = jnp.zeros((c.shape[0], b.shape[1]))  # no feedthrough
 
         return LinearSystem(
             a=a, b=b, c=c, d=d, dt=self.dt, continuous_time=True, removed_u_np1=False
@@ -236,8 +330,10 @@ class LinearBeam(
         )
 
         # has to be specified in the input object, as the linear system does not know how many time steps to run for in
-        # the degenerate case where there is no external forcing
+        # the case where there is no external forcing
         n_tstep = u.n_tstep
+
+        q_state_size = self.n_modes if self.modal_states else self.n_free_dof
 
         # initial states
         if x0 is None:
@@ -247,67 +343,68 @@ class LinearBeam(
             q0_ = x0.q
             q0_dot_ = x0.q_dot
 
-        if q0_ is None:
-            q0 = jnp.zeros((self.n_free_dof,))
-        else:
-            q0 = q0_.ravel()[self.free_dofs]
-            check_arr_shape(q0, (self.n_free_dof,), name="q0")
+        def _project_initial(q0_arr: Optional[Array]) -> Array:
+            if q0_arr is None:
+                return jnp.zeros((q_state_size,))
 
-        if q0_dot_ is None:
-            q0_dot = jnp.zeros((self.n_free_dof,))
-        else:
-            q0_dot = q0_dot_.ravel()[self.free_dofs]
-            check_arr_shape(q0_dot, (self.n_free_dof,), name="q0_dot")
+            match q0_arr.shape:
+                case (self.n_nodes, 6):
+                    q0_nodal = q0_arr.ravel()[self.free_dofs]  # remove prescribed dofs
+                    if self.modal_states:
+                        q0__ = self.nodal_to_modal(q0_nodal)
+                    else:
+                        q0__ = q0_nodal
+                case (self.n_modes,):
+                    if not self.modal_states:
+                        raise NotImplementedError(
+                            "Inputs cannot be modal for a nodal system"
+                        )
+                    q0__ = q0_arr
+                case _:
+                    raise ValueError("Invalid input for initial states")
+            return q0__
 
-        def create_delta_forcing(
-            reference_f: Optional[Array],
-            input_f_t: Optional[Array],
-            name: str,
-        ) -> Array:
-            r"""
-            Compute the perturbation forcing time history relative to the reference.
-            :param reference_f: Reference forcing vector, [n_nodes, 6] or None.
-            :param input_f_t: Input forcing vector, [n_tstep, n_nodes, 6] or None.
-            :param name: Name of the forcing vector for error messages.
-            :return: Delta forcing vector, [n_tstep, n_nodes, 6].
-            """
-            if input_f_t is None:
-                if reference_f is None:
-                    return jnp.zeros((n_tstep, self.n_nodes, 6))
-                return -jnp.broadcast_to(
-                    reference_f[None, :, :],
-                    (n_tstep, self.n_nodes, 6),
+        q0 = _project_initial(q0_)  # [n_free_dof | n_modes]
+        q0_dot = _project_initial(q0_dot_)  # [n_free_dof | n_modes]
+
+        if q0.shape != q0_dot.shape:
+            raise ValueError("q0 and q0_dot must both be modal or nodal")
+
+        ref_f_ext = self._reference_inputs["f_ext"]
+        assert ref_f_ext is None or isinstance(
+            ref_f_ext, Array
+        )  # type narrowing as it cannot be an ArrayList
+
+        if self.modal_inputs:
+            # user-provided input is a modal force time history of shape [n_tstep, n_modes]
+            if u.f_ext is None:
+                delta_f_ext_t = (
+                    jnp.zeros((n_tstep, self.n_modes))
+                    if ref_f_ext is None
+                    else -jnp.broadcast_to(ref_f_ext[None, :], (n_tstep, self.n_modes))
                 )
-            check_arr_shape(input_f_t, (n_tstep, self.n_nodes, 6), name=name)
-            if reference_f is None:
-                return input_f_t
-            return input_f_t - reference_f[None, :, :]
+            else:
+                check_arr_shape(u.f_ext, (n_tstep, self.n_modes), name="f_ext_t")
+                delta_f_ext_t = (
+                    u.f_ext if ref_f_ext is None else u.f_ext - ref_f_ext[None, :]
+                )
+        else:
+            # user-provided input is a nodal global-frame force time history of shape [n_tstep, n_nodes, 6]
+            if u.f_ext is None:
+                delta_f_ext_t = (
+                    jnp.zeros((n_tstep, self.n_nodes, 6))
+                    if ref_f_ext is None
+                    else -jnp.broadcast_to(
+                        ref_f_ext[None, :, :], (n_tstep, self.n_nodes, 6)
+                    )
+                )
+            else:
+                check_arr_shape(u.f_ext, (n_tstep, self.n_nodes, 6), name="f_ext_t")
+                delta_f_ext_t = (
+                    u.f_ext if ref_f_ext is None else u.f_ext - ref_f_ext[None, :, :]
+                )
 
-        # reference dead forces are stored in the local frame and so are rotated back
-        rmat_ref = self.reference.hg[:, :3, :3]
-        reference_dead_global = (
-            transform_nodal_vect(self.reference.f_ext_dead, rmat_ref)
-            if self.reference.f_ext_dead is not None
-            else None
-        )
-
-        delta_f_ext_follower_t = create_delta_forcing(
-            reference_f=self.reference.f_ext_follower,
-            input_f_t=u.f_ext_follower,
-            name="f_ext_follower_t",
-        )
-
-        delta_f_ext_dead_t = create_delta_forcing(
-            reference_f=reference_dead_global,
-            input_f_t=u.f_ext_dead,
-            name="f_ext_dead_t",
-        )
-
-        delta_u = BeamInputUnflattened(
-            n_tstep=n_tstep,
-            f_ext_follower=delta_f_ext_follower_t,
-            f_ext_dead=delta_f_ext_dead_t,
-        )
+        delta_u = BeamInputUnflattened(n_tstep=n_tstep, f_ext=delta_f_ext_t)
         delta_u_vec = self._pack_input_vector_t(delta_u)
 
         # run linear system
@@ -316,28 +413,40 @@ class LinearBeam(
             x0=jnp.concatenate((q0, q0_dot)),
         )
 
-        # extract perturbations in displacements and velocities
-        delta_q_t = x_t[:, : self.n_free_dof]
-        delta_q_dot_t = x_t[:, self.n_free_dof :]
+        # extract perturbations in displacements and velocities, reconstructing nodal form if requested
+        delta_q_state = x_t[:, :q_state_size]
+        delta_q_dot_state = x_t[:, q_state_size:]
 
-        # add in zeros for dofs not solved for to allow for reconstructing the full configuration
-        delta_q_t_full = (
-            jnp.zeros((n_tstep, self.n_nodes * 6))
-            .at[:, self.free_dofs]
-            .set(delta_q_t)
-            .reshape(n_tstep, self.n_nodes, 6)
-        )
+        if self.modal_outputs:
+            delta_q_t = delta_q_state
+            delta_q_dot_t = delta_q_dot_state
+            hg_t = None  # do not reconstruct coordinates
+        else:
+            if self.modal_states:
+                assert self.mode_shapes is not None
+                delta_q_t = self.modal_to_nodal(delta_q_state)  # [n_tstep, n_free_dof]
+                delta_q_dot_t = self.modal_to_nodal(delta_q_dot_state)
+            else:
+                delta_q_t = delta_q_state
+                delta_q_dot_t = delta_q_dot_state
 
-        delta_hg_t = vmap(vmap(exp_se3, 0, 0), 1, 1)(
-            delta_q_t_full
-        )  # [n_tstep, n_nodes, 4, 4]
+            # add in zeros for dofs not solved for to allow for reconstructing the full configuration
+            delta_q_t_full = (
+                jnp.zeros((n_tstep, self.n_nodes * 6))
+                .at[:, self.free_dofs]
+                .set(delta_q_t)
+                .reshape(n_tstep, self.n_nodes, 6)
+            )
 
-        hg_t = jnp.einsum("ijk,hikl->hijl", self.reference.hg, delta_hg_t)
+            delta_hg_t = vmap(vmap(exp_se3, 0, 0), 1, 1)(
+                delta_q_t_full
+            )  # [n_tstep, n_nodes, 4, 4]
+
+            hg_t = jnp.einsum("ijk,hikl->hijl", self.reference.hg, delta_hg_t)
 
         return BeamLinearResult(
             reference=self.reference,
-            f_ext_follower=u.f_ext_follower,
-            f_ext_dead=u.f_ext_dead,
+            f_ext=u.f_ext,
             delta_q=delta_q_t,
             delta_q_dot=delta_q_dot_t,
             hg=hg_t,

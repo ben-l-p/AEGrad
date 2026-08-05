@@ -1,5 +1,7 @@
 from __future__ import annotations
+import os
 from typing import Any, Callable, Literal, Optional, Sequence, TYPE_CHECKING
+from matplotlib import pyplot as plt
 
 from jax import numpy as jnp, Array, vmap
 
@@ -11,7 +13,7 @@ from aegrad.aero.linear.data_structures import (
 )
 from aegrad.aero.utils import project_forcing_to_beam
 from aegrad.algebra.array_utils import ArrayList, construct_named_block_jacobian
-from aegrad.algebra.base import jacrev_custom
+from aegrad.algebra.base import ADMode, jacrev_custom
 from aegrad.algebra.se3 import exp_se3, ha_to_ha_tilde
 from aegrad.coupled import StaticAeroelastic
 from aegrad.coupled.linear.data_structures import (
@@ -20,11 +22,23 @@ from aegrad.coupled.linear.data_structures import (
     AeroelasticOutputUnflattened,
     AeroelasticLinearResult,
 )
+from aegrad.plotting.modal import plot_modes_vtu
 from aegrad.structure.utils import get_solve_dofs
 from aegrad.structure.linear.linear_beam import LinearBeam
 from aegrad.utils.constants import BASE_LOBATTO_ORDER
-from aegrad.utils.linear import LinearComponent, SliceEntry, LinearModel, LinearSystem
-from aegrad.utils.print_utils import print_table_title, print_table_line
+from aegrad.utils.linear import (
+    LinearComponent,
+    SliceEntry,
+    LinearModel,
+    LinearSystem,
+    conjugate_partner_mask,
+)
+from aegrad.utils.print_utils import (
+    print_table_title,
+    print_table_line,
+    jax_print,
+    VerbosityLevel,
+)
 
 if TYPE_CHECKING:
     from aegrad.coupled.coupled import BaseCoupledAeroelastic
@@ -35,6 +49,7 @@ class LinearCoupled(
         StaticAeroelastic,
         AeroelasticInputUnflattened,
         AeroelasticStateUnflattened,
+        AeroelasticOutputUnflattened,
         AeroelasticLinearResult,
     ]
 ):
@@ -42,17 +57,18 @@ class LinearCoupled(
         self,
         case: BaseCoupledAeroelastic,
         reference: StaticAeroelastic,
-        wake_type: LinearWakeType = LinearWakeType.FREE,
+        batch_size: Optional[int],
+        n_struct_modes: Optional[int],
+        wake_type: LinearWakeType = "frozen",
         bound_upwash: bool = True,
         wake_upwash: bool = False,
         unsteady_force: bool = True,
-        local_forcing: bool = False,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
         *,
         skip_checks: bool = False,
     ):
 
-        self._aero = LinearUVLM(
+        self.aero = LinearUVLM(
             case=case.aero,
             reference=reference.aero,
             wake_type=wake_type,
@@ -62,17 +78,27 @@ class LinearCoupled(
             skip_linearisation=True,
             skip_checks=skip_checks,
         )
-        self._beam = LinearBeam(
+        self.beam = LinearBeam(
             beam=case.structure,
             reference=reference.structure,
             dt=case.aero.dt,
-            local_forcing=local_forcing,
+            n_modes=n_struct_modes,
             int_order=int_order,
         )
 
-        self.n_beam_dof: int = case.structure.n_dof - len(
+        self.n_beam_nodal_dof: int = case.structure.n_dof - len(
             reference.structure.prescribed_dofs
         )
+        self.n_beam_input_dof: int = (
+            self.beam.n_modes if self.beam.modal_inputs else self.n_beam_nodal_dof
+        )
+        self.n_beam_state_dof: int = (
+            self.beam.n_modes if self.beam.modal_states else self.n_beam_nodal_dof
+        )
+        self.n_beam_output_dof: int = (
+            self.beam.n_modes if self.beam.modal_outputs else self.n_beam_nodal_dof
+        )
+
         self.n_nodes: int = case.structure.n_nodes
         self.free_dofs: Array = jnp.array(
             get_solve_dofs(
@@ -84,7 +110,7 @@ class LinearCoupled(
         super().__init__(reference=reference, dt=case.aero.dt)
 
         self.unsteady_force: bool = unsteady_force
-        self.sys = self.linearise()
+        self.sys = self.linearise(batch_size=batch_size)
 
     @property
     def reference(self) -> StaticAeroelastic:
@@ -94,8 +120,7 @@ class LinearCoupled(
         self,
     ) -> dict[str, Optional[Array | ArrayList]]:
         inputs = (
-            self._aero.extract_reference_inputs()
-            | self._beam.extract_reference_inputs()
+            self.aero.extract_reference_inputs() | self.beam.extract_reference_inputs()
         )
 
         # remove redundant
@@ -107,8 +132,7 @@ class LinearCoupled(
         self,
     ) -> dict[str, Optional[Array | ArrayList]]:
         states = (
-            self._aero.extract_reference_states()
-            | self._beam.extract_reference_states()
+            self.aero.extract_reference_states() | self.beam.extract_reference_states()
         )
 
         # remove redundant
@@ -119,8 +143,8 @@ class LinearCoupled(
         self,
     ) -> dict[str, Optional[Array | ArrayList]]:
         states = (
-            self._aero.extract_reference_outputs()
-            | self._beam.extract_reference_outputs()
+            self.aero.extract_reference_outputs()
+            | self.beam.extract_reference_outputs()
         )
 
         # remove redundant
@@ -157,7 +181,7 @@ class LinearCoupled(
                 "nu_b",
                 *(
                     (True, reference.aero.zeta_b.shape)
-                    if self._aero.bound_upwash
+                    if self.aero.bound_upwash
                     else (False, None)
                 ),
             ),
@@ -165,19 +189,16 @@ class LinearCoupled(
                 "nu_w",
                 *(
                     (True, reference.aero.zeta_w.shape)
-                    if self._aero.wake_upwash
+                    if self.aero.wake_upwash
                     else (False, None)
                 ),
             ),
             SliceEntry(
-                "f_ext_follower",
+                "f_ext",
                 True,
-                (self.n_beam_dof,),
-            ),
-            SliceEntry(
-                "f_ext_dead",
-                True,
-                (self.n_beam_dof,),
+                # this also allows for input forces on prescribed degrees of freedom for consistency, even if they do
+                # nothing
+                (self.beam.n_modes,) if self.beam.modal_inputs else (self.n_nodes, 6),
             ),
         )
         return self._make_slices(slice_entries)
@@ -196,7 +217,7 @@ class LinearCoupled(
                 "gamma_b_nm1",
                 *(
                     (True, reference.aero.gamma_b.shape)
-                    if self._aero.unsteady_force
+                    if self.aero.unsteady_force
                     else (False, None)
                 ),
             ),
@@ -204,12 +225,12 @@ class LinearCoupled(
                 "zeta_w",
                 *(
                     (True, reference.aero.zeta_w.shape)
-                    if self._aero.prescribed_wake
+                    if self.aero.prescribed_wake
                     else (False, None)
                 ),
             ),
-            SliceEntry("q", True, (self.n_beam_dof,)),
-            SliceEntry("q_dot", True, (self.n_beam_dof,)),
+            SliceEntry("q", True, (self.n_beam_state_dof,)),
+            SliceEntry("q_dot", True, (self.n_beam_state_dof,)),
         )
         return self._make_slices(slice_entries)
 
@@ -221,8 +242,8 @@ class LinearCoupled(
         :return: OutputSlices instance and total number of output elements.
         """
         slice_entries = (
-            SliceEntry("q", True, (self.n_beam_dof,)),
-            SliceEntry("q_dot", True, (self.n_beam_dof,)),
+            SliceEntry("q", True, (self.n_beam_output_dof,)),
+            SliceEntry("q_dot", True, (self.n_beam_output_dof,)),
         )
         return self._make_slices(slice_entries)
 
@@ -234,10 +255,9 @@ class LinearCoupled(
         zeta_w_vec: Optional[Array] = None,
         nu_b_vec: Optional[Array] = None,
         nu_w_vec: Optional[Array] = None,
-        f_ext_follower: Optional[Array] = None,
-        f_ext_dead: Optional[Array] = None,
-        q: Optional[Array] = None,
-        q_dot: Optional[Array] = None,
+        f_ext: Optional[Array] = None,
+        q_nodal: Optional[Array] = None,
+        q_dot_nodal: Optional[Array] = None,
     ) -> tuple[AeroelasticStateUnflattened, AeroelasticOutputUnflattened]:
         r"""
         Step solution from states at timestep n and inputs at timestep n+1 to give states at timestep n+1 and outputs
@@ -268,7 +288,7 @@ class LinearCoupled(
                 if gamma_b_nm1_vec is not None
                 else ref.aero.gamma_b
             )
-            if self._aero.unsteady_force
+            if self.aero.unsteady_force
             else None
         )
         zeta_w = (
@@ -286,7 +306,7 @@ class LinearCoupled(
                 if nu_b_vec is not None
                 else ArrayList.zeros_like(ref.aero.zeta_b)
             )
-            if self._aero.bound_upwash
+            if self.aero.bound_upwash
             else None
         )
         nu_w = (
@@ -297,23 +317,29 @@ class LinearCoupled(
                 if nu_w_vec is not None
                 else ArrayList.zeros_like(ref.aero.zeta_w)
             )
-            if self._aero.wake_upwash
+            if self.aero.wake_upwash
             else None
         )
-        q = q if q is not None else jnp.zeros(self.n_beam_dof)
-        q_dot = q_dot if q_dot is not None else jnp.zeros(self.n_beam_dof)
+        q_nodal = (
+            q_nodal if q_nodal is not None else jnp.zeros(len(self.beam.free_dofs))
+        )
+        q_dot_nodal = (
+            q_dot_nodal
+            if q_dot_nodal is not None
+            else jnp.zeros(len(self.beam.free_dofs))
+        )
 
         # fill in prescribed dofs with zeros
         q_full = (
             jnp.zeros(self.n_nodes * 6)
             .at[self.free_dofs]
-            .set(q)
+            .set(q_nodal)
             .reshape(self.n_nodes, 6)
         )
         q_dot_full = (
             jnp.zeros(self.n_nodes * 6)
             .at[self.free_dofs]
-            .set(q_dot)
+            .set(q_dot_nodal)
             .reshape(self.n_nodes, 6)
         )
 
@@ -326,12 +352,12 @@ class LinearCoupled(
         )
 
         # aerodynamic grid
-        zeta_b = self._aero.case.hg_to_zeta_b(hg_n=hg, cs_ang_n=self._aero.case.cs_ang0)
-        zeta_b_dot = self._aero.case.hg_dot_to_zeta_b_dot(
+        zeta_b = self.aero.case.hg_to_zeta_b(hg_n=hg, cs_ang_n=self.aero.case.cs_ang0)
+        zeta_b_dot = self.aero.case.hg_dot_to_zeta_b_dot(
             hg_n=hg,
             hg_dot_n=hg_dot,
-            cs_ang_n=self._aero.case.cs_ang0,
-            cs_vel_n=self._aero.case.cs_vel0,
+            cs_ang_n=self.aero.case.cs_ang0,
+            cs_vel_n=self.aero.case.cs_vel0,
         )
 
         # pass through aerodynamic system
@@ -343,19 +369,19 @@ class LinearCoupled(
             gamma_b=gamma_b,
             gamma_w=gamma_w,
             gamma_b_nm1=gamma_b_nm1,
-            zeta_w=zeta_w if self._aero.prescribed_wake else None,
-            zeta_b=zeta_b if self._aero.prescribed_wake else None,
+            zeta_w=zeta_w if self.aero.prescribed_wake else None,
+            zeta_b=zeta_b if self.aero.prescribed_wake else None,
         )
 
-        u_n_aero_vec = self._aero._pack_input_vector(u_n_aero)
-        x_n_aero_vec = self._aero._pack_state_vector(x_n_aero)
+        u_n_aero_vec = self.aero._pack_input_vector(u_n_aero)
+        x_n_aero_vec = self.aero._pack_state_vector(x_n_aero)
 
-        x_np1_aero_vec, y_np1_aero_vec = self._aero.step_vec(
+        x_np1_aero_vec, y_np1_aero_vec = self.aero.step_vec(
             x_vec=x_n_aero_vec, u_vec=u_n_aero_vec
         )
 
-        x_np1_aero = self._aero._unpack_state_vector(x=x_np1_aero_vec)
-        y_np1_aero = self._aero._unpack_output_vector(y=y_np1_aero_vec)
+        x_np1_aero = self.aero._unpack_state_vector(x=x_np1_aero_vec)
+        y_np1_aero = self.aero._unpack_output_vector(y=y_np1_aero_vec)
         assert isinstance(x_np1_aero, AeroStateUnflattened) and isinstance(
             y_np1_aero, AeroOutputUnflattened
         ), (
@@ -373,53 +399,54 @@ class LinearCoupled(
         f_aero_beam_total = project_forcing_to_beam(
             f_total=f_aero_np1,
             rmat=rmat,
-            dof_mapping=self._aero.case.dof_mapping,
-            x0_aero=self._aero.case.x0_b,
+            dof_mapping=self.aero.case.dof_mapping,
+            x0_aero=self.aero.case.x0_b,
         )
 
         # subtract the reference contribution so the aero forcing fed into the beam operator
         # is a pure perturbation (the beam sys.a / sys.b operate on perturbations)
         f_aero_ref_total = ref.aero.f_steady
-        if self._aero.unsteady_force:
+        if self.aero.unsteady_force:
             f_aero_ref_total += ref.aero.f_unsteady
         f_aero_beam_ref = project_forcing_to_beam(
             f_total=f_aero_ref_total,
             rmat=ref.structure.hg[:, :3, :3],
-            dof_mapping=self._aero.case.dof_mapping,
-            x0_aero=self._aero.case.x0_b,
+            dof_mapping=self.aero.case.dof_mapping,
+            x0_aero=self.aero.case.x0_b,
         )
         delta_f_aero_beam = f_aero_beam_total - f_aero_beam_ref
 
-        f_ext_dead_: Array = (
-            f_ext_dead if f_ext_dead is not None else jnp.zeros(self.n_beam_dof)
-        )
-        f_ext_follower_: Array = (
-            f_ext_follower if f_ext_follower is not None else jnp.zeros(self.n_beam_dof)
-        )
+        f_ext_: Array = f_ext if f_ext is not None else jnp.zeros(self.free_dofs.size)
 
         # scatter free-dof forcing to full (n_nodes * 6) vectors expected by the beam B operator, and add aero
-        # forcing (global frame, perturbation) into the dead-force channel
-        f_ext_dead_full = (
-            jnp.zeros(self.n_nodes * 6).at[self.free_dofs].set(f_ext_dead_)
+        # forcing (global frame, perturbation) as an external force
+        f_ext_full = (
+            jnp.zeros(self.n_nodes * 6).at[self.free_dofs].set(f_ext_)
             + delta_f_aero_beam.ravel()
-        )
-        f_ext_follower_full = (
-            jnp.zeros(self.n_nodes * 6).at[self.free_dofs].set(f_ext_follower_)
-        )
+        )  # [n_nodes * 6]
+
+        if self.beam.modal_inputs:
+            f_ext_full = self.beam.nodal_to_modal(f_ext_full[self.free_dofs])
 
         # beam step in perturbation form (discrete-time Tustin)
-        x_beam_n = jnp.concatenate([q, q_dot])
-
-        x_beam_np1 = (
-            self._beam.sys.a @ x_beam_n
-            + self._beam.sys.b[:, self._beam.input_slices["f_ext_dead"].slices]
-            @ f_ext_dead_full
-            + self._beam.sys.b[:, self._beam.input_slices["f_ext_follower"].slices]
-            @ f_ext_follower_full
+        x_beam_n = jnp.concatenate(
+            [
+                self.beam.nodal_to_modal(q_nodal)
+                if self.beam.modal_states
+                else q_nodal,
+                self.beam.nodal_to_modal(q_dot_nodal)
+                if self.beam.modal_states
+                else q_dot_nodal,
+            ]
         )
 
-        q_np1 = x_beam_np1[: self.n_beam_dof]
-        q_dot_np1 = x_beam_np1[self.n_beam_dof :]
+        x_beam_np1 = (
+            self.beam.sys.a @ x_beam_n
+            + self.beam.sys.b[:, self.beam.input_slices["f_ext"].slices] @ f_ext_full
+        )
+
+        q_np1 = x_beam_np1[: self.n_beam_state_dof]
+        q_dot_np1 = x_beam_np1[self.n_beam_state_dof :]
 
         state_np1 = AeroelasticStateUnflattened(
             gamma_b=x_np1_aero.gamma_b,
@@ -429,7 +456,7 @@ class LinearCoupled(
             q=q_np1,
             q_dot=q_dot_np1,
         )
-        output_n = AeroelasticOutputUnflattened(q=q, q_dot=q_dot)
+        output_n = AeroelasticOutputUnflattened(q=q_np1, q_dot=q_dot_np1)
 
         return state_np1, output_n
 
@@ -450,8 +477,10 @@ class LinearCoupled(
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q=q_n,
-            q_dot=q_dot_n,
+            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
+            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
+            if self.beam.modal_states
+            else q_dot_n,
         )
         return x_np1.gamma_b.ravel()
 
@@ -471,9 +500,9 @@ class LinearCoupled(
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q=q_n,
+            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
         )
-        assert not ((x_new.zeta_w is not None) ^ self._aero.prescribed_wake), (
+        assert not ((x_new.zeta_w is not None) ^ self.aero.prescribed_wake), (
             "zeta_w should be None only if prescribed_wake is False."
         )
         return (
@@ -487,21 +516,27 @@ class LinearCoupled(
         q_dot_n: Array,
         gamma_b_n_vec: Array,
         gamma_w_n_vec: Array,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
+        f_ext: Optional[Array],
         zeta_w_n_vec: Optional[Array] = None,
+        gamma_b_nm1_vec: Optional[Array] = None,
+        nu_b_n_vec: Optional[Array] = None,
+        nu_w_n_vec: Optional[Array] = None,
     ) -> Array:
         r"""
         Beam displacement at timestep n+1 as a function of states at n and external forcing.
         """
         x_new, _ = self.step(
-            f_ext_follower=f_ext_follower,
-            f_ext_dead=f_ext_dead,
+            f_ext=f_ext,
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
+            gamma_b_nm1_vec=gamma_b_nm1_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q=q_n,
-            q_dot=q_dot_n,
+            nu_b_vec=nu_b_n_vec,
+            nu_w_vec=nu_w_n_vec,
+            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
+            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
+            if self.beam.modal_states
+            else q_dot_n,
         )
         return x_new.q.ravel()
 
@@ -511,21 +546,27 @@ class LinearCoupled(
         q_dot_n: Array,
         gamma_b_n_vec: Array,
         gamma_w_n_vec: Array,
-        f_ext_follower: Optional[Array],
-        f_ext_dead: Optional[Array],
+        f_ext: Optional[Array],
         zeta_w_n_vec: Optional[Array],
+        gamma_b_nm1_vec: Optional[Array] = None,
+        nu_b_n_vec: Optional[Array] = None,
+        nu_w_n_vec: Optional[Array] = None,
     ) -> Array:
         r"""
         Beam velocity at timestep n+1 as a function of states at n and external forcing.
         """
         x_new, _ = self.step(
-            f_ext_follower=f_ext_follower,
-            f_ext_dead=f_ext_dead,
+            f_ext=f_ext,
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
+            gamma_b_nm1_vec=gamma_b_nm1_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q=q_n,
-            q_dot=q_dot_n,
+            nu_b_vec=nu_b_n_vec,
+            nu_w_vec=nu_w_n_vec,
+            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
+            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
+            if self.beam.modal_states
+            else q_dot_n,
         )
         return x_new.q_dot.ravel()
 
@@ -547,58 +588,71 @@ class LinearCoupled(
         gamma_b_args: dict[str, Any] = dict(
             gamma_b_n_vec=ref.aero.gamma_b.ravel(),
             gamma_w_n_vec=ref.aero.gamma_w.ravel(),
-            q_n=jnp.zeros((self.n_beam_dof,)),
-            q_dot_n=jnp.zeros((self.n_beam_dof,)),
+            q_n=jnp.zeros((self.n_beam_state_dof,)),
+            q_dot_n=jnp.zeros((self.n_beam_state_dof,)),
             zeta_w_n_vec=ref.aero.zeta_w.ravel(),
             nu_b_n_vec=jnp.zeros(ref.aero.zeta_b.size)
-            if self._aero.bound_upwash
+            if self.aero.bound_upwash
             else None,
         )
         gamma_b_diff = ["gamma_w_n_vec", "q_n", "q_dot_n"]
-        if self._aero.prescribed_wake:
+        if self.aero.prescribed_wake:
             gamma_b_diff.append("zeta_w_n_vec")
-        if self._aero.bound_upwash:
+        if self.aero.bound_upwash:
             gamma_b_diff.append("nu_b_n_vec")
 
         # wake
         wake_args: dict[str, Any] = dict(
             gamma_b_n_vec=ref.aero.gamma_b.ravel(),
             gamma_w_n_vec=ref.aero.gamma_w.ravel(),
-            q_n=jnp.zeros((self.n_beam_dof,)),
+            q_n=jnp.zeros((self.n_beam_state_dof,)),
             zeta_w_n_vec=ref.aero.zeta_w.ravel(),
             nu_w_n_vec=jnp.zeros(ref.aero.zeta_w.size)
-            if self._aero.wake_upwash
+            if self.aero.wake_upwash
             else None,
         )
         gamma_w_diff = ["gamma_b_n_vec", "gamma_w_n_vec"]
         zeta_w_diff = ["q_n"]
-        if self._aero.prescribed_wake:
+        if self.aero.prescribed_wake:
             zeta_w_diff.append("zeta_w_n_vec")
-        if self._aero.wake_upwash:
+        if self.aero.wake_upwash:
             zeta_w_diff.append("nu_w_n_vec")
-        if self._aero.free_wake:
+        if self.aero.free_wake:
             zeta_w_diff.extend(["gamma_b_n_vec", "gamma_w_n_vec"])
 
         q_args: dict[str, Any] = dict(
-            q_n=jnp.zeros((self.n_beam_dof,)),
-            q_dot_n=jnp.zeros((self.n_beam_dof,)),
+            q_n=jnp.zeros((self.n_beam_state_dof,)),
+            q_dot_n=jnp.zeros((self.n_beam_state_dof,)),
             gamma_b_n_vec=ref.aero.gamma_b.ravel(),
             gamma_w_n_vec=ref.aero.gamma_w.ravel(),
-            f_ext_follower=jnp.zeros((self.n_beam_dof,)),
-            f_ext_dead=jnp.zeros((self.n_beam_dof,)),
+            f_ext=jnp.zeros((self.n_beam_input_dof,)),
             zeta_w_n_vec=ref.aero.zeta_w.ravel(),
+            gamma_b_nm1_vec=ref.aero.gamma_b.ravel()
+            if self.aero.unsteady_force
+            else None,
+            nu_b_n_vec=jnp.zeros(ref.aero.zeta_b.size)
+            if self.aero.bound_upwash
+            else None,
+            nu_w_n_vec=jnp.zeros(ref.aero.zeta_w.size)
+            if self.aero.wake_upwash
+            else None,
         )
         q_diff = [
             "q_n",
             "q_dot_n",
             "gamma_b_n_vec",
             "gamma_w_n_vec",
-            "f_ext_follower",
-            "f_ext_dead",
+            "f_ext",
         ]
 
-        if self._aero.prescribed_wake:
+        if self.aero.prescribed_wake:
             q_diff.append("zeta_w_n_vec")
+        if self.aero.unsteady_force:
+            q_diff.append("gamma_b_nm1_vec")
+        if self.aero.bound_upwash:
+            q_diff.append("nu_b_n_vec")
+        if self.aero.wake_upwash:
+            q_diff.append("nu_w_n_vec")
 
         linear_args: dict[
             str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]
@@ -621,7 +675,7 @@ class LinearCoupled(
         }
 
         # add zeta_w for linearisation
-        if self._aero.prescribed_wake:
+        if self.aero.prescribed_wake:
             linear_args["zeta_w"] = (
                 lambda *args, **kwargs: self.wake_prop_step(**kwargs)[0],
                 wake_args,
@@ -631,23 +685,23 @@ class LinearCoupled(
         # define Jacobians we know nicely as jac_options
         jac_options = {
             "q": {
-                "q_n": lambda *args, **kwargs: self._beam.sys.a[
-                    : self.n_beam_dof, : self.n_beam_dof
+                "q_n": lambda *args, **kwargs: self.beam.sys.a[
+                    : self.n_beam_state_dof, : self.n_beam_state_dof
                 ],
-                "q_dot_n": lambda *args, **kwargs: self._beam.sys.a[
-                    : self.n_beam_dof, self.n_beam_dof :
+                "q_dot_n": lambda *args, **kwargs: self.beam.sys.a[
+                    : self.n_beam_state_dof, self.n_beam_state_dof :
                 ],
             },
             "q_dot": {
-                "q_n": lambda *args, **kwargs: self._beam.sys.a[
-                    self.n_beam_dof :, : self.n_beam_dof
+                "q_n": lambda *args, **kwargs: self.beam.sys.a[
+                    self.n_beam_state_dof :, : self.n_beam_state_dof
                 ],
-                "q_dot_n": lambda *args, **kwargs: self._beam.sys.a[
-                    self.n_beam_dof :, self.n_beam_dof :
+                "q_dot_n": lambda *args, **kwargs: self.beam.sys.a[
+                    self.n_beam_state_dof :, self.n_beam_state_dof :
                 ],
             },
         }
-        if self._aero.unsteady_force:
+        if self.aero.unsteady_force:
             jac_options["gamma_b_nm1"] = {
                 "gamma_b_n_vec": lambda *args, **kwargs: jnp.eye(ref.aero.gamma_b.size)
             }
@@ -656,6 +710,8 @@ class LinearCoupled(
 
     def create_jacobians(
         self,
+        mode: ADMode | dict[str, ADMode] = "reverse",
+        batch_size: Optional[int] = None,
         n_profile_loops: Optional[int] = None,
         jac_options: Optional[
             dict[str, dict[str, Optional[Callable[..., Any]]]]
@@ -683,11 +739,23 @@ class LinearCoupled(
                     if arg in res_jac_options:
                         res_jac_options[arg] = entry
 
+            if isinstance(mode, str):
+                res_mode: ADMode = mode
+            elif isinstance(mode, dict):
+                try:
+                    res_mode = mode[res_name]
+                except KeyError:
+                    res_mode = "reverse"
+            else:
+                raise NotImplementedError
+
             jacs, res_compile_time, res_run_time = jacrev_custom(
                 func=res_func,
                 jac_options=res_jac_options,
                 n_profile_loops=n_profile_loops,
                 func_name=res_name,
+                map_batch_size=batch_size,
+                mode=res_mode,
             )(**args)
 
             jacobians[res_name] = jacs
@@ -702,26 +770,34 @@ class LinearCoupled(
             run_time if n_profile_loops is not None else None,
         )
 
-    def linearise(self) -> LinearSystem:
-        jacobians, _, _ = self.create_jacobians(n_profile_loops=None, jac_options=None)
+    def linearise(
+        self,
+        batch_size: Optional[int] = None,
+    ) -> LinearSystem:
+        jacobians, _, _ = self.create_jacobians(
+            n_profile_loops=None,
+            jac_options=None,
+            batch_size=batch_size,
+            mode={"gamma_b": "forward"} if self.beam.modal_states else {},  # type: ignore
+        )
 
         # (row-label in `jacobians`, column-argname used inside each jacobian dict, size)
         state_specs: list[tuple[str, str, int]] = [
             ("gamma_b", "gamma_b_n_vec", self.reference.aero.gamma_b.size),
             ("gamma_w", "gamma_w_n_vec", self.reference.aero.gamma_w.size),
         ]
-        if self._aero.unsteady_force:
+        if self.aero.unsteady_force:
             state_specs.append(
                 ("gamma_b_nm1", "gamma_b_nm1_vec", self.reference.aero.gamma_b.size)
             )
-        if self._aero.prescribed_wake:
+        if self.aero.prescribed_wake:
             state_specs.append(
                 ("zeta_w", "zeta_w_n_vec", self.reference.aero.zeta_w.size)
             )
         state_specs.extend(
             [
-                ("q", "q_n", self.n_beam_dof),
-                ("q_dot", "q_dot_n", self.n_beam_dof),
+                ("q", "q_n", self.n_beam_state_dof),
+                ("q_dot", "q_dot_n", self.n_beam_state_dof),
             ]
         )
         state_names = [s[0] for s in state_specs]
@@ -729,20 +805,15 @@ class LinearCoupled(
         state_sizes = [s[2] for s in state_specs]
 
         input_specs: list[tuple[str, int]] = []
-        if self._aero.bound_upwash:
+        if self.aero.bound_upwash:
             input_specs.append(("nu_b_n_vec", self.reference.aero.zeta_b.size))
-        if self._aero.wake_upwash:
+        if self.aero.wake_upwash:
             input_specs.append(("nu_w_n_vec", self.reference.aero.zeta_w.size))
-        input_specs.extend(
-            [
-                ("f_ext_follower", self.n_beam_dof),
-                ("f_ext_dead", self.n_beam_dof),
-            ]
-        )
+        input_specs.append(("f_ext", self.n_beam_input_dof))
         input_arg_names = [s[0] for s in input_specs]
         input_sizes = [s[1] for s in input_specs]
 
-        output_sizes = [self.n_beam_dof, self.n_beam_dof]
+        output_sizes = [self.n_beam_output_dof, self.n_beam_output_dof]
 
         a = construct_named_block_jacobian(
             entries=tuple(jacobians[k] for k in state_names),
@@ -759,8 +830,12 @@ class LinearCoupled(
         )
 
         c_entries: tuple[dict[str, Array], ...] = (
-            {"q_n": jnp.eye(self.n_beam_dof)},
-            {"q_dot_n": jnp.eye(self.n_beam_dof)},
+            {"q_n": self.beam.sys.c[: self.n_beam_output_dof, : self.n_beam_state_dof]},
+            {
+                "q_dot_n": self.beam.sys.c[
+                    self.n_beam_output_dof :, self.n_beam_state_dof :
+                ]
+            },
         )
         c = construct_named_block_jacobian(
             entries=c_entries,
@@ -774,7 +849,7 @@ class LinearCoupled(
 
     def linearise_profile(
         self,
-        n_profile_loops: int = 10,
+        n_profile_loops: int = 3,
     ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
         r"""
         Profile forming the Jacobians required for the linearised model.
@@ -785,7 +860,9 @@ class LinearCoupled(
         print_table_title(inner_width=95, title="Aeroelastic Adjoint Profile")
 
         _, compile_time, run_time = self.create_jacobians(
-            n_profile_loops=n_profile_loops, jac_options=None
+            n_profile_loops=n_profile_loops,
+            jac_options=None,
+            mode={"gamma_b": "forward"} if self.beam.modal_states else {},  # type: ignore
         )
 
         assert compile_time is not None and run_time is not None, (
@@ -795,6 +872,167 @@ class LinearCoupled(
         print_table_line(inner_width=95)
 
         return compile_time, run_time
+
+    def modal(
+        self,
+        n_modes: Optional[int] = None,
+        freq_range: tuple[float | Array, float | Array] = (0.0, jnp.inf),
+        damp_range: tuple[float | Array, float | Array] = (-jnp.inf, jnp.inf),
+        remove_complex_conjugate: bool = True,
+        plot_eigvals: bool = False,
+        sort: Literal["frequency", "damping"] = "frequency",
+        plot_xlim: tuple[float, float] = (-500.0, 50.0),
+        plot_ylim: tuple[float, float] = (-400.0, 400.0),
+        n_plot_vtk: int = 0,
+        vtu_directory: os.PathLike | str = "./modal",
+        n_phase: int = 8,
+        n_interp: int = 0,
+        max_disp: float = 0.2,
+        max_ang: float = 0.2,
+        max_gamma: float = 100.0,
+    ) -> Array:
+        r"""
+        Compute stability eigenvalues of the linear system A matrix.
+        :param n_modes: Number of modes to be kept. If None, all eigenvalues are returned.
+        :param freq_range: (min, max) natural frequency window in Hz. Modes outside are pushed past the
+        truncation and dropped when n_modes is set.
+        :param damp_range: (min, max) damping-ratio window. Modes outside are pushed past the truncation and
+        dropped when n_modes is set.
+        :param remove_complex_conjugate: If true, one mode from each complex-conjugate pair is dropped.
+        :param plot_eigvals: If true, plot the eigenvalues with Matplotlib.
+        :param sort: Method for sorting eigenvalues before truncation, can be either "frequency" or "damping".
+        :param plot_xlim: Range of real component to be used for plotting.
+        :param plot_ylim: Range of imaginary component to be used for plotting.
+        :param n_plot_vtk: Number of modes (starting from the most damped) to write to VTK for visualisation. Set to 0
+        to skip plotting.
+        :param vtu_directory: Directory for plotting vtu files, defaults to "./modal".
+        :param n_phase: Number of phase samples of the complex eigenvector to plot per mode.
+        :param n_interp: Number of interpolation points to add along each beam element in the beam VTU output.
+        :param max_disp: Maximum linear displacement used to normalise the plotted mode shape (in reference units).
+        :param max_ang: Maximum angular displacement used to normalise the plotted mode shape.
+        :param max_gamma: Maximum circulation used to normalise the plotted mode shape.
+        :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
+        """
+
+        evals_d, evecs = jnp.linalg.eig(self.sys.a)
+        evals = jnp.log(evals_d) / self.dt  # convert to continuous time
+
+        # order from most to least damped and truncate
+        omega_damped = jnp.abs(evals.imag)
+        damping = -evals.real / jnp.abs(evals)
+        omega_natural = omega_damped / jnp.sqrt(1.0 - damping**2)
+
+        freq_natural_hz = omega_natural / (2.0 * jnp.pi)
+
+        match sort:
+            case "frequency":
+                idx = omega_natural.argsort()
+            case "damping":
+                idx = damping.argsort()
+
+        # push conjugate partners past the truncation point (indexed by original position, then re-sorted so it
+        # aligns with `idx`). Stable-argsort preserves the primary sort within each group.
+        if remove_complex_conjugate:
+            partner = conjugate_partner_mask(
+                freq_hz=freq_natural_hz, damping=damping, tiebreaker=evals.real
+            )
+            idx = idx[jnp.argsort(partner[idx], stable=True)]
+
+        # push modes outside the requested natural-frequency / damping window to the back so truncation to
+        # n_modes keeps only the in-range ones.
+        in_range = (
+            (freq_natural_hz[idx] >= freq_range[0])
+            & (freq_natural_hz[idx] <= freq_range[1])
+            & (damping[idx] >= damp_range[0])
+            & (damping[idx] <= damp_range[1])
+        )
+        idx = idx[jnp.argsort(~in_range, stable=True)]
+
+        if n_modes is not None:
+            idx = idx[:n_modes]
+
+        freq_damped_ordered = omega_damped[idx] / (2.0 * jnp.pi)
+        freq_natural_ordered = omega_natural[idx] / (2.0 * jnp.pi)
+        damping_ordered = damping[idx]
+
+        # write to console
+        if n_modes is not None:
+            print_table_line(inner_width=71)
+            jax_print(
+                "| Mode | Damped Frequency [Hz] | Natural Frequency [Hz] | Damping Ratio |",
+                verbose_level=VerbosityLevel.NORMAL,
+            )
+            print_table_line(inner_width=71)
+            for i_mode in range(n_modes):
+                jax_print(
+                    "| {mode:>4d} | {freq_damped:>21.3f} | {freq_natural:>22.3f} | {damp:>13.6f} |",
+                    mode=i_mode + 1,
+                    freq_damped=freq_damped_ordered[i_mode],
+                    freq_natural=freq_natural_ordered[i_mode],
+                    damp=damping_ordered[i_mode],
+                    verbose_level=VerbosityLevel.NORMAL,
+                )
+            print_table_line(inner_width=71)
+
+        if plot_eigvals:
+            fig, ax = plt.subplots()
+            ax.scatter(
+                evals.real,
+                evals.imag,
+            )
+            ax.set_xlim(*plot_xlim)
+            ax.set_ylim(*plot_ylim)
+            ax.set_xlabel("Re(eig) [1/s]")
+            ax.set_ylabel("Im(eig) [1/s]")
+            ax.set_title("Eigenvalues")
+            plt.show()
+
+        if n_plot_vtk > 0:
+            evecs_ordered = evecs[:, idx[:n_plot_vtk]].T  # [m, n_states]
+
+            q_mode = evecs_ordered[:, self.state_slices["q"].slices]  # [m, n_free_dof]
+            q_full = (
+                jnp.zeros((n_plot_vtk, self.n_nodes * 6), dtype=complex)
+                .at[:, self.free_dofs]
+                .set(q_mode)
+            )
+
+            def _extract_array_list(name: str) -> Optional[ArrayList]:
+                component = self.state_slices[name]
+                if not component.enabled:
+                    return None
+                return ArrayList(
+                    [
+                        evecs_ordered[:, s].reshape((n_plot_vtk, *shape))
+                        for s, shape in zip(component.slices, component.shapes)
+                    ]
+                )
+
+            gamma_b_full = _extract_array_list("gamma_b")
+            gamma_w_full = _extract_array_list("gamma_w")
+            zeta_w_full = _extract_array_list("zeta_w")
+
+            plot_modes_vtu(
+                reference=self.reference,
+                directory=vtu_directory,
+                q_full=q_full.reshape(n_plot_vtk, self.n_nodes, 6),
+                freqs=freq_damped_ordered,
+                gamma_b_full=gamma_b_full,
+                gamma_w_full=gamma_w_full,
+                zeta_w_full=zeta_w_full,
+                uvlm=self.aero.case,
+                n_phase=n_phase,
+                n_interp=n_interp,
+                max_disp=max_disp,
+                max_ang=max_ang,
+                max_gamma=max_gamma,
+            )
+
+        return evals[idx]
+
+    def rescale(
+        self, u_inf_mag: float | Array, rho: float | Array, c_ref: float
+    ) -> LinearCoupled: ...
 
     # noinspection PyMethodOverriding
     def run(

@@ -6,11 +6,11 @@ from jax import Array
 
 from aegrad.aero.flowfields import FlowField, Constant
 from aegrad.coupled import CoupledAeroelastic
-from models.straight_pazy.pazy_wing import make_generic_pazy_wing
+from models.pazy.base import make_generic_pazy_wing
 
 
 # constant from provided data
-from models.swept_pazy.swept_pazy_properties import SWEEP_10_LE, SWEEP_10_TE
+from models.pazy.swept.data.properties import SWEEP_10_LE, SWEEP_10_TE
 
 
 def make_swept_pazy_wing(
@@ -45,7 +45,7 @@ def make_swept_pazy_wing(
         flowfield=flowfield,
         aoa=aoa,
         data=data,
-        sweep=None,
+        sweep=None,  # if sweep were to be added here, it would be added on top of the sweep from data
     )
 
 

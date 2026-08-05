@@ -4,11 +4,9 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from math import prod
 from typing import Optional, Sequence, TYPE_CHECKING, Literal
-from matplotlib import pyplot as plt
 
 import jax
-from jax.scipy.linalg import expm
-from jax import Array, numpy as jnp
+from jax import Array, numpy as jnp, scipy as jsp
 
 from aegrad.utils.print_utils import warn, jax_print, VerbosityLevel
 from aegrad.utils.utils import shallow_as_dict, make_pytree
@@ -73,10 +71,11 @@ class LinearModel[
     R: ReferenceObject,
     I: InputUnflattened,
     S: StateUnflattened,
+    O: OutputUnflattened,
     Res: LinearResult,
-](ABC):
+](ABC):  # the definition of R, I, S, O, Res are provided in subclass implementations
     r"""
-    Class to represent a linearised UVLM aerodynamic system about a reference state.
+    Base class to represent a linearised system.
     """
 
     def __init__(self, reference: R, dt: float | Array):
@@ -91,13 +90,13 @@ class LinearModel[
 
         self._reference: R = reference
 
-        self.reference_inputs: dict[str, Optional[Array | ArrayList]] = (
+        self._reference_inputs: dict[str, Optional[Array | ArrayList]] = (
             self.extract_reference_inputs()
         )
-        self.reference_states: dict[str, Optional[Array | ArrayList]] = (
+        self._reference_states: dict[str, Optional[Array | ArrayList]] = (
             self.extract_reference_states()
         )
-        self.reference_outputs: dict[str, Optional[Array | ArrayList]] = (
+        self._reference_outputs: dict[str, Optional[Array | ArrayList]] = (
             self.extract_reference_outputs()
         )
 
@@ -130,19 +129,19 @@ class LinearModel[
     @abstractmethod
     def input_object(
         self,
-    ) -> type: ...
+    ) -> type[I]: ...
 
     @property
     @abstractmethod
     def state_object(
         self,
-    ) -> type: ...
+    ) -> type[S]: ...
 
     @property
     @abstractmethod
     def output_object(
         self,
-    ) -> type: ...
+    ) -> type[O]: ...
 
     @abstractmethod
     def _make_input_slices(
@@ -162,50 +161,6 @@ class LinearModel[
     @abstractmethod
     def linearise(self) -> LinearSystem: ...
 
-    def eigenvalues(
-        self,
-        to_components: bool = False,
-        to_continuous_time: bool = True,
-        plot: bool = True,
-        plot_xlim: tuple[float, float] = (-500.0, 50.0),
-        plot_ylim: tuple[float, float] = (-400.0, 400.0),
-    ) -> Array:
-        r"""
-        Compute stability eigenvalues of the linear system A matrix.
-
-        :param to_components: If true, return real and imaginary parts as separate components. If false, return complex
-        eigenvalues.
-        :param to_continuous_time: If true, convert from discrete to continuous time eigenvalues using the formula:
-        lambda_c = log(lambda_d) / dt.
-        :param plot: If true, plot the eigenvalues with Matplotlib.
-        :param plot_xlim: Range of real component to be used for plotting.
-        :param plot_ylim: Range of imaginary component to be used for plotting.
-        :return: Eigenvalues of the system A matrix, [n_states] or [n_states, 2] if to_components is True.
-        """
-
-        evals = jnp.linalg.eigvals(self.sys.a)
-
-        if to_continuous_time:
-            evals = jnp.log(evals) / self.dt
-
-        if plot:
-            fig, ax = plt.subplots()
-            ax.scatter(
-                evals.real,
-                evals.imag,
-            )
-            ax.set_xlim(*plot_xlim)
-            ax.set_ylim(*plot_ylim)
-            ax.set_xlabel("Re(λ) [1/s]")
-            ax.set_ylabel("Im(λ) [1/s]")
-            ax.set_title("Eigenvalues")
-            plt.show()
-
-        if to_components:
-            return jnp.stack((evals.real, evals.imag), axis=-1)
-        else:
-            return evals
-
     @abstractmethod
     def run(
         self,
@@ -213,20 +168,23 @@ class LinearModel[
         x0: Optional[S] = None,
     ) -> Res: ...
 
-    def get_reference_inputs(
+    @property
+    def reference_inputs(
         self,
-    ) -> InputUnflattened:
-        return self.input_object(**self.reference_inputs)
+    ) -> I:
+        return self.input_object(**self._reference_inputs)
 
-    def get_reference_states(
+    @property
+    def reference_states(
         self,
-    ) -> StateUnflattened:
-        return self.state_object(**self.reference_states)
+    ) -> S:
+        return self.state_object(**self._reference_states)
 
-    def get_reference_outputs(
+    @property
+    def reference_outputs(
         self,
-    ) -> OutputUnflattened:
-        return self.output_object(**self.reference_outputs)
+    ) -> O:
+        return self.output_object(**self._reference_outputs)
 
     @staticmethod
     def _make_slices(
@@ -315,7 +273,7 @@ class LinearModel[
                     raise ValueError("Invalid slices type")
         return out
 
-    def _unpack_input_vector(self, u: Array) -> object:
+    def _unpack_input_vector(self, u: Array) -> I:
         r"""
         Unpack an input vector into its components.
         :param u: Input vector, [n_inputs]
@@ -323,7 +281,7 @@ class LinearModel[
         """
         return self.input_object(**self._unpack_vector(x=u, slices=self.input_slices))
 
-    def _unpack_state_vector(self, x: Array) -> object:
+    def _unpack_state_vector(self, x: Array) -> S:
         r"""
         Unpack a state vector into its components.
         :param x: State vector, [n_states]
@@ -331,7 +289,7 @@ class LinearModel[
         """
         return self.state_object(**self._unpack_vector(x=x, slices=self.state_slices))
 
-    def _unpack_output_vector(self, y: Array) -> object:
+    def _unpack_output_vector(self, y: Array) -> O:
         r"""
         Unpack an output vector into its components.
         :param y: Output vector, [n_outputs]
@@ -339,7 +297,7 @@ class LinearModel[
         """
         return self.output_object(**self._unpack_vector(x=y, slices=self.output_slices))
 
-    def _unpack_input_vector_t(self, u_t: Array) -> object:
+    def _unpack_input_vector_t(self, u_t: Array) -> I:
         r"""
         Unpack a time history of input vectors into its components.
         :param u_t: Input vector time history, [n_tstep, n_inputs]
@@ -349,7 +307,7 @@ class LinearModel[
             **self._unpack_vector(x=u_t, slices=self.input_slices, add_t=True)
         )
 
-    def _unpack_state_vector_t(self, x_t: Array) -> object:
+    def _unpack_state_vector_t(self, x_t: Array) -> S:
         r"""
         Unpack a time history of state vectors into its components.
         :param x_t: State vector time history, [n_tstep, n_states]
@@ -359,7 +317,7 @@ class LinearModel[
             **self._unpack_vector(x=x_t, slices=self.state_slices, add_t=True)
         )
 
-    def _unpack_output_vector_t(self, y_t: Array) -> object:
+    def _unpack_output_vector_t(self, y_t: Array) -> O:
         r"""
         Unpack a time history of output vectors into its components.
         :param y_t: Output vector time history, [n_tstep, n_outputs]
@@ -531,7 +489,7 @@ class LinearModel[
         :param reference: Dictionary mapping of names to ArrayList reference entries
         :param add_t: If true, the first dimension of the arrays is time steps.
         :return: Dictionary mapping of names to total ArrayList entries.
-        TODO: some cases are not additive!
+        TODO: some cases are not additive - need to consider beam rotations properly
         """
         out = {}
         for name, entry in reference.items():
@@ -567,7 +525,7 @@ class LinearModel[
         """
         return self.input_object(
             **self._get_total(
-                shallow_as_dict(u), shallow_as_dict(self.get_reference_inputs())
+                shallow_as_dict(u), shallow_as_dict(self.reference_inputs)
             )
         )
 
@@ -579,7 +537,7 @@ class LinearModel[
         """
         return self.state_object(
             **self._get_total(
-                shallow_as_dict(x), shallow_as_dict(self.get_reference_states())
+                shallow_as_dict(x), shallow_as_dict(self.reference_states)
             )
         )
 
@@ -591,7 +549,7 @@ class LinearModel[
         """
         return self.output_object(
             **self._get_total(
-                shallow_as_dict(y), shallow_as_dict(self.get_reference_outputs())
+                shallow_as_dict(y), shallow_as_dict(self.reference_outputs)
             )
         )
 
@@ -604,7 +562,7 @@ class LinearModel[
         return self.input_object(
             **self._get_total(
                 input_=shallow_as_dict(u_t),
-                reference=shallow_as_dict(self.get_reference_inputs()),
+                reference=shallow_as_dict(self.reference_inputs),
                 add_t=True,
             )
         )
@@ -618,7 +576,7 @@ class LinearModel[
         return self.state_object(
             **self._get_total(
                 shallow_as_dict(x_t),
-                shallow_as_dict(self.get_reference_states()),
+                shallow_as_dict(self.reference_states),
                 add_t=True,
             )
         )
@@ -632,7 +590,7 @@ class LinearModel[
         return self.output_object(
             **self._get_total(
                 shallow_as_dict(y_t),
-                shallow_as_dict(self.get_reference_outputs()),
+                shallow_as_dict(self.reference_outputs),
                 add_t=True,
             )
         )
@@ -791,7 +749,7 @@ class LinearSystem:
                     "Augmented matrix must be square for matrix exponential."
                 )
 
-                exp_aug = expm(self.dt * aug)
+                exp_aug = jsp.linalg.expm(self.dt * aug)
 
                 a_d = exp_aug[: self.a.shape[0], : self.a.shape[1]]
                 b_d = exp_aug[: self.a.shape[0], self.a.shape[1] :]
@@ -869,3 +827,38 @@ class LinearSystem:
         :return: Sequence of dynamic attribute names.
         """
         return "a", "b", "c", "d", "removed_u_np1"
+
+
+def conjugate_partner_mask(
+    freq_hz: Array,
+    damping: Array,
+    tiebreaker: Array,
+) -> Array:
+    r"""
+    Return a boolean mask identifying the second member of each complex-conjugate mode pair.
+
+    Modes are first sorted by frequency, and falls back to a tiebreaker (typically the real part of the eigenvalue) as a
+    secondary key. Each mode whose predecessor matches in frequency and \|damping\|
+    is then flagged.
+    :param freq_hz: Natural frequency of each mode [n_modes].
+    :param damping: Damping ratio of each mode [n_modes].
+    :param tiebreaker: Secondary sort key used to keep conjugate partners adjacent [n_modes].
+    :return: Boolean mask, True where the mode is the redundant partner in a conjugate pair [n_modes].
+    """
+    idx = jnp.lexsort((tiebreaker, freq_hz))
+    freq_sorted = freq_hz[idx]
+    damp_sorted = damping[idx]
+    partner_sorted = jnp.concatenate(
+        [
+            jnp.array([False]),
+            jnp.isclose(freq_sorted[1:], freq_sorted[:-1], rtol=1e-6, atol=0.0)
+            & jnp.isclose(
+                jnp.abs(damp_sorted[1:]),
+                jnp.abs(damp_sorted[:-1]),
+                rtol=1e-6,
+                atol=1e-9,
+            ),
+        ]
+    )
+    # scatter back to original ordering
+    return jnp.zeros_like(partner_sorted).at[idx].set(partner_sorted)

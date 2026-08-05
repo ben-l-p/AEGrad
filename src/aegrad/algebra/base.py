@@ -255,8 +255,79 @@ def _jacrev_via_map_kwargs(
         )
         m = int(y.size)
         basis = jnp.eye(m, dtype=y.dtype).reshape((m,) + y.shape)
-        cotangents = jax.lax.map(pullback, basis, batch_size=map_batch_size)
+
+        # account for case where these are zero-size arguments as these break map
+        keep_idxs = tuple(i for i, v in enumerate(dyn_vals) if int(jnp.size(v)) > 0)
+
+        def filtered_pullback(cotan: Any) -> tuple[Any, ...]:
+            return tuple(pullback(cotan)[i] for i in keep_idxs)
+
+        kept = (
+            jax.lax.map(filtered_pullback, basis, batch_size=map_batch_size)
+            if keep_idxs
+            else ()
+        )
+
+        kept_iter = iter(kept)
+        cotangents = tuple(
+            next(kept_iter)
+            if i in keep_idxs
+            else jnp.zeros((m,) + jnp.shape(v), dtype=jnp.result_type(v))
+            for i, v in enumerate(dyn_vals)
+        )
         return dict(zip(argnames, cotangents))
+
+    return inner_func
+
+
+def _jacfwd_via_map_kwargs(
+    func: Callable[..., Array],
+    argnames: str | Sequence[str],
+    map_batch_size: Optional[int],
+) -> Callable[..., dict[str, Any]]:
+    r"""
+    Forward-mode Jacobian assembly that uses map to reduce memory usage compared to jax.jacfwd by allowing for an
+    input batch size.
+    """
+    argnames = (argnames,) if isinstance(argnames, str) else tuple(argnames)
+
+    def inner_func(**kwargs: Any) -> dict[str, Array]:
+        full_argnames = list(kwargs.keys())
+        argvals = list(kwargs.values())
+
+        jacs: dict[str, Array] = {}
+        for name in argnames:
+            arg_idx = full_argnames.index(name)
+            v = argvals[arg_idx]
+            v_shape = jnp.shape(v)
+            v_size = int(jnp.size(v))
+            v_dtype = jnp.result_type(v)
+
+            def single_arg_adapter(dyn_arg: Any, _arg_idx: int = arg_idx) -> Array:
+                merged = list(argvals)
+                merged[_arg_idx] = dyn_arg
+                return func(**dict(zip(full_argnames, merged)))
+
+            if v_size == 0:
+                y_struct = jax.eval_shape(single_arg_adapter, v)
+                jacs[name] = jnp.zeros(y_struct.shape + v_shape, dtype=v_dtype)
+                continue
+
+            basis = jnp.eye(v_size, dtype=v_dtype).reshape((v_size,) + v_shape)
+
+            def single_jvp(
+                tangent: Array,
+                _adapter: Callable[..., Array] = single_arg_adapter,
+                _primal: Any = v,
+            ) -> Array:
+                _, out_tan = jax.jvp(_adapter, (_primal,), (tangent,))
+                return out_tan
+
+            stacked = jax.lax.map(single_jvp, basis, batch_size=map_batch_size)
+            y_shape = stacked.shape[1:]
+            jacs[name] = jnp.moveaxis(stacked, 0, -1).reshape(y_shape + v_shape)
+
+        return jacs
 
     return inner_func
 
@@ -351,8 +422,6 @@ def jacrev_custom(
     """
 
     static_argnames_t = tuple(static_argnames)
-    if map_batch_size is not None and mode != "reverse":
-        raise ValueError("map_batch_size is only supported with mode='reverse'")
 
     if mode == "reverse":
         if map_batch_size is not None:
@@ -366,9 +435,16 @@ def jacrev_custom(
             def _build_jac(argnames):
                 return jacrev_kwargs(func, argnames=argnames, allow_int=True)
     elif mode == "forward":
+        if map_batch_size is not None:
 
-        def _build_jac(argnames):
-            return jacfwd_kwargs(func, argnames=argnames)
+            def _build_jac(argnames):
+                return _jacfwd_via_map_kwargs(
+                    func, argnames=argnames, map_batch_size=map_batch_size
+                )
+        else:
+
+            def _build_jac(argnames):
+                return jacfwd_kwargs(func, argnames=argnames)
     else:
         raise ValueError('Invalid mode, use "forward" or "reverse"')
 
@@ -396,6 +472,7 @@ def jacrev_custom(
 
         # compute cases where we perform AD directly
         if ad_args:
+            per_arg_jacobians: dict[str, Any] = {}
             if n_profile_loops is not None:
                 for ad_arg in ad_args:
                     # profile for individual Jacobians
@@ -409,18 +486,29 @@ def jacrev_custom(
                         func_name=func_name,
                         arg_name=ad_arg,
                     )(**args)
+                    per_arg_jacobians.update(val)
 
-            # compute case for all arguments
-            jac_func = _build_jac(ad_args)
-            if n_profile_loops is not None:
-                jac_func = jax.jit(jac_func, static_argnames=static_argnames_t)
+            if mode == "forward":
+                all_jacobians = (
+                    per_arg_jacobians
+                    if n_profile_loops is not None
+                    else _build_jac(ad_args)(**args)
+                )
+            else:
+                jac_func = _build_jac(ad_args)
+                if n_profile_loops is not None:
+                    jac_func = jax.jit(jac_func, static_argnames=static_argnames_t)
 
-            all_jacobians, compile_time["all"], run_time["all"] = conditional_profile(
-                func=jac_func,
-                n_loops=n_profile_loops,
-                func_name=func_name,
-                arg_name="all",
-            )(**args)
+                (
+                    all_jacobians,
+                    compile_time["all"],
+                    run_time["all"],
+                ) = conditional_profile(
+                    func=jac_func,
+                    n_loops=n_profile_loops,
+                    func_name=func_name,
+                    arg_name="all",
+                )(**args)
 
             jacobians.update(all_jacobians)
 

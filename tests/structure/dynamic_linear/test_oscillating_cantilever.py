@@ -3,9 +3,10 @@ from jax import numpy as jnp, vmap
 from aegrad.algebra.se3 import log_se3
 from aegrad.structure import BeamStructure
 from aegrad.structure.linear.data_structures import BeamInputUnflattened
+from aegrad.structure.utils import transform_nodal_vect
 
 
-class TestOscillatingCantileverDeadLocal:
+class TestOscillatingCantileverDead:
     n_nodes = 10
     length = 1.0
     m_bar = 1.0
@@ -35,7 +36,13 @@ class TestOscillatingCantileverDeadLocal:
     n_tstep = int(physical_time / dt)
 
     is_dead: bool = True
-    local_force_linearisation: bool = True
+
+    modal: bool = False
+
+    @classmethod
+    def _to_global(cls, f_local_t, rmat):
+        # helper function to convert follower forces from the local to global frame
+        return vmap(lambda ft: transform_nodal_vect(ft, rmat))(f_local_t)
 
     @classmethod
     def test_oscillating_undeform_cantilever(cls):
@@ -54,7 +61,7 @@ class TestOscillatingCantileverDeadLocal:
         )
 
         linear_beam = cls.beam.linearise(
-            reference=ref, dt=cls.dt, local_forcing=cls.local_force_linearisation
+            reference=ref, dt=cls.dt, n_modes=40 if cls.modal else None
         )
 
         # nonlinear case
@@ -70,15 +77,11 @@ class TestOscillatingCantileverDeadLocal:
             dt=cls.dt,
         )
 
-        u_beam = BeamInputUnflattened(
-            n_tstep=cls.n_tstep,
-            f_ext_follower=None if cls.is_dead else f_beam,
-            f_ext_dead=f_beam if cls.is_dead else None,
-        )
+        # linear input is a single global-frame external force; convert local (follower) force to global
+        f_ext = f_beam if cls.is_dead else cls._to_global(f_beam, ref.hg[:, :3, :3])
+        u_beam = BeamInputUnflattened(n_tstep=cls.n_tstep, f_ext=f_ext)
 
-        lin_sol = linear_beam.run(
-            u=u_beam,
-        )
+        lin_sol = linear_beam.run(u=u_beam)
 
         nl_tip_z = nl_sol.x[:, -1, 2]
         lin_tip_z = lin_sol.x[:, -1, 2]
@@ -127,15 +130,15 @@ class TestOscillatingCantileverDeadLocal:
             dt=cls.dt,
         )
 
-        u_beam = BeamInputUnflattened(
-            n_tstep=cls.n_tstep,
-            f_ext_dead=f_ext_perturb if cls.is_dead else None,
-            f_ext_follower=None if cls.is_dead else f_ext_perturb,
+        # linear input is a single global-frame external force; convert local (follower) force to global
+        f_ext = (
+            f_ext_perturb
+            if cls.is_dead
+            else cls._to_global(f_ext_perturb, ref.hg[:, :3, :3])
         )
+        u_beam = BeamInputUnflattened(n_tstep=cls.n_tstep, f_ext=f_ext)
 
-        lin_sol = linear_beam.run(
-            u=u_beam,
-        )
+        lin_sol = linear_beam.run(u=u_beam)
 
         nl_tip_z = nl_sol.x[:, -1, 2]
         lin_tip_z = lin_sol.x[:, -1, 2]
@@ -153,14 +156,14 @@ class TestOscillatingCantileverDeadLocal:
         )
 
 
-class TestOscillatingCantileverFollowerLocal(TestOscillatingCantileverDeadLocal):
+class TestOscillatingCantileverFollower(TestOscillatingCantileverDead):
     is_dead: bool = False
 
 
-class TestOscillatingCantileverDeadGlobal(TestOscillatingCantileverDeadLocal):
-    local_force_linearisation: bool = False
+class TestOscillatingCantileverDeadModal(TestOscillatingCantileverDead):
+    modal: bool = True
 
 
-class TestOscillatingCantileverFollowerGlobal(TestOscillatingCantileverDeadLocal):
+class TestOscillatingCantileverFollowerModal(TestOscillatingCantileverDead):
     is_dead: bool = False
-    local_force_linearisation: bool = False
+    modal: bool = True

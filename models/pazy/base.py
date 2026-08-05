@@ -1,25 +1,48 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import jax
-from jax import numpy as jnp
-from jax import Array
+from jax import Array, numpy as jnp
 from jax.scipy.spatial.transform import Rotation
 
 from aegrad.aero.data_structures import GridDiscretization
-from aegrad.aero.flowfields import FlowField, Constant
+from aegrad.aero.flowfields import FlowField
 from aegrad.aero.utils import make_rectangular_grid
 from aegrad.aero.uvlm import UVLM
-from aegrad.coupled import CoupledAeroelastic
 from aegrad.algebra.so3 import vec_to_skew
+from aegrad.coupled import CoupledAeroelastic
 from aegrad.structure import BeamStructure
 from aegrad.utils.data_structures import ConvergenceSettings
 
-# constant from provided data
-from models.straight_pazy.pazy_properties import NO_SKIN, WITH_SKIN
+
+@dataclass
+class PazyParameters:
+    n_keypoints: int
+    coords: Array
+    mass: Array
+    cg_x: Array
+    cg_y: Array
+    cg_z: Array
+    i_xx: Array
+    i_yy: Array
+    i_zz: Array
+    i_xy: Array
+    i_xz: Array
+    i_yz: Array
+    k11: Array
+    k22: Array
+    k33: Array
+    k44: Array
+    k12: Array
+    k13: Array
+    k14: Array
+    k23: Array
+    k24: Array
+    k34: Array
 
 
 def make_generic_pazy_wing(
-    data: dict[str, Array],
+    data: PazyParameters,
     m: int,
     m_star: int,
     node_multiplier: int,
@@ -27,10 +50,12 @@ def make_generic_pazy_wing(
     flowfield: FlowField,
     aoa: float | Array,
     sweep: Optional[float | Array],
+    wake_delta: Optional[Array] = None,
+    custom_dt: Optional[float] = None,
 ) -> CoupledAeroelastic:
 
     # keypoint 3D coordinates at which cross-section properties are defined
-    coords_data = jnp.array(data["coords"])  # [N_KEYPOINT, 3]
+    coords_data = jnp.array(data.coords)  # [N_KEYPOINT, 3]
 
     # arclength along the beam at each keypoint, used as the interpolation parameter
     seg_lengths_data = jnp.linalg.norm(jnp.diff(coords_data, axis=0), axis=1)
@@ -54,12 +79,10 @@ def make_generic_pazy_wing(
     s_arr = jnp.concatenate([jnp.zeros(1), jnp.cumsum(seg_lengths)])
     elem_midpoints = 0.5 * (s_arr[:-1] + s_arr[1:])
 
-    cg_data = jnp.stack(
-        (data["cg_y"], -data["cg_x"], data["cg_z"]), axis=1
-    )  # [N_KEYPOINT, 3]
+    cg_data = jnp.stack((data.cg_y, -data.cg_x, data.cg_z), axis=1)  # [N_KEYPOINT, 3]
 
     # inertia tensor at CG, in beam-local frame
-    j_cg_data = jnp.zeros((data["n_points"], 3, 3))
+    j_cg_data = jnp.zeros((data.n_keypoints, 3, 3))
 
     idx_keys = (
         (0, 0, "i_yy"),
@@ -71,14 +94,12 @@ def make_generic_pazy_wing(
     )
     for i, j, key in idx_keys:
         # redundant for diagonal terms
-        j_cg_data = j_cg_data.at[:, i, j].set(data[key])
-        j_cg_data = j_cg_data.at[:, j, i].set(data[key])
+        j_cg_data = j_cg_data.at[:, i, j].set(getattr(data, key))
+        j_cg_data = j_cg_data.at[:, j, i].set(getattr(data, key))
 
     # parallel-axis shift inertia
     skew_cg_data = jax.vmap(vec_to_skew)(cg_data)  # [N_KEYPOINT, 3]
-    j_axis_data = j_cg_data - data["mass"][:, None, None] * (
-        skew_cg_data @ skew_cg_data
-    )
+    j_axis_data = j_cg_data - data.mass[:, None, None] * (skew_cg_data @ skew_cg_data)
 
     # distribute nodal lumped mass and inertia
     elem_lengths_data = seg_lengths_data  # [N_KEYPOINT - 1]
@@ -89,7 +110,7 @@ def make_generic_pazy_wing(
             0.5 * elem_lengths_data[-1:],
         )
     )  # [N_KEYPOINT]
-    m_bar_data = data["mass"] / half_lengths_data  # mass per unit length of elements
+    m_bar_data = data.mass / half_lengths_data  # mass per unit length of elements
     j_bar_data = (
         j_axis_data / half_lengths_data[:, None, None]
     )  # inertia per unit length of elements
@@ -125,7 +146,7 @@ def make_generic_pazy_wing(
 
     # stiffness properties
     # data is provided for non-shear deformation
-    k_cs_data = jnp.zeros((data["n_points"] - 1, 6, 6))
+    k_cs_data = jnp.zeros((data.n_keypoints - 1, 6, 6))
 
     idx_keys = (
         (0, 0, "k11"),
@@ -141,8 +162,8 @@ def make_generic_pazy_wing(
     )
     for i, j, key in idx_keys:
         # redundant for diagonal terms
-        k_cs_data = k_cs_data.at[:, i, j].set(data[key])
-        k_cs_data = k_cs_data.at[:, j, i].set(data[key])
+        k_cs_data = k_cs_data.at[:, i, j].set(getattr(data, key))
+        k_cs_data = k_cs_data.at[:, j, i].set(getattr(data, key))
 
     # add large shear stiffness to diagonal terms to avoid singularity
     k_cs_data = k_cs_data.at[:, 1, 1].set(1e9)
@@ -168,7 +189,10 @@ def make_generic_pazy_wing(
     y_vector = jnp.zeros((n_elem, 3))  # [n_elem, 3]
     y_vector = y_vector.at[:, 0].set(-1.0)
 
-    dt = c_ref / (flowfield.u_inf_mag * m)  # time step based on CFL condition
+    if custom_dt is None:
+        dt = c_ref / (flowfield.u_inf_mag * m)  # time step based on CFL condition
+    else:
+        dt = custom_dt
 
     if isinstance(gravity, Array):
         gravity_ = gravity
@@ -222,8 +246,12 @@ def make_generic_pazy_wing(
         m_lumped=None,
         dt=dt,
         flowfield=flowfield,
-        delta_w=None,
         x0_aero=aero_grid,
+        delta_w=None
+        if wake_delta is None
+        else wake_delta
+        * dt
+        * flowfield.u_inf_mag,  # all ones for base wake, increase values for variable disc.
         orientation_euler=jnp.array((0.0, aoa, 0.0)),
     )
 
@@ -231,6 +259,9 @@ def make_generic_pazy_wing(
 
 
 def interp_cs_property(data: Array, data_coords: Array, coords: Array) -> Array:
+    r"""
+    Helper function for interpolating cross-sectional structural properties along a beam.
+    """
     return jnp.stack(
         [
             jnp.stack(
@@ -241,58 +272,3 @@ def interp_cs_property(data: Array, data_coords: Array, coords: Array) -> Array:
         ],
         axis=1,
     )
-
-
-def make_pazy_wing(
-    m: int = 12,
-    m_star: int = 120,
-    skin: bool = True,
-    node_multiplier: int = 1,
-    gravity: bool | Array = False,
-    flowfield: FlowField = Constant(
-        u_inf=jnp.array((40.0, 0.0, 0.0)), rho=1.225, relative_motion=True
-    ),
-    aoa: float | Array = jnp.deg2rad(3.0),
-    sweep: Optional[float | Array] = None,
-) -> CoupledAeroelastic:
-    return make_generic_pazy_wing(
-        m=m,
-        m_star=m_star,
-        node_multiplier=node_multiplier,
-        gravity=gravity,
-        flowfield=flowfield,
-        aoa=aoa,
-        data=WITH_SKIN if skin else NO_SKIN,
-        sweep=sweep,
-    )
-
-
-if __name__ == "__main__":
-    jax.config.update("jax_enable_x64", True)
-
-    rho = 1.225
-    aoa_ = jnp.deg2rad(7.0)
-    u_inf_mag = 60.0
-
-    wing_ = make_pazy_wing(
-        gravity=True,
-        node_multiplier=2,
-        m=16,
-        m_star=160,
-        skin=True,
-        aoa=aoa_,
-        flowfield=Constant(
-            rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
-        ),
-        sweep=jnp.deg2rad(10.0),
-    )
-    static_sol = wing_.static_solve(
-        prescribed_dofs=jnp.arange(6), horseshoe=False, load_steps=1, fsi_relaxation=0.5
-    )
-    static_sol.plot("./pazy_outputs/")
-
-    z_tip = 0.5 * (
-        static_sol.aero.zeta_b[0][0, -1, 2] + static_sol.aero.zeta_b[0][-1, -1, 2]
-    )
-    print(f"Tip deflection at mid chord (m): {float(z_tip):.03f}")
-    print(f"Relative tip deflection at mid chord (z/b) {float(z_tip) / 0.55:.03f}")

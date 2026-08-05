@@ -11,8 +11,7 @@ from aegrad.aero.linear.data_structures import AeroLinearResult
 class AeroelasticInputUnflattened:
     nu_b: Optional[ArrayList]
     nu_w: Optional[ArrayList]
-    f_ext_follower: Optional[Array]
-    f_ext_dead: Optional[Array]
+    f_ext: Optional[Array]
 
 
 @dataclass

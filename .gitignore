@@ -4,6 +4,7 @@
 *.vtu
 *.pvd
 *.dat
+*.csv
 *.pickle
 *.png
 

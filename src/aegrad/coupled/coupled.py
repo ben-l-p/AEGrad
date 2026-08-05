@@ -477,11 +477,12 @@ class BaseCoupledAeroelastic:
     def linearise(
         self,
         reference: StaticAeroelastic,
-        wake_type: LinearWakeType = LinearWakeType.FROZEN,
-        bound_upwash: bool = True,
+        wake_type: LinearWakeType = "frozen",
+        batch_size: Optional[int] = 64,
+        n_struct_modes: Optional[int] = None,
+        bound_upwash: bool = False,
         wake_upwash: bool = False,
         unsteady_force: bool = True,
-        local_forcing: bool = False,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
         *,
         skip_checks: bool = False,
@@ -493,9 +494,10 @@ class BaseCoupledAeroelastic:
             bound_upwash=bound_upwash,
             wake_upwash=wake_upwash,
             unsteady_force=unsteady_force,
-            local_forcing=local_forcing,
+            batch_size=batch_size,
             int_order=int_order,
             skip_checks=skip_checks,
+            n_struct_modes=n_struct_modes,
         )
 
     @staticmethod

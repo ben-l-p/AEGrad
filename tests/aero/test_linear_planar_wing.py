@@ -9,7 +9,6 @@ from jax import Array, vmap
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.uvlm import UVLM
-from aegrad.aero.linear import LinearWakeType
 from aegrad.aero.linear.data_structures import AeroInputUnflattened
 from aegrad.aero.data_structures import AeroSnapshot
 from aegrad.aero.utils import biot_savart_cutoff, make_rectangular_grid
@@ -98,7 +97,7 @@ class TestLinearAero:
         # linear case
         linear_model = uvlm.linearise(
             reference=static_case,
-            wake_type=LinearWakeType.PRESCRIBED,
+            wake_type="prescribed",
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
@@ -182,7 +181,7 @@ class TestLinearAero:
         # linear case
         linear_model = uvlm.linearise(
             reference=static_case,
-            wake_type=LinearWakeType.PRESCRIBED,
+            wake_type="prescribed",
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
@@ -270,7 +269,7 @@ class TestLinearAero:
         # linear case
         linear_model = uvlm.linearise(
             reference=static_case,
-            wake_type=LinearWakeType.FROZEN,
+            wake_type="frozen",
             bound_upwash=False,
             wake_upwash=False,
             unsteady_force=True,
@@ -338,7 +337,7 @@ class TestLinearAero:
         # linear case
         linear_model = uvlm.linearise(
             reference=static_case,
-            wake_type=LinearWakeType.PRESCRIBED,
+            wake_type="prescribed",
             bound_upwash=True,
             wake_upwash=True,
             unsteady_force=True,

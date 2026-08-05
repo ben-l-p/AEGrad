@@ -228,9 +228,17 @@ def v_ind_vmap(
     zeta_flat = zeta.reshape(-1, 2, 3)
     gamma_flat = gamma.ravel()  # [zeta_m * zeta_n]
 
+    # account for case where zeta is empty
+    if zeta.size == 0:
+        return jnp.zeros_like(c)
+
     @jax.checkpoint
     def row(ci: Array) -> Array:
         influence = vmap(kernel, (None, 0), 0)(ci, zeta_flat)  # [zeta_m * zeta_n, 3]
+
+        if influence.shape[0] != gamma_flat.shape[0]:
+            pass
+
         return jnp.einsum("lm,l->m", influence, gamma_flat)  # [3]
 
     result = jax.lax.map(row, c_flat, batch_size=batch_size)  # [c_m * c_n, 3]

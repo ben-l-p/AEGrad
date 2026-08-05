@@ -9,7 +9,6 @@ from jax import Array, vmap
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.aero.data_structures import GridDiscretization
 from aegrad.aero.uvlm import UVLM
-from aegrad.aero.linear import LinearWakeType
 from aegrad.aero.linear.data_structures import AeroInputUnflattened
 from aegrad.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from aegrad.aero.flowfields import Constant
@@ -112,7 +111,7 @@ if __name__ == "__main__":
     linear_model = nonlinear_model.linearise(
         reference=static_case,
         # wake_type=LinearWakeType.PRESCRIBED,
-        wake_type=LinearWakeType.FROZEN,
+        wake_type="frozen",
         bound_upwash=False,
         wake_upwash=False,
         unsteady_force=True,

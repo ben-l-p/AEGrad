@@ -252,7 +252,7 @@ def propagate_surf_wake(
         gamma_base = gamma_w_nm1[:-1, ...]  # [gamma_w_m - 1, gamma_n]
 
     # values at t=varphi+1 before re-discretisation
-    gamma_w_np1 = jnp.concatenate(
+    gamma_w_n = jnp.concatenate(
         (gamma_te[None, ...], gamma_base), axis=0
     )  # [gamma_w_m+1 | gamma_w_m, gamma_n]
 
@@ -260,7 +260,7 @@ def propagate_surf_wake(
     v = v_func(zeta_base)  # [zeta_w_m | zeta_w_m-1, zeta_n, 3]
 
     # wake coordinates at t=varphi+1 before re-discretisation
-    zeta_w_np1 = jnp.concatenate(
+    zeta_w_n = jnp.concatenate(
         (zeta_te[None, :, :], zeta_base + dt * v), axis=0
     )  # [zeta_w_m+1 | zeta_w_m, zeta_n, 3]
 
@@ -271,7 +271,7 @@ def propagate_surf_wake(
                 jnp.zeros((1, zeta_te.shape[0])),  # [1, zeta_n]
                 jnp.cumsum(
                     jnp.linalg.norm(
-                        zeta_w_np1[1:, ...] - zeta_w_np1[:-1, ...], axis=-1
+                        zeta_w_n[1:, ...] - zeta_w_n[:-1, ...], axis=-1
                     ),  # [zeta_w_m+1, zeta_n]
                     axis=0,
                 ),  # [zeta_w_m, zeta_n]
@@ -292,23 +292,27 @@ def propagate_surf_wake(
         s_gamma_w_discretisation = neighbour_average(s_zeta_w_discretisation, axes=(0,))
 
         # re-discretise coordinates onto desired grid
-        zeta_w_np1 = vmap(
+        zeta_w_n = vmap(
             vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1),
             in_axes=(None, None, 1),
             out_axes=2,
         )(
-            s_zeta_w_discretisation, s_zeta_w.T, jnp.transpose(zeta_w_np1, (1, 2, 0))
+            s_zeta_w_discretisation, s_zeta_w.T, jnp.transpose(zeta_w_n, (1, 2, 0))
         )  # [zeta_w_m, zeta_n, 3]
 
         # re-discretise gamma onto desired grid
-        gamma_w_np1 = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(
-            s_gamma_w_discretisation, s_gamma_w.T, gamma_w_np1.T
+        gamma_w_n = vmap(jnp.interp, in_axes=(None, 0, 0), out_axes=1)(
+            s_gamma_w_discretisation, s_gamma_w.T, gamma_w_n.T
         )  # [zeta_w_m, zeta_n, 3]
 
+    # logic for edge case where there is no wake
+    if gamma_w_nm1.size == 0:
+        gamma_w_n = jnp.zeros_like(gamma_w_nm1)
+
     if frozen_wake:
-        return None, gamma_w_np1
+        return None, gamma_w_n
     else:
-        return zeta_w_np1, gamma_w_np1
+        return zeta_w_n, gamma_w_n
 
 
 @overload
@@ -366,8 +370,8 @@ def propagate_wake(
     """
 
     n_surf = len(gamma_b_nm1)
-    zeta_w_np1: Optional[ArrayList] = ArrayList([]) if not frozen_wake else None
-    gamma_w_np1 = ArrayList([])
+    zeta_w_n: Optional[ArrayList] = ArrayList([]) if not frozen_wake else None
+    gamma_w_n = ArrayList([])
 
     for i_surf in range(n_surf):
         surf_zeta_w, surf_gamma_w = propagate_surf_wake(
@@ -381,11 +385,11 @@ def propagate_wake(
             frozen_wake=frozen_wake,
             linearise_variable_wake=linearise_variable_wake,
         )
-        if zeta_w_np1 is not None:
+        if zeta_w_n is not None:
             assert surf_zeta_w is not None
-            zeta_w_np1.append(surf_zeta_w)
-        gamma_w_np1.append(surf_gamma_w)
-    return zeta_w_np1, gamma_w_np1
+            zeta_w_n.append(surf_zeta_w)
+        gamma_w_n.append(surf_gamma_w)
+    return zeta_w_n, gamma_w_n
 
 
 def biot_savart(x: Array, y: Array) -> Array:

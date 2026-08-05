@@ -1,5 +1,7 @@
 from jax import numpy as jnp
 
+from models.pazy.base import PazyParameters
+
 N_KEYPOINT = 16
 
 Y_10 = (
@@ -50,10 +52,10 @@ Y_20 = (
     - jnp.array((4.13e-02, 0.0, 0.0))[None, :]
 )
 
-SWEEP_10_LE = {
-    "n_points": N_KEYPOINT,
-    "coords": Y_10,
-    "mass": jnp.array(
+SWEEP_10_LE = PazyParameters(
+    n_keypoints=N_KEYPOINT,
+    coords=Y_10,
+    mass=jnp.array(
         (
             1.86119647400900e-02,
             2.03269986438200e-02,
@@ -73,7 +75,7 @@ SWEEP_10_LE = {
             3.13327742938320e-02,
         )
     ),
-    "cg_x": jnp.array(
+    cg_x=jnp.array(
         (
             1.73875219248450e-03,
             1.23998011219326e-03,
@@ -93,7 +95,7 @@ SWEEP_10_LE = {
             -3.76894246214857e-02,
         )
     ),
-    "cg_y": jnp.array(
+    cg_y=jnp.array(
         (
             8.62500931243665e-03,
             -1.42252342954916e-03,
@@ -113,7 +115,7 @@ SWEEP_10_LE = {
             2.75139744005881e-03,
         )
     ),
-    "cg_z": jnp.array(
+    cg_z=jnp.array(
         (
             5.43850822820389e-05,
             8.86450577732304e-05,
@@ -133,7 +135,7 @@ SWEEP_10_LE = {
             -7.27636837693618e-06,
         )
     ),
-    "i_xx": jnp.array(
+    i_xx=jnp.array(
         (
             9.05982013723003e-07,
             1.96381336650033e-06,
@@ -153,7 +155,7 @@ SWEEP_10_LE = {
             7.08348010841166e-07,
         )
     ),
-    "i_yy": jnp.array(
+    i_yy=jnp.array(
         (
             1.02309834824827e-05,
             1.05250432343024e-05,
@@ -173,7 +175,7 @@ SWEEP_10_LE = {
             0.000117505553643356,
         )
     ),
-    "i_zz": jnp.array(
+    i_zz=jnp.array(
         (
             1.06441011412979e-05,
             1.21761912318249e-05,
@@ -193,7 +195,7 @@ SWEEP_10_LE = {
             0.000117867502901682,
         )
     ),
-    "i_xy": jnp.array(
+    i_xy=jnp.array(
         (
             -2.41652846716972e-07,
             -3.23065322558405e-07,
@@ -213,7 +215,7 @@ SWEEP_10_LE = {
             2.42745936484505e-06,
         )
     ),
-    "i_xz": jnp.array(
+    i_xz=jnp.array(
         (
             -2.13291074939031e-08,
             -1.70393517987238e-08,
@@ -233,7 +235,7 @@ SWEEP_10_LE = {
             3.58489348453775e-09,
         )
     ),
-    "i_yz": jnp.array(
+    i_yz=jnp.array(
         (
             -1.90603666877279e-09,
             -7.6410982933573e-10,
@@ -253,7 +255,7 @@ SWEEP_10_LE = {
             -1.69709457506072e-09,
         )
     ),
-    "k11": jnp.array(
+    k11=jnp.array(
         (
             4561840.77411847,
             4960813.87902062,
@@ -272,7 +274,7 @@ SWEEP_10_LE = {
             113589893.088318,
         )
     ),
-    "k22": jnp.array(
+    k22=jnp.array(
         (
             9.77384606903814,
             8.10224355114071,
@@ -291,7 +293,7 @@ SWEEP_10_LE = {
             13.1565429636262,
         )
     ),
-    "k33": jnp.array(
+    k33=jnp.array(
         (
             4.51506595422922,
             4.82790807873621,
@@ -310,7 +312,7 @@ SWEEP_10_LE = {
             5.5618548803908,
         )
     ),
-    "k44": jnp.array(
+    k44=jnp.array(
         (
             2382.30188760417,
             3294.39640750642,
@@ -329,9 +331,9 @@ SWEEP_10_LE = {
             4655.68741762652,
         )
     ),
-    "k12": jnp.zeros((N_KEYPOINT - 1)),
-    "k13": jnp.zeros((N_KEYPOINT - 1)),
-    "k14": jnp.array(
+    k12=jnp.zeros((N_KEYPOINT - 1)),
+    k13=jnp.zeros((N_KEYPOINT - 1)),
+    k14=jnp.array(
         (
             20015.638049448,
             37064.8933192303,
@@ -350,85 +352,38 @@ SWEEP_10_LE = {
             210638.678498758,
         )
     ),
-    "k23": jnp.zeros((N_KEYPOINT - 1)),
-    "k24": jnp.zeros((N_KEYPOINT - 1)),
-    "k34": jnp.zeros((N_KEYPOINT - 1)),
-}
+    k23=jnp.zeros((N_KEYPOINT - 1)),
+    k24=jnp.zeros((N_KEYPOINT - 1)),
+    k34=jnp.zeros((N_KEYPOINT - 1)),
+)
 
 SWEEP_10_TE = SWEEP_10_LE
 
 # shift in CG does not affect linear mass, only shifts position of lumped mass and inertia tensor at outer two nodes
-SWEEP_10_TE["cg_x"] = (
-    SWEEP_10_TE["cg_x"]
-    .at[-2:]
-    .set(jnp.array((-4.71960788369929e-03, 4.49036531576184e-02)))
+SWEEP_10_TE.cg_x = SWEEP_10_TE.cg_x.at[-2:].set(
+    jnp.array((-4.71960788369929e-03, 4.49036531576184e-02))
 )
-SWEEP_10_TE["cg_y"] = (
-    SWEEP_10_TE["cg_y"]
-    .at[-2:]
-    .set(jnp.array((-4.45676769437797e-03, 2.66948472624795e-03)))
+SWEEP_10_TE.cg_y = SWEEP_10_TE.cg_y.at[-2:].set(
+    jnp.array((-4.45676769437797e-03, 2.66948472624795e-03))
 )
-SWEEP_10_TE["cg_z"] = (
-    SWEEP_10_TE["cg_z"]
-    .at[-2:]
-    .set(jnp.array((-2.39769283206869e-05, -7.27683817325292e-06)))
+SWEEP_10_TE.cg_z = SWEEP_10_TE.cg_z.at[-2:].set(
+    jnp.array((-2.39769283206869e-05, -7.27683817325292e-06))
 )
-SWEEP_10_TE["i_xx"] = (
-    SWEEP_10_TE["i_xx"]
-    .at[-2:]
-    .set(jnp.array((1.77115619689960e-06, 6.97809834859672e-07)))
+SWEEP_10_TE.i_xx = SWEEP_10_TE.i_xx.at[-2:].set(
+    jnp.array((1.77115619689960e-06, 6.97809834859672e-07))
 )
-SWEEP_10_TE["i_yy"] = (
-    SWEEP_10_TE["i_yy"]
-    .at[-2:]
-    .set(jnp.array((1.59577178736210e-05, 1.25672273282732e-04)))
+SWEEP_10_TE.i_yy = SWEEP_10_TE.i_yy.at[-2:].set(
+    jnp.array((1.59577178736210e-05, 1.25672273282732e-04))
 )
-SWEEP_10_TE["i_zz"] = (
-    SWEEP_10_TE["i_zz"]
-    .at[-2:]
-    .set(jnp.array((1.70887501675369e-05, 1.26023685134661e-04)))
+SWEEP_10_TE.i_zz = SWEEP_10_TE.i_zz.at[-2:].set(
+    jnp.array((1.70887501675369e-05, 1.26023685134661e-04))
 )
-SWEEP_10_TE["i_xy"] = (
-    SWEEP_10_TE["i_xy"]
-    .at[-2:]
-    .set(jnp.array((-5.78375033149240e-07, -2.88532094924509e-06)))
+SWEEP_10_TE.i_xy = SWEEP_10_TE.i_xy.at[-2:].set(
+    jnp.array((-5.78375033149240e-07, -2.88532094924509e-06))
 )
-SWEEP_10_TE["i_xz"] = (
-    SWEEP_10_TE["i_xz"]
-    .at[-2:]
-    .set(jnp.array((-9.32817353169632e-09, -1.52454038701234e-08)))
+SWEEP_10_TE.i_xz = SWEEP_10_TE.i_xz.at[-2:].set(
+    jnp.array((-9.32817353169632e-09, -1.52454038701234e-08))
 )
-SWEEP_10_TE["i_yz"] = (
-    SWEEP_10_TE["i_yz"]
-    .at[-2:]
-    .set(jnp.array((2.69179454678639e-09, -1.67841939307621e-09)))
+SWEEP_10_TE.i_yz = SWEEP_10_TE.i_yz.at[-2:].set(
+    jnp.array((2.69179454678639e-09, -1.67841939307621e-09))
 )
-
-
-# SWEEP_20_LE = {
-#     "coords": Y_20,
-#     "mass": jnp.array(()),
-#     "cg_x": jnp.array(()),
-#     "cg_y": jnp.array(()),
-#     "cg_z": jnp.array(()),
-#     "i_xx": jnp.array(()),
-#     "i_yy": jnp.array(()),
-#     "i_zz": jnp.array(()),
-#     "i_xy": jnp.array(()),
-#     "i_xz": jnp.array(()),
-#     "i_yz": jnp.array(()),
-#     "k11": jnp.array(()),
-#     "k22": jnp.array(()),
-#     "k33": jnp.array(()),
-#     "k44": jnp.array(()),
-#     "k12": jnp.array(()),
-#     "k13": jnp.array(()),
-#     "k14": jnp.array(()),
-#     "k23": jnp.array(()),
-#     "k24": jnp.array(()),
-#     "k34": jnp.array(()),
-# }
-#
-#
-# SWEEP_20_TE = SWEEP_20_LE
-# SWEEP_20_TE.update({})
