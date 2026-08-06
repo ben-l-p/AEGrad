@@ -5,9 +5,12 @@ from jax import numpy as jnp
 from aegrad.aero.flowfields import Constant
 from aegrad.algebra.so3 import vec_to_skew
 from models.pazy.straight.pazy_wing import make_pazy_wing
+from models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing
 
 
-def generate_static_aeroelastic(aoa: float | Array, q_inf: float | Array) -> Array:
+def generate_straight_static_aeroelastic(
+    aoa: float | Array, q_inf: float | Array
+) -> Array:
     r"""
     Function to perform a static aeroelastic analysis of the Pazy wing and return the tip z-displacement.
     """
@@ -15,7 +18,7 @@ def generate_static_aeroelastic(aoa: float | Array, q_inf: float | Array) -> Arr
     u_inf_mag = jnp.sqrt(2 * q_inf / rho)
 
     wing_ = make_pazy_wing(
-        gravity=True,
+        gravity=False,
         node_multiplier=2,
         m=16,
         m_star=160,
@@ -28,13 +31,48 @@ def generate_static_aeroelastic(aoa: float | Array, q_inf: float | Array) -> Arr
     static_sol = wing_.static_solve(
         prescribed_dofs=jnp.arange(6),
         horseshoe=False,
-        load_steps=1,
-        fsi_relaxation=0.5,
     )
 
     return 0.5 * (
         static_sol.aero.zeta_b[0][0, -1, 2] + static_sol.aero.zeta_b[0][-1, -1, 2]
     )
+
+
+def generate_swept_static_aeroelastic(
+    aoa: float | Array, q_inf: float | Array
+) -> Array:
+    r"""
+    Function to perform a static aeroelastic analysis of the swept Pazy wing and return the tip z-displacement.
+    """
+    rho = 1.225
+    u_inf_mag = jnp.sqrt(2 * q_inf / rho)
+
+    wing_ = make_swept_pazy_wing(
+        gravity=False,
+        node_multiplier=2,
+        m=16,
+        m_star=160,
+        tip_mass="TE_CORRECTED",
+        aoa=aoa,
+        flowfield=Constant(
+            rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
+        ),
+    )
+    static_sol = wing_.static_solve(
+        prescribed_dofs=jnp.arange(6),
+        horseshoe=False,
+    )
+
+    # rotating a swept wing gives a non-zero reference z
+    reference_sol = wing_.reference_configuration(prescribed_dofs=tuple(range(6)))
+    reference_tip_z = 0.5 * (
+        reference_sol.aero.zeta_b[0][0, -1, 2] + reference_sol.aero.zeta_b[0][-1, -1, 2]
+    )
+
+    tip_z = 0.5 * (
+        static_sol.aero.zeta_b[0][0, -1, 2] + static_sol.aero.zeta_b[0][-1, -1, 2]
+    )
+    return (tip_z - reference_tip_z) / 0.55
 
 
 class TestPazy:
@@ -129,7 +167,39 @@ class TestPazy:
         Bounds are chosen to ensure the results are aligned with that found in "Collaborative Pazy Wing Analyses for
         the Third Aeroelastic Prediction Workshop", DOI: 10.2514/6.2024-0419.
         """
-        z_tip = generate_static_aeroelastic(aoa=jnp.deg2rad(aoa_deg), q_inf=q_inf)
+        z_tip = generate_straight_static_aeroelastic(
+            aoa=jnp.deg2rad(aoa_deg), q_inf=q_inf
+        )
+
+        assert z_tip_bounds[0] < z_tip < z_tip_bounds[1], (
+            f"Pazy vertical tip displacement {float(z_tip)} out of bounds: {z_tip_bounds}"
+        )
+
+
+class TestSwept10Pazy:
+    @staticmethod
+    @pytest.mark.parametrize(
+        "aoa_deg, q_inf, z_tip_bounds",
+        [
+            pytest.param(3.0, 1000.0, (0.04, 0.09), id="aoa=3, q_inf=1000"),
+            pytest.param(3.0, 3000.0, (0.15, 0.18), id="aoa=3, q_inf=3000"),
+            pytest.param(5.0, 1000.0, (0.10, 0.15), id="aoa=5, q_inf=1000"),
+            pytest.param(5.0, 3000.0, (0.25, 0.32), id="aoa=5, q_inf=3000"),
+            pytest.param(7.0, 1000.0, (0.14, 0.19), id="aoa=7, q_inf=1000"),
+            pytest.param(7.0, 3000.0, (0.35, 0.40), id="aoa=7, q_inf=3000"),
+        ],
+    )
+    def test_static_aeroelastic(
+        aoa_deg: float, q_inf: float, z_tip_bounds: tuple[float, float]
+    ):
+        r"""
+        Test the static aeroelastic analysis of the 10-degree swept Pazy wing across a sweep of angles of attack and
+        dynamic pressures. Bounds are chosen to ensure the results are aligned with that found in "Flutter, Post-Flutter, and
+        Limit-Cycle Oscillations of Very Flexible Swept Wings". Note that the tolerances are quite relaxed as it is
+        accepted that the results do not perfectly align, with the tests being to ensure a correct order of magnitude.
+        Note that data for the swept case is normalised whereas it is not for the straight case.
+        """
+        z_tip = generate_swept_static_aeroelastic(aoa=jnp.deg2rad(aoa_deg), q_inf=q_inf)
 
         assert z_tip_bounds[0] < z_tip < z_tip_bounds[1], (
             f"Pazy vertical tip displacement {float(z_tip)} out of bounds: {z_tip_bounds}"

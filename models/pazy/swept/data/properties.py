@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from jax import numpy as jnp
 
 from models.pazy.base import PazyParameters
@@ -357,7 +359,7 @@ SWEEP_10_LE = PazyParameters(
     k34=jnp.zeros((N_KEYPOINT - 1)),
 )
 
-SWEEP_10_TE = SWEEP_10_LE
+SWEEP_10_TE = replace(SWEEP_10_LE)
 
 # shift in CG does not affect linear mass, only shifts position of lumped mass and inertia tensor at outer two nodes
 SWEEP_10_TE.cg_x = SWEEP_10_TE.cg_x.at[-2:].set(
@@ -387,3 +389,13 @@ SWEEP_10_TE.i_xz = SWEEP_10_TE.i_xz.at[-2:].set(
 SWEEP_10_TE.i_yz = SWEEP_10_TE.i_yz.at[-2:].set(
     jnp.array((2.69179454678639e-09, -1.67841939307621e-09))
 )
+
+# use the beam model from the 10 degree leading edge mass case, but change the tip inertia to reduce the first torsion
+# mode frequency whilst aiming to have a minimal impact on the first two bending modes
+SWEEP_10_LE_CORRECTED = replace(SWEEP_10_LE)
+SWEEP_10_LE_CORRECTED.i_yy = SWEEP_10_LE_CORRECTED.i_yy.at[-2:].multiply(1.25)
+
+# use the beam model from the 10 degree trailing edge mass case, but change the inertia to reduce the second bending
+# mode frequency whilst aiming to have a minimal impact on the first bending and torsion modes
+SWEEP_10_TE_CORRECTED = replace(SWEEP_10_TE)
+SWEEP_10_TE_CORRECTED.mass = SWEEP_10_TE_CORRECTED.mass.at[7].multiply(1.55)

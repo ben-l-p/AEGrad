@@ -1009,7 +1009,7 @@ class BaseBeamStructure:
             q_full = (
                 jnp.zeros((n_plot_vtu, self.n_nodes * 6))
                 .at[:, case.free_dofs]
-                .set(modes)
+                .set(modes[:n_plot_vtu, :])
             )
 
             for i_mode in range(n_plot_vtu):
@@ -1031,6 +1031,92 @@ class BaseBeamStructure:
 
         return freqs, damping, modes
 
+    @staticmethod
+    def _base_modal_symmetric(
+        m_nodal: Array,
+        k_nodal: Array,
+        n_modes: int,
+        freq_range: tuple[float | Array, float | Array],
+        damp_range: tuple[float | Array, float | Array],
+    ) -> tuple[Array, Array, Array]:
+        # Cholesky-transformed symmetric eigenproblem: K phi = omega^2 M phi
+        # ensure symmetry
+        m_sym = 0.5 * (m_nodal + m_nodal.T)
+        k_sym = 0.5 * (k_nodal + k_nodal.T)
+        l_chol = jnp.linalg.cholesky(m_sym)
+        x = jnp.linalg.solve(l_chol, k_sym)
+        a_sym = jnp.linalg.solve(l_chol, x.T).T
+        a_sym = 0.5 * (a_sym + a_sym.T)
+        omega_sq, y = jnp.linalg.eigh(a_sym)
+        modes = jax.scipy.linalg.solve_triangular(l_chol.T, y, lower=False)
+
+        omega = jnp.sqrt(jnp.maximum(omega_sq, 0.0))
+        freq_hz = omega / (2.0 * jnp.pi)
+        damping = jnp.zeros_like(freq_hz)
+
+        # eigh returns ascending eigenvalues, so frequency ordering is implicit
+        del n_modes
+        in_range = (
+            (freq_hz >= freq_range[0])
+            & (freq_hz <= freq_range[1])
+            & (damping >= damp_range[0])
+            & (damping <= damp_range[1])
+        )
+        idx = jnp.argsort(~in_range, stable=True)
+        return freq_hz[idx], damping[idx], modes[:, idx]
+
+    @staticmethod
+    def _base_modal_nonsymmetric(
+        m_nodal: Array,
+        k_nodal: Array,
+        n_modes: int,
+        freq_range: tuple[float | Array, float | Array],
+        damp_range: tuple[float | Array, float | Array],
+        remove_complex_conjugate: bool,
+    ) -> tuple[Array, Array, Array]:
+        # non-symmetric fallback for follower-load-deformed references
+        m_inv_k = jnp.linalg.solve(m_nodal, k_nodal)
+        omega_sq, modes = jnp.linalg.eig(m_inv_k)
+
+        s = jnp.sqrt(-omega_sq)
+        s = jnp.where(jnp.imag(s) < 0, -s, s)
+        s_mag = jnp.abs(s)
+        freq_hz = s_mag / (2.0 * jnp.pi)
+        damping = -jnp.real(s) / s_mag
+
+        # sort by frequency, remove conjugates and remove out-of-range
+        idx = jnp.argsort(freq_hz)
+        if remove_complex_conjugate:
+            partner = conjugate_partner_mask(
+                freq_hz=freq_hz, damping=damping, tiebreaker=jnp.real(s)
+            )
+            idx = idx[jnp.argsort(partner[idx], stable=True)]
+
+        ordered_freq = freq_hz[idx]
+        out_damping = damping[idx]
+        in_range = (
+            (ordered_freq >= freq_range[0])
+            & (ordered_freq <= freq_range[1])
+            & (out_damping >= damp_range[0])
+            & (out_damping <= damp_range[1])
+        )
+        range_idx = jnp.argsort(~in_range, stable=True)
+        idx = idx[range_idx]
+        ordered_freq = ordered_freq[range_idx]
+        out_damping = out_damping[range_idx]
+
+        kept = modes[:, idx[:n_modes]].real  # real part of preserved modes
+
+        # project mass matrix onto real modes and make symmetric
+        gram = kept.T @ m_nodal @ kept
+        gram = 0.5 * (gram + gram.T)
+        l_gram = jnp.linalg.cholesky(gram)
+        kept = jax.scipy.linalg.solve_triangular(l_gram, kept.T, lower=True).T
+
+        # pad back to full width
+        out_modes = modes[:, idx].real.at[:, :n_modes].set(kept)
+        return ordered_freq, out_damping, out_modes
+
     def base_modal(
         self,
         case: StaticStructure,
@@ -1044,50 +1130,25 @@ class BaseBeamStructure:
 
         m_nodal, k_nodal = self.make_nodal_m_k(case=case, int_order=int_order)
 
-        # reduce generalised problem K phi = omega^2 M phi to standard form and solve. The non-symmetric solver
-        # handles both the undeformed (symmetric) and deformed (asymmetric) cases.
-        m_inv_k = jnp.linalg.solve(m_nodal, k_nodal)
-        omega_sq, modes = jnp.linalg.eig(m_inv_k)
-
-        # map omega^2 to state-space root s (s^2 = -omega^2), choosing the positive-imaginary branch
-        s = jnp.sqrt(-omega_sq)
-        s = jnp.where(jnp.imag(s) < 0, -s, s)
-
-        # undamped natural frequency (Hz) and damping ratio for each mode
-        s_mag = jnp.abs(s)
-        freq_hz = s_mag / (2.0 * jnp.pi)
-        damping = -jnp.real(s) / s_mag
-
-        # primary sort by frequency; conjugate partners and out-of-range modes are then pushed past n_modes so
-        # the existing truncation drops them. Stable-argsort preserves frequency order within the kept group.
-        idx = jnp.argsort(freq_hz)
-        if remove_complex_conjugate:
-            partner = conjugate_partner_mask(
-                freq_hz=freq_hz, damping=damping, tiebreaker=jnp.real(s)
-            )
-            idx = idx[jnp.argsort(partner[idx], stable=True)]
-
-        ordered_freq = freq_hz[idx]
-        out_damping = damping[idx]
-
-        # push modes outside the requested frequency / damping window to the back. If the number of modes in the range
-        # is less than the number requested, then it will start passing out-of-range modes to satisfy shape requirements
-        in_range = (
-            (ordered_freq >= freq_range[0])
-            & (ordered_freq <= freq_range[1])
-            & (out_damping >= damp_range[0])
-            & (out_damping <= damp_range[1])
+        # dispatch based on stiffness symmetry - external loads can cause a non-conservative system where a symmetric
+        # solve would fail
+        k_asymmetry = jnp.linalg.norm(k_nodal - k_nodal.T) / jnp.maximum(
+            jnp.linalg.norm(k_nodal), 1.0
         )
-        range_idx = jnp.argsort(~in_range, stable=True)
-        idx = idx[range_idx]
-        ordered_freq = ordered_freq[range_idx]
-        out_damping = out_damping[range_idx]
-
-        # cast to real for downstream use and truncate
-        out_modes = modes[:, idx].real
-
-        # normalise modes
-        out_modes /= jnp.linalg.norm(out_modes, axis=0, keepdims=True)
+        ordered_freq, out_damping, out_modes = jax.lax.cond(
+            k_asymmetry < 1e-10,
+            lambda: self._base_modal_symmetric(
+                m_nodal, k_nodal, n_modes, freq_range, damp_range
+            ),
+            lambda: self._base_modal_nonsymmetric(
+                m_nodal,
+                k_nodal,
+                n_modes,
+                freq_range,
+                damp_range,
+                remove_complex_conjugate,
+            ),
+        )
 
         # write to console
         print_table_line(inner_width=39)

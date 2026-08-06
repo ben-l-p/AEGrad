@@ -10,14 +10,19 @@ from models.pazy.base import make_generic_pazy_wing
 
 
 # constant from provided data
-from models.pazy.swept.data.properties import SWEEP_10_LE, SWEEP_10_TE
+from models.pazy.swept.data.properties import (
+    SWEEP_10_LE,
+    SWEEP_10_TE,
+    SWEEP_10_LE_CORRECTED,
+    SWEEP_10_TE_CORRECTED,
+)
 
 
 def make_swept_pazy_wing(
     m: int = 12,
     m_star: int = 120,
     sweep_angle: Literal[10] = 10,
-    tip_mass: Literal["LE", "TE"] = "LE",
+    tip_mass: Literal["LE", "TE", "LE_CORRECTED", "TE_CORRECTED"] = "LE_CORRECTED",
     node_multiplier: int = 1,
     gravity: bool | Array = False,
     flowfield: FlowField = Constant(
@@ -32,6 +37,10 @@ def make_swept_pazy_wing(
                     data = SWEEP_10_LE
                 case "TE":
                     data = SWEEP_10_TE
+                case "LE_CORRECTED":
+                    data = SWEEP_10_LE_CORRECTED
+                case "TE_CORRECTED":
+                    data = SWEEP_10_TE_CORRECTED
                 case _:
                     raise ValueError("Invalid tip_mass value")
         case _:

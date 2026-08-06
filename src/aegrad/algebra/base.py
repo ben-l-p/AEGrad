@@ -6,6 +6,7 @@ from typing import Callable, Any, Literal, Optional, Sequence, TYPE_CHECKING
 
 import jax
 from jax import numpy as jnp, Array
+from jax.flatten_util import ravel_pytree
 from jax.scipy.special import bernoulli
 from jax.lax import cond
 from jax import jacfwd, jacrev
@@ -257,7 +258,11 @@ def _jacrev_via_map_kwargs(
         basis = jnp.eye(m, dtype=y.dtype).reshape((m,) + y.shape)
 
         # account for case where these are zero-size arguments as these break map
-        keep_idxs = tuple(i for i, v in enumerate(dyn_vals) if int(jnp.size(v)) > 0)
+        keep_idxs = tuple(
+            i
+            for i, v in enumerate(dyn_vals)
+            if sum(int(leaf.size) for leaf in jax.tree.leaves(v)) > 0
+        )
 
         def filtered_pullback(cotan: Any) -> tuple[Any, ...]:
             return tuple(pullback(cotan)[i] for i in keep_idxs)
@@ -272,7 +277,12 @@ def _jacrev_via_map_kwargs(
         cotangents = tuple(
             next(kept_iter)
             if i in keep_idxs
-            else jnp.zeros((m,) + jnp.shape(v), dtype=jnp.result_type(v))
+            else jax.tree.map(
+                lambda leaf: jnp.zeros(
+                    (m,) + jnp.shape(leaf), dtype=jnp.result_type(leaf)
+                ),
+                v,
+            )
             for i, v in enumerate(dyn_vals)
         )
         return dict(zip(argnames, cotangents))
@@ -291,17 +301,17 @@ def _jacfwd_via_map_kwargs(
     """
     argnames = (argnames,) if isinstance(argnames, str) else tuple(argnames)
 
-    def inner_func(**kwargs: Any) -> dict[str, Array]:
+    def inner_func(**kwargs: Any) -> dict[str, Any]:
         full_argnames = list(kwargs.keys())
         argvals = list(kwargs.values())
 
-        jacs: dict[str, Array] = {}
+        jacs: dict[str, Any] = {}
         for name in argnames:
             arg_idx = full_argnames.index(name)
             v = argvals[arg_idx]
-            v_shape = jnp.shape(v)
-            v_size = int(jnp.size(v))
-            v_dtype = jnp.result_type(v)
+            leaves, treedef = jax.tree.flatten(v)
+            leaf_sizes = [int(leaf.size) for leaf in leaves]
+            v_size = sum(leaf_sizes)
 
             def single_arg_adapter(dyn_arg: Any, _arg_idx: int = arg_idx) -> Array:
                 merged = list(argvals)
@@ -310,22 +320,46 @@ def _jacfwd_via_map_kwargs(
 
             if v_size == 0:
                 y_struct = jax.eval_shape(single_arg_adapter, v)
-                jacs[name] = jnp.zeros(y_struct.shape + v_shape, dtype=v_dtype)
+                jacs[name] = jax.tree.unflatten(
+                    treedef,
+                    [
+                        jnp.zeros(y_struct.shape + leaf.shape, dtype=leaf.dtype)
+                        for leaf in leaves
+                    ],
+                )
                 continue
 
-            basis = jnp.eye(v_size, dtype=v_dtype).reshape((v_size,) + v_shape)
+            flat_v, unravel = ravel_pytree(v)
+            flat_basis = jnp.eye(v_size, dtype=flat_v.dtype)
 
             def single_jvp(
-                tangent: Array,
+                flat_tangent: Array,
                 _adapter: Callable[..., Array] = single_arg_adapter,
                 _primal: Any = v,
+                _unravel: Callable[[Array], Any] = unravel,
             ) -> Array:
-                _, out_tan = jax.jvp(_adapter, (_primal,), (tangent,))
+                _, out_tan = jax.jvp(_adapter, (_primal,), (_unravel(flat_tangent),))
                 return out_tan
 
-            stacked = jax.lax.map(single_jvp, basis, batch_size=map_batch_size)
+            stacked = jax.lax.map(single_jvp, flat_basis, batch_size=map_batch_size)
             y_shape = stacked.shape[1:]
-            jacs[name] = jnp.moveaxis(stacked, 0, -1).reshape(y_shape + v_shape)
+            n_y = len(y_shape)
+
+            split_points: list[int] = []
+            running = 0
+            for s in leaf_sizes[:-1]:
+                running += s
+                split_points.append(running)
+            pieces = jnp.split(stacked, split_points, axis=0) if split_points else [stacked]
+
+            leaf_jacs = []
+            for piece, leaf in zip(pieces, leaves):
+                reshaped = piece.reshape(leaf.shape + y_shape)
+                n_leaf = len(leaf.shape)
+                perm = tuple(range(n_leaf, n_leaf + n_y)) + tuple(range(n_leaf))
+                leaf_jacs.append(jnp.transpose(reshaped, perm))
+
+            jacs[name] = jax.tree.unflatten(treedef, leaf_jacs)
 
         return jacs
 
