@@ -14,7 +14,7 @@ from aegrad.coupled.data_structures import (
 from aegrad.aero.gradients.data_structures import AeroGradsToCompute
 from aegrad.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from aegrad.utils.data_structures import ConvergenceSettings
-from models.patil_wing import generate_patil_wing
+from models.patil_wing.patil_wing import generate_patil_wing
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute
 
 if __name__ == "__main__":

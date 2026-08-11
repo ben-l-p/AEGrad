@@ -8,7 +8,7 @@ import jax
 from jax import tree_util, Array
 from jax import numpy as jnp
 
-from aegrad.utils.print_utils import jax_print, VerbosityLevel
+from aegrad.utils.print_utils import jax_print
 
 
 class SupportsPytree(Protocol):
@@ -132,7 +132,7 @@ def conditional_profile[U](
 
             jax_print(
                 f"| Function: {func_name:<14} Argument: {arg_name:<16} Compile time: {compile_time:<8.4f} Run time: {run_time:<8.4f} |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
 
             return out, compile_time, run_time

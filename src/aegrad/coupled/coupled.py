@@ -23,9 +23,9 @@ from aegrad.coupled.data_structures import (
 )
 from aegrad.utils.print_utils import (
     warn_if_32_bit,
-    VerbosityLevel,
     VERBOSITY_LEVEL,
     warn,
+    map_verbosity_level,
 )
 from aegrad.structure import StaticStructure
 from aegrad.structure.time_integration import TimeIntegrator
@@ -273,7 +273,7 @@ class BaseCoupledAeroelastic:
                 cs_ang=self.aero.cs_ang0,
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
                 converge_status_.print_fsi_message(i_ts=None, t=None)
 
             return converge_status_, struct_case_np1, aero_case_np1, omega, r_curr

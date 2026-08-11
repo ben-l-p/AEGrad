@@ -52,7 +52,6 @@ from aegrad.aero.gradients.data_structures import (
     GammaBDotApprox,
     FAeroApprox,
 )
-from aegrad.utils.print_utils import VerbosityLevel
 from aegrad.coupled.data_structures import AeroelasticDesignVariables
 from aegrad.structure import BeamStructure, DynamicStructure
 from aegrad.algebra.array_utils import construct_named_block_jacobian, ArrayListShape
@@ -442,7 +441,9 @@ class UVLM:
             delta_w=self.delta_w,
             x0_b=dv.x0_b if dv.x0_b is not None else self.x0_b,
             hg0=self.hg0,
-            reference_cs_angles={k: v[0] for k, v in dv.cs_ang_t.items()}
+            reference_cs_angles={
+                k: jnp.atleast_1d(v)[0] for k, v in dv.cs_ang_t.items()
+            }
             if dv.cs_ang_t is not None
             else self.cs_ang0,
         )
@@ -1291,7 +1292,7 @@ class UVLM:
             jax_print(
                 "UVLM timestep {i_ts_}",
                 i_ts_=i_ts_,
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
             return case_
 

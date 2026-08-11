@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from enum import Enum
+from typing import Literal
+
 import jax
 
 
@@ -14,14 +16,25 @@ class Colour(Enum):
     CYAN = 36
 
 
-class VerbosityLevel(Enum):
-    SILENT = 0
-    WARNING = 1
-    NORMAL = 2
-    VERBOSE = 3
+type VerbosityLevel = Literal["silent", "warning", "normal", "verbose"]
 
 
-VERBOSITY_LEVEL = VerbosityLevel.NORMAL  # default value
+def map_verbosity_level(level: VerbosityLevel) -> int:
+    # function to rank verbosity levels for comparison
+    match level:
+        case "silent":
+            return 0
+        case "warning":
+            return 1
+        case "normal":
+            return 2
+        case "verbose":
+            return 3
+        case _:
+            raise ValueError(f"Invalid verbosity level: {level}")
+
+
+VERBOSITY_LEVEL: VerbosityLevel = "normal"  # default value
 
 
 def set_verbosity(level: VerbosityLevel) -> None:
@@ -50,10 +63,10 @@ def make_color(text: str, color: Colour) -> str:
 
 
 def warn(message: str, **kwargs) -> None:
-    if VERBOSITY_LEVEL.value >= VerbosityLevel.WARNING.value:
+    if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("warning"):
         jax_print(
             make_color(f"Warning: {message}", color=Colour.YELLOW),
-            verbose_level=VerbosityLevel.WARNING,
+            verbose_level="warning",
             **kwargs,
         )
 
@@ -67,20 +80,20 @@ def warn_if_32_bit() -> None:
 
 
 def jax_print(
-    message: str, verbose_level: VerbosityLevel = VERBOSITY_LEVEL.VERBOSE, **kwargs
+    message: str, verbose_level: VerbosityLevel = "verbose", **kwargs
 ) -> None:
-    if VERBOSITY_LEVEL.value >= verbose_level.value:
+    if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(verbose_level):
         jax.debug.print(message, **kwargs)
 
 
 def print_table_line(
-    inner_width: int, verbose_level: VerbosityLevel = VerbosityLevel.NORMAL
+    inner_width: int, verbose_level: VerbosityLevel = "normal"
 ) -> None:
     jax_print("+" + "-" * inner_width + "+", verbose_level=verbose_level)
 
 
 def print_table_title(
-    title: str, inner_width: int, verbose_level: VerbosityLevel = VerbosityLevel.NORMAL
+    title: str, inner_width: int, verbose_level: VerbosityLevel = "normal"
 ) -> None:
     usable_width = inner_width - len(title) - 2
     left_length = usable_width // 2

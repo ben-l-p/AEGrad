@@ -11,7 +11,6 @@ from jax import Array, vmap
 
 from aegrad.utils.print_utils import (
     jax_print,
-    VerbosityLevel,
     print_table_line,
     print_table_title,
 )
@@ -977,7 +976,7 @@ class BeamStructure(BaseBeamStructure):
         jax_print(
             "Adjoint step: {i_ts}",
             i_ts=i_ts,
-            verbose_level=VerbosityLevel.NORMAL,
+            verbose_level="normal",
         )
 
         if matrix_free:

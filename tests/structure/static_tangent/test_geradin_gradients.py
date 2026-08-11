@@ -4,12 +4,12 @@ from typing import Literal
 from jax import Array, numpy as jnp
 from aegrad.structure import StructureFullStates
 from aegrad.utils.data_structures import ConvergenceSettings
-from models.geradin_beam import generate_geradin_beam
+from models.geradin_beam.geradin_beam import generate_geradin_beam
 
 
 class TestGeradinBeamGradients:
     n_nodes = 20
-    struct = generate_geradin_beam(n_nodes, "x_target")
+    struct = generate_geradin_beam(n_nodes, "x")
     struct.struct_convergence_settings = ConvergenceSettings(
         max_n_iter=50,
         rel_force_tol=0.0,

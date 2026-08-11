@@ -8,7 +8,7 @@ from typing import Optional, Sequence, TYPE_CHECKING, Literal
 import jax
 from jax import Array, numpy as jnp, scipy as jsp
 
-from aegrad.utils.print_utils import warn, jax_print, VerbosityLevel
+from aegrad.utils.print_utils import warn, jax_print
 from aegrad.utils.utils import shallow_as_dict, make_pytree
 from aegrad.algebra.array_utils import (
     ArrayList,
@@ -722,7 +722,7 @@ class LinearSystem:
         """
         jax_print(
             "Converting continuous-time system to discrete-time system.",
-            verbose_level=VerbosityLevel.NORMAL,
+            verbose_level="normal",
         )
         if not self.continuous_time:
             warn("System is already discrete-time.")
@@ -788,7 +788,7 @@ class LinearSystem:
             jax_print(
                 "Linear system state step {i_ts}",
                 i_ts=i_ts,
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
             this_u = u[i_ts - 1, ...] if self.removed_u_np1 else u[i_ts, ...]
             return x_.at[i_ts, ...].set(self.a @ x_[i_ts - 1, ...] + self.b @ this_u)

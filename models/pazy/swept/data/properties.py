@@ -4,6 +4,13 @@ from jax import numpy as jnp
 
 from models.pazy.base import PazyParameters
 
+r"""
+Stiffness model from Technion, available on LDWG Sharepoint: https://imperiallondon.sharepoint.com/:x:/r/sites/aepw-ldgw
+-AE/Shared%20Documents/data/Pazy_S10_beam/single_phase_constitutive_compact.csv?d=wf8fff3b1e5f647dfa6d5afc60acb552f&csf=
+1&web=1&e=71zaYZ
+Mass model from Cristina Riso - https://github.com/cristinariso/AePW-Swept-Pazy/tree/main/02_BeamMassModel
+"""
+
 N_KEYPOINT = 16
 
 Y_10 = (
@@ -52,7 +59,7 @@ Y_20 = (
         )
     )
     - jnp.array((4.13e-02, 0.0, 0.0))[None, :]
-)
+)  # offset data to have root at 0
 
 SWEEP_10_LE = PazyParameters(
     n_keypoints=N_KEYPOINT,

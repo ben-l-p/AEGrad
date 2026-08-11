@@ -1,5 +1,4 @@
 from typing import Literal, Optional
-from pathlib import Path
 
 from jax import numpy as jnp
 from jax import Array
@@ -9,15 +8,15 @@ from aegrad.structure import BeamStructure
 
 def generate_geradin_beam(
     n_nodes: int = 20,
-    beam_direction: Literal["x_target", "y", "z"] = "x_target",
+    beam_direction: Literal["x", "y", "z"] = "x",
     m_cs: Optional[Array] = None,
 ) -> BeamStructure:
     length = jnp.array(5.0)
     n_elem = n_nodes - 1
 
-    direction_index = {"x_target": 0, "y": 1, "z": 2}[beam_direction]
+    direction_index = {"x": 0, "y": 1, "z": 2}[beam_direction]
     y_vect = {
-        "x_target": jnp.array([0.0, 1.0, 0.0]),
+        "x": jnp.array([0.0, 1.0, 0.0]),
         "y": jnp.array([0.0, 0.0, 1.0]),
         "z": jnp.array([1.0, 0.0, 0.0]),
     }[beam_direction]
@@ -40,22 +39,3 @@ def generate_geradin_beam(
     k_coeffs = k_coeffs.at[4:6].set(9.345e6)
     struct.set_design_variables(coords, jnp.diag(k_coeffs), m_cs)
     return struct
-
-
-if __name__ == "__main__":
-    n_nodes_ = 20
-    load = 600000.0
-    struct_ = generate_geradin_beam(n_nodes=n_nodes_, beam_direction="x_target")
-    f_ext = jnp.zeros((n_nodes_, 6))
-    f_ext = f_ext.at[-1, 2].set(-load)
-
-    result = struct_.static_solve(
-        f_ext_follower=None,
-        f_ext_dead=f_ext,
-        f_ext_aero=None,
-        prescribed_dofs=jnp.arange(6),
-        load_steps=3,
-    )
-
-    out_path = Path("./geradin_beam")
-    result.plot(out_path, 3)

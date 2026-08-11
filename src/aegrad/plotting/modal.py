@@ -24,6 +24,7 @@ def plot_modes_vtu(
     reference: StaticAeroelastic | StaticStructure,
     q_full: Array,
     freqs: Array,
+    dampings: Array,
     gamma_b_full: Optional[ArrayList],
     gamma_w_full: Optional[ArrayList],
     zeta_w_full: Optional[ArrayList],
@@ -40,7 +41,8 @@ def plot_modes_vtu(
     :param reference: Reference aeroelastic model used for linearisation.
     :param directory: Directory for saving data. If not passed, will default to ./modal.
     :param q_full: Full nodal mode deflections, [n_modes, n_nodes, 6].
-    :param freqs: Damped mode frequencies, Hz. [n_modes]. Used for correct time information in PVD files.
+    :param freqs: Damped mode frequencies, Hz. [n_modes], used for file naming.
+    :param dampings: Damping ratios, [n_modes], used for file naming.
     :param gamma_b_full: Full bound gamma modes, [n_surf][n_modes, m, n] or None.
     :param gamma_w_full: Full wake modes, [n_surf][n_modes, m*, n] or None.
     :param zeta_w_full: Full wake displacement modes, [n_surf][n_modes, m*, n, 3] or None.
@@ -123,7 +125,9 @@ def plot_modes_vtu(
             else None
         )
 
-        mode_dir = plot_dir.joinpath(f"mode_{i_mode + 1}")
+        mode_dir = plot_dir.joinpath(
+            f"mode_{i_mode + 1}_f{float(freqs[i_mode]):.2f}Hz_z{float(dampings[i_mode]):+.4f}"
+        )
         mode_dir.mkdir(parents=True, exist_ok=True)
         beam_paths: list[Path] = []
 

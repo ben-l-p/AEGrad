@@ -1,6 +1,5 @@
 from typing import Literal
 
-import jax
 from jax import numpy as jnp
 from jax import Array
 
@@ -29,6 +28,7 @@ def make_swept_pazy_wing(
         u_inf=jnp.array((40.0, 0.0, 0.0)), rho=1.225, relative_motion=True
     ),
     aoa: float | Array = jnp.deg2rad(3.0),
+    variable_disc_wake: bool = False,
 ) -> CoupledAeroelastic:
     match sweep_angle:
         case 10:
@@ -55,35 +55,5 @@ def make_swept_pazy_wing(
         aoa=aoa,
         data=data,
         sweep=None,  # if sweep were to be added here, it would be added on top of the sweep from data
+        variable_disc_wake=variable_disc_wake,
     )
-
-
-if __name__ == "__main__":
-    jax.config.update("jax_enable_x64", True)
-
-    rho = 1.225
-    aoa_ = jnp.deg2rad(7.0)
-    u_inf_mag = 60.0
-
-    wing_ = make_swept_pazy_wing(
-        gravity=True,
-        node_multiplier=2,
-        m=16,
-        m_star=160,
-        sweep_angle=10,
-        tip_mass="LE",
-        aoa=aoa_,
-        flowfield=Constant(
-            rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
-        ),
-    )
-    static_sol = wing_.static_solve(
-        prescribed_dofs=jnp.arange(6), horseshoe=False, load_steps=1, fsi_relaxation=0.5
-    )
-    static_sol.plot("./swept_pazy_outputs/")
-
-    z_tip = 0.5 * (
-        static_sol.aero.zeta_b[0][0, -1, 2] + static_sol.aero.zeta_b[0][-1, -1, 2]
-    )
-    print(f"Tip deflection at mid chord (m): {float(z_tip):.03f}")
-    print(f"Relative tip deflection at mid chord (z/b) {float(z_tip) / 0.55:.03f}")

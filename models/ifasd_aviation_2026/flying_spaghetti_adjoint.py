@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import Array
 from typing import Optional
 
-from models.flying_spaghetti import generate_flying_spaghetti
+from models.flying_spaghetti.flying_spaghetti import generate_flying_spaghetti
 
 from aegrad.structure import StructureFullStates, StructuralDesignVariables
 from aegrad.utils.data_structures import ConvergenceSettings

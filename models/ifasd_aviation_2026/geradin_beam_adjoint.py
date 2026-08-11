@@ -5,9 +5,8 @@ from aegrad.utils.print_utils import set_verbosity
 from aegrad.structure import StructureFullStates
 from aegrad.utils.data_structures import ConvergenceSettings
 from aegrad.algebra.so3 import log_so3
-from models.geradin_beam import generate_geradin_beam
+from models.geradin_beam.geradin_beam import generate_geradin_beam
 from aegrad.structure import BeamStructure, StaticStructure
-from aegrad.utils.print_utils import VerbosityLevel
 
 if __name__ == "__main__":
     """
@@ -16,10 +15,10 @@ if __name__ == "__main__":
     gradients with finite differences.
     """
     jax.config.update("jax_enable_x64", True)
-    set_verbosity(VerbosityLevel.SILENT)
+    set_verbosity("silent")
 
     n_nodes = 20
-    struct = generate_geradin_beam(n_nodes, "x_target")
+    struct = generate_geradin_beam(n_nodes, "x")
 
     # convergence very strict, forces 100 structural iterations
     struct.struct_convergence_settings = ConvergenceSettings(

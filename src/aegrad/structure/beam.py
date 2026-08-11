@@ -26,10 +26,10 @@ from aegrad.utils.linear import conjugate_partner_mask
 from aegrad.utils.print_utils import (
     warn,
     warn_if_32_bit,
-    VerbosityLevel,
     VERBOSITY_LEVEL,
     jax_print,
     print_table_line,
+    map_verbosity_level,
 )
 from aegrad.structure.utils import (
     _check_connectivity,
@@ -1018,6 +1018,7 @@ class BaseBeamStructure:
                     directory=vtu_directory,
                     q_full=q_full.reshape(n_plot_vtu, self.n_nodes, 6),
                     freqs=freqs,
+                    dampings=damping,
                     gamma_b_full=None,
                     gamma_w_full=None,
                     zeta_w_full=None,
@@ -1035,7 +1036,6 @@ class BaseBeamStructure:
     def _base_modal_symmetric(
         m_nodal: Array,
         k_nodal: Array,
-        n_modes: int,
         freq_range: tuple[float | Array, float | Array],
         damp_range: tuple[float | Array, float | Array],
     ) -> tuple[Array, Array, Array]:
@@ -1055,7 +1055,6 @@ class BaseBeamStructure:
         damping = jnp.zeros_like(freq_hz)
 
         # eigh returns ascending eigenvalues, so frequency ordering is implicit
-        del n_modes
         in_range = (
             (freq_hz >= freq_range[0])
             & (freq_hz <= freq_range[1])
@@ -1069,7 +1068,6 @@ class BaseBeamStructure:
     def _base_modal_nonsymmetric(
         m_nodal: Array,
         k_nodal: Array,
-        n_modes: int,
         freq_range: tuple[float | Array, float | Array],
         damp_range: tuple[float | Array, float | Array],
         remove_complex_conjugate: bool,
@@ -1104,17 +1102,8 @@ class BaseBeamStructure:
         idx = idx[range_idx]
         ordered_freq = ordered_freq[range_idx]
         out_damping = out_damping[range_idx]
-
-        kept = modes[:, idx[:n_modes]].real  # real part of preserved modes
-
-        # project mass matrix onto real modes and make symmetric
-        gram = kept.T @ m_nodal @ kept
-        gram = 0.5 * (gram + gram.T)
-        l_gram = jnp.linalg.cholesky(gram)
-        kept = jax.scipy.linalg.solve_triangular(l_gram, kept.T, lower=True).T
-
-        # pad back to full width
-        out_modes = modes[:, idx].real.at[:, :n_modes].set(kept)
+        out_modes = modes[:, idx].real
+        out_modes /= jnp.linalg.norm(out_modes, axis=0, keepdims=True)
         return ordered_freq, out_damping, out_modes
 
     def base_modal(
@@ -1138,12 +1127,11 @@ class BaseBeamStructure:
         ordered_freq, out_damping, out_modes = jax.lax.cond(
             k_asymmetry < 1e-10,
             lambda: self._base_modal_symmetric(
-                m_nodal, k_nodal, n_modes, freq_range, damp_range
+                m_nodal, k_nodal, freq_range, damp_range
             ),
             lambda: self._base_modal_nonsymmetric(
                 m_nodal,
                 k_nodal,
-                n_modes,
                 freq_range,
                 damp_range,
                 remove_complex_conjugate,
@@ -1154,7 +1142,7 @@ class BaseBeamStructure:
         print_table_line(inner_width=39)
         jax_print(
             "| Mode | Frequency [Hz] | Damping Ratio |",
-            verbose_level=VerbosityLevel.NORMAL,
+            verbose_level="normal",
         )
         print_table_line(inner_width=39)
         for i_mode in range(n_modes):
@@ -1163,7 +1151,7 @@ class BaseBeamStructure:
                 mode=i_mode + 1,
                 freq=ordered_freq[i_mode],
                 damp=out_damping[i_mode],
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
         print_table_line(inner_width=39)
         return (
@@ -1990,7 +1978,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
                 converge_status.print_struct_message(
                     i_ts=None, t=None, i_load_step=i_load_step
                 )
@@ -2019,12 +2007,15 @@ class BaseBeamStructure:
                 ),
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
                 convergence_status.print_struct_message(
                     i_ts=None, t=None, i_load_step=i_load_step
                 )
 
             return hg_solve
+
+        if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+            ConvergenceStatus.print_header(dynamic=False)
 
         # solve for each load step
         hg = jax.lax.fori_loop(
@@ -2033,6 +2024,9 @@ class BaseBeamStructure:
             lambda *args: convergence_loop(*args),
             self.hg0,
         )
+
+        if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+            ConvergenceStatus.print_line(dynamic=False)
 
         # postprocess final results
         d, eps, f_ext_dead_local, f_ext_aero_local, f_grav, f_int, _, _, f_res = (
@@ -2276,7 +2270,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
                 )
@@ -2466,7 +2460,7 @@ class BaseBeamStructure:
                 )
 
             # print message where we only require one message per timestep
-            if VERBOSITY_LEVEL.value == VerbosityLevel.NORMAL.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) == map_verbosity_level("normal"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=struct_sol.t[i_ts], i_load_step=load_steps - 1
                 )
@@ -2689,7 +2683,7 @@ class BaseBeamStructure:
                 total_force=f_aero_alpha.ravel()[solve_dofs_arr],
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
                 fsi_convergence_status_.print_fsi_message(i_ts=i_ts, t=t[i_ts])
 
             return (
@@ -2760,7 +2754,7 @@ class BaseBeamStructure:
                 )
             )
 
-            if VERBOSITY_LEVEL.value >= VerbosityLevel.VERBOSE.value:
+            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
                 )
@@ -2896,15 +2890,15 @@ class BaseBeamStructure:
                 return None
             match arr.ndim:
                 case 2:
-                    out = jnp.broadcast_to(arr[None, ...], (n_tstep, self.n_nodes, 6))
+                    out_ = jnp.broadcast_to(arr[None, ...], (n_tstep, self.n_nodes, 6))
                 case 3:
-                    out = arr
+                    out_ = arr
                 case _:
                     raise ValueError(
                         f"{name} must have shape [n_node, 6] or [n_tstep, n_node, 6]"
                     )
-            check_arr_shape(out, (n_tstep, self.n_nodes, 6), name)
-            return out
+            check_arr_shape(out_, (n_tstep, self.n_nodes, 6), name)
+            return out_
 
         f_ext_dead = check_force(f_ext_dead, "f_ext_dead")  # [n_tstep, n_node, 6]
         f_ext_follower = check_force(
@@ -2944,7 +2938,7 @@ class BaseBeamStructure:
             jax_print(
                 "Initial state maximum residual force: {max_res:.3e}",
                 max_res=max_res,
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
 
             f_elem = self.make_f_elem(eps=eps)
@@ -3009,7 +3003,9 @@ class BaseBeamStructure:
             convergence_settings=self.struct_convergence_settings
         )
 
-        return self.base_dynamic_solve(
+        ConvergenceStatus.print_header(dynamic=True)
+
+        out = self.base_dynamic_solve(
             struct_case=dynamic_struct,
             struct_convergence_status=converge_status,
             t=t,
@@ -3024,6 +3020,9 @@ class BaseBeamStructure:
             cs_ang_t=None,
             cs_vel_t=None,
         )
+
+        ConvergenceStatus.print_line(dynamic=True)
+        return out
 
     @staticmethod
     def _static_names() -> Sequence[str]:

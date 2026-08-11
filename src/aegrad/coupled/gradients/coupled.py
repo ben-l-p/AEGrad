@@ -17,8 +17,11 @@ from aegrad.aero.utils import project_forcing_to_beam
 from aegrad.algebra.array_utils import ArrayList
 from aegrad.algebra.base import ADMode
 from aegrad.coupled import DynamicAeroelastic
-from aegrad.utils import print_utils
-from aegrad.utils.print_utils import jax_print, VerbosityLevel, verbosity
+from aegrad.utils.print_utils import (
+    jax_print,
+    verbosity,
+    map_verbosity_level,
+)
 from aegrad.structure import StructuralDesignVariables
 from aegrad.structure.data_structures import OptionalJacobians, StructureMinimalStates
 
@@ -219,7 +222,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         if ad_mode not in ("forward", "reverse"):
             raise ValueError("ad_mode must be either 'forward' or 'reverse'")
 
-        jax_print("Computing static adjoint", verbose_level=VerbosityLevel.NORMAL)
+        jax_print("Computing static adjoint", verbose_level="normal")
 
         solve_dofs = jnp.array(
             get_solve_dofs(
@@ -853,7 +856,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         solve_dofs: tuple[int, ...],
         approx_grads: bool = False,
         precond_i_ts: int = 0,
-        aero_batch_size: Optional[int] = 32,
+        batch_size: Optional[int] = 32,
     ) -> Callable[[Array], Array]:
         r"""
         Build a preconditioner for the coupled aeroelastic system which skips the wake grid and circulation. When
@@ -865,7 +868,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param solve_dofs: Solve degree of freedom index.
         :param approx_grads: Approximate gradient of the coupled aeroelastic system, removing some negligible terms.
         :param precond_i_ts: Time step index for which to create the preconditioner. Defaults to 0.
-        :param aero_batch_size: Batch size for mapping the Jacobian construction.
+        :param batch_size: Batch size for mapping the Jacobian construction on the aerodynamic system.
         :return: Preconditioner function.
         """
         precond_q_nm1 = case.get_minimal_states(i_ts=max(precond_i_ts - 1, 0))
@@ -930,7 +933,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             n_profile_loops=None,
             jac_options=jac_options,
             compute_wake_gradients=False,
-            map_batch_size=aero_batch_size,
+            map_batch_size=batch_size,
         )
 
         assert p_v_dot_res_p_f_ext_n is not None
@@ -1010,6 +1013,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         gmres_precond: bool = True,
         gmres_restart: int = 50,
         i_ts_preconditioner: int = 0,
+        preconditioner_batch_size: Optional[int] = 16,
         preconditioner: Optional[Callable[[Array], Array]] = None,
     ) -> tuple[AeroelasticDesignVariables, Array, Optional[Array]]:
         r"""
@@ -1041,6 +1045,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         Ignored when ``preconditioner`` is supplied.
         :param gmres_restart: Number of times to restart the GMRES algorithm.
         :param i_ts_preconditioner: Timestep at which to build the preconditioner if requested.
+        :param preconditioner_batch_size: Batch size for creating the Jacobians for the preconditioner. Ignored if
+        ``preconditioner`` is supplied.
         :param preconditioner: Optional pass a prebuild preconditioner. Useful for profiling.
         :return: Gradient of sum of objective across timesteps with respect to design variables, objective at each time
         step, and optional adjoint states.
@@ -1168,10 +1174,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     solve_dofs=solve_dofs,
                     approx_grads=approx_grads,
                     precond_i_ts=i_ts_preconditioner,
+                    batch_size=preconditioner_batch_size,
                 )
                 jax_print(
                     "Built frozen-wake preconditioner",
-                    verbose_level=VerbosityLevel.NORMAL,
+                    verbose_level="normal",
                 )
             else:
                 apply_precond = None
@@ -1211,7 +1218,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 _, pull_all = jax.vjp(_residual_all, q_n, q_nm1, dv)
 
                 def matvec_qn_t(v: Array) -> Array:
-                    if print_utils.VERBOSITY_LEVEL.value >= VerbosityLevel.NORMAL.value:
+                    if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+                        "normal"
+                    ):
                         # print a dot for every GMRES iteration. Due to the jax GMRES function not returning the number
                         # of iterations, this at least allows us to count the dots!
                         def _print_gmres_dot() -> None:
@@ -1259,7 +1268,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     "\nSolved adjoint for timestep {i_ts} (GMRES converged={converged})",
                     i_ts=i_ts,
                     converged=jnp.max(gmres_info) == 0,
-                    verbose_level=VerbosityLevel.NORMAL,
+                    verbose_level="normal",
                 )
 
                 if save_adjoint:
@@ -1318,7 +1327,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 jax_print(
                     "Solved adjoint for timestep {i_ts}",
                     i_ts=i_ts,
-                    verbose_level=VerbosityLevel.NORMAL,
+                    verbose_level="normal",
                 )
 
                 # add sentitivity of aerodynamic problem through full aero residual
@@ -1445,6 +1454,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         load_steps: int = 1,
         trim_relaxation: float = 0.9,
         horseshoe: bool = False,
+        method: Literal["adjoint", "finite_difference"] = "finite_difference",
+        broyden_fd_step: float = 1e-3,
     ) -> tuple[StaticAeroelastic, TrimVariables]:
         r"""
         Trim an aircraft such that the resulting sum of forces on the aircraft is zero without any supports.
@@ -1464,6 +1475,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param load_steps: Number of load steps used for the static solution.
         :param trim_relaxation: Relaxation factor for updates to degrees of freedom used to achieve trim.
         :param horseshoe: If true, use a horseshoe wake formulation.
+        :param method: "adjoint" rebuilds the trim Jacobian each iteration via the adjoint method. "finite_difference"
+        approximates the Jacobian with a forward finite-difference sweep. Usually the latter is faster assuming a small
+        number of trim variables.
+        :param broyden_fd_step: Step size used for the finite-difference bootstrap of the Broyden Jacobian.
         :return: Aeroelastic solution object for the trimmed aircraft.
         """
 
@@ -1527,45 +1542,107 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         inner_case = deepcopy(self)
 
-        def trim_body(
-            i_iter: int,
-            trim_variables_: TrimVariables,
-            sol_: StaticAeroelastic,
-            f_clamp_: Array,
-        ) -> tuple[int, TrimVariables, StaticAeroelastic, Array]:
-            i_iter, _, tv, sol, fc = self.trim_iter(
-                i_iter,
-                inner_case,
-                trim_variables_,
-                sol_,
-                f_clamp_,
+        if method == "adjoint":
+
+            def trim_body(
+                i_iter: int,
+                trim_variables_: TrimVariables,
+                sol_: StaticAeroelastic,
+                f_clamp_: Array,
+            ) -> tuple[int, TrimVariables, StaticAeroelastic, Array]:
+                i_iter, _, tv, sol, fc = self.trim_iter(
+                    i_iter,
+                    inner_case,
+                    trim_variables_,
+                    sol_,
+                    f_clamp_,
+                    prescribed_dofs=prescribed_dofs_,
+                    zero_force_dofs=zero_force_dofs_,
+                    f_ext_dead=f_ext_dead,
+                    f_ext_follower=f_ext_follower,
+                    t=jnp.array(t),
+                    load_steps=load_steps,
+                    horseshoe=horseshoe,
+                    trim_cs=trim_cs_,
+                    thrust_nodes=thrust_nodes_,
+                    trim_orientation=trim_orientation_,
+                    trim_relaxation=trim_relaxation,
+                )
+                return i_iter, tv, sol, fc
+
+            print_table_title(title="Trim (Adjoint)", inner_width=81)
+            n_iter, trim_variables, ae_sol, f_clamp = jax.lax.while_loop(
+                lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+                body_fun=lambda args_: trim_body(*args_),
+                init_val=(
+                    0,
+                    trim_variables_init,
+                    ae_sol_init,
+                    jnp.full((len(zero_force_dofs_)), 1e10),
+                ),
+            )
+            print_table_line(inner_width=81)
+        elif method == "finite_difference":
+            print_table_title(title="Trim (Finite Difference)", inner_width=81)
+
+            b_approx_init, f_clamp_init, ae_sol_bootstrap = self._trim_fd_jacobian(
+                inner_case=inner_case,
+                trim_variables=trim_variables_init,
+                fd_step=broyden_fd_step,
                 prescribed_dofs=prescribed_dofs_,
                 zero_force_dofs=zero_force_dofs_,
-                f_ext_dead=f_ext_dead,
                 f_ext_follower=f_ext_follower,
+                f_ext_dead=f_ext_dead,
                 t=jnp.array(t),
                 load_steps=load_steps,
                 horseshoe=horseshoe,
                 trim_cs=trim_cs_,
                 thrust_nodes=thrust_nodes_,
                 trim_orientation=trim_orientation_,
-                trim_relaxation=trim_relaxation,
             )
-            return i_iter, tv, sol, fc
 
-        # run trim loop
-        print_table_title(title="Trim", inner_width=81)
-        n_iter, trim_variables, ae_sol, f_clamp = jax.lax.while_loop(
-            lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
-            body_fun=lambda args_: trim_body(*args_),
-            init_val=(
-                0,
-                trim_variables_init,
-                ae_sol_init,
-                jnp.full((len(zero_force_dofs_)), 1e10),
-            ),
-        )
-        print_table_line(inner_width=81)
+            def trim_body_broyden(
+                i_iter: int,
+                trim_variables_: TrimVariables,
+                sol_: StaticAeroelastic,
+                f_clamp_: Array,
+                b_approx_: Array,
+            ) -> tuple[int, TrimVariables, StaticAeroelastic, Array, Array]:
+                i_iter, _, tv, sol, fc, b = self._trim_iter_fd(
+                    i_iter,
+                    inner_case,
+                    trim_variables_,
+                    sol_,
+                    f_clamp_,
+                    b_approx_,
+                    prescribed_dofs=prescribed_dofs_,
+                    zero_force_dofs=zero_force_dofs_,
+                    f_ext_dead=f_ext_dead,
+                    f_ext_follower=f_ext_follower,
+                    t=jnp.array(t),
+                    load_steps=load_steps,
+                    horseshoe=horseshoe,
+                    trim_cs=trim_cs_,
+                    thrust_nodes=thrust_nodes_,
+                    trim_orientation=trim_orientation_,
+                    trim_relaxation=trim_relaxation,
+                )
+                return i_iter, tv, sol, fc, b
+
+            n_iter, trim_variables, ae_sol, f_clamp, _ = jax.lax.while_loop(
+                lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+                body_fun=lambda args_: trim_body_broyden(*args_),
+                init_val=(
+                    0,
+                    trim_variables_init,
+                    ae_sol_bootstrap,
+                    f_clamp_init,
+                    b_approx_init,
+                ),
+            )
+            print_table_line(inner_width=81)
+        else:
+            raise ValueError(f"Unknown trim method: {method!r}.")
 
         new_orientation: Array = self.structure.orientation_euler
         for k, v in trim_variables.trim_angles.items():
@@ -1605,6 +1682,82 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         return orientation_euler
 
     @staticmethod
+    def _trim_solve_f_clamp(
+        inner_case: CoupledAeroelastic,
+        trim_variables: TrimVariables,
+        prescribed_dofs: tuple[int, ...],
+        zero_force_dofs: tuple[int, ...],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        t: Array,
+        load_steps: int,
+        horseshoe: bool,
+    ) -> tuple[StaticAeroelastic, Array]:
+        """Push trim variables into inner_case, run a static solve, and return (solution, clamp-force residual)."""
+        inner_case.set_design_variables(
+            coords=inner_case.structure.x0,
+            k_cs=inner_case.structure.k_cs,
+            m_cs=inner_case.structure.m_cs,
+            m_lumped=inner_case.structure.m_lumped
+            if inner_case.structure.use_lumped_mass
+            else None,
+            thrust_reference=inner_case.structure.thrust_reference
+            | trim_variables.thrust,
+            dt=inner_case.aero.dt,
+            flowfield=inner_case.aero.flowfield,
+            delta_w=inner_case.aero.delta_w,
+            x0_aero=inner_case.aero.x0_b,
+            orientation_euler=inner_case.trim_angles_to_euler(
+                trim_variables.trim_angles
+            ),
+            cs_angles_reference=inner_case.aero.cs_ang0 | trim_variables.cs_ang,
+            remove_checks=True,
+        )
+        with verbosity(
+            level="silent"
+            if map_verbosity_level(VERBOSITY_LEVEL) <= map_verbosity_level("normal")
+            else VERBOSITY_LEVEL
+        ):
+            ae_sol = inner_case.static_solve(
+                prescribed_dofs=prescribed_dofs,
+                f_ext_follower=f_ext_follower,
+                f_ext_dead=f_ext_dead,
+                t=t,
+                load_steps=load_steps,
+                horseshoe=horseshoe,
+            )
+        f_clamp = ae_sol.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
+        return ae_sol, f_clamp
+
+    @staticmethod
+    def _apply_trim_update(
+        trim_variables: TrimVariables,
+        trim_update: Array,
+        trim_cs: Sequence[str],
+        thrust_nodes: Sequence[str],
+        trim_orientation: Sequence[str],
+    ) -> TrimVariables:
+        """Subtract the flat trim_update vector from the current variables and return a new TrimVariables."""
+        idx = 0
+        updated_cs_ang = {}
+        for k in trim_cs:
+            updated_cs_ang[k] = trim_variables.cs_ang[k] - trim_update[idx]
+            idx += 1
+        updated_thrust = {}
+        for k in thrust_nodes:
+            updated_thrust[k] = trim_variables.thrust[k] - trim_update[idx]
+            idx += 1
+        updated_trim_angles = {}
+        for k in trim_orientation:
+            updated_trim_angles[k] = trim_variables.trim_angles[k] - trim_update[idx]
+            idx += 1
+        return TrimVariables(
+            cs_ang=updated_cs_ang,
+            thrust=updated_thrust,
+            trim_angles=updated_trim_angles,
+        )
+
+    @staticmethod
     def trim_iter(
         i_iter: int,
         inner_case: CoupledAeroelastic,
@@ -1625,42 +1778,23 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_orientation: Sequence[str],
     ) -> tuple[int, CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array]:
 
-        inner_case.set_design_variables(
-            coords=inner_case.structure.x0,
-            k_cs=inner_case.structure.k_cs,
-            m_cs=inner_case.structure.m_cs,
-            m_lumped=inner_case.structure.m_lumped
-            if inner_case.structure.use_lumped_mass
-            else None,
-            thrust_reference=inner_case.structure.thrust_reference
-            | trim_variables.thrust,
-            dt=inner_case.aero.dt,
-            flowfield=inner_case.aero.flowfield,
-            delta_w=inner_case.aero.delta_w,
-            x0_aero=inner_case.aero.x0_b,
-            orientation_euler=inner_case.trim_angles_to_euler(
-                trim_variables.trim_angles
-            ),
-            cs_angles_reference=inner_case.aero.cs_ang0 | trim_variables.cs_ang,
-            remove_checks=True,
+        ae_sol, f_clamp = CoupledAeroelastic._trim_solve_f_clamp(
+            inner_case=inner_case,
+            trim_variables=trim_variables,
+            prescribed_dofs=prescribed_dofs,
+            zero_force_dofs=zero_force_dofs,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=f_ext_dead,
+            t=t,
+            load_steps=load_steps,
+            horseshoe=horseshoe,
         )
 
-        # avoid printing structure messages if Verbosity is NORMAL or lower
         with verbosity(
-            level=VerbosityLevel.SILENT
-            if VERBOSITY_LEVEL.value <= VerbosityLevel.NORMAL.value
+            level="silent"
+            if map_verbosity_level(VERBOSITY_LEVEL) <= map_verbosity_level("normal")
             else VERBOSITY_LEVEL
         ):
-            ae_sol = inner_case.static_solve(
-                prescribed_dofs=prescribed_dofs,
-                f_ext_follower=f_ext_follower,
-                f_ext_dead=f_ext_dead,
-                t=t,
-                load_steps=load_steps,
-                horseshoe=horseshoe,
-            )
-
-            f_clamp = ae_sol.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
 
             def objective(states: AeroelasticFullStates, *_) -> Array:
                 return states.structure.f_res.ravel()[jnp.array(zero_force_dofs)]
@@ -1737,27 +1871,159 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             * trim_relaxation
         )  # subtract this from current solution to update
 
-        # update trim_variables
-        idx = 0
-        updated_cs_ang = {}
-        for k in trim_cs:
-            updated_cs_ang[k] = trim_variables.cs_ang[k] - trim_update[idx]
-            idx += 1
-        updated_thrust = {}
-        for k in thrust_nodes:
-            updated_thrust[k] = trim_variables.thrust[k] - trim_update[idx]
-            idx += 1
-        updated_trim_angles = {}
-        for k in trim_orientation:
-            updated_trim_angles[k] = trim_variables.trim_angles[k] - trim_update[idx]
-            idx += 1
-
-        trim_variables = TrimVariables(
-            cs_ang=updated_cs_ang,
-            thrust=updated_thrust,
-            trim_angles=updated_trim_angles,
+        trim_variables = CoupledAeroelastic._apply_trim_update(
+            trim_variables=trim_variables,
+            trim_update=trim_update,
+            trim_cs=trim_cs,
+            thrust_nodes=thrust_nodes,
+            trim_orientation=trim_orientation,
         )
 
         trim_variables.print(i_iter=i_iter, f_clamp=f_clamp)
 
         return i_iter + 1, inner_case, trim_variables, ae_sol, f_clamp
+
+    @staticmethod
+    def _trim_fd_jacobian(
+        inner_case: CoupledAeroelastic,
+        trim_variables: TrimVariables,
+        fd_step: float,
+        prescribed_dofs: tuple[int, ...],
+        zero_force_dofs: tuple[int, ...],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        t: Array,
+        load_steps: int,
+        horseshoe: bool,
+        trim_cs: Sequence[str],
+        thrust_nodes: Sequence[str],
+        trim_orientation: Sequence[str],
+    ) -> tuple[Array, Array, StaticAeroelastic]:
+        """
+        Obtain the Broyden Jacobian with a forward finite-difference sweep: perturb each trim variable in turn by
+        `fd_step`, solve, and build the corresponding column.
+        """
+        ae_sol_0, f_clamp_0 = CoupledAeroelastic._trim_solve_f_clamp(
+            inner_case=inner_case,
+            trim_variables=trim_variables,
+            prescribed_dofs=prescribed_dofs,
+            zero_force_dofs=zero_force_dofs,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=f_ext_dead,
+            t=t,
+            load_steps=load_steps,
+            horseshoe=horseshoe,
+        )
+
+        def eval_perturbed(tv_p_: TrimVariables) -> Array:
+            _, f_p = CoupledAeroelastic._trim_solve_f_clamp(
+                inner_case=inner_case,
+                trim_variables=tv_p_,
+                prescribed_dofs=prescribed_dofs,
+                zero_force_dofs=zero_force_dofs,
+                f_ext_follower=f_ext_follower,
+                f_ext_dead=f_ext_dead,
+                t=t,
+                load_steps=load_steps,
+                horseshoe=horseshoe,
+            )
+            return (f_p - f_clamp_0) / fd_step
+
+        columns: list[Array] = []
+        for k in trim_cs:
+            tv_p = TrimVariables(
+                cs_ang={
+                    kk: (v + fd_step if kk == k else v)
+                    for kk, v in trim_variables.cs_ang.items()
+                },
+                thrust=trim_variables.thrust,
+                trim_angles=trim_variables.trim_angles,
+            )
+            columns.append(eval_perturbed(tv_p))
+        for k in thrust_nodes:
+            tv_p = TrimVariables(
+                cs_ang=trim_variables.cs_ang,
+                thrust={
+                    kk: (v + fd_step if kk == k else v)
+                    for kk, v in trim_variables.thrust.items()
+                },
+                trim_angles=trim_variables.trim_angles,
+            )
+            columns.append(eval_perturbed(tv_p))
+        for k in trim_orientation:
+            tv_p = TrimVariables(
+                cs_ang=trim_variables.cs_ang,
+                thrust=trim_variables.thrust,
+                trim_angles={
+                    kk: (v + fd_step if kk == k else v)
+                    for kk, v in trim_variables.trim_angles.items()
+                },
+            )
+            columns.append(eval_perturbed(tv_p))
+
+        n_zero_force = len(zero_force_dofs)
+        b_approx = (
+            jnp.stack(columns, axis=1) if columns else jnp.zeros((n_zero_force, 0))
+        )
+        return b_approx, f_clamp_0, ae_sol_0
+
+    @staticmethod
+    def _trim_iter_fd(
+        i_iter: int,
+        inner_case: CoupledAeroelastic,
+        trim_variables: TrimVariables,
+        _: StaticAeroelastic,
+        f_clamp: Array,
+        b_approx: Array,
+        *,
+        prescribed_dofs: tuple[int, ...],
+        zero_force_dofs: tuple[int, ...],
+        f_ext_follower: Optional[Array],
+        f_ext_dead: Optional[Array],
+        t: Array,
+        load_steps: int,
+        trim_relaxation: float,
+        horseshoe: bool,
+        trim_cs: Sequence[str],
+        thrust_nodes: Sequence[str],
+        trim_orientation: Sequence[str],
+    ) -> tuple[int, CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array, Array]:
+        """
+        One Broyden trim iteration: take a step using the current Jacobian approximation, re-solve at the new point,
+        then update the Jacobian with the Broyden rank-1 formula.
+        """
+        trim_update = jnp.linalg.lstsq(a=b_approx, b=f_clamp)[0] * trim_relaxation
+        trim_variables_new = CoupledAeroelastic._apply_trim_update(
+            trim_variables=trim_variables,
+            trim_update=trim_update,
+            trim_cs=trim_cs,
+            thrust_nodes=thrust_nodes,
+            trim_orientation=trim_orientation,
+        )
+
+        ae_sol_new, f_clamp_new = CoupledAeroelastic._trim_solve_f_clamp(
+            inner_case=inner_case,
+            trim_variables=trim_variables_new,
+            prescribed_dofs=prescribed_dofs,
+            zero_force_dofs=zero_force_dofs,
+            f_ext_follower=f_ext_follower,
+            f_ext_dead=f_ext_dead,
+            t=t,
+            load_steps=load_steps,
+            horseshoe=horseshoe,
+        )
+
+        s = -trim_update  # actual step taken in trim-variable space
+        y = f_clamp_new - f_clamp
+        b_approx_new = b_approx + jnp.outer(y - b_approx @ s, s) / jnp.dot(s, s)
+
+        trim_variables_new.print(i_iter=i_iter, f_clamp=f_clamp_new)
+
+        return (
+            i_iter + 1,
+            inner_case,
+            trim_variables_new,
+            ae_sol_new,
+            f_clamp_new,
+            b_approx_new,
+        )

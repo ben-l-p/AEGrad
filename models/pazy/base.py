@@ -50,7 +50,7 @@ def make_generic_pazy_wing(
     flowfield: FlowField,
     aoa: float | Array,
     sweep: Optional[float | Array],
-    wake_delta: Optional[Array] = None,
+    variable_disc_wake: bool,
     custom_dt: Optional[float] = None,
 ) -> CoupledAeroelastic:
 
@@ -238,6 +238,13 @@ def make_generic_pazy_wing(
         rel_force_tol=1e-2,
         abs_force_tol=1e-2,
     )
+
+    if variable_disc_wake:
+        m_base = 3 * m
+        wake_delta = jnp.ones(m_star)
+        wake_delta = wake_delta.at[m_base:].set(jnp.logspace(0.0, 1.3, m_star - m_base))
+    else:
+        wake_delta = None
 
     wing.set_design_variables(
         coords=sweep_coords,

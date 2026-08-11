@@ -6,7 +6,7 @@ import numpy as np
 from scipy.optimize import minimize
 from matplotlib import pyplot as plt
 
-from models.flying_spaghetti import generate_flying_spaghetti
+from models.flying_spaghetti.flying_spaghetti import generate_flying_spaghetti
 
 from aegrad.structure import StructureFullStates, StructuralDesignVariables
 from aegrad.structure.gradients.data_structures import StructuralGradsToCompute

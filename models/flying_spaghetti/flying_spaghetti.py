@@ -1,9 +1,7 @@
-from pathlib import Path
 from typing import Optional
 
 from jax import Array
 from jax import numpy as jnp
-import jax
 
 from aegrad.structure import BeamStructure
 
@@ -91,7 +89,6 @@ def generate_flying_spaghetti(
     f_dead_2d = f_dead_2d.at[:, 0, 4].set(g_t_2d)
 
     # g(t) is a signal with g(<=0) = 0, g(2.5) = 200, g(>=5) = 0, using linear interpolation
-
     upper_ramp = 200.0 / 2.5 * t
     lower_ramp = 400.0 - 200.0 / 2.5 * t
 
@@ -106,48 +103,3 @@ def generate_flying_spaghetti(
     f_dead_3d = f_dead_3d.at[:, 0, 5].set(0.5 * g_t_3d)
 
     return struct, f_dead_2d, f_dead_3d
-
-
-if __name__ == "__main__":
-    jax.config.update("jax_enable_x64", True)
-
-    n_nodes_ = 21
-    dt_ = 0.01
-    t_end_ = 10.0
-    n_tstep_ = int(jnp.ceil(t_end_ / dt_)) + 1
-
-    # start one timestep behind to prevent issues with initial condition
-    t_ = jnp.arange(n_tstep_) * dt_ - dt_
-
-    # will work with 1.0 (numerical damping is not essential)
-    struct_, f_dead_2d_, f_dead_3d_ = generate_flying_spaghetti(
-        n_nodes_, t_, spectral_radius=0.7
-    )
-
-    solution = struct_.dynamic_solve(
-        init_state=None,
-        n_tstep=n_tstep_,
-        dt=dt_,
-        f_ext_follower=None,
-        f_ext_dead=f_dead_2d_,  # swap between 2d and 3d to see the difference in response
-        f_ext_aero=None,
-        prescribed_dofs=None,
-    )
-
-    plot_path = Path("./flying_spaghetti_2d")
-    stride = 10
-    solution.plot(plot_path, n_interp=3, index=jnp.arange(0, n_tstep_, stride))
-
-    i_ts_ = [0, 200, 400, 600, 800, 1000]
-
-    x_out = solution.hg[i_ts_, :, 0, 3]  # [n_i_ts, n_nodes]
-    z_out = solution.hg[i_ts_, :, 2, 3]  # [n_i_ts, n_nodes]
-
-    import numpy as np
-
-    np.savetxt(
-        "spaghetti_coords.dat",
-        np.concatenate((x_out, z_out), axis=0).T,
-        header="x0 x1 x2 x3 x4 x5 z0 z1 z2 z3 z4 z5",
-        comments="",
-    )

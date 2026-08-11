@@ -1,6 +1,3 @@
-from pathlib import Path
-
-import jax
 from jax import numpy as jnp
 from jax import Array
 
@@ -126,44 +123,3 @@ def generate_patil_wing(
     )
 
     return wing
-
-
-if __name__ == "__main__":
-    jax.config.update("jax_enable_x64", True)
-
-    dir_ = Path("./coupled_patil")
-
-    coupled_system = generate_patil_wing()
-
-    prescribed_dofs_static = (
-        jnp.arange(6) + (coupled_system.structure.n_nodes - 1) * 3
-    )  # middle node degrees of freedom
-    prescribed_dofs_dynamic = prescribed_dofs_static[jnp.array((0, 1, 2, 4, 5))]
-
-    static_sol = coupled_system.static_solve(
-        prescribed_dofs=prescribed_dofs_static, horseshoe=True
-    )
-
-    trimmed_sol, trim_vars = coupled_system.trim(
-        prescribed_dofs=prescribed_dofs_static,
-        zero_force_dofs=prescribed_dofs_static[2],
-        trim_cs=None,
-        thrust_nodes=None,
-        trim_orientation="y",
-        horseshoe=True,
-        trim_relaxation=0.5,
-    )
-
-    n_tstep = 200
-
-    dynamic_sol = coupled_system.dynamic_solve(
-        init_case=trimmed_sol,
-        prescribed_dofs=prescribed_dofs_dynamic,
-        n_tstep=n_tstep,
-        cs_ang_t={
-            "left_aileron": jnp.linspace(0.0, -jnp.deg2rad(30.0), n_tstep),
-            "right_aileron": jnp.linspace(0.0, jnp.deg2rad(30.0), n_tstep),
-        },
-    )
-
-    dynamic_sol.plot(dir_)

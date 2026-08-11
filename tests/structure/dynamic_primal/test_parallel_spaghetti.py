@@ -1,4 +1,4 @@
-from models.flying_spaghetti import generate_flying_spaghetti
+from models.flying_spaghetti.flying_spaghetti import generate_flying_spaghetti
 
 import jax
 from jax import numpy as jnp

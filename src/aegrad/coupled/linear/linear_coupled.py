@@ -37,7 +37,6 @@ from aegrad.utils.print_utils import (
     print_table_title,
     print_table_line,
     jax_print,
-    VerbosityLevel,
 )
 
 if TYPE_CHECKING:
@@ -878,6 +877,7 @@ class LinearCoupled(
         n_modes: Optional[int] = None,
         freq_range: tuple[float | Array, float | Array] = (0.0, jnp.inf),
         damp_range: tuple[float | Array, float | Array] = (-jnp.inf, jnp.inf),
+        min_struct_content: float | Array = 0.0,
         remove_complex_conjugate: bool = True,
         plot_eigvals: bool = False,
         sort: Literal["frequency", "damping"] = "frequency",
@@ -898,6 +898,9 @@ class LinearCoupled(
         truncation and dropped when n_modes is set.
         :param damp_range: (min, max) damping-ratio window. Modes outside are pushed past the truncation and
         dropped when n_modes is set.
+        :param min_struct_content: Minimum fraction of eigenvector energy that must live in the beam
+        (q, q_dot) states in range [0, 1]. Modes below this threshold (typically wake convection modes) are pushed
+        past the truncation.
         :param remove_complex_conjugate: If true, one mode from each complex-conjugate pair is dropped.
         :param plot_eigvals: If true, plot the eigenvalues with Matplotlib.
         :param sort: Method for sorting eigenvalues before truncation, can be either "frequency" or "damping".
@@ -938,6 +941,15 @@ class LinearCoupled(
             )
             idx = idx[jnp.argsort(partner[idx], stable=True)]
 
+        # fraction of eigenvector energy in the structural states — used to reject
+        # aero-only modes (e.g. wake convection)
+        q_slice = self.state_slices["q"].slices
+        q_dot_slice = self.state_slices["q_dot"].slices
+        evec_sq = jnp.abs(evecs) ** 2
+        struct_content = (
+            evec_sq[q_slice].sum(axis=0) + evec_sq[q_dot_slice].sum(axis=0)
+        ) / evec_sq.sum(axis=0)
+
         # push modes outside the requested natural-frequency / damping window to the back so truncation to
         # n_modes keeps only the in-range ones.
         in_range = (
@@ -945,6 +957,7 @@ class LinearCoupled(
             & (freq_natural_hz[idx] <= freq_range[1])
             & (damping[idx] >= damp_range[0])
             & (damping[idx] <= damp_range[1])
+            & (struct_content[idx] >= min_struct_content)
         )
         idx = idx[jnp.argsort(~in_range, stable=True)]
 
@@ -960,7 +973,7 @@ class LinearCoupled(
             print_table_line(inner_width=71)
             jax_print(
                 "| Mode | Damped Frequency [Hz] | Natural Frequency [Hz] | Damping Ratio |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
             print_table_line(inner_width=71)
             for i_mode in range(n_modes):
@@ -970,7 +983,7 @@ class LinearCoupled(
                     freq_damped=freq_damped_ordered[i_mode],
                     freq_natural=freq_natural_ordered[i_mode],
                     damp=damping_ordered[i_mode],
-                    verbose_level=VerbosityLevel.NORMAL,
+                    verbose_level="normal",
                 )
             print_table_line(inner_width=71)
 
@@ -990,7 +1003,11 @@ class LinearCoupled(
         if n_plot_vtk > 0:
             evecs_ordered = evecs[:, idx[:n_plot_vtk]].T  # [m, n_states]
 
-            q_mode = evecs_ordered[:, self.state_slices["q"].slices]  # [m, n_free_dof]
+            q_mode = evecs_ordered[
+                :, self.state_slices["q"].slices
+            ]  # [m, n_free_dof | n_modes]
+            if self.beam.modal_states:
+                q_mode = self.beam.modal_to_nodal(q_mode)  # [m, n_free_dof]
             q_full = (
                 jnp.zeros((n_plot_vtk, self.n_nodes * 6), dtype=complex)
                 .at[:, self.free_dofs]
@@ -1017,6 +1034,7 @@ class LinearCoupled(
                 directory=vtu_directory,
                 q_full=q_full.reshape(n_plot_vtk, self.n_nodes, 6),
                 freqs=freq_damped_ordered,
+                dampings=damping_ordered,
                 gamma_b_full=gamma_b_full,
                 gamma_w_full=gamma_w_full,
                 zeta_w_full=zeta_w_full,

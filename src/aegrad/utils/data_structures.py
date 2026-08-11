@@ -11,7 +11,6 @@ from aegrad.algebra.array_utils import ArrayListShape, ArrayList, check_arr_shap
 from aegrad.utils.print_utils import (
     warn,
     jax_print,
-    VerbosityLevel,
     print_table_line,
     print_table_title,
 )
@@ -191,7 +190,7 @@ class ConvergenceStatus:
             jax_print(
                 "| Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
                 "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
                 i_load_step=i_load_step,
                 i_iter=self.i_iter,
                 conv=self.converged,
@@ -205,7 +204,7 @@ class ConvergenceStatus:
             jax_print(
                 "| {i_ts:<8} | {t:.03e} | Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
                 "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
                 i_ts=i_ts,
                 t=t,
                 i_load_step=i_load_step,
@@ -225,7 +224,7 @@ class ConvergenceStatus:
             jax_print(
                 "| FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | {rel_force_val:.03e} | "
                 "{abs_force_val:.03e} |           |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
                 i_iter=self.i_iter,
                 conv=self.converged,
                 rel_disp_val=self.rel_disp_val,
@@ -238,7 +237,7 @@ class ConvergenceStatus:
             jax_print(
                 "| {i_ts:<8} | {t:.03e} | FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
                 "{rel_force_val:.03e} | {abs_force_val:.03e} |           |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
                 i_ts=i_ts,
                 t=t,
                 i_iter=self.i_iter,
@@ -255,13 +254,13 @@ class ConvergenceStatus:
             print_table_title(title="Dynamic Solve", inner_width=104)
             jax_print(
                 "| Timestep |   Time    |    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
         else:
             print_table_title(title="Static Solve", inner_width=81)
             jax_print(
                 "|    Iter     | Conv  | Rel Disp  | Abs Disp  | Rel Force | Abs Force | Load Step |",
-                verbose_level=VerbosityLevel.NORMAL,
+                verbose_level="normal",
             )
         cls.print_line(dynamic=dynamic)
 

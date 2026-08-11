@@ -15,7 +15,7 @@ from aegrad.structure.gradients.data_structures import (
     BeamJacobianApproximations,
 )
 from aegrad.utils.utils import make_pytree
-from aegrad.utils.print_utils import jax_print, VerbosityLevel
+from aegrad.utils.print_utils import jax_print
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class TrimVariables:
         jax_print(
             f"| {iter_label} | {{i_iter:>{val_w}}}" + " " * padding + "|",
             i_iter=i_iter,
-            verbose_level=VerbosityLevel.NORMAL,
+            verbose_level="normal",
         )
 
         # jax.debug.print's numeric format for printing required 0-D values
@@ -116,7 +116,7 @@ class TrimVariables:
             content = f"| {label} | {fmt}"
             padding = inner_width - len(label) - rendered_len - 4
             content += " " * padding + "|"
-            jax_print(content, **kwargs, verbose_level=VerbosityLevel.NORMAL)
+            jax_print(content, **kwargs, verbose_level="normal")
 
     @staticmethod
     def _static_names() -> Sequence[str]:

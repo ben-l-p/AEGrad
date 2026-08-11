@@ -50,11 +50,6 @@ def make_pazy_wing(
     :param custom_dt: Set a custom time step length. If None, uses the default time step length to enforce CFL=1.
     :return: CoupledAeroelastic Pazy wing model.
     """
-    if variable_disc_wake:
-        wake_delta = jnp.ones(m_star)
-        wake_delta = wake_delta.at[2 * m :].set(jnp.logspace(0.0, 1.3, m_star - 2 * m))
-    else:
-        wake_delta = None
 
     match model:
         case "prepazy":
@@ -73,7 +68,7 @@ def make_pazy_wing(
         aoa=aoa,
         data=data,
         sweep=sweep,
-        wake_delta=wake_delta,
+        variable_disc_wake=variable_disc_wake,
         custom_dt=custom_dt,
     )
 
