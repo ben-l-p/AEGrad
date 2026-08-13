@@ -3,6 +3,7 @@
 ![Tests](https://github.com/ben-l-p/condor/actions/workflows/python_package.yml/badge.svg)
 [![cov](https://ben-l-p.github.io/condor/badges/coverage.svg)](https://github.com/ben-l-p/condor/actions)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-blue)](https://ben-l-p.github.io/condor/)
+[![PyPI](https://img.shields.io/pypi/v/condor-jax)](https://pypi.org/project/condor-jax/)
 ![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/ben-l-p/condor/main/pyproject.toml)
 
 Condor is a differentiable nonlinear aeroelastic analysis framework which couples a nonlinear structural model with
@@ -15,13 +16,13 @@ Full documentation, including tutorials, API reference and theory, is available 
 
 ## Installation
 
-Installation is available using pip - from the root of the repository, installation can be run with:
+Installation is available using PyPi with:
 
 ```bash
-pip install .
+pip install condor-jax
 ```
 
-It is reccomended to use ``uv`` as a virtual environment manager to manage dependencies. To install through ``uv``:
+Cloning the full repository and installing with uv is also supported, which allows for development installation:
 
 ```bash
 uv sync
