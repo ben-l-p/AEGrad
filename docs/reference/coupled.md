@@ -1,0 +1,3 @@
+# Coupled
+
+::: condor.coupled

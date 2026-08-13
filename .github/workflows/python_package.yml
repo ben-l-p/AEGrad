@@ -19,7 +19,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install
-        run: uv sync --all-extras --dev && uv pip install -e .
+        run: uv sync
 
       - name: Run tests and coverage
         run: uv run pytest --cov --cov-report json

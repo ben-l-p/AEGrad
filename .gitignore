@@ -6,7 +6,6 @@
 *.dat
 *.csv
 *.pickle
-*.png
 
 # Claude files
 *.claude
@@ -29,3 +28,8 @@ tests/test_outputs/
 tests/.jax_cache/
 tmp/
 *.prof
+
+# MkDocs build output
+site/
+.cache/
+

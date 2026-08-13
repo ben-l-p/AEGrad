@@ -1,0 +1,106 @@
+site_name: Condor
+site_description: JAX-based differentiable nonlinear aeroelastic solver
+repo_url: https://github.com/ben-l-p/condor
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [ src ]
+          options:
+            docstring_style: sphinx
+            show_source: true
+            show_root_heading: true
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_submodules: true
+            members_order: source
+            filters: [ "!^_" ]
+            show_if_no_docstring: false
+            inherited_members: true
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+      ignore: [ "*.md" ]
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - tutorials/index.md
+      - Structure:
+          - Geradin beam static deformation: tutorials/geradin_beam_static.ipynb
+          - Flying spaghetti free dynamics: tutorials/flying_spaghetti.ipynb
+      - Aeroelastic:
+          - Simple HALE gust response: tutorials/simple_hale_gust.ipynb
+          - Patil wing open-loop control: tutorials/patil_wing_control.ipynb
+          - Straight Pazy wing:
+              - Static deflection: tutorials/straight_pazy_static_deflection.ipynb
+              - Deformed mode frequencies: tutorials/straight_pazy_deformed_modes.ipynb
+              - Flutter analysis: tutorials/straight_pazy_flutter.ipynb
+              - Time-domain LCO: tutorials/straight_pazy_lco.ipynb
+          - Swept Pazy wing:
+              - Static deflection: tutorials/swept_pazy_static_deflection.ipynb
+              - Deformed mode frequencies: tutorials/swept_pazy_deformed_modes.ipynb
+              - Flutter analysis: tutorials/swept_pazy_flutter.ipynb
+              - Time-domain LCO: tutorials/swept_pazy_lco.ipynb
+  - Reference:
+      - reference/index.md
+      - Aero: reference/aero.md
+      - Structure: reference/structure.md
+      - Coupled: reference/coupled.md
+      - Algebra: reference/algebra.md
+      - Utils: reference/utils.md
+  - Theory:
+      - theory/index.md
+      - Nonlinear beam: theory/beam.md
+      - UVLM: theory/uvlm.md
+      - Coupling: theory/coupling.md
+      - Linear: theory/linear.md
+      - Adjoint: theory/adjoint.md
