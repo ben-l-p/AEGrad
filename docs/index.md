@@ -23,7 +23,8 @@ There are many advantages for using a fully JAX-based framework, including:
   linearised systems.
 
 It is advised that users have an understanding of key JAX principles, including JIT compilation, vectorisation, and
-automatic differentiation [JAX documentation](https://docs.jax.dev/en/latest/notebooks/thinking_in_jax.html).
+automatic differentiation [JAX documentation](https://docs.jax.dev/en/latest/notebooks/thinking_in_jax.html). This can
+often result in unusual coding patterns due to the absense of conventional control logic.
 
 This framework is designed to be modular, and allows for very flexible workflows. It makes extensive use of
 object-oriented principles with a very "pythonic" interface. It makes full use of Python type hinting to best inform
