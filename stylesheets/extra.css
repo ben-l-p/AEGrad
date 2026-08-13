@@ -1,0 +1,10 @@
+.jp-OutputArea-output pre {
+    max-height: 24rem;
+    overflow: auto;
+    resize: vertical;
+}
+
+.jp-OutputArea-output.jp-OutputArea-stderr {
+    max-height: 24rem;
+    overflow: auto;
+}
