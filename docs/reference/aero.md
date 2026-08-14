@@ -1,3 +1,3 @@
 # Aero
 
-::: condor.aero
+::: flapjax.aero

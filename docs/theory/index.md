@@ -1,6 +1,6 @@
 # Theory
 
-Explanations of the mathematics and modelling choices behind Condor. Unlike the tutorials and how-tos, these pages are
+Explanations of the mathematics and modelling choices behind FLAPJAX. Unlike the tutorials and how-tos, these pages are
 discussion, not action — they exist to build intuition and to make design decisions traceable.
 
 <div class="grid cards" markdown>

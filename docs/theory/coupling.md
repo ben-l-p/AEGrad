@@ -22,7 +22,7 @@ A visualisation of the scheme is presented in the figure below.
 ## Convergence Criteria
 
 Both the structural inner iteration and the outer FSI iteration are terminated by a shared convergence framework
-(`ConvergenceSettings` / `ConvergenceStatus` in `condor/utils/data_structures.py`). At each iteration $k$ we obtain the
+(`ConvergenceSettings` / `ConvergenceStatus` in `flapjax/utils/data_structures.py`). At each iteration $k$ we obtain the
 displacement increment $\Delta\pmb{\varphi}^{k}$ and forcing aerodynamic increment $\Delta \mathbf{f}^{k}$ relative to
 iteration $k-1$, where we aim to drive both to zero (by means of having two sequential iterations that are
 near-identical).

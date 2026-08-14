@@ -1,3 +1,3 @@
 # Coupled
 
-::: condor.coupled
+::: flapjax.coupled

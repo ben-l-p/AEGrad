@@ -1,6 +1,6 @@
-# condor
+# flapjax
 
-**condor** (COupled Nonlinear Differentiable solver fOR aeroelastics) is a nonlinear aeroelastic solver build using
+**flapjax** (COupled Nonlinear Differentiable solver fOR aeroelastics) is a nonlinear aeroelastic solver build using
 Google JAX. It couples:
 
 - **UVLM** (Unsteady Vortex Lattice Method) for aerodynamics

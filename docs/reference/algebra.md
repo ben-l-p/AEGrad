@@ -1,3 +1,3 @@
 # Algebra
 
-::: condor.algebra
+::: flapjax.algebra

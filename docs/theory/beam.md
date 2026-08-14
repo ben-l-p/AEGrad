@@ -1,6 +1,6 @@
 # Nonlinear beam
 
-Condor's structural model is a geometrically-exact Cosserat beam written directly on the Lie group $\mathrm{SE} (3)$.
+FLAPJAX's structural model is a geometrically-exact Cosserat beam written directly on the Lie group $\mathrm{SE} (3)$.
 The formulation used is largely the same as that
 of [Sonneville et. al, 2014](https://www.sciencedirect.com/science/article/pii/S0045782513002600?via%3Dihub) and the
 corresponding [thesis](https://hdl.handle.net/2268/180964), with some minor modifications. This beam formulation was
@@ -8,8 +8,8 @@ chosen as it is relatively simple to formulate and implement, whilst still being
 deflections and rigid-body motions. This work makes use of a 2-noded constant curvature formulation.
 
 This page explains the beam mathematical formulation for static and dynamic problems, and how it is implemented in
-Condor. The beam code is implemented in
-[`Condor.structure.beam`](../reference/structure.md).
+FLAPJAX. The beam code is implemented in
+[`FLAPJAX.structure.beam`](../reference/structure.md).
 
 ## Lie Groups
 
@@ -271,7 +271,7 @@ small.
 ## Convergence
 
 The static Newton-Raphson iteration and the dynamic corrector iteration share the same convergence framework
-(`ConvergenceSettings` / `ConvergenceStatus` in `Condor/utils/data_structures.py`). At iteration $k$, the linear system
+(`ConvergenceSettings` / `ConvergenceStatus` in `FLAPJAX/utils/data_structures.py`). At iteration $k$, the linear system
 
 $$
 \mathbf{S}_T \, \Delta \pmb{\varphi}^{ (k)} = -\mathbf{r}_{\mathbf{f}}^{ (k)}

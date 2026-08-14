@@ -1,6 +1,6 @@
-site_name: Condor
+site_name: FLAPJAX
 site_description: JAX-based differentiable nonlinear aeroelastic solver
-repo_url: https://github.com/ben-l-p/condor
+repo_url: https://github.com/ben-l-p/flapjax
 edit_uri: edit/main/docs/
 
 theme:

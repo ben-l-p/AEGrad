@@ -1,3 +1,3 @@
 # Structure
 
-::: condor.structure
+::: flapjax.structure
