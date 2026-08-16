@@ -368,6 +368,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -445,6 +449,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../geradin_beam_adjoint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Static Beam Adjoint Gradients
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../flying_spaghetti/" class="md-nav__link">
         
   
@@ -453,6 +485,34 @@
     
   
     Dynamic Free-Flying Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../flying_spaghetti_optimise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flying Spaghetti Mass Optimisation
   
 
     
@@ -2320,7 +2380,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoupledAeroelastic</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled.data_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">DynamicAeroelastic</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled.data_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">AeroelasticCase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.patil_wing.patil_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_patil_wing</span>
 
 <span class="n">jax</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">"jax_enable_x64"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
@@ -2330,7 +2390,7 @@ from jax import numpy as jnp
 from matplotlib import pyplot as plt
 
 from flapjax.coupled import CoupledAeroelastic
-from flapjax.coupled.data_structures import DynamicAeroelastic
+from flapjax.coupled.data_structures import AeroelasticCase
 from flapjax.models.patil_wing.patil_wing import generate_patil_wing
 
 jax.config.update("jax_enable_x64", True)</div>
@@ -2594,7 +2654,7 @@ Inclination angle: 5.12 degrees
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">n_tstep</span> <span class="o">=</span> <span class="mi">200</span>
 
-<span class="n">dynamic_sol</span><span class="p">:</span> <span class="n">DynamicAeroelastic</span> <span class="o">=</span> <span class="n">coupled_system</span><span class="o">.</span><span class="n">dynamic_solve</span><span class="p">(</span>
+<span class="n">dynamic_sol</span><span class="p">:</span> <span class="n">AeroelasticCase</span> <span class="o">=</span> <span class="n">coupled_system</span><span class="o">.</span><span class="n">dynamic_solve</span><span class="p">(</span>
     <span class="n">init_case</span><span class="o">=</span><span class="n">trimmed_sol</span><span class="p">,</span>
     <span class="n">prescribed_dofs</span><span class="o">=</span><span class="n">prescribed_dofs_dynamic</span><span class="p">,</span>
     <span class="n">n_tstep</span><span class="o">=</span><span class="n">n_tstep</span><span class="p">,</span>
@@ -2606,7 +2666,7 @@ Inclination angle: 5.12 degrees
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-5">n_tstep = 200
 
-dynamic_sol: DynamicAeroelastic = coupled_system.dynamic_solve(
+dynamic_sol: AeroelasticCase = coupled_system.dynamic_solve(
     init_case=trimmed_sol,
     prescribed_dofs=prescribed_dofs_dynamic,
     n_tstep=n_tstep,

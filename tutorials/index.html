@@ -368,6 +368,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -445,6 +449,34 @@
   
   
     <li class="md-nav__item">
+      <a href="geradin_beam_adjoint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Static Beam Adjoint Gradients
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="flying_spaghetti/" class="md-nav__link">
         
   
@@ -453,6 +485,34 @@
     
   
     Dynamic Free-Flying Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="flying_spaghetti_optimise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flying Spaghetti Mass Optimisation
   
 
     
@@ -1462,8 +1522,16 @@ write <code>.vtu</code> and <code>.pvd</code> files to disk, which can be visual
 <li><a href="geradin_beam_static/">Geradin beam static deformation</a> - Clamped cantilever beam subject to a tip load,
   causing large deflections. The tutorial demonstrates how to set up a simple structural problem, and use the beam
   <code>static_solve()</code> routine to solve for the deformation when subject to follower and dead external forces.</li>
+<li><a href="geradin_beam_adjoint/">Geradin beam adjoint gradients</a> - Follow-on to the static deformation tutorial that
+  uses the beam <code>static_adjoint()</code> routine to compute the gradient of the tip vertical displacement with respect
+  to the tip load and the beam bending stiffness, then verifies each against finite differences.<ul>
 <li><a href="flying_spaghetti/">Flying spaghetti free dynamics</a> - Free-flying beam subject to time-dependent external
   forces, making use of the beam <code>dynamic_solve()</code> routine to find the time-doman response.</li>
+</ul>
+</li>
+<li><a href="flying_spaghetti_optimise/">Flying spaghetti mass optimisation</a> - Follow-on to the free dynamics tutorial
+  that uses the beam <code>dynamic_adjoint()</code> routine to drive an SLSQP outer loop, redistributing per-element mass to
+  minimise the final-time strain energy of the beam subject to a total-mass constraint.</li>
 </ul>
 </li>
 <li>Aeroelastic<ul>

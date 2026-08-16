@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../geradin_beam_static/">
+        <link rel="prev" href="../geradin_beam_adjoint/">
       
       
-        <link rel="next" href="../simple_hale_gust/">
+        <link rel="next" href="../flying_spaghetti_optimise/">
       
       
         
@@ -370,6 +370,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -427,6 +431,34 @@
     
   
     Static Beam Deformation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../geradin_beam_adjoint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Static Beam Adjoint Gradients
   
 
     
@@ -576,6 +608,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../flying_spaghetti_optimise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flying Spaghetti Mass Optimisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2408,7 +2468,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.flying_spaghetti.flying_spaghetti</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_flying_spaghetti</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.structure</span><span class="w"> </span><span class="kn">import</span> <span class="n">DynamicStructure</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.structure</span><span class="w"> </span><span class="kn">import</span> <span class="n">StructureCase</span>
 
 <span class="n">jax</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">"jax_enable_x64"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
 </pre></div>
@@ -2417,7 +2477,7 @@ from jax import numpy as jnp
 from matplotlib import pyplot as plt
 
 from flapjax.models.flying_spaghetti.flying_spaghetti import generate_flying_spaghetti
-from flapjax.structure import DynamicStructure
+from flapjax.structure import StructureCase
 
 jax.config.update("jax_enable_x64", True)</div>
 </div>
@@ -2542,7 +2602,7 @@ struct, f_dead_2d, _ = generate_flying_spaghetti(
 <li><code>f_ext_dead</code>: The time-dependent nodal dead forces, [n_tstep, n_nodes, 6]. If set to <code>None</code>, no dead forces are applied.</li>
 <li><code>f_ext_aero</code>: The time-dependent nodal aerodynamic forces, [n_tstep, n_nodes, 6]. If set to <code>None</code>, no aerodynamic forces are applied. This is designed for use in coupled simulations with an aerodynamic solver.</li>
 <li><code>prescribed_dofs</code>: An array of prescribed degrees of freedom index. If set to <code>None</code>, no degrees of freedom are prescribed, which is done in this free-flying case.
-This routine returns a <code>DynamicStructure</code> object which contains the time history of the structural response, which includes properties such as the nodal coordinates, orientations, velocities, and accelerations at each time step.</li>
+This routine returns a <code>Structure</code> object which contains the time history of the structural response, which includes properties such as the nodal coordinates, orientations, velocities, and accelerations at each time step.</li>
 </ul>
 </div>
 </div>
@@ -2566,7 +2626,7 @@ This routine returns a <code>DynamicStructure</code> object which contains the t
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">solution</span><span class="p">:</span> <span class="n">DynamicStructure</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">dynamic_solve</span><span class="p">(</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">solution</span><span class="p">:</span> <span class="n">StructureCase</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">dynamic_solve</span><span class="p">(</span>
     <span class="n">init_state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">n_tstep</span><span class="o">=</span><span class="n">n_tstep</span><span class="p">,</span>
     <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span>
@@ -2576,7 +2636,7 @@ This routine returns a <code>DynamicStructure</code> object which contains the t
     <span class="n">prescribed_dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-4">solution: DynamicStructure = struct.dynamic_solve(
+<div class="clipboard-copy-txt" id="cell-4">solution: StructureCase = struct.dynamic_solve(
     init_state=None,
     n_tstep=n_tstep,
     dt=dt,
@@ -3693,7 +3753,7 @@ plt.show()</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="plot-to-paraview">Plot to Paraview<a class="anchor-link" href="#plot-to-paraview">¶</a></h2><p>We can plot the 3D structure to Paraview using the <code>plot</code> method of the <code>DynamicStructure</code> object. This has the <code>n_interp</code> argument for interpolating to create mid-element nodes, as well as the <code>index</code> argument for selecting which time steps to plot. In this case, we plot every 10th timestep by computing the required timestep index. Two types of output file are written:</p>
+<h2 id="plot-to-paraview">Plot to Paraview<a class="anchor-link" href="#plot-to-paraview">¶</a></h2><p>We can plot the 3D structure to Paraview using the <code>plot</code> method of the <code>Structure</code> object. This has the <code>n_interp</code> argument for interpolating to create mid-element nodes, as well as the <code>index</code> argument for selecting which time steps to plot. In this case, we plot every 10th timestep by computing the required timestep index. Two types of output file are written:</p>
 <ul>
 <li><code>.vtu</code> files for each time step, which can be opened in Paraview to visualise the 3D structure.</li>
 <li>A <code>.pvd</code> file which contains the time stamps of the simulation, which can be opened in Paraview to animate the structure over time.</li>

@@ -366,6 +366,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -443,6 +447,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../tutorials/geradin_beam_adjoint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Static Beam Adjoint Gradients
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../tutorials/flying_spaghetti/" class="md-nav__link">
         
   
@@ -451,6 +483,34 @@
     
   
     Dynamic Free-Flying Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/flying_spaghetti_optimise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Flying Spaghetti Mass Optimisation
   
 
     
@@ -3656,8 +3716,8 @@ non-uniform arrays in various calculations.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">146</span>
-<span class="normal">147</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arrs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">148</span>
+<span class="normal">149</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arrs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Array</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">arrs</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
                   </details>
@@ -3690,7 +3750,7 @@ non-uniform arrays in various calculations.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Get the arr_list_shapes of the arrays in the ArrayList.</p>
+        <p>Get the shapes of the arrays in the ArrayList.</p>
 
 
     <p><span class="doc-section-title">Returns:</span></p>
@@ -3708,7 +3768,7 @@ non-uniform arrays in various calculations.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>ArrayListShape containing the arr_list_shapes of the arrays in the ArrayList.</p>
+                <p>ArrayListShape containing the shapes of the arrays in the ArrayList.</p>
               </div>
             </td>
           </tr>
@@ -3763,12 +3823,12 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">200</span>
 <span class="normal">201</span>
 <span class="normal">202</span>
-<span class="normal">203</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Array</span><span class="p">]:</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Array</span><span class="p">]:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Convert the ArrayList to a standard Python list of arrays.</span>
 <span class="sd">    :return: List of arrays.</span>
@@ -3852,13 +3912,13 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">207</span>
 <span class="normal">208</span>
 <span class="normal">209</span>
 <span class="normal">210</span>
-<span class="normal">211</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Get the array at the given index.</span>
 <span class="sd">    :param idx: Index of the array to get.</span>
@@ -3912,12 +3972,12 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">221</span>
 <span class="normal">222</span>
 <span class="normal">223</span>
-<span class="normal">224</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ravel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ravel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Flatten the sequence of arrays into a single 1D array.</span>
 <span class="sd">    :return: Flattened 1D array.</span>
@@ -3942,7 +4002,7 @@ non-uniform arrays in various calculations.</p>
 
 <a href="#flapjax.algebra.array_utils.ArrayList.from_vector" class="headerlink" title="Permanent link">&para;</a></h5>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">from_vector</span><span class="p">(</span>
-    <span class="n">vect</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">arr_list_shapes</span><span class="p">:</span> <span class="n">ArrayListShape</span>
+    <span class="n">vect</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="n">ArrayListShape</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span>
 </code></pre></div>
 
@@ -3980,7 +4040,7 @@ non-uniform arrays in various calculations.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>arr_list_shapes</code>
+                <code>shapes</code>
             </td>
             <td>
                   <code><a class="autorefs autorefs-internal" title="ArrayListShape (flapjax.algebra.array_utils.ArrayListShape)" href="#flapjax.algebra.array_utils.ArrayListShape">ArrayListShape</a></code>
@@ -4023,9 +4083,7 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">228</span>
 <span class="normal">229</span>
 <span class="normal">230</span>
 <span class="normal">231</span>
@@ -4044,24 +4102,26 @@ non-uniform arrays in various calculations.</p>
 <span class="normal">244</span>
 <span class="normal">245</span>
 <span class="normal">246</span>
-<span class="normal">247</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@classmethod</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">from_vector</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">vect</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">arr_list_shapes</span><span class="p">:</span> <span class="n">ArrayListShape</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span><span class="p">:</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">from_vector</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">vect</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="n">ArrayListShape</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Unravel a 1D vector into a sequence of arrays with the given shapes.</span>
 <span class="sd">    :param vect: Input 1D vector to unravel.</span>
-<span class="sd">    :param arr_list_shapes: ArrayListShape containing the shapes of the arrays to unravel into.</span>
+<span class="sd">    :param shapes: ArrayListShape containing the shapes of the arrays to unravel into.</span>
 <span class="sd">    :return: ArrayList containing the unravelled arrays.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">if</span> <span class="n">vect</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">arr_list_shapes</span><span class="o">.</span><span class="n">sizes</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">vect</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">shapes</span><span class="o">.</span><span class="n">sizes</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Input vector must have the same number of elements as arr_list_shapes. Vector has &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">vect</span><span class="o">.</span><span class="n">size</span><span class="si">}</span><span class="s2"> elements, but shape requires </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">arr_list_shapes</span><span class="o">.</span><span class="n">sizes</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Input vector must have the same number of elements as shapes. Vector has &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">vect</span><span class="o">.</span><span class="n">size</span><span class="si">}</span><span class="s2"> elements, but shape requires </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">shapes</span><span class="o">.</span><span class="n">sizes</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
         <span class="p">)</span>
 
     <span class="n">arrs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">arr_list_shapes</span><span class="o">.</span><span class="n">shapes</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">shapes</span><span class="o">.</span><span class="n">shapes</span><span class="p">:</span>
         <span class="n">size</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span>
         <span class="n">arrs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vect</span><span class="p">[</span><span class="n">idx</span> <span class="p">:</span> <span class="n">idx</span> <span class="o">+</span> <span class="n">size</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape</span><span class="p">))</span>
         <span class="n">idx</span> <span class="o">+=</span> <span class="n">size</span>
@@ -4092,14 +4152,14 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">251</span>
 <span class="normal">252</span>
 <span class="normal">253</span>
 <span class="normal">254</span>
 <span class="normal">255</span>
-<span class="normal">256</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">index_all</span><span class="p">(</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">index_all</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="o">*</span><span class="n">idx</span><span class="p">:</span> <span class="n">EllipsisType</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span><span class="p">:</span>
@@ -4205,9 +4265,7 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">260</span>
 <span class="normal">261</span>
 <span class="normal">262</span>
 <span class="normal">263</span>
@@ -4223,7 +4281,9 @@ non-uniform arrays in various calculations.</p>
 <span class="normal">273</span>
 <span class="normal">274</span>
 <span class="normal">275</span>
-<span class="normal">276</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">einsum</span><span class="p">(</span><span class="n">subscript</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="n">operands</span><span class="p">:</span> <span class="n">ArrayList</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Perform Einstein summation on sequences of arrays.</span>
@@ -4324,14 +4384,14 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">278</span>
-<span class="normal">279</span>
-<span class="normal">280</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">280</span>
 <span class="normal">281</span>
 <span class="normal">282</span>
 <span class="normal">283</span>
 <span class="normal">284</span>
-<span class="normal">285</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">zeros_like</span><span class="p">(</span><span class="n">arr</span><span class="p">:</span> <span class="n">ArrayList</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ArrayList</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a new ArrayList with the same shape as the input_, but filled with zeros.</span>
@@ -4369,7 +4429,7 @@ non-uniform arrays in various calculations.</p>
 
 
 
-        <p>Class to hold the arr_list_shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.</p>
+        <p>Class to hold the shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.</p>
 
 
 
@@ -4380,10 +4440,10 @@ non-uniform arrays in various calculations.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">321</span>
-<span class="normal">322</span>
-<span class="normal">323</span>
-<span class="normal">324</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">shapes</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="n">shapes</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">n_arrays</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shapes</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">prod</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">shapes</span><span class="p">]</span>
@@ -4421,11 +4481,11 @@ non-uniform arrays in various calculations.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">338</span>
-<span class="normal">339</span>
-<span class="normal">340</span>
-<span class="normal">341</span>
-<span class="normal">342</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">total_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">total_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Get the total number of entries in the ArrayList.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -4462,7 +4522,7 @@ non-uniform arrays in various calculations.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.</p>
+        <p>Asserts that the shape of the given array matches the expected shape.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4580,7 +4640,7 @@ be of any size.</p>
 <span class="normal">40</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_arr_shape</span><span class="p">(</span>
     <span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">expected_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Asserts that the shape of the given array matches the expected shape.</span>
 <span class="sd">    :param arr: Input array to check.</span>
 <span class="sd">    :param expected_shape: Expected shape of the array, as a tuple of integers, with None used for dimensions that can</span>
 <span class="sd">    be of any size.</span>
@@ -4597,7 +4657,7 @@ be of any size.</p>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span>
 
-    <span class="n">message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Expected arr_list_shapes </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, but got arr_list_shapes </span><span class="si">{</span><span class="n">actual_shape</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="n">message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Expected shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, but got shape </span><span class="si">{</span><span class="n">actual_shape</span><span class="si">}</span><span class="s2">.&quot;</span>
     <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">message</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;Issue with input &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
@@ -5026,7 +5086,7 @@ be of any size.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Double nested sequence of arrays ()()(varphi, m)</p>
+                <p>Double nested sequence of arrays <code>()()(n, m)</code></p>
               </div>
             </td>
             <td>
@@ -5068,7 +5128,7 @@ be of any size.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Block matrix, (n_total, m_total)</p>
+                <p>Block matrix, <code>(n_total, m_total)</code></p>
               </div>
             </td>
           </tr>
@@ -5094,9 +5154,9 @@ be of any size.</p>
 <span class="normal">103</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">block_axis</span><span class="p">(</span><span class="n">arrs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Array</span><span class="p">]],</span> <span class="n">axes</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Form a block matrix along two given axes</span>
-<span class="sd">    :param arrs: Double nested sequence of arrays ()()(varphi, m)</span>
+<span class="sd">    :param arrs: Double nested sequence of arrays ``()()(n, m)``</span>
 <span class="sd">    :param axes: Axes along which to concatenate the arrays</span>
-<span class="sd">    :return: Block matrix, (n_total, m_total)</span>
+<span class="sd">    :return: Block matrix, ``(n_total, m_total)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># obtain the number of levels in the nested sequence</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">axes</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
@@ -5305,7 +5365,7 @@ the forcing generated by a panel into its four corners.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input array to split, or equivalent ArrayList. (..., n, ..., m, ...)</p>
+                <p>Input array to split, or equivalent ArrayList. <code>(..., n, ..., m, ...)</code></p>
               </div>
             </td>
             <td>
@@ -5347,7 +5407,7 @@ the forcing generated by a panel into its four corners.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Array with vertex components. (..., n+1, ..., m+1, ...)</p>
+                <p>Array with vertex components. <code>(..., n+1, ..., m+1, ...)</code></p>
               </div>
             </td>
           </tr>
@@ -5357,7 +5417,21 @@ the forcing generated by a panel into its four corners.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">345</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
 <span class="normal">346</span>
 <span class="normal">347</span>
 <span class="normal">348</span>
@@ -5378,28 +5452,14 @@ the forcing generated by a panel into its four corners.</p>
 <span class="normal">363</span>
 <span class="normal">364</span>
 <span class="normal">365</span>
-<span class="normal">366</span>
-<span class="normal">367</span>
-<span class="normal">368</span>
-<span class="normal">369</span>
-<span class="normal">370</span>
-<span class="normal">371</span>
-<span class="normal">372</span>
-<span class="normal">373</span>
-<span class="normal">374</span>
-<span class="normal">375</span>
-<span class="normal">376</span>
-<span class="normal">377</span>
-<span class="normal">378</span>
-<span class="normal">379</span>
-<span class="normal">380</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@singledispatch</span>
+<span class="normal">366</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@singledispatch</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">split_to_vertex</span><span class="p">(</span><span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">axes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Split the array into its vertex components along the specified axes. This corresponds to the process of splitting</span>
 <span class="sd">    the forcing generated by a panel into its four corners.</span>
-<span class="sd">    :param arr: Input array to split, or equivalent ArrayList. (..., n, ..., m, ...)</span>
+<span class="sd">    :param arr: Input array to split, or equivalent ArrayList. ``(..., n, ..., m, ...)``</span>
 <span class="sd">    :param axes: Axis or axes along which to split.</span>
-<span class="sd">    :return: Array with vertex components. (..., n+1, ..., m+1, ...)</span>
+<span class="sd">    :return: Array with vertex components. ``(..., n+1, ..., m+1, ...)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_single_split_to_vertex</span><span class="p">(</span><span class="n">arr_</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">axis_</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -5528,7 +5588,21 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">388</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
 <span class="normal">389</span>
 <span class="normal">390</span>
 <span class="normal">391</span>
@@ -5543,21 +5617,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">400</span>
 <span class="normal">401</span>
 <span class="normal">402</span>
-<span class="normal">403</span>
-<span class="normal">404</span>
-<span class="normal">405</span>
-<span class="normal">406</span>
-<span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vect_to_arrs</span><span class="p">(</span>
+<span class="normal">403</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vect_to_arrs</span><span class="p">(</span>
     <span class="n">vect</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shapes</span><span class="p">:</span> <span class="n">OrderedDict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="n">ArrayListShape</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OrderedDict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span> <span class="o">|</span> <span class="n">ArrayList</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
@@ -5579,7 +5639,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">ArrayListShape</span><span class="p">):</span>
             <span class="n">sz</span> <span class="o">=</span> <span class="n">shape</span><span class="o">.</span><span class="n">total_size</span><span class="p">()</span>
             <span class="n">out_vals</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ArrayList</span><span class="o">.</span><span class="n">from_vector</span><span class="p">(</span>
-                <span class="n">vect</span><span class="o">=</span><span class="n">vect</span><span class="p">[</span><span class="n">cnt</span> <span class="p">:</span> <span class="n">cnt</span> <span class="o">+</span> <span class="n">sz</span><span class="p">],</span> <span class="n">arr_list_shapes</span><span class="o">=</span><span class="n">shape</span>
+                <span class="n">vect</span><span class="o">=</span><span class="n">vect</span><span class="p">[</span><span class="n">cnt</span> <span class="p">:</span> <span class="n">cnt</span> <span class="o">+</span> <span class="n">sz</span><span class="p">],</span> <span class="n">shapes</span><span class="o">=</span><span class="n">shape</span>
             <span class="p">)</span>
             <span class="n">cnt</span> <span class="o">+=</span> <span class="n">sz</span>
         <span class="k">elif</span> <span class="n">shape</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -5718,7 +5778,21 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/algebra/array_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">420</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
 <span class="normal">421</span>
 <span class="normal">422</span>
 <span class="normal">423</span>
@@ -5743,21 +5817,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">442</span>
 <span class="normal">443</span>
 <span class="normal">444</span>
-<span class="normal">445</span>
-<span class="normal">446</span>
-<span class="normal">447</span>
-<span class="normal">448</span>
-<span class="normal">449</span>
-<span class="normal">450</span>
-<span class="normal">451</span>
-<span class="normal">452</span>
-<span class="normal">453</span>
-<span class="normal">454</span>
-<span class="normal">455</span>
-<span class="normal">456</span>
-<span class="normal">457</span>
-<span class="normal">458</span>
-<span class="normal">459</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">construct_named_block_jacobian</span><span class="p">(</span>
+<span class="normal">445</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">construct_named_block_jacobian</span><span class="p">(</span>
     <span class="n">entries</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
     <span class="n">keys</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
     <span class="n">widths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -5879,7 +5939,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Matrix, (n, n).</p>
+                <p>Matrix, <code>(n, n)</code>.</p>
               </div>
             </td>
             <td>
@@ -5905,7 +5965,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Matrix squared, (n, n).</p>
+                <p>Matrix squared, <code>(n, n)</code>.</p>
               </div>
             </td>
           </tr>
@@ -5924,8 +5984,8 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">31</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">matrix2</span><span class="p">(</span><span class="n">mat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the square of a matrix.</span>
-<span class="sd">    :param mat: Matrix, (n, n).</span>
-<span class="sd">    :return: Matrix squared, (n, n).</span>
+<span class="sd">    :param mat: Matrix, ``(n, n)``.</span>
+<span class="sd">    :return: Matrix squared, ``(n, n)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">mat</span> <span class="o">@</span> <span class="n">mat</span>
 </code></pre></div></td></tr></table></div>
@@ -6060,7 +6120,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (a, b).</p>
+                <p>Rotation matrix, <code>(a, b)</code>.</p>
               </div>
             </td>
             <td>
@@ -6086,7 +6146,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Block matrix with diagonal rotation matrices, (2a, 2b).</p>
+                <p>Block matrix with diagonal rotation matrices, <code>(2a, 2b)</code>.</p>
               </div>
             </td>
           </tr>
@@ -6105,8 +6165,8 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">49</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">chi</span><span class="p">(</span><span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a 3x3 rotation matrix to a 6x6 matrix used in spatial transformations.</span>
-<span class="sd">    :param rmat: Rotation matrix, (a, b).</span>
-<span class="sd">    :return: Block matrix with diagonal rotation matrices, (2a, 2b).</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(a, b)``.</span>
+<span class="sd">    :return: Block matrix with diagonal rotation matrices, ``(2a, 2b)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">([[</span><span class="n">rmat</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">rmat</span><span class="p">)],</span> <span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">rmat</span><span class="p">),</span> <span class="n">rmat</span><span class="p">]])</span>
 </code></pre></div></td></tr></table></div>
@@ -6390,7 +6450,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Algebra matrix to exponentiate, (n, n).</p>
+                <p>Algebra matrix to exponentiate, <code>(n, n)</code>.</p>
               </div>
             </td>
             <td>
@@ -6432,7 +6492,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Exponential of matrix, (n, n)</p>
+                <p>Exponential of matrix, <code>(n, n)</code></p>
               </div>
             </td>
           </tr>
@@ -6459,9 +6519,9 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">113</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">exp_sum</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BASE_SUMMATION_ORDER</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the matrix exponential using truncated summation.</span>
-<span class="sd">    :param a: Algebra matrix to exponentiate, (n, n).</span>
+<span class="sd">    :param a: Algebra matrix to exponentiate, ``(n, n)``.</span>
 <span class="sd">    :param order: Order of summation.</span>
-<span class="sd">    :return: Exponential of matrix, (n, n)</span>
+<span class="sd">    :return: Exponential of matrix, ``(n, n)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
@@ -6515,7 +6575,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Group matrix to exponentiate, (n, n).</p>
+                <p>Group matrix to exponentiate, <code>(n, n)</code>.</p>
               </div>
             </td>
             <td>
@@ -6557,7 +6617,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Logarithm of matrix, (n, n)</p>
+                <p>Logarithm of matrix, <code>(n, n)</code></p>
               </div>
             </td>
           </tr>
@@ -6586,9 +6646,9 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">132</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">log_sum</span><span class="p">(</span><span class="n">g</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BASE_SUMMATION_ORDER</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the matrix logarithm using truncated summation.</span>
-<span class="sd">    :param g: Group matrix to exponentiate, (n, n).</span>
+<span class="sd">    :param g: Group matrix to exponentiate, ``(n, n)``.</span>
 <span class="sd">    :param order: Order of summation.</span>
-<span class="sd">    :return: Logarithm of matrix, (n, n)</span>
+<span class="sd">    :return: Logarithm of matrix, ``(n, n)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">g</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">g</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
@@ -6642,7 +6702,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Adjoint action matrix, (n, n)</p>
+                <p>Adjoint action matrix, <code>(n, n)</code></p>
               </div>
             </td>
             <td>
@@ -6684,7 +6744,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Tangent operator, (n, n)</p>
+                <p>Tangent operator, <code>(n, n)</code></p>
               </div>
             </td>
           </tr>
@@ -6711,9 +6771,9 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">149</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">t_sum</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BASE_SUMMATION_ORDER</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the tangent operator truncated summation. This is used to validate other implementations.</span>
-<span class="sd">    :param a: Adjoint action matrix, (n, n)</span>
+<span class="sd">    :param a: Adjoint action matrix, ``(n, n)``</span>
 <span class="sd">    :param order: Order of summation.</span>
-<span class="sd">    :return: Tangent operator, (n, n)</span>
+<span class="sd">    :return: Tangent operator, ``(n, n)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
@@ -6767,7 +6827,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Adjoint action matrix, (n, n)</p>
+                <p>Adjoint action matrix, <code>(n, n)</code></p>
               </div>
             </td>
             <td>
@@ -6809,7 +6869,7 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Inverse tangent operator, (n, n)</p>
+                <p>Inverse tangent operator, <code>(n, n)</code></p>
               </div>
             </td>
           </tr>
@@ -6838,9 +6898,9 @@ lists are specified in the shapes argument, which is an ordered dictionary mappi
 <span class="normal">168</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">t_inv_sum</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BASE_SUMMATION_ORDER</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the inverse tangent operator truncated summation.</span>
-<span class="sd">    :param a: Adjoint action matrix, (n, n)</span>
+<span class="sd">    :param a: Adjoint action matrix, ``(n, n)``</span>
 <span class="sd">    :param order: Order of summation.</span>
-<span class="sd">    :return: Inverse tangent operator, (n, n)</span>
+<span class="sd">    :return: Inverse tangent operator, ``(n, n)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
@@ -8099,7 +8159,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Scalar bounds of integration in function space, (2, ).</p>
+                <p>Scalar bounds of integration in function space, <code>(2, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8115,7 +8175,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>values of function at the bounds, (2, ...).</p>
+                <p>values of function at the bounds, <code>(2, ...)</code>.</p>
               </div>
             </td>
             <td>
@@ -8216,8 +8276,8 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
 <span class="sd">    Integrate using quadrature with Gauss-Lobatto points. Makes use of function values at the bounds.</span>
 <span class="sd">    See https://en.wikipedia.org/wiki/Gaussian_quadrature.</span>
 <span class="sd">    :param f: Function to integrate (must support vector mapping), () -&gt; (...).</span>
-<span class="sd">    :param bounds: Scalar bounds of integration in function space, (2, ).</span>
-<span class="sd">    :param f_bounds: values of function at the bounds, (2, ...).</span>
+<span class="sd">    :param bounds: Scalar bounds of integration in function space, ``(2, )``.</span>
+<span class="sd">    :param f_bounds: values of function at the bounds, ``(2, ...)``.</span>
 <span class="sd">    :param int_order: Order of integration, 3, 4, or 5.</span>
 <span class="sd">    :return: Integrated value, (...).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -8308,7 +8368,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Scalar bounds of integration in function space, (2,).</p>
+                <p>Scalar bounds of integration in function space, <code>(2, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8398,7 +8458,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Integrate using quadrature with Gauss-Legendre points. See https://en.wikipedia.org/wiki/Gaussian_quadrature.</span>
 <span class="sd">    :param f: Function to integrate (must support vector mapping), () -&gt; (...).</span>
-<span class="sd">    :param bounds: Scalar bounds of integration in function space, (2,).</span>
+<span class="sd">    :param bounds: Scalar bounds of integration in function space, ``(2, )``.</span>
 <span class="sd">    :param int_order: Order of integration.</span>
 <span class="sd">    :return: Integrated value, (...).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -8503,7 +8563,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie algebra vector in se(3), (6, ).</p>
+                <p>Lie algebra vector in se(3), <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8519,7 +8579,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie algebra vector in se(3), (6, ).</p>
+                <p>Lie algebra vector in se(3), <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8545,7 +8605,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie bracket, (4, 4).</p>
+                <p>Lie bracket, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -8568,9 +8628,9 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
 <span class="normal">31</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">bracket_se3</span><span class="p">(</span><span class="n">a_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">b_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the Lie bracket of two se(3) elements, :math:`\tilde{a}\tilde{b} - \tilde{b}\tilde{a}`.</span>
-<span class="sd">    :param a_vec: Lie algebra vector in se(3), (6, ).</span>
-<span class="sd">    :param b_vec: Lie algebra vector in se(3), (6, ).</span>
-<span class="sd">    :return: Lie bracket, (4, 4).</span>
+<span class="sd">    :param a_vec: Lie algebra vector in se(3), ``(6, )``.</span>
+<span class="sd">    :param b_vec: Lie algebra vector in se(3), ``(6, )``.</span>
+<span class="sd">    :return: Lie bracket, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">mat1</span> <span class="o">=</span> <span class="n">ha_to_ha_tilde</span><span class="p">(</span><span class="n">a_vec</span><span class="p">)</span>
     <span class="n">mat2</span> <span class="o">=</span> <span class="n">ha_to_ha_tilde</span><span class="p">(</span><span class="n">b_vec</span><span class="p">)</span>
@@ -8618,7 +8678,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie algebra vector in se(3), (6, ).</p>
+                <p>Lie algebra vector in se(3), <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8634,7 +8694,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie algebra vector in se(3), (6, ).</p>
+                <p>Lie algebra vector in se(3), <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8660,7 +8720,7 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Negative lie bracket, (4, 4).</p>
+                <p>Negative lie bracket, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -8683,9 +8743,9 @@ See https://en.wikipedia.org/wiki/Gaussian_quadrature.</p>
 <span class="normal">44</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">bracket_neg_se3</span><span class="p">(</span><span class="n">a_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">b_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the negative Lie bracket of two se(3) elements, :math:`\tilde{a}\tilde{b} + \tilde{b}\tilde{a}`.</span>
-<span class="sd">    :param a_vec: Lie algebra vector in se(3), (6, ).</span>
-<span class="sd">    :param b_vec: Lie algebra vector in se(3), (6, ).</span>
-<span class="sd">    :return: Negative lie bracket, (4, 4).</span>
+<span class="sd">    :param a_vec: Lie algebra vector in se(3), ``(6, )``.</span>
+<span class="sd">    :param b_vec: Lie algebra vector in se(3), ``(6, )``.</span>
+<span class="sd">    :return: Negative lie bracket, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">mat1</span> <span class="o">=</span> <span class="n">ha_to_ha_tilde</span><span class="p">(</span><span class="n">a_vec</span><span class="p">)</span>
     <span class="n">mat2</span> <span class="o">=</span> <span class="n">ha_to_ha_tilde</span><span class="p">(</span><span class="n">b_vec</span><span class="p">)</span>
@@ -8734,7 +8794,7 @@ from Geometrically exact beam finite element formulated on the special Euclidean
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector in se(3), (6, ).</p>
+                <p>Vector in se(3), <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -8760,7 +8820,7 @@ from Geometrically exact beam finite element formulated on the special Euclidean
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Operator, (3, 3).</p>
+                <p>Operator, <code>(3, 3)</code>.</p>
               </div>
             </td>
           </tr>
@@ -8809,8 +8869,8 @@ from Geometrically exact beam finite element formulated on the special Euclidean
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the :math:`\mathbf{T}_{U \omega+}` matrix, used for computing the tangent application for SE(3). Formulation</span>
 <span class="sd">    from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.12</span>
-<span class="sd">    :param ha: Vector in se(3), (6, ).</span>
-<span class="sd">    :return: Operator, (3, 3).</span>
+<span class="sd">    :param ha: Vector in se(3), ``(6, )``.</span>
+<span class="sd">    :return: Operator, ``(3, 3)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># (6,) -&gt; (3, 3)</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">ha</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
@@ -8886,7 +8946,7 @@ inverse of the SO(3) tangent operator.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector in se(3), (6, )</p>
+                <p>Vector in se(3), <code>(6, )</code></p>
               </div>
             </td>
             <td>
@@ -8912,7 +8972,7 @@ inverse of the SO(3) tangent operator.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Operator, (3, 3).</p>
+                <p>Operator, <code>(3, 3)</code>.</p>
               </div>
             </td>
           </tr>
@@ -8939,8 +8999,8 @@ inverse of the SO(3) tangent operator.</p>
 <span class="sd">    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by</span>
 <span class="sd">    Sonneville et al., 2013, Eq A.14. This can be represented in terms of :math:`\mathbf{T}_{U \omega+}` and the</span>
 <span class="sd">    inverse of the SO(3) tangent operator.</span>
-<span class="sd">    :param ha: Vector in se(3), (6, )</span>
-<span class="sd">    :return: Operator, (3, 3).</span>
+<span class="sd">    :param ha: Vector in se(3), ``(6, )``</span>
+<span class="sd">    :return: Operator, ``(3, 3)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">t_inv_</span> <span class="o">=</span> <span class="n">t_inv_so3</span><span class="p">(</span><span class="n">ha</span><span class="p">[</span><span class="mi">3</span><span class="p">:])</span>
@@ -8988,7 +9048,7 @@ special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.11.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) vector, (6, ).</p>
+                <p>se(3) vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9014,7 +9074,7 @@ special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.11.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Tangent operator, (6, 6).</p>
+                <p>Tangent operator, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9044,8 +9104,8 @@ special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.11.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the tangent operator for se(3). Formulation from Geometrically exact beam finite element formulated on the</span>
 <span class="sd">    special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.11.</span>
-<span class="sd">    :param ha: se(3) vector, (6, ).</span>
-<span class="sd">    :return: Tangent operator, (6, 6).</span>
+<span class="sd">    :param ha: se(3) vector, ``(6, )``.</span>
+<span class="sd">    :return: Tangent operator, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">t_se3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -9100,7 +9160,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.13.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9126,7 +9186,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.13.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Inverse angent operator, (6, 6).</p>
+                <p>Inverse angent operator, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9156,8 +9216,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.13.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the inverse tangent operator for se(3). Formulation from Geometrically exact beam finite element formulated</span>
 <span class="sd">    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.13.</span>
-<span class="sd">    :param ha: se(3) algebra vector, (6, ).</span>
-<span class="sd">    :return: Inverse angent operator, (6, 6).</span>
+<span class="sd">    :param ha: se(3) algebra vector, ``(6, )``.</span>
+<span class="sd">    :return: Inverse angent operator, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">t_inv_se3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -9212,7 +9272,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.15.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -9238,7 +9298,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.15.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -9269,8 +9329,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.15.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the logarithm map from SE(3) to se(3). Formulation from Geometrically exact beam finite element formulated</span>
 <span class="sd">    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.15.</span>
-<span class="sd">    :param hg: SE(3) group element, (4, 4).</span>
-<span class="sd">    :return: se(3) algebra vector, (6, ).</span>
+<span class="sd">    :param hg: SE(3) group element, ``(4, 4)``.</span>
+<span class="sd">    :return: se(3) algebra vector, ``(6, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">omega</span> <span class="o">=</span> <span class="n">log_so3</span><span class="p">(</span><span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span>
@@ -9326,7 +9386,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9352,7 +9412,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9386,8 +9446,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the exponential map from se(3) to SE(3). Formulation from Geometrically exact beam finite element formulated</span>
 <span class="sd">    on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</span>
-<span class="sd">    :param ha: se(3) algebra vector, (6, ).</span>
-<span class="sd">    :return: SE(3) group element, (4, 4).</span>
+<span class="sd">    :param ha: se(3) algebra vector, ``(6, )``.</span>
+<span class="sd">    :return: SE(3) group element, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">exp_se3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -9445,7 +9505,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Translation vector, (3, ).</p>
+                <p>Translation vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9461,7 +9521,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3).</p>
+                <p>Rotation matrix, <code>(3, 3)</code>.</p>
               </div>
             </td>
             <td>
@@ -9487,7 +9547,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9507,9 +9567,9 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">187</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">x_rmat_to_hg</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Combines a translation vector and rotation matrix into an element of the SE(3) group.</span>
-<span class="sd">    :param x: Translation vector, (3, ).</span>
-<span class="sd">    :param rmat: Rotation matrix, (3, 3).</span>
-<span class="sd">    :return: SE(3) group element, (4, 4).</span>
+<span class="sd">    :param x: Translation vector, ``(3, )``.</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(3, 3)``.</span>
+<span class="sd">    :return: SE(3) group element, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">([[</span><span class="n">rmat</span><span class="p">,</span> <span class="n">x</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]],</span> <span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))]])</span>
 </code></pre></div></td></tr></table></div>
@@ -9554,7 +9614,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Translation vector, (3, ).</p>
+                <p>Translation vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9570,7 +9630,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3).</p>
+                <p>Rotation matrix, <code>(3, 3)</code>.</p>
               </div>
             </td>
             <td>
@@ -9596,7 +9656,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -9616,9 +9676,9 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">197</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">x_rmat_to_ha</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Combines a translation vector and rotation matrix into an element of the se(3) algebra.</span>
-<span class="sd">    :param x: Translation vector, (3, ).</span>
-<span class="sd">    :param rmat: Rotation matrix, (3, 3).</span>
-<span class="sd">    :return: se(3) algebra vector, (6, ).</span>
+<span class="sd">    :param x: Translation vector, ``(3, )``.</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(3, 3)``.</span>
+<span class="sd">    :return: se(3) algebra vector, ``(6, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">log_se3</span><span class="p">(</span><span class="n">x_rmat_to_hg</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">rmat</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
@@ -9663,7 +9723,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -9689,7 +9749,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Translation vector, (3, ), and rotation matrix, (3, 3).</p>
+                <p>Translation vector, <code>(3, )</code>, and rotation matrix, <code>(3, 3)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9708,8 +9768,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hg_to_x_rmat</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Array</span><span class="p">,</span> <span class="n">Array</span><span class="p">]:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Decomposes an SE(3) group element into a translation vector and rotation matrix.</span>
-<span class="sd">    :param hg: SE(3) group element, (4, 4).</span>
-<span class="sd">    :return: Translation vector, (3, ), and rotation matrix, (3, 3).</span>
+<span class="sd">    :param hg: SE(3) group element, ``(4, 4)``.</span>
+<span class="sd">    :return: Translation vector, ``(3, )``, and rotation matrix, ``(3, 3)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
 </code></pre></div></td></tr></table></div>
@@ -9754,7 +9814,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -9770,7 +9830,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Translation vector, (3, ).</p>
+                <p>Translation vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9796,7 +9856,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Resulting translation vector, (3, ).</p>
+                <p>Resulting translation vector, <code>(3, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -9816,9 +9876,9 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">216</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vect_product</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the resulting vector of an SE(3) group element and a 3D translation vector.</span>
-<span class="sd">    :param hg: SE(3) group element, (4, 4).</span>
-<span class="sd">    :param x: Translation vector, (3, ).</span>
-<span class="sd">    :return: Resulting translation vector, (3, ).</span>
+<span class="sd">    :param hg: SE(3) group element, ``(4, 4)``.</span>
+<span class="sd">    :param x: Translation vector, ``(3, )``.</span>
+<span class="sd">    :return: Resulting translation vector, ``(3, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">x</span> <span class="o">+</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
 </code></pre></div></td></tr></table></div>
@@ -9863,7 +9923,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -9889,7 +9949,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Inverse SE(3) group element, (4, 4).</p>
+                <p>Inverse SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -9911,8 +9971,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">228</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hg_inv</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the inverse of an SE(3) group element.</span>
-<span class="sd">    :param hg: SE(3) group element, (4, 4).</span>
-<span class="sd">    :return: Inverse SE(3) group element, (4, 4).</span>
+<span class="sd">    :param hg: SE(3) group element, ``(4, 4)``.</span>
+<span class="sd">    :return: Inverse SE(3) group element, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">x</span><span class="p">,</span> <span class="n">rmat</span> <span class="o">=</span> <span class="n">hg_to_x_rmat</span><span class="p">(</span><span class="n">hg</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">(</span>
@@ -9960,7 +10020,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -9986,7 +10046,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra element in matrix form, (4, 4).</p>
+                <p>se(3) algebra element in matrix form, <code>(4, 4)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10005,8 +10065,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">237</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ha_to_ha_tilde</span><span class="p">(</span><span class="n">ha</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a se(3) vector into its matrix representation.</span>
-<span class="sd">    :param ha: se(3) algebra vector, (6, ).</span>
-<span class="sd">    :return: se(3) algebra element in matrix form, (4, 4).</span>
+<span class="sd">    :param ha: se(3) algebra vector, ``(6, )``.</span>
+<span class="sd">    :return: se(3) algebra element in matrix form, ``(4, 4)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">([[</span><span class="n">vec_to_skew</span><span class="p">(</span><span class="n">ha</span><span class="p">[</span><span class="mi">3</span><span class="p">:]),</span> <span class="n">ha</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="kc">None</span><span class="p">]],</span> <span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">))]])</span>
 </code></pre></div></td></tr></table></div>
@@ -10051,7 +10111,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra element in matrix form, (4, 4).</p>
+                <p>se(3) algebra element in matrix form, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -10077,7 +10137,7 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -10098,8 +10158,8 @@ on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq A.10.</p>
 <span class="normal">248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ha_tilde_to_ha</span><span class="p">(</span><span class="n">ha_tilde</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a se(3) element matrix into its vector representation.</span>
-<span class="sd">    :param ha_tilde: se(3) algebra element in matrix form, (4, 4).</span>
-<span class="sd">    :return: se(3) algebra vector, (6, ).</span>
+<span class="sd">    :param ha_tilde: se(3) algebra element in matrix form, ``(4, 4)``.</span>
+<span class="sd">    :return: se(3) algebra vector, ``(6, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">ha_u</span> <span class="o">=</span> <span class="n">ha_tilde</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
     <span class="n">ha_omega</span> <span class="o">=</span> <span class="n">skew_to_vec</span><span class="p">(</span><span class="n">ha_tilde</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span>
@@ -10147,7 +10207,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -10173,7 +10233,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Hat matrix representation, (6, 6).</p>
+                <p>Hat matrix representation, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10199,8 +10259,8 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a se(3) vector into its hat matrix representation. Formulation from Geometrically exact beam finite element</span>
 <span class="sd">    formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 15.</span>
-<span class="sd">    :param ha: se(3) algebra vector, (6, ).</span>
-<span class="sd">    :return: Hat matrix representation, (6, 6).</span>
+<span class="sd">    :param ha: se(3) algebra vector, ``(6, )``.</span>
+<span class="sd">    :return: Hat matrix representation, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">(</span>
         <span class="p">[</span>
@@ -10251,7 +10311,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3).</p>
+                <p>Rotation matrix, <code>(3, 3)</code>.</p>
               </div>
             </td>
             <td>
@@ -10277,7 +10337,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Hat matrix representation, (6, 6).</p>
+                <p>Hat matrix representation, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10298,8 +10358,8 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a rotation matrix into its hat matrix representation in se(3) with zero translation. Formulation from</span>
 <span class="sd">    &quot;A geometric local frame approach for flexible multibody systems&quot;, by Sonneville, 2015, Eq 1.50, p. 15.</span>
-<span class="sd">    :param rmat: Rotation matrix, (3, 3).</span>
-<span class="sd">    :return: Hat matrix representation, (6, 6).</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(3, 3)``.</span>
+<span class="sd">    :return: Hat matrix representation, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">chi</span><span class="p">(</span><span class="n">rmat</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -10345,7 +10405,7 @@ element formulated on the special Euclidean group SE(3), by Sonneville et al., 2
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Hat matrix representation, (6, 6).</p>
+                <p>Hat matrix representation, <code>(6, 6)</code>.</p>
               </div>
             </td>
             <td>
@@ -10371,7 +10431,7 @@ element formulated on the special Euclidean group SE(3), by Sonneville et al., 2
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) vector, (6, ).</p>
+                <p>se(3) vector, <code>(6, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -10394,8 +10454,8 @@ element formulated on the special Euclidean group SE(3), by Sonneville et al., 2
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a se(3) hat matrix representation into se(3) vector. Formulation from Geometrically exact beam finite</span>
 <span class="sd">    element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 15.</span>
-<span class="sd">    :param ha_hat: Hat matrix representation, (6, 6).</span>
-<span class="sd">    :return: se(3) vector, (6, ).</span>
+<span class="sd">    :param ha_hat: Hat matrix representation, ``(6, 6)``.</span>
+<span class="sd">    :return: se(3) vector, ``(6, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">ha_u</span> <span class="o">=</span> <span class="n">skew_to_vec</span><span class="p">(</span><span class="n">ha_hat</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">:])</span>
     <span class="n">ha_omega</span> <span class="o">=</span> <span class="n">skew_to_vec</span><span class="p">(</span><span class="n">ha_hat</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span>
@@ -10443,7 +10503,7 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) algebra vector, (6, ).</p>
+                <p>se(3) algebra vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -10469,7 +10529,7 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Check matrix representation, (6, 6).</p>
+                <p>Check matrix representation, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10495,8 +10555,8 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a se(3) vector into its check matrix representation. Formulation from &quot;Geometrically exact beam finite element formulated</span>
 <span class="sd">    on the special Euclidean group SE(3)&quot;, by Sonneville, 2014, Eq 16.</span>
-<span class="sd">    :param ha: se(3) algebra vector, (6, ).</span>
-<span class="sd">    :return: Check matrix representation, (6, 6).</span>
+<span class="sd">    :param ha: se(3) algebra vector, ``(6, )``.</span>
+<span class="sd">    :return: Check matrix representation, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="o">-</span><span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">(</span>
         <span class="p">[</span>
@@ -10546,7 +10606,7 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) group element, (4, 4).</p>
+                <p>SE(3) group element, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -10572,7 +10632,7 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) hat matrix representation, (6, 6).</p>
+                <p>se(3) hat matrix representation, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10599,8 +10659,8 @@ on the special Euclidean group SE(3)", by Sonneville, 2014, Eq 16.</p>
 <span class="normal">317</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hg_to_ha_hat</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts an SE(3) group element into its se(3) hat matrix representation.</span>
-<span class="sd">    :param hg: SE(3) group element, (4, 4).</span>
-<span class="sd">    :return: se(3) hat matrix representation, (6, 6).</span>
+<span class="sd">    :param hg: SE(3) group element, ``(4, 4)``.</span>
+<span class="sd">    :return: se(3) hat matrix representation, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">rmat</span> <span class="o">=</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">hg</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
@@ -10654,7 +10714,7 @@ beam finite element formulated on the special Euclidean group SE(3), by Sonnevil
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Base SE(3) group element at s=0, (4, 4).</p>
+                <p>Base SE(3) group element at s=0, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -10670,7 +10730,7 @@ beam finite element formulated on the special Euclidean group SE(3), by Sonnevil
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Tip SE(3) group element at s=L, (4, 4).</p>
+                <p>Tip SE(3) group element at s=L, <code>(4, 4)</code>.</p>
               </div>
             </td>
             <td>
@@ -10696,7 +10756,7 @@ beam finite element formulated on the special Euclidean group SE(3), by Sonnevil
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) relative configuration vector, (6, ).</p>
+                <p>se(3) relative configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -10718,9 +10778,9 @@ beam finite element formulated on the special Euclidean group SE(3), by Sonnevil
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Obtains the relative configuration vector between two SE(3) group elements. Formulation from Geometrically exact</span>
 <span class="sd">    beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 56.</span>
-<span class="sd">    :param hg1: Base SE(3) group element at s=0, (4, 4).</span>
-<span class="sd">    :param hg2: Tip SE(3) group element at s=L, (4, 4).</span>
-<span class="sd">    :return: se(3) relative configuration vector, (6, ).</span>
+<span class="sd">    :param hg1: Base SE(3) group element at s=0, ``(4, 4)``.</span>
+<span class="sd">    :param hg2: Tip SE(3) group element at s=L, ``(4, 4)``.</span>
+<span class="sd">    :return: se(3) relative configuration vector, ``(6, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">log_se3</span><span class="p">(</span><span class="n">hg_inv</span><span class="p">(</span><span class="n">hg1</span><span class="p">)</span> <span class="o">@</span> <span class="n">hg2</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -10766,7 +10826,7 @@ from "A geometric local frame approach for flexible multibody systems", by Sonne
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative se(3) configuration vector, (6, ).</p>
+                <p>Relative se(3) configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -10782,7 +10842,7 @@ from "A geometric local frame approach for flexible multibody systems", by Sonne
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Adjoint action for rotation, (6, 6).</p>
+                <p>Adjoint action for rotation, <code>(6, 6)</code>.</p>
               </div>
             </td>
             <td>
@@ -10808,7 +10868,7 @@ from "A geometric local frame approach for flexible multibody systems", by Sonne
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Matrix, (6, 12).</p>
+                <p>Matrix, <code>(6, 12)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10840,9 +10900,9 @@ from "A geometric local frame approach for flexible multibody systems", by Sonne
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the :math:`\mathbf{P}(\mathbf{d}) = \frac{d \mathbf{d}}{d \mathbf{h}_{AB}}` matrix. Formulation</span>
 <span class="sd">    from &quot;A geometric local frame approach for flexible multibody systems&quot;, by Sonneville, 2015, Eq 6.141, p. 90.</span>
-<span class="sd">    :param d: Relative se(3) configuration vector, (6, ).</span>
-<span class="sd">    :param ad_inv: Adjoint action for rotation, (6, 6).</span>
-<span class="sd">    :return: Matrix, (6, 12).</span>
+<span class="sd">    :param d: Relative se(3) configuration vector, ``(6, )``.</span>
+<span class="sd">    :param ad_inv: Adjoint action for rotation, ``(6, 6)``.</span>
+<span class="sd">    :return: Matrix, ``(6, 12)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">t_inv_pos</span> <span class="o">=</span> <span class="n">t_inv_se3</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
@@ -10894,7 +10954,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative position along the element :math:<code>\frac{s}{l0} \ivarphi [0, 1]</code>, ().</p>
+                <p>Relative position along the element :math:<code>\frac{s}{l0} \in [0, 1]</code>, ().</p>
               </div>
             </td>
             <td>
@@ -10910,7 +10970,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative se(3) configuration vector, (6, ).</p>
+                <p>Relative se(3) configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -10936,7 +10996,7 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
             </td>
             <td>
               <div class="doc-md-description">
-                <p>:math:<code>T^*(s, \mathbf{d})</code> matrix, (6, 6).</p>
+                <p>:math:<code>T^*(s, \mathbf{d})</code> matrix, <code>(6, 6)</code>.</p>
               </div>
             </td>
           </tr>
@@ -10962,9 +11022,9 @@ formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 
 <span class="sd">    both ends of the element, :math:`T^*(s, \mathbf{d}) = \frac{d \mathbf{h}(s)}{d \mathbf{h}_A}` or</span>
 <span class="sd">    :math:`\frac{d \mathbf{h}(s)}{d \mathbf{h}_B}`. Formulation from Geometrically exact beam finite element</span>
 <span class="sd">    formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 70.</span>
-<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \ivarphi [0, 1]`, ().</span>
-<span class="sd">    :param d: Relative se(3) configuration vector, (6, ).</span>
-<span class="sd">    :return: :math:`T^*(s, \mathbf{d})` matrix, (6, 6).</span>
+<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, ().</span>
+<span class="sd">    :param d: Relative se(3) configuration vector, ``(6, )``.</span>
+<span class="sd">    :return: :math:`T^*(s, \mathbf{d})` matrix, ``(6, 6)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">s_l</span> <span class="o">*</span> <span class="n">t_se3</span><span class="p">(</span><span class="n">s_l</span> <span class="o">*</span> <span class="n">d</span><span class="p">)</span> <span class="o">@</span> <span class="n">t_inv_se3</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -11012,7 +11072,7 @@ by Sonneville, 2015, Eq 6.145, p. 90.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative position along the element :math:<code>\frac{s}{l0} \varphi [0, 1]</code>, ().</p>
+                <p>Relative position along the element :math:<code>\frac{s}{l0} \in [0, 1]</code>, ().</p>
               </div>
             </td>
             <td>
@@ -11028,7 +11088,7 @@ by Sonneville, 2015, Eq 6.145, p. 90.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative se(3) configuration vector, (6, ).</p>
+                <p>Relative se(3) configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11044,7 +11104,7 @@ by Sonneville, 2015, Eq 6.145, p. 90.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Adjoint action for base rotation, (6, 6).</p>
+                <p>Adjoint action for base rotation, <code>(6, 6)</code>.</p>
               </div>
             </td>
             <td>
@@ -11070,7 +11130,7 @@ by Sonneville, 2015, Eq 6.145, p. 90.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>:math:<code>Q(s, \mathbf{d})</code> matrix, (6, 12).</p>
+                <p>:math:<code>Q(s, \mathbf{d})</code> matrix, <code>(6, 12)</code>.</p>
               </div>
             </td>
           </tr>
@@ -11099,10 +11159,10 @@ by Sonneville, 2015, Eq 6.145, p. 90.</p>
 <span class="sd">    both ends of the element, :math:`Q(s, \mathbf{d}) = [\mathbf{I}_{6 \times 6} - T^*(s, \mathbf{d}) &amp;</span>
 <span class="sd">    T^*(s, \mathbf{d})]`. Formulation from &quot;A geometric local frame approach for flexible multibody systems&quot;,</span>
 <span class="sd">    by Sonneville, 2015, Eq 6.145, p. 90.</span>
-<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \varphi [0, 1]`, ().</span>
-<span class="sd">    :param d: Relative se(3) configuration vector, (6, ).</span>
-<span class="sd">    :param ad_inv: Adjoint action for base rotation, (6, 6).</span>
-<span class="sd">    :return: :math:`Q(s, \mathbf{d})` matrix, (6, 12).</span>
+<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, ().</span>
+<span class="sd">    :param d: Relative se(3) configuration vector, ``(6, )``.</span>
+<span class="sd">    :param ad_inv: Adjoint action for base rotation, ``(6, 6)``.</span>
+<span class="sd">    :return: :math:`Q(s, \mathbf{d})` matrix, ``(6, 12)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">t_star_</span> <span class="o">=</span> <span class="n">t_star</span><span class="p">(</span><span class="n">s_l</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
 
@@ -11152,7 +11212,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative position along the element :math:<code>\frac{s}{l0} \varphi [0, 1]</code>, ().</p>
+                <p>Relative position along the element :math:<code>\frac{s}{l0} \in [0, 1]</code>, ().</p>
               </div>
             </td>
             <td>
@@ -11168,7 +11228,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative se(3) configuration vector, (6, ).</p>
+                <p>Relative se(3) configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11184,7 +11244,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Time derivative of relative se(3) configuration vector, (6, ).</p>
+                <p>Time derivative of relative se(3) configuration vector, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11200,7 +11260,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Adjoint action for base rotation, (6, 6).</p>
+                <p>Adjoint action for base rotation, <code>(6, 6)</code>.</p>
               </div>
             </td>
             <td>
@@ -11226,7 +11286,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Time derivative of :math:<code>Q(s, \mathbf{d})</code> matrix, (6, 12).</p>
+                <p>Time derivative of :math:<code>Q(s, \mathbf{d})</code> matrix, <code>(6, 12)</code>.</p>
               </div>
             </td>
           </tr>
@@ -11257,11 +11317,11 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Time derivative of the matrix which described perturbations in the algebra element along an element with respect to</span>
 <span class="sd">    the algebra elements at both ends of the element, :math:`\dot{Q}(s, \mathbf{d})`.</span>
-<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \varphi [0, 1]`, ().</span>
-<span class="sd">    :param d: Relative se(3) configuration vector, (6, ).</span>
-<span class="sd">    :param d_dot: Time derivative of relative se(3) configuration vector, (6, ).</span>
-<span class="sd">    :param ad_inv: Adjoint action for base rotation, (6, 6).</span>
-<span class="sd">    :return: Time derivative of :math:`Q(s, \mathbf{d})` matrix, (6, 12).</span>
+<span class="sd">    :param s_l: Relative position along the element :math:`\frac{s}{l0} \in [0, 1]`, ().</span>
+<span class="sd">    :param d: Relative se(3) configuration vector, ``(6, )``.</span>
+<span class="sd">    :param d_dot: Time derivative of relative se(3) configuration vector, ``(6, )``.</span>
+<span class="sd">    :param ad_inv: Adjoint action for base rotation, ``(6, 6)``.</span>
+<span class="sd">    :return: Time derivative of :math:`Q(s, \mathbf{d})` matrix, ``(6, 12)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_</span><span class="p">,</span> <span class="n">tangents</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jvp</span><span class="p">(</span>
@@ -11353,7 +11413,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>3D vector, (3,).</p>
+                <p>3D vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11379,7 +11439,7 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Skew-symmetric matrix, (3, 3)</p>
+                <p>Skew-symmetric matrix, <code>(3, 3)</code></p>
               </div>
             </td>
           </tr>
@@ -11400,8 +11460,8 @@ the algebra elements at both ends of the element, :math:<code>\dot{Q}(s, \mathbf
 <span class="normal">17</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vec_to_skew</span><span class="p">(</span><span class="n">vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a 3D vector to a skew-symmetric matrix.</span>
-<span class="sd">    :param vec: 3D vector, (3,).</span>
-<span class="sd">    :return: Skew-symmetric matrix, (3, 3)</span>
+<span class="sd">    :param vec: 3D vector, ``(3, )``.</span>
+<span class="sd">    :return: Skew-symmetric matrix, ``(3, 3)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
         <span class="p">((</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="n">vec</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">vec</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="p">(</span><span class="n">vec</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="n">vec</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="p">(</span><span class="o">-</span><span class="n">vec</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">vec</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">))</span>
@@ -11449,7 +11509,7 @@ gradients.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Skew-symmetric matrix, (3, 3)</p>
+                <p>Skew-symmetric matrix, <code>(3, 3)</code></p>
               </div>
             </td>
             <td>
@@ -11475,7 +11535,7 @@ gradients.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>3D vector, (3, ).</p>
+                <p>3D vector, <code>(3, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -11500,8 +11560,8 @@ gradients.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Converts a skew-symmetric matrix to a 3D vector. Note this refers to both skew symmetric entries for consistent</span>
 <span class="sd">    gradients.</span>
-<span class="sd">    :param mat: Skew-symmetric matrix, (3, 3)</span>
-<span class="sd">    :return: 3D vector, (3, ).</span>
+<span class="sd">    :param mat: Skew-symmetric matrix, ``(3, 3)``</span>
+<span class="sd">    :return: 3D vector, ``(3, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">a1</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">mat</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">mat</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
     <span class="n">a2</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">mat</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">mat</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
@@ -11552,7 +11612,7 @@ Sonneville et al., 2013, Eq A.4</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input vector, (3, ).</p>
+                <p>Input vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11609,7 +11669,7 @@ Sonneville et al., 2013, Eq A.4</p>
 <span class="sd">    Computes the alpha function for SO(3) operations. This includes a small angle approximation as b approaches zero.</span>
 <span class="sd">    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by</span>
 <span class="sd">    Sonneville et al., 2013, Eq A.4</span>
-<span class="sd">    :param b: Input vector, (3, ).</span>
+<span class="sd">    :param b: Input vector, ``(3, )``.</span>
 <span class="sd">    :return: Alpha value, ().</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">b_norm</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
@@ -11665,7 +11725,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input vector, (3, ).</p>
+                <p>Input vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11723,7 +11783,7 @@ Sonneville et al., 2013, Eq A.4.</p>
 <span class="sd">    Computes the beta function for SO(3) operations. This includes a small angle approximation as b approaches zero.</span>
 <span class="sd">    Formulation from Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by</span>
 <span class="sd">    Sonneville et al., 2013, Eq A.4.</span>
-<span class="sd">    :param b: Input vector, (3, ).</span>
+<span class="sd">    :param b: Input vector, ``(3, )``.</span>
 <span class="sd">    :return: Beta value, ()</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">b_norm2</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
@@ -11778,7 +11838,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Cartesian rotation vector, (3, ).</p>
+                <p>Cartesian rotation vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11804,7 +11864,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Bounded Cartesian rotation vector, (3, ).</p>
+                <p>Bounded Cartesian rotation vector, <code>(3, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -11833,8 +11893,8 @@ Sonneville et al., 2013, Eq A.4.</p>
 <span class="normal">89</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">bound_h_omega</span><span class="p">(</span><span class="n">h_omega</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Bounds the angle of a rotation vector to be within `[-pi, pi]`.</span>
-<span class="sd">    :param h_omega: Cartesian rotation vector, (3, ).</span>
-<span class="sd">    :return: Bounded Cartesian rotation vector, (3, ).</span>
+<span class="sd">    :param h_omega: Cartesian rotation vector, ``(3, )``.</span>
+<span class="sd">    :return: Bounded Cartesian rotation vector, ``(3, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">ang</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">h_omega</span><span class="p">)</span>
 
@@ -11889,7 +11949,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector 1, (3, ).</p>
+                <p>Vector 1, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11905,7 +11965,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector 2, (3, ).</p>
+                <p>Vector 2, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -11931,7 +11991,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Lie bracket, (3, 3).</p>
+                <p>Lie bracket, <code>(3, 3)</code>.</p>
               </div>
             </td>
           </tr>
@@ -11954,9 +12014,9 @@ Sonneville et al., 2013, Eq A.4.</p>
 <span class="normal">102</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">bracket_so3</span><span class="p">(</span><span class="n">vec1</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">vec2</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the Lie bracket of two so(3) elements represented as vectors.</span>
-<span class="sd">    :param vec1: Vector 1, (3, ).</span>
-<span class="sd">    :param vec2: Vector 2, (3, ).</span>
-<span class="sd">    :return: Lie bracket, (3, 3).</span>
+<span class="sd">    :param vec1: Vector 1, ``(3, )``.</span>
+<span class="sd">    :param vec2: Vector 2, ``(3, )``.</span>
+<span class="sd">    :return: Lie bracket, ``(3, 3)``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">mat1</span> <span class="o">=</span> <span class="n">vec_to_skew</span><span class="p">(</span><span class="n">vec1</span><span class="p">)</span>
     <span class="n">mat2</span> <span class="o">=</span> <span class="n">vec_to_skew</span><span class="p">(</span><span class="n">vec2</span><span class="p">)</span>
@@ -12004,7 +12064,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector 1, (3, )</p>
+                <p>Vector 1, <code>(3, )</code></p>
               </div>
             </td>
             <td>
@@ -12020,7 +12080,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Vector 2, (3, )</p>
+                <p>Vector 2, <code>(3, )</code></p>
               </div>
             </td>
             <td>
@@ -12046,7 +12106,7 @@ Sonneville et al., 2013, Eq A.4.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Negative Lie bracket, (3, 3)</p>
+                <p>Negative Lie bracket, <code>(3, 3)</code></p>
               </div>
             </td>
           </tr>
@@ -12069,9 +12129,9 @@ Sonneville et al., 2013, Eq A.4.</p>
 <span class="normal">115</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">bracket_neg_so3</span><span class="p">(</span><span class="n">vec1</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">vec2</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the negative Lie bracket of two so(3) elements represented as vectors.</span>
-<span class="sd">    :param vec1: Vector 1, (3, )</span>
-<span class="sd">    :param vec2: Vector 2, (3, )</span>
-<span class="sd">    :return: Negative Lie bracket, (3, 3)</span>
+<span class="sd">    :param vec1: Vector 1, ``(3, )``</span>
+<span class="sd">    :param vec2: Vector 2, ``(3, )``</span>
+<span class="sd">    :return: Negative Lie bracket, ``(3, 3)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">mat1</span> <span class="o">=</span> <span class="n">vec_to_skew</span><span class="p">(</span><span class="n">vec1</span><span class="p">)</span>
     <span class="n">mat2</span> <span class="o">=</span> <span class="n">vec_to_skew</span><span class="p">(</span><span class="n">vec2</span><span class="p">)</span>
@@ -12121,7 +12181,7 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.6</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation vector, (3, ).</p>
+                <p>Rotation vector, <code>(3, )</code>.</p>
               </div>
             </td>
             <td>
@@ -12147,7 +12207,7 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.6</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Tangent operator, (3, 3)</p>
+                <p>Tangent operator, <code>(3, 3)</code></p>
               </div>
             </td>
           </tr>
@@ -12184,8 +12244,8 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.6</p>
 <span class="sd">    Computes the tangent operator for SO(3) given a rotation vector. Includes a small angle approximation as the</span>
 <span class="sd">    rotation approaches zero. Formulation from Geometrically exact beam finite element formulated on the special</span>
 <span class="sd">    Euclidean group SE(3), by Sonneville et al., 2013, Eq A.6</span>
-<span class="sd">    :param ha_omega: Rotation vector, (3, ).</span>
-<span class="sd">    :return: Tangent operator, (3, 3)</span>
+<span class="sd">    :param ha_omega: Rotation vector, ``(3, )``.</span>
+<span class="sd">    :return: Tangent operator, ``(3, 3)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">t_so3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -12246,7 +12306,7 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.7</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation vector, (3, )</p>
+                <p>Rotation vector, <code>(3, )</code></p>
               </div>
             </td>
             <td>
@@ -12272,7 +12332,7 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.7</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Inverse tangent operator, (3, 3)</p>
+                <p>Inverse tangent operator, <code>(3, 3)</code></p>
               </div>
             </td>
           </tr>
@@ -12309,8 +12369,8 @@ Euclidean group SE(3), by Sonneville et al., 2013, Eq A.7</p>
 <span class="sd">    Computes the inverse tangent operator for SO(3) given a rotation vector. Includes a small angle approximation as the</span>
 <span class="sd">    rotation approaches zero. Formulation from Geometrically exact beam finite element formulated on the special</span>
 <span class="sd">    Euclidean group SE(3), by Sonneville et al., 2013, Eq A.7</span>
-<span class="sd">    :param ha_omega: Rotation vector, (3, )</span>
-<span class="sd">    :return: Inverse tangent operator, (3, 3)</span>
+<span class="sd">    :param ha_omega: Rotation vector, ``(3, )``</span>
+<span class="sd">    :return: Inverse tangent operator, ``(3, 3)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">t_inv_so3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -12370,7 +12430,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation vector, (3, )</p>
+                <p>Rotation vector, <code>(3, )</code></p>
               </div>
             </td>
             <td>
@@ -12396,7 +12456,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3)</p>
+                <p>Rotation matrix, <code>(3, 3)</code></p>
               </div>
             </td>
           </tr>
@@ -12431,8 +12491,8 @@ the angle approaches zero.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the exponential map from so(3) to SO(3) given a rotation vector. Includes a small angle approximation as</span>
 <span class="sd">    the angle approaches zero.</span>
-<span class="sd">    :param ha_omega: Rotation vector, (3, )</span>
-<span class="sd">    :return: Rotation matrix, (3, 3)</span>
+<span class="sd">    :param ha_omega: Rotation vector, ``(3, )``</span>
+<span class="sd">    :return: Rotation matrix, ``(3, 3)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">exp_so3_full</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
@@ -12492,7 +12552,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3)</p>
+                <p>Rotation matrix, <code>(3, 3)</code></p>
               </div>
             </td>
             <td>
@@ -12518,7 +12578,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation vector, (3, ).</p>
+                <p>Rotation vector, <code>(3, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -12548,13 +12608,12 @@ the angle approaches zero.</p>
 <span class="normal">209</span>
 <span class="normal">210</span>
 <span class="normal">211</span>
-<span class="normal">212</span>
-<span class="normal">213</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">log_so3</span><span class="p">(</span><span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">212</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">log_so3</span><span class="p">(</span><span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Computes the logarithmic map from SO(3) to so(3) given a rotation matrix. Includes a small angle approximation as</span>
 <span class="sd">    the angle approaches zero.</span>
-<span class="sd">    :param rmat: Rotation matrix, (3, 3)</span>
-<span class="sd">    :return: Rotation vector, (3, ).</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(3, 3)``</span>
+<span class="sd">    :return: Rotation vector, ``(3, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">cos_theta</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">trace</span><span class="p">(</span><span class="n">rmat</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span>
@@ -12567,7 +12626,6 @@ the angle approaches zero.</p>
     <span class="k">def</span><span class="w"> </span><span class="nf">log_so3_small_angle</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">skew_to_vec</span><span class="p">(</span><span class="n">log_sum</span><span class="p">(</span><span class="n">rmat</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
 
-    <span class="c1"># theta &gt; SMALL_ANG_THRESH  ⟺  cos_theta &lt; cos(SMALL_ANG_THRESH)</span>
     <span class="k">return</span> <span class="n">cond</span><span class="p">(</span>
         <span class="n">cos_theta</span> <span class="o">&lt;</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">SMALL_ANG_THRESH</span><span class="p">),</span> <span class="n">log_so3_full</span><span class="p">,</span> <span class="n">log_so3_small_angle</span>
     <span class="p">)</span>
@@ -12655,7 +12713,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Rotation matrix, (3, 3)</p>
+                <p>Rotation matrix, <code>(3, 3)</code></p>
               </div>
             </td>
             <td>
@@ -12748,17 +12806,17 @@ the angle approaches zero.</p>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if rotation matrix is a valid SO3 group element</span>
-<span class="sd">    :param rmat: Rotation matrix, (3, 3)</span>
+<span class="sd">    :param rmat: Rotation matrix, ``(3, 3)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if matrix is SO3</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">column_mags</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">rmat</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">row_mags</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">rmat</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 
-    <span class="c1"># if not correct arr_list_shapes</span>
+    <span class="c1"># if not correct shape</span>
     <span class="k">if</span> <span class="n">rmat</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">raise_if_false</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not SO3 as arr_list_shapes is not (3, 3)&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not SO3 as shape is not (3, 3)&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">False</span>
 
     <span class="c1"># if not unit magnitude</span>
@@ -12822,7 +12880,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Algebra matrix, (3, 3)</p>
+                <p>Algebra matrix, <code>(3, 3)</code></p>
               </div>
             </td>
             <td>
@@ -12901,14 +12959,14 @@ the angle approaches zero.</p>
 <span class="normal">70</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_if_so3_a</span><span class="p">(</span><span class="n">h_tilde</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">raise_if_false</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if rotation matrix is a valid so3 algebra element</span>
-<span class="sd">    :param h_tilde: Algebra matrix, (3, 3)</span>
+<span class="sd">    :param h_tilde: Algebra matrix, ``(3, 3)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if matrix is so3</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># check arr_list_shapes</span>
+    <span class="c1"># check shape</span>
     <span class="k">if</span> <span class="n">h_tilde</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">raise_if_false</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not so3 as arr_list_shapes is not (3, 3)&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not so3 as shape is not (3, 3)&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">False</span>
 
     <span class="c1"># check for nonzero diagonal elements</span>
@@ -12967,7 +13025,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) matrix, (4, 4)</p>
+                <p>SE(3) matrix, <code>(4, 4)</code></p>
               </div>
             </td>
             <td>
@@ -13044,14 +13102,14 @@ the angle approaches zero.</p>
 <span class="normal">95</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_if_se3_g</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">raise_if_false</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if matrix is a valid SE3 group element</span>
-<span class="sd">    :param hg: SE(3) matrix, (4, 4)</span>
+<span class="sd">    :param hg: SE(3) matrix, ``(4, 4)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if matrix is SE(3)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># check arr_list_shapes</span>
+    <span class="c1"># check shape</span>
     <span class="k">if</span> <span class="n">hg</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">raise_if_false</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not SE3 as arr_list_shapes is not (4, 4)&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not SE3 as shape is not (4, 4)&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">False</span>
 
     <span class="c1"># check rotational component</span>
@@ -13108,7 +13166,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>SE(3) matrices, (..., 4, 4)</p>
+                <p>SE(3) matrices, <code>(..., 4, 4)</code></p>
               </div>
             </td>
             <td>
@@ -13200,7 +13258,7 @@ the angle approaches zero.</p>
 <span class="normal">135</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_if_all_se3_g</span><span class="p">(</span><span class="n">hgs</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">raise_if_false</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if array of matrices are valid SE3 group elements</span>
-<span class="sd">    :param hgs: SE(3) matrices, (..., 4, 4)</span>
+<span class="sd">    :param hgs: SE(3) matrices, ``(..., 4, 4)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if all matrices are SE(3)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -13279,7 +13337,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) matrix, (4, 4)</p>
+                <p>se(3) matrix, <code>(4, 4)</code></p>
               </div>
             </td>
             <td>
@@ -13356,14 +13414,14 @@ the angle approaches zero.</p>
 <span class="normal">160</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_if_se3_a</span><span class="p">(</span><span class="n">h_tilde</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">raise_if_false</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if matrix is a valid se(3) group element</span>
-<span class="sd">    :param h_tilde: se(3) matrix, (4, 4)</span>
+<span class="sd">    :param h_tilde: se(3) matrix, ``(4, 4)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if matrix is se(3)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># check arr_list_shapes</span>
+    <span class="c1"># check shape</span>
     <span class="k">if</span> <span class="n">h_tilde</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">raise_if_false</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not se3 as arr_list_shapes is not (4, 4)&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Matrix not se3 as shape is not (4, 4)&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">False</span>
 
     <span class="c1"># check so3 component</span>
@@ -13420,7 +13478,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>se(3) matrices, (..., 4, 4)</p>
+                <p>se(3) matrices, <code>(..., 4, 4)</code></p>
               </div>
             </td>
             <td>
@@ -13502,7 +13560,7 @@ the angle approaches zero.</p>
 <span class="normal">190</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">check_if_all_se3_a</span><span class="p">(</span><span class="n">h_tildes</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">raise_if_false</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check if array of matrices are valid se(3) algebra elements</span>
-<span class="sd">    :param h_tildes: se(3) matrices, (..., 4, 4)</span>
+<span class="sd">    :param h_tildes: se(3) matrices, ``(..., 4, 4)``</span>
 <span class="sd">    :param raise_if_false: If the check fails, raise ValueError</span>
 <span class="sd">    :return: Boolean indicating if all matrices are se(3)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -13571,7 +13629,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Stiffness coefficients which make up the diagonal of the local stiffness matrix, (6, ).</p>
+                <p>Stiffness coefficients which make up the diagonal of the local stiffness matrix, <code>(6, )</code>.</p>
               </div>
             </td>
             <td>
@@ -13613,7 +13671,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Beam tangent stiffness matrix, (12, 12)</p>
+                <p>Beam tangent stiffness matrix, <code>(12, 12)</code></p>
               </div>
             </td>
           </tr>
@@ -13671,14 +13729,14 @@ the angle approaches zero.</p>
 <span class="normal">238</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">k_t_expected</span><span class="p">(</span><span class="n">coeffs</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">length</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compute expected two-node beam undeformed element stiffness matrix given coefficients and length</span>
-<span class="sd">    :param coeffs: Stiffness coefficients which make up the diagonal of the local stiffness matrix, (6, ).</span>
+<span class="sd">    :param coeffs: Stiffness coefficients which make up the diagonal of the local stiffness matrix, ``(6, )``.</span>
 <span class="sd">    :param length: Beam length, ()</span>
-<span class="sd">    :return: Beam tangent stiffness matrix, (12, 12)</span>
+<span class="sd">    :return: Beam tangent stiffness matrix, ``(12, 12)``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">coeffs</span><span class="p">,</span> <span class="n">Array</span><span class="p">)</span> <span class="ow">and</span> <span class="n">coeffs</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">6</span><span class="p">,))</span> <span class="ow">or</span> <span class="p">(</span>
         <span class="nb">isinstance</span><span class="p">(</span><span class="n">coeffs</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">coeffs</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">6</span>
     <span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Coefficients array must be of arr_list_shapes (6, )&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Coefficients array must be of shape (6, )&quot;</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="n">Array</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="n">length</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Length l0 must be a scalar value&quot;</span><span class="p">)</span>
@@ -13761,7 +13819,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Curvature of the element, ()</p>
+                <p>Curvature of the element, <code>()</code></p>
               </div>
             </td>
             <td>
@@ -13777,7 +13835,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Position along the beam length, ()</p>
+                <p>Position along the beam length, <code>()</code></p>
               </div>
             </td>
             <td>
@@ -13793,7 +13851,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Direction of moment applied, either 'y' or 'z'</p>
+                <p>Direction of moment applied, either <code>y</code> or <code>z</code></p>
               </div>
             </td>
             <td>
@@ -13819,7 +13877,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Coordinate of point along the beam, (3, ).</p>
+                <p>Coordinate of point along the beam, <code>(3, )</code>.</p>
               </div>
             </td>
           </tr>
@@ -13856,10 +13914,10 @@ the angle approaches zero.</p>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    For a beam with constant curvature, with base node at the origin and curvature in the positive z direction</span>
 <span class="sd">    (i.e., existing in the x_target-y plane with z=0), obtain the coordinates along the beam length for</span>
-<span class="sd">    :param kappa: Curvature of the element, ()</span>
-<span class="sd">    :param s: Position along the beam length, ()</span>
-<span class="sd">    :param direction: Direction of moment applied, either &#39;y&#39; or &#39;z&#39;</span>
-<span class="sd">    :return: Coordinate of point along the beam, (3, ).</span>
+<span class="sd">    :param kappa: Curvature of the element, ``()``</span>
+<span class="sd">    :param s: Position along the beam length, ``()``</span>
+<span class="sd">    :param direction: Direction of moment applied, either ``y`` or ``z``</span>
+<span class="sd">    :return: Coordinate of point along the beam, ``(3, )``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">x</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">s</span> <span class="o">*</span> <span class="n">kappa</span><span class="p">)</span> <span class="o">/</span> <span class="n">kappa</span>
@@ -13914,7 +13972,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative configuration vector, (6, )</p>
+                <p>Relative configuration vector, <code>(6, )</code></p>
               </div>
             </td>
             <td>
@@ -13959,7 +14017,7 @@ the angle approaches zero.</p>
 <span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_curvature</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Obtain curvature from relative configuration vector</span>
-<span class="sd">    :param d: Relative configuration vector, (6, )</span>
+<span class="sd">    :param d: Relative configuration vector, ``(6, )``</span>
 <span class="sd">    :return: Curvature of neutral axis, ()</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="mi">3</span><span class="p">:],</span> <span class="n">d</span><span class="p">[:</span><span class="mi">3</span><span class="p">]))</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">d</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span>
@@ -14005,7 +14063,7 @@ the angle approaches zero.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative configuration vector, (6, )</p>
+                <p>Relative configuration vector, <code>(6, )</code></p>
               </div>
             </td>
             <td>
@@ -14050,7 +14108,7 @@ the angle approaches zero.</p>
 <span class="normal">280</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_torsion</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Obtain torsion from relative configuration vector</span>
-<span class="sd">    :param d: Relative configuration vector, (6, )</span>
+<span class="sd">    :param d: Relative configuration vector, ``(6, )``</span>
 <span class="sd">    :return: Torsion of neutral axis, ()</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="o">-</span><span class="n">jnp</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="mi">3</span><span class="p">:],</span> <span class="n">d</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">d</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span>
