@@ -1,6 +1,6 @@
 [project]
 name = "flapjax"
-version = "0.1.2"
+version = "1.1.1"
 description = "Solver for computing aeroelastic responses and corresponding design derivatives."
 authors = [{ name = "Ben Preston", email = "b.preston23@imperial.ac.uk" }]
 keywords = ["aeroelasticity", "unsteady vortex lattice method", "nonlinear beam", "adjoint methods"]
