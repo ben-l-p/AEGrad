@@ -7,7 +7,7 @@ from jax import Array, vmap
 from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
 
-from flapjax.aero.data_structures import AeroSnapshot, GridDiscretisation
+from flapjax.aero.data_structures import AeroCase, GridDiscretisation
 from flapjax.aero.flowfields import Constant, FlowField, OneMinusCosine
 from flapjax.aero.linear.data_structures import AeroInputUnflattened
 from flapjax.aero.utils import biot_savart_cutoff, make_rectangular_grid
@@ -36,7 +36,7 @@ class TestLinearAero:
         cls,
         flowfield: FlowField,
         ea: float = 0.0,
-    ) -> tuple[UVLM, AeroSnapshot, Array]:
+    ) -> tuple[UVLM, AeroCase, Array]:
         r"""
         Returns a reference wing case, and the reference beam coordinates.
         """

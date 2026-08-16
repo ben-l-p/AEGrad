@@ -1,8 +1,6 @@
 from flapjax.structure.data_structures import (
-    DynamicStructure,
-    DynamicStructureSnapshot,
     OptionalJacobians,
-    StaticStructure,
+    StructureCase,
 )
 from flapjax.structure.gradients.beam import BeamStructure
 from flapjax.structure.gradients.data_structures import (

@@ -76,7 +76,9 @@ nav:
       - tutorials/index.md
       - Structure:
           - Geradin beam static deformation: tutorials/geradin_beam_static.ipynb
+          - Geradin beam adjoint gradients: tutorials/geradin_beam_adjoint.ipynb
           - Flying spaghetti free dynamics: tutorials/flying_spaghetti.ipynb
+          - Flying spaghetti mass optimisation: tutorials/flying_spaghetti_optimise.ipynb
       - Aeroelastic:
           - Simple HALE gust response: tutorials/simple_hale_gust.ipynb
           - Patil wing open-loop control: tutorials/patil_wing_control.ipynb

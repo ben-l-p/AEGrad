@@ -8,8 +8,14 @@ write ``.vtu`` and ``.pvd`` files to disk, which can be visualised in ParaView.
     - [Geradin beam static deformation](geradin_beam_static.ipynb) - Clamped cantilever beam subject to a tip load,
       causing large deflections. The tutorial demonstrates how to set up a simple structural problem, and use the beam
       ``static_solve()`` routine to solve for the deformation when subject to follower and dead external forces.
-    - [Flying spaghetti free dynamics](flying_spaghetti.ipynb) - Free-flying beam subject to time-dependent external
-      forces, making use of the beam ``dynamic_solve()`` routine to find the time-doman response.
+    - [Geradin beam adjoint gradients](geradin_beam_adjoint.ipynb) - Follow-on to the static deformation tutorial that
+      uses the beam ``static_adjoint()`` routine to compute the gradient of the tip vertical displacement with respect
+      to the tip load and the beam bending stiffness, then verifies each against finite differences.
+        - [Flying spaghetti free dynamics](flying_spaghetti.ipynb) - Free-flying beam subject to time-dependent external
+          forces, making use of the beam ``dynamic_solve()`` routine to find the time-doman response.
+    - [Flying spaghetti mass optimisation](flying_spaghetti_optimise.ipynb) - Follow-on to the free dynamics tutorial
+      that uses the beam ``dynamic_adjoint()`` routine to drive an SLSQP outer loop, redistributing per-element mass to
+      minimise the final-time strain energy of the beam subject to a total-mass constraint.
 - Aeroelastic
     - [Simple HALE gust response](simple_hale_gust.ipynb) - Free-flying high aspect ratio aircraft configuration subject
       to a one-minus-cosine gust. This first uses the aeroelastic``trim()``

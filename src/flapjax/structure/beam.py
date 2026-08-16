@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from functools import partial
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, ClassVar, Literal, cast, overload
 
 import jax
 from jax import Array, vmap
@@ -11,7 +11,7 @@ from jax import numpy as jnp
 from jax.scipy.linalg import block_diag
 from jax.scipy.spatial.transform import Rotation
 
-from flapjax.aero.data_structures import DynamicAeroCase
+from flapjax.aero.data_structures import AeroCase
 from flapjax.algebra.array_utils import check_arr_dtype, check_arr_shape
 from flapjax.algebra.se3 import (
     exp_se3,
@@ -24,10 +24,8 @@ from flapjax.algebra.se3 import (
 from flapjax.algebra.so3 import vec_to_skew
 from flapjax.plotting.modal import plot_modes_vtu
 from flapjax.structure.data_structures import (
-    DynamicStructure,
-    DynamicStructureSnapshot,
     OptionalJacobians,
-    StaticStructure,
+    StructureCase,
     StructureMinimalStates,
 )
 from flapjax.structure.gradients.data_structures import (
@@ -57,11 +55,15 @@ from flapjax.utils.print_utils import (
     warn,
     warn_if_32_bit,
 )
-from flapjax.utils.utils import check_type, make_pytree, nested_list_to_tuple
+from flapjax.utils.utils import (
+    check_type,
+    make_pytree,
+    nested_list_to_tuple,
+)
 
 if TYPE_CHECKING:
     from flapjax.aero.uvlm import UVLM
-    from flapjax.coupled.data_structures import DynamicAeroelastic
+    from flapjax.coupled.data_structures import AeroelasticCase
 
 DEFAULT_STRUCT_CONVERGENCE_SETTINGS = ConvergenceSettings(
     max_n_iter=25,
@@ -77,6 +79,68 @@ class BaseBeamStructure:
     r"""
     Class to represent nonlinear beam structure model
     """
+
+    _static: ClassVar[tuple[str, ...]] = (
+        "n_nodes",
+        "n_dof",
+        "connectivity",
+        "n_elem_per_node",
+        "n_elem",
+        "dof_per_elem",
+        "y_vector_reference",
+        "use_lumped_mass",
+        "use_gravity",
+        "gravity_vec",
+        "k_cs_index",
+        "m_cs_index",
+        "m_lumped_index",
+        "thrust_nodes",
+        "thrust_direction",
+        "optional_jacobians",
+        "struct_convergence_settings",
+        "relaxation_factor",
+        "spectral_radius",
+    )
+
+    @property
+    def k_cs(self) -> Array:
+        if self._k_cs is None:
+            raise ValueError("k_cs has not been set")
+        return self._k_cs
+
+    @k_cs.setter
+    def k_cs(self, value: Array | None) -> None:
+        self._k_cs = value
+
+    @property
+    def m_cs(self) -> Array:
+        if self._m_cs is None:
+            raise ValueError("m_cs has not been set")
+        return self._m_cs
+
+    @m_cs.setter
+    def m_cs(self, value: Array | None) -> None:
+        self._m_cs = value
+
+    @property
+    def m_lumped(self) -> Array:
+        if self._m_lumped is None:
+            raise ValueError("m_lumped has not been set")
+        return self._m_lumped
+
+    @m_lumped.setter
+    def m_lumped(self, value: Array | None) -> None:
+        self._m_lumped = value
+
+    @property
+    def time_integrator(self) -> TimeIntegrator:
+        if self._time_integrator is None:
+            raise ValueError("time_integrator has not been set")
+        return self._time_integrator
+
+    @time_integrator.setter
+    def time_integrator(self, value: TimeIntegrator | None) -> None:
+        self._time_integrator = value
 
     def __init__(
         self,
@@ -97,16 +161,16 @@ class BaseBeamStructure:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters.
         :param num_nodes: Number of nodes in the structure.
-        :param connectivity: Connectivity array of arr_list_shapes (n_elem, 2).
-        :param y_vector: Vector defining the y direction for each element, (n_elem, 3).
-        :param k_cs_index: Array defining the index from the library of k_cs to use for each element, (n_elem, ).
-        :param m_cs_index: Array defining the index from the library of m_cs to use for each element, (n_elem, ).
+        :param connectivity: Connectivity array, `(n_elem, 2)``.
+        :param y_vector: Vector defining the y direction for each element, ``(n_elem, 3)``.
+        :param k_cs_index: Array defining the index from the library of k_cs to use for each element, ``(n_elem, )``.
+        :param m_cs_index: Array defining the index from the library of m_cs to use for each element, ``(n_elem, )``.
         :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as
-        that for the lumped mass data (n_lumped_mass, ).
-        :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, (3, ).
+        that for the lumped mass data ``(n_lumped_mass, )``.
+        :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, ``(3, )``.
         :param thrust_nodes: Dictionary of thrust node names and their corresponding node indices, {keys, int}.
         :param thrust_direction: Dictionary of thrust node names and their corresponding thrust direction vectors,
-        {keys, (3, )}.
+        ``{keys, (3, )}``.
         :param optional_jacobians: Define which Jacobians contributions are to be used for solution.
         :param relaxation_factor: Relaxation factor which reduces the displacement update at each iteration. A value of
         1 is no relaxation, and a value of 0 is no update.
@@ -156,9 +220,9 @@ class BaseBeamStructure:
         self.x0_reference: Array = jnp.zeros((num_nodes, 3))  # unoriented
         self.x0: Array = jnp.zeros((num_nodes, 3))  # oriented
 
-        self._m_cs: Array | None = None
-        self._k_cs: Array | None = None
-        self._m_lumped: Array | None = None
+        self.m_cs = None
+        self.k_cs = None
+        self.m_lumped = None
         self.use_lumped_mass: bool = m_lumped_index is not None
 
         # initialise auxiliary arrays
@@ -250,51 +314,7 @@ class BaseBeamStructure:
         self.relaxation_factor: float = relaxation_factor
         self.spectral_radius: float = spectral_radius
 
-        self._time_integrator: TimeIntegrator | None = None
-
-    @property
-    def k_cs(self) -> Array:
-        if self._k_cs is None:
-            raise ValueError("k_cs has not been set. Please set k_cs before accessing.")
-        return self._k_cs
-
-    @k_cs.setter
-    def k_cs(self, k_cs: Array) -> None:
-        self._k_cs = k_cs
-
-    @property
-    def m_cs(self) -> Array:
-        if self._m_cs is None:
-            raise ValueError("m_cs has not been set. Please set m_cs before accessing.")
-        return self._m_cs
-
-    @m_cs.setter
-    def m_cs(self, m_cs: Array) -> None:
-        self._m_cs = m_cs
-
-    @property
-    def m_lumped(self) -> Array:
-        if self._m_lumped is None:
-            raise ValueError(
-                "m_lumped has not been set. Please set m_lumped before accessing."
-            )
-        return self._m_lumped
-
-    @m_lumped.setter
-    def m_lumped(self, m_lumped: Array) -> None:
-        self._m_lumped = m_lumped
-
-    @property
-    def time_integrator(self) -> TimeIntegrator:
-        if self._time_integrator is None:
-            raise ValueError(
-                "Time integrator has not been set. Please set time_integrator before accessing."
-            )
-        return self._time_integrator
-
-    @time_integrator.setter
-    def time_integrator(self, ti: TimeIntegrator) -> None:
-        self._time_integrator = ti
+        self.time_integrator = None
 
     def set_design_variables(
         self,
@@ -309,14 +329,14 @@ class BaseBeamStructure:
     ) -> None:
         r"""
         Set design variables and compute initial configuration dependent quantities.
-        :param coords: Node coordinates in the reference configuration, (n_nodes, 3).
-        :param k_cs: Cross-section stiffness matrices, (n_entry, 6, 6) or (6, 6).
-        :param m_cs: Cross-section mass matrices, (n_entry, 6, 6) or (6, 6).
-        :param m_lumped: Lumped mass matrices at nodes, (n_entry, 6, 6).
-        :param orientation_euler: Euler angles in radians which to rotate the reference configuration by, (3, ). This rotation
+        :param coords: Node coordinates in the reference configuration, ``(n_nodes, 3)``.
+        :param k_cs: Cross-section stiffness matrices, ``(n_entry, 6, 6)`` or ``(6, 6)``.
+        :param m_cs: Cross-section mass matrices, ``(n_entry, 6, 6)`` or ``(6, 6)``.
+        :param m_lumped: Lumped mass matrices at nodes, ``(n_entry, 6, 6)``.
+        :param orientation_euler: Euler angles in radians which to rotate the reference configuration by, ``(3, )``. This rotation
         is performed about the origin, and will default to the identity is no Array is passed. These are rotated in
         z-y-x order.
-        :param thrust_reference: Reference thrust magnitude, {keys, (1, )}.
+        :param thrust_reference: Reference thrust magnitude, ``{keys, (1, )}``.
         :param remove_checks: Flag to ignore input checks, used when function is JIT compiled.
         """
 
@@ -329,22 +349,16 @@ class BaseBeamStructure:
             ).as_matrix()
 
             # rotate the y vectors
-            self.y_vector = (
-                jnp.array(self.y_vector)
-                .at[...]
-                .set(
-                    jnp.einsum(
-                        "jk,ik->ij",
-                        self.orientation,
-                        self.y_vector_reference_arr,
-                    )
-                )
+            self.y_vector = jnp.einsum(
+                "jk,ik->ij",
+                self.orientation,
+                self.y_vector_reference_arr,
             )
 
         # coordinates
         check_arr_shape(coords, (self.n_nodes, 3), "coords")
         self.x0_reference = coords
-        self.x0 = self.x0.at[...].set(jnp.einsum("jk,ik->ij", self.orientation, coords))
+        self.x0 = jnp.einsum("jk,ik->ij", self.orientation, coords)
 
         # populate arrays
         if k_cs.ndim == 2:
@@ -425,7 +439,7 @@ class BaseBeamStructure:
                 "Please provide a different y_vector."
             )
 
-        self.l0 = self.l0.at[...].set(jnp.linalg.norm(dx, axis=-1))  # (n_elem,)
+        self.l0 = jnp.linalg.norm(dx, axis=-1)  # (n_elem,)
         self.d0 = self.d0.at[:, 0].set(self.l0)
 
         dx_unit = dx / self.l0[:, None]  # unit vector in beam direction, (n_elem, 3)
@@ -440,15 +454,13 @@ class BaseBeamStructure:
         self.o0 = self.o0.at[..., 1].set(dy_unit)
         self.o0 = self.o0.at[..., 2].set(dz_unit)
 
-        self.ad_inv_o0 = self.ad_inv_o0.at[...].set(
-            vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
-        )
+        self.ad_inv_o0 = vmap(rmat_to_ha_hat)(jnp.transpose(self.o0, (0, 2, 1)))
 
         # set unoriented initial coordinates
-        self.hg0_reference = self.hg0_reference.at[...].set(
-            jnp.broadcast_to(jnp.eye(4)[None, ...], (self.n_nodes, 4, 4))
+        self.hg0_reference = jnp.broadcast_to(
+            jnp.eye(4)[None, ...], (self.n_nodes, 4, 4)
         )  # (n_nodes, 4, 4)
-        self.hg0_reference = self.hg0.at[:, :3, 3].set(self.x0_reference)
+        self.hg0_reference = self.hg0_reference.at[:, :3, 3].set(self.x0_reference)
 
         # set oriented initial coordinates
         self.hg0 = self.hg0.at[:, :3, :3].set(
@@ -459,7 +471,7 @@ class BaseBeamStructure:
 
     def get_design_variables(
         self,
-        struct_case: StaticStructure | DynamicStructure,
+        struct_case: StructureCase,
         thrust_t: dict[str, Array],
         grads_to_compute: StructuralGradsToCompute | None,
     ) -> StructuralDesignVariables:
@@ -467,7 +479,7 @@ class BaseBeamStructure:
         Obtain the design variables for the structural problem. As the external forcing is defined for each solve, the
         chosen forcing is required as input.
         :param struct_case: Structural case
-        :param thrust_t: Thrust time history, {keys, (n_tstep, )}.
+        :param thrust_t: Thrust time history, {keys, ``(n_tstep,)``}.
         :param grads_to_compute: Data structure which describes which design variables should be obtained. If none, all
         variables are obtained.
         :return: StructuralDesignVariables dataclass containing design variables
@@ -476,9 +488,9 @@ class BaseBeamStructure:
         # struct_case.f_ext_dead is stored in local frame: f_local = R^T @ f_global,
         # so recover f_global = R @ f_local
         hg = struct_case.hg
-        if hg.ndim == 4:  # DynamicStructure: (n_tstep, n_nodes, 4, 4)
+        if hg.ndim == 4:  # batched case: (n_tstep, n_nodes, 4, 4)
             rmat = hg[:, :, :3, :3]
-        else:  # StaticStructure: (n_nodes, 4, 4)
+        else:  # snapshot: (n_nodes, 4, 4)
             rmat = hg[:, :3, :3]
         f_ext_dead_global = (
             transform_nodal_vect(struct_case.f_ext_dead, rmat)
@@ -521,12 +533,12 @@ class BaseBeamStructure:
         use_f_aero: bool = True,
         use_f_grav: bool = True,
         prescribed_dofs: tuple[int, ...] = (),
-    ) -> StaticStructure:
+    ) -> StructureCase:
         r"""
         Get the reference configuration of the structure.
-        :return: StaticStructure dataclass containing reference configuration.
+        :return: Structure dataclass containing reference configuration.
         """
-        return StaticStructure(
+        return StructureCase(
             hg=self.hg0,
             conn=self.connectivity,
             o0=self.o0,
@@ -545,6 +557,7 @@ class BaseBeamStructure:
             thrust_nodes=self.thrust_nodes,
             local=True,
             prescribed_dofs=prescribed_dofs,
+            t=jnp.zeros(1),
         )
 
     @property
@@ -575,8 +588,8 @@ class BaseBeamStructure:
     def calculate_varphi_from_hg(self, hg: Array) -> Array:
         r"""
         Calculate the twist vector from the reference configuration to hg
-        :param hg: Deformed coordinates, (n_nodes, 4, 4)
-        :return: Vector of twists, (n_nodes, 6)
+        :param hg: Deformed coordinates, ``(n_nodes, 4, 4)``
+        :return: Vector of twists, ``(n_nodes, 6)``
         """
         return vmap(hg_to_d, (0, 0), 0)(self.hg0, hg)
 
@@ -587,8 +600,8 @@ class BaseBeamStructure:
     def assemble_matrix_from_entries(self, entries: Array) -> Array:
         r"""
         Assemble global matrix from element entries
-        :param entries: Array of element matrix entries, (n_elem, 12, 12)
-        :return: System global matrix, (n_dof, n_dof)
+        :param entries: Array of element matrix entries, ``(n_elem, 12, 12)``
+        :return: System global matrix, ``(n_dof, n_dof)``
         """
 
         row_idx = jnp.broadcast_to(
@@ -606,8 +619,8 @@ class BaseBeamStructure:
     def assemble_vector_from_entries(self, entries: Array) -> Array:
         r"""
         Assemble global vector from element entries
-        :param entries: Array of element vector entries, (n_elem, 12)
-        :return: System global vector, (n_dof,)
+        :param entries: Array of element vector entries, ``(n_elem, 12)``
+        :return: System global vector, ``(n_dof, )``
         """
 
         vect = jnp.zeros(self.n_dof)
@@ -617,9 +630,9 @@ class BaseBeamStructure:
     def add_lumped_contributions_to_arr(self, arr: Array, lumped_arr: Array) -> Array:
         r"""
         Add lumped contributions to an array
-        :param arr: Full array, (6*n_node, 6*n_node)
-        :param lumped_arr: Lumped contributions, (n_lump, 6, 6)
-        :return: In-place updated array, (6*n_node, 6*n_node)
+        :param arr: Full array, ``(6*n_node, 6*n_node)``
+        :param lumped_arr: Lumped contributions, ``(n_lump, 6, 6)``
+        :return: In-place updated array, ``(6*n_node, 6*n_node)``
         """
 
         assert self.m_lumped_index is not None
@@ -637,9 +650,9 @@ class BaseBeamStructure:
     def add_lumped_contributions_to_vec(self, vec: Array, lumped_vec: Array) -> Array:
         r"""
         Add lumped contributions to an array
-        :param vec: Full vector, (6*n_node,)
-        :param lumped_vec: Lumped contributions, (n_lump, 6)
-        :return: In-place updated vector, (6*n_node, ).
+        :param vec: Full vector, ``(6*n_node, )``
+        :param lumped_vec: Lumped contributions, ``(n_lump, 6)``
+        :return: In-place updated vector, ``(6*n_node, )``.
         """
 
         assert self.m_lumped_index is not None
@@ -655,8 +668,8 @@ class BaseBeamStructure:
     ) -> Array | None:
         r"""
         This also includes the effect of the time integrator
-        :param f: Forcing, (n_nodes, 6).
-        :param weighting: Vector of load step weightings, (n_load_steps, ).
+        :param f: Forcing, ``(n_nodes, 6)``.
+        :param weighting: Vector of load step weightings, ``(n_load_steps, )``.
         :param apply_alpha_weighting: If true, compute the forcing at the alpha step.
         :return:
         """
@@ -703,10 +716,10 @@ class BaseBeamStructure:
     ) -> Array:
         r"""
         Assemble tangent stiffness matrix as a function of the element relative configuration vectors
-        :param d: Element relative configuration, (n_elem, 6).
-        :param p_d: P(d) operator, (n_elem, 6, 12).
-        :param eps: Element strains, (n_elem, 6).
-        :return: Elementwise stiffness matrix entries, (n_elem, 12, 12).
+        :param d: Element relative configuration, ``(n_elem, 6)``.
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``.
+        :param eps: Element strains, ``(n_elem, 6)``.
+        :return: Elementwise stiffness matrix entries, ``(n_elem, 12, 12)``.
         """
         # compute stiffness matrix entries
         return vmap(
@@ -728,9 +741,9 @@ class BaseBeamStructure:
     def _make_k_t_dead(self, rmat: Array, f_ext_dead: Array) -> Array:
         r"""
         Compute the contribution to the stiffness matrix from dead external forces.
-        :param rmat: Rotation matrices at nodes, (n_node, 3, 3)
-        :param f_ext_dead: External dead forces in global reference, (n_node, 6)
-        :return: Stiffness matrix contribution from dead forces, (n_node, 6, 6)
+        :param rmat: Rotation matrices at nodes, ``(n_node, 3, 3)``
+        :param f_ext_dead: External dead forces in global reference, ``(n_node, 6)``
+        :return: Stiffness matrix contribution from dead forces, ``(n_node, 6, 6)``
         """
         k_t = jnp.zeros((self.n_nodes, 6, 6))
 
@@ -746,11 +759,11 @@ class BaseBeamStructure:
     def _make_k_t_grav(self, d: Array, p_d: Array, rmat: Array, m_t: Array) -> Array:
         r"""
         Compute the contribution to the stiffness matrix from gravity forces.
-        :param d: Element relative configuration, (n_elem, 6)
-        :param p_d: P(d) operator, (n_elem, 6, 12)
-        :param rmat: Nodal rotation matrices, (n_node, 3, 3)
-        :param m_t: Disassembled system mass matrix, (n_elem, 12, 12)
-        :return: Stiffness matrix contribution from gravity forces, (n_elem, 12, 12)
+        :param d: Element relative configuration, ``(n_elem, 6)``
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``
+        :param rmat: Nodal rotation matrices, ``(n_node, 3, 3)``
+        :param m_t: Disassembled system mass matrix, ``(n_elem, 12, 12)``
+        :return: Stiffness matrix contribution from gravity forces, ``(n_elem, 12, 12)``
         """
 
         # perturbations in mass matrix integration
@@ -798,8 +811,8 @@ class BaseBeamStructure:
     def _make_k_t_grav_lumped(self, rmat: Array) -> Array:
         r"""
         Compute the contribution to the stiffness matrix from gravity forces for the lumped masses.
-        :param rmat: Nodal rotation matrices, (n_node, 3, 3)
-        :return: Stiffness contribution from gravity forces for lumped masses, (n_lumped, 6, 6)
+        :param rmat: Nodal rotation matrices, ``(n_node, 3, 3)``
+        :return: Stiffness contribution from gravity forces for lumped masses, ``(n_lumped, 6, 6)``
         """
         # (n_lumped, 3, 3)
         d_g_d_omega = vmap(vec_to_skew, 0, 0)(
@@ -823,13 +836,13 @@ class BaseBeamStructure:
     ) -> Array:
         r"""
         Compute the full tangent stiffness matrix, with contributions from stiffness, dead forces and gravity.
-        :param d: Element relative configuration, (n_elem, 6).
-        :param p_d: P(d) operator, (n_elem, 6, 12).
-        :param eps: Strain vectors, (n_elem, 6).
-        :param f_ext_dead: External dead forces in global reference, (n_node, 6).
-        :param rmat: Nodal rotation matrices, (n_node, 3, 3).
-        :param m_t: Disassembled system mass matrix, (n_elem, 12, 12).
-        :return: Tangent stiffness matrix with all contributions, (n_dof, n_dof).
+        :param d: Element relative configuration, ``(n_elem, 6)``.
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``.
+        :param eps: Strain vectors, ``(n_elem, 6)``.
+        :param f_ext_dead: External dead forces in global reference, ``(n_node, 6)``.
+        :param rmat: Nodal rotation matrices, ``(n_node, 3, 3)``.
+        :param m_t: Disassembled system mass matrix, ``(n_elem, 12, 12)``.
+        :return: Tangent stiffness matrix with all contributions, ``(n_dof, n_dof)``.
         """
 
         k_t = self.assemble_matrix_from_entries(self.make_k_t(d, p_d, eps))
@@ -855,9 +868,9 @@ class BaseBeamStructure:
         r"""
         Assemble tangent mass matrix as a function of the element relative configuration vectors. This does not include
         the lumped mass contribution.
-        :param d: Element relative configuration, (n_elem, 6)
+        :param d: Element relative configuration, ``(n_elem, 6)``
         :param int_order: Integration order for mass matrix computation
-        :return: Elementwise mass matrix, (n_elem, 12, 12)
+        :return: Elementwise mass matrix, ``(n_elem, 12, 12)``
         """
         return vmap(partial(_integrate_m_l, int_order=int_order), (0, 0, 0, 0), 0)(
             self.m_cs[self.m_cs_index, ...], d, self.ad_inv_o0, self.l0
@@ -865,7 +878,7 @@ class BaseBeamStructure:
 
     def make_nodal_m_k(
         self,
-        case: StaticStructure,
+        case: StructureCase,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
     ) -> tuple[Array, Array]:
         r"""
@@ -874,7 +887,7 @@ class BaseBeamStructure:
         global perturbations in acceleration and displacement, respectively.
         :param case: Static structure case for which to compute the global mass and stiffness matrices.
         :param int_order: Integration order for mass matrix computation.
-        :return: Global mass and stiffness matrices, (n_free_dof, n_free_dof).
+        :return: Global mass and stiffness matrices, ``(n_free_dof, n_free_dof)``.
         """
         # extract variables from case
         d = case.d
@@ -945,7 +958,7 @@ class BaseBeamStructure:
 
     def make_modal_m_k(
         self,
-        case: StaticStructure,
+        case: StructureCase,
         n_modes: int,
         remove_complex_conjugate: bool = True,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
@@ -965,7 +978,7 @@ class BaseBeamStructure:
 
     def modal(
         self,
-        case: StaticStructure,
+        case: StructureCase,
         remove_complex_conjugate: bool = True,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
         n_modes: int = 20,
@@ -996,7 +1009,7 @@ class BaseBeamStructure:
         :param max_disp: Maximum displacement of structure for plotted modes, used for scaling.
         :param max_ang: Maximum angle of structure for plotted modes in radians, used for scaling.
         :return: Tuple of natural frequencies (n_free_dof), damping ratios (n_free_dof), and mode shapes with no
-         normalisation (n_modes, n_free_dof).
+         normalisation ``(n_modes, n_free_dof)``.
         """
         freqs, damping, modes, *_ = self.base_modal(
             case=case,
@@ -1110,7 +1123,7 @@ class BaseBeamStructure:
 
     def base_modal(
         self,
-        case: StaticStructure,
+        case: StructureCase,
         remove_complex_conjugate: bool,
         int_order: Literal[3, 4, 5] = BASE_LOBATTO_ORDER,
         n_modes: int = 20,
@@ -1166,7 +1179,7 @@ class BaseBeamStructure:
 
     def linearise(
         self,
-        reference: StaticStructure,
+        reference: StructureCase,
         dt: float,
         n_modes: int | None = None,
         modal_inputs: bool = False,
@@ -1200,11 +1213,11 @@ class BaseBeamStructure:
     ) -> tuple[Array, Array]:
         r"""
         Assemble tangent gyroscopic matrix. This does not include the lumped mass contribution.
-        :param d: Element relative configuration, (n_elem, 6)
-        :param d_dot: Element relative velocity, (n_elem, 6)
-        :param v: Velocities in local frames, (n_node, 6)
+        :param d: Element relative configuration, ``(n_elem, 6)``
+        :param d_dot: Element relative velocity, ``(n_elem, 6)``
+        :param v: Velocities in local frames, ``(n_node, 6)``
         :param int_order: Integration order,
-        :return: Elementwise gyroscopic C_L and C_T matrices, (n_elem, 12, 12), (n_elem, 12, 12)
+        :return: Elementwise gyroscopic C_L and C_T matrices, ``(n_elem, 12, 12)``, ``(n_elem, 12, 12)``
         """
         clt = vmap(
             partial(
@@ -1235,8 +1248,8 @@ class BaseBeamStructure:
     def _make_c_t_lumped(self, v: Array) -> tuple[Array, Array]:
         r"""
         Obtain the gyroscopic matrix contribution from the lumped masses.
-        :param v: Nodal velocities in global frame, (n_node, 6)
-        :return: Gyroscopic L and T matrix entries from lumped masses, (n_lumped, 6, 6), (n_lumped, 6, 6)
+        :param v: Nodal velocities in global frame, ``(n_node, 6)``
+        :return: Gyroscopic L and T matrix entries from lumped masses, ``(n_lumped, 6, 6)``, ``(n_lumped, 6, 6)``
         """
         c_t_l = vmap(_make_c_t_lumped, (0, 0), 0)(
             self.m_lumped, v[self.m_lumped_index, ...]
@@ -1254,13 +1267,13 @@ class BaseBeamStructure:
     ) -> Array:
         r"""
         Create the system matrix for the static or dynamic analysis.
-        :param m_t: Disassembled system mass matrix, (n_elem, 12, 12).
-        :param c_t: Disassembled system gyroscopic matrix, (n_elem, 12, 12).
-        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, (n_lumped, 6, 6).
-        :param k_t: System stiffness matrix, (n_dof, n_dof).
-        :param t_n: Tangent operator T(varphi), (n_nodes, 6, 6).
+        :param m_t: Disassembled system mass matrix, ``(n_elem, 12, 12)``.
+        :param c_t: Disassembled system gyroscopic matrix, ``(n_elem, 12, 12)``.
+        :param c_t_lumped: Disassembled system lumped gyroscopic matrix, ``(n_lumped, 6, 6)``.
+        :param k_t: System stiffness matrix, ``(n_dof, n_dof)``.
+        :param t_n: Tangent operator T(varphi), ``(n_nodes, 6, 6)``.
         :param ti: Time integration parameters.
-        :return: System matrix, (n_dof, n_dof).
+        :return: System matrix, ``(n_dof, n_dof)``.
         """
 
         # note that k_t is already assembled for convenience
@@ -1289,8 +1302,8 @@ class BaseBeamStructure:
     def calculate_centre_of_mass(self, hg: Array) -> Array:
         r"""
         Compute the centre of mass for an arbitrary system.
-        :param hg: Node SE(3) coordinates, (n_node, 4, 4) or (n_tstep, n_node, 4, 4).
-        :return: Centre of mass, (3) or (n_tstep, 3).
+        :param hg: Node SE(3) coordinates, ``(n_node, 4, 4)`` or ``(n_tstep, n_node, 4, 4)``.
+        :return: Centre of mass, (3) or ``(n_tstep, 3)``.
         """
 
         def inner_func(hg_: Array) -> Array:
@@ -1313,17 +1326,17 @@ class BaseBeamStructure:
     def make_f_elem(self, eps: Array) -> Array:
         r"""
         Compute the forces within the elements as :math:`\mathbf{f}_{elem} = \mathcal{K}_{cs} \epsilon`.
-        :param eps: Element strain vectors, (n_elem, 6).
-        :return: Element forces, (n_elem, 6).
+        :param eps: Element strain vectors, ``(n_elem, 6)``.
+        :return: Element forces, ``(n_elem, 6)``.
         """
         return jnp.einsum("ijk,ik->ij", self.k_cs[self.k_cs_index, ...], eps)
 
     def make_f_int(self, p_d: Array, eps: Array) -> Array:
         r"""
         Assemble global internal force vector as a function of the element relative configuration vectors.
-        :param p_d: P(d) operator, (n_elem, 6, 12).
-        :param eps: Element strain vectors, (n_elem, 6).
-        :return: Internal forces, (n_elem, 12).
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``.
+        :param eps: Element strain vectors, ``(n_elem, 6)``.
+        :return: Internal forces, ``(n_elem, 12)``.
         """
 
         return -jnp.einsum("ikj,ikl,il->ij", p_d, self.k_cs[self.k_cs_index, ...], eps)
@@ -1331,9 +1344,9 @@ class BaseBeamStructure:
     def _make_f_grav(self, m_t: Array, rmat: Array) -> Array:
         r"""
         Compute the global gravitational force vector. This does not include the lumped mass contribution.
-        :param m_t: Disassembled system mass matrix, (n_elem, 12, 12).
-        :param rmat: Node rotations from reference, (n_node, 3, 3).
-        :return: Gravity force element vector, (n_elem, 12).
+        :param m_t: Disassembled system mass matrix, ``(n_elem, 12, 12)``.
+        :param rmat: Node rotations from reference, ``(n_node, 3, 3)``.
+        :return: Gravity force element vector, ``(n_elem, 12)``.
         """
         f_rot = jnp.einsum(
             "ikj,k->ij", rmat, jnp.array(self.gravity_vec)
@@ -1356,8 +1369,8 @@ class BaseBeamStructure:
     def _make_f_grav_lumped(self, rmat: Array) -> Array:
         r"""
         Compute the global gravitational force vector contribution from the lumped masses.
-        :param rmat: Rotation matrices at nodes, (n_node, 3, 3)
-        :return: Lumped gravity force vector, (n_lumped, 6)
+        :param rmat: Rotation matrices at nodes, ``(n_node, 3, 3)``
+        :return: Lumped gravity force vector, ``(n_lumped, 6)``
         """
         f_rot = jnp.einsum(
             "ikj,k->ij", rmat[self.m_lumped_index_arr, ...], jnp.array(self.gravity_vec)
@@ -1371,9 +1384,9 @@ class BaseBeamStructure:
     def make_f_dead_ext(f_ext: Array, rmat: Array) -> Array:
         r"""
         Compute the global external dead force vector.
-        :param f_ext: External forces array of dead forces in global reference, (n_node, 6)
-        :param rmat: Deformation rotation matrices, (n_node, 3, 3)
-        :return: External forces, (n_node, 6)
+        :param f_ext: External forces array of dead forces in global reference, ``(n_node, 6)``
+        :param rmat: Deformation rotation matrices, ``(n_node, 3, 3)``
+        :return: External forces, ``(n_node, 6)``
         """
 
         return transform_nodal_vect(f_ext, jnp.swapaxes(rmat, -1, -2))
@@ -1392,11 +1405,11 @@ class BaseBeamStructure:
     ) -> tuple[Array, Array]:
         r"""
         Compute the global inertial force vector.
-        :param m_l: Disassembled system mass matrix, (n_elem, 12, 12)
-        :param c_l: Disassembled system gyroscopic matrix, (n_elem, 12, 12)
-        :param v: Nodal velocities in local frame, (n_node, 6)
-        :param v_dot: Nodal accelerations in local frame, (n_node, 6)
-        :return: Inertial forces, (n_elem, 12)
+        :param m_l: Disassembled system mass matrix, ``(n_elem, 12, 12)``
+        :param c_l: Disassembled system gyroscopic matrix, ``(n_elem, 12, 12)``
+        :param v: Nodal velocities in local frame, ``(n_node, 6)``
+        :param v_dot: Nodal accelerations in local frame, ``(n_node, 6)``
+        :return: Inertial forces, ``(n_elem, 12)``
         """
 
         v_elem = self.split_vector_to_elements(v)
@@ -1417,10 +1430,10 @@ class BaseBeamStructure:
     ) -> tuple[Array, Array]:
         r"""
         Obtain the contribution to the inertial forces from the lumped masses.
-        :param c_l_lumped: Gyroscopic matrix from lumped masses, (n_lumped, 6, 6)
-        :param v: Nodal velocities in local frame, (n_node, 6)
-        :param v_dot: Nodal accelerations in local frame, (n_node, 6)
-        :return: Inertial forces from lumped masses, (n_lumped, 6)
+        :param c_l_lumped: Gyroscopic matrix from lumped masses, ``(n_lumped, 6, 6)``
+        :param v: Nodal velocities in local frame, ``(n_node, 6)``
+        :param v_dot: Nodal accelerations in local frame, ``(n_node, 6)``
+        :return: Inertial forces from lumped masses, ``(n_lumped, 6)``
         """
         f_iner = -jnp.einsum(
             "ijk,ik->ij", self.m_lumped, v_dot[self.m_lumped_index, ...]
@@ -1433,9 +1446,9 @@ class BaseBeamStructure:
     def add_thrust_force(self, force: Array, thrust: dict[str, Array]) -> Array:
         r"""
         Add thrust acting at nodes onto full system forcing.
-        :param force: Input forcing, (n_node, 6).
-        :param thrust: Input thrust at the current step, {key, (1, )}.
-        :return: Updated forcing, (n_node, 6).
+        :param force: Input forcing, ``(n_node, 6)``.
+        :param thrust: Input thrust at the current step, ``{key: ()}``.
+        :return: Updated forcing, ``(n_node, 6)``.
         """
 
         for k, v in thrust.items():
@@ -1449,8 +1462,8 @@ class BaseBeamStructure:
         Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from
         Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,
         2013, Eq 64.
-        :param d: Element relative configuration, (n_elem, 6)
-        :return: Element strain vectors, (n_elem, 6)
+        :param d: Element relative configuration, ``(n_elem, 6)``
+        :return: Element strain vectors, ``(n_elem, 6)``
         """
 
         return (d - self.d0) / self.l0[:, None]
@@ -1458,16 +1471,16 @@ class BaseBeamStructure:
     def make_p_d(self, d: Array) -> Array:
         r"""
         Compute the P(d) operator as a function of the element relative configuration vectors.
-        :param d: Relative configuration vectors, (n_elem, 6)
-        :return: P(d) operator, (n_elem, 6, 12)
+        :param d: Relative configuration vectors, ``(n_elem, 6)``
+        :return: P(d) operator, ``(n_elem, 6, 12)``
         """
         return vmap(p, (0, 0), 0)(d, self.ad_inv_o0)  # [n_elem, 6, 12]
 
     def make_d(self, hg: Array) -> Array:
         r"""
         Compute the element relative configuration vectors from the nodal homogeneous transformation matrices
-        :param hg: Nodal homogeneous transformation matrices, (n_nodes, 4, 4)
-        :return: Element relative configuration vectors, (n_elem, 6)
+        :param hg: Nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``
+        :return: Element relative configuration vectors, ``(n_elem, 6)``
         """
 
         base_hg = jnp.zeros((self.n_elem, 4, 4))
@@ -1486,9 +1499,9 @@ class BaseBeamStructure:
     def _make_d_dot(self, p_d: Array, v: Array) -> Array:
         r"""
         Compute the time derivative of the element relative configuration vectors from the nodal velocities.
-        :param p_d: P(d) operator, (n_elem, 6, 12)
-        :param v: Nodal velocities in local frame, (n_node, 6)
-        :return: Element relative velocity vectors, (n_elem, 6)
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``
+        :param v: Nodal velocities in local frame, ``(n_node, 6)``
+        :return: Element relative velocity vectors, ``(n_elem, 6)``
         """
 
         v_elem = jnp.concatenate(
@@ -1505,9 +1518,9 @@ class BaseBeamStructure:
     def make_hg_dot(hg: Array, v: Array) -> Array:
         r"""
         Obtain the time derivative of the nodal coordinates.
-        :param hg: Node coordinates, (n_node, 4, 4).
-        :param v: Node local velocities, (n_node, 6)
-        :return: Coordinate time derivative, (n_node, 4, 4)
+        :param hg: Node coordinates, ``(n_node, 4, 4)``.
+        :param v: Node local velocities, ``(n_node, 6)``
+        :return: Coordinate time derivative, ``(n_node, 4, 4)``
         """
         return jnp.einsum(
             "ijk,ikl->ijl", hg, vmap(ha_to_ha_tilde, 0, 0)(v)
@@ -1585,14 +1598,14 @@ class BaseBeamStructure:
     ]:
         r"""
         Obtain all components of the force from a final solution.
-        :param hg: Nodal homogeneous transformation matrices, (n_nodes, 4, 4).
+        :param hg: Nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``.
         :param dynamic: Whether to compute dynamic forces.
-        :param f_ext_follower: External follower forces in local reference, (n_node, 6).
-        :param f_ext_dead: External dead forces in global reference, (n_node, 6).
-        :param f_ext_aero: External aero forces in global reference, (n_node, 6).
-        :param thrust: Thrust forces at current step, {keys, (1, )}.
-        :param v: Nodal velocities in global frame, (n_node, 6).
-        :param v_dot: Nodal accelerations in global frame, (n_node, 6).
+        :param f_ext_follower: External follower forces in local reference, ``(n_node, 6)``.
+        :param f_ext_dead: External dead forces in global reference, ``(n_node, 6)``.
+        :param f_ext_aero: External aero forces in global reference, ``(n_node, 6)``.
+        :param thrust: Thrust forces at current step, {keys, ``()``}.
+        :param v: Nodal velocities in global frame, ``(n_node, 6)``.
+        :param v_dot: Nodal accelerations in global frame, ``(n_node, 6)``.
         :param approx_gradients: Whether to stop computing gradients of the inertial and gyroscopic forces with respect to
         the node coordinates, as these are small but nonzero values in practice.
         :return: Configuration vectors, strain vectors, Dead external forces, aero external forces, gravitational forces, internal forces,
@@ -1750,20 +1763,20 @@ class BaseBeamStructure:
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
         This is the force imbalance that the nonlinear solver will seek to drive to zero. Additionally, returns an
         "absolute sum" of all forces, used for relative convergence checks.
-        :param solve_dofs: Optional array of degrees of freedom to solve for (n_solve_dofs, ).
-        :param p_d: P(d) operator, (n_elem, 6, 12).
-        :param eps: Element strain vectors, (n_elem, 6).
-        :param hg: Nodal homogeneous transformation matrices, (n_nodes, 4, 4).
-        :param f_ext_follower_n: Nodal follower forces, (n_nodes, 6).
-        :param f_ext_dead_n: Nodal dead forces, (n_nodes, 6).
-        :param thrust_n: Thrust magnitude, {key, (1, )}.
+        :param solve_dofs: Optional array of degrees of freedom to solve for ``(n_solve_dofs, )``.
+        :param p_d: P(d) operator, ``(n_elem, 6, 12)``.
+        :param eps: Element strain vectors, ``(n_elem, 6)``.
+        :param hg: Nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``.
+        :param f_ext_follower_n: Nodal follower forces, ``(n_nodes, 6)``.
+        :param f_ext_dead_n: Nodal dead forces, ``(n_nodes, 6)``.
+        :param thrust_n: Thrust magnitude, ``{key: ()}``.
         :param dynamic: Flag for whether to compute dynamic entries.
-        :param m_t: Disassembled system mass matrix, (n_elem, 12, 12).
-        :param c_l: Dissembled system gyroscopic matrix, (n_elem, 12, 12).
-        :param c_l_lumped: Lumped gyroscopic matrix, (n_nodes, 6, 6).
-        :param v: Nodal velocities, (n_nodes, 6).
-        :param v_dot: Nodal accelerations, (n_node, 6).
-        :return: Residual force vector, (n_dof, ), absolute sum of forces, (n_dof, ).
+        :param m_t: Disassembled system mass matrix, ``(n_elem, 12, 12)``.
+        :param c_l: Dissembled system gyroscopic matrix, ``(n_elem, 12, 12)``.
+        :param c_l_lumped: Lumped gyroscopic matrix, ``(n_nodes, 6, 6)``.
+        :param v: Nodal velocities, ``(n_nodes, 6)``.
+        :param v_dot: Nodal accelerations, ``(n_node, 6)``.
+        :return: Residual force vector, ``(n_dof, )``, absolute sum of forces, ``(n_dof, )``.
         """
 
         f_res = self.make_f_int(p_d, eps)  # (n_elem, 12)
@@ -1829,9 +1842,9 @@ class BaseBeamStructure:
     def update_hg(hg: Array, phi: Array) -> Array:
         r"""
         Update the nodal homogeneous transformation matrices with the configuration increments.
-        :param hg: Existing nodal homogeneous transformation matrices, (n_nodes, 4, 4)
-        :param phi: Perturbation to the configuration vector, (n_nodes, 6)
-        :return: Updated nodal homogeneous transformation matrices, (n_nodes, 4, 4)
+        :param hg: Existing nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``
+        :param phi: Perturbation to the configuration vector, ``(n_nodes, 6)``
+        :return: Updated nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``
         """
         return jnp.einsum(
             "ijk,ikl->ijl",
@@ -1866,15 +1879,15 @@ class BaseBeamStructure:
         f_ext_dead: Array | None = None,
         f_ext_aero: Array | None = None,
         load_steps: int = 1,
-    ) -> StaticStructure:
+    ) -> StructureCase:
         r"""
         Perform static solve of the structure under external loads.
-        :param f_ext_follower: External forces array of follower forces (n_node, 6).
-        :param f_ext_dead: External forces array of dead loads (n_node, 6).
-        :param f_ext_aero: External forces array of aerodynamic loads (n_node, 6).
+        :param f_ext_follower: External forces array of follower forces ``(n_node, 6)``.
+        :param f_ext_dead: External forces array of dead loads ``(n_node, 6)``.
+        :param f_ext_aero: External forces array of aerodynamic loads ``(n_node, 6)``.
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
-        :return: StaticStructure dataclass containing results of the static analysis.
+        :return: StructureCase object containing results of the static analysis.
         """
 
         if load_steps < 1:
@@ -1970,7 +1983,7 @@ class BaseBeamStructure:
                 hg_n, jnp.zeros(self.n_dof).at[solve_dofs].set(d_varphi_np1)
             )
 
-            # algebra between undeformed and deformed arr_list_shapes, used to check relative convergence, (n_solve_dofs, )
+            # algebra between undeformed and deformed shape, used to check relative convergence, (n_solve_dofs, )
             # this is relatively expensive to compute
             if self.struct_convergence_settings.rel_disp_tol is not None:
                 h_full = vmap(hg_to_d, (0, 0), 0)(self.hg0, hg_np1_full).ravel()[
@@ -2001,8 +2014,8 @@ class BaseBeamStructure:
             r"""
             Convergence loop
             :param i_load_step: Index of load step.
-            :param hg_init: Initial coordinates, (n_nodes, 4, 4).
-            :return: Converged coordinates, (n_nodes, 4, 4).
+            :param hg_init: Initial coordinates, ``(n_nodes, 4, 4)``.
+            :return: Converged coordinates, ``(n_nodes, 4, 4)``.
             """
             _, convergence_status, hg_solve = jax.lax.while_loop(
                 lambda args_: ~args_[1].get_status(),
@@ -2053,7 +2066,7 @@ class BaseBeamStructure:
         varphi = self.calculate_varphi_from_hg(hg)
         f_elem = self.make_f_elem(eps=eps)  # compute loads in each element
 
-        return StaticStructure(
+        return StructureCase(
             hg=hg,
             conn=self.connectivity,
             o0=self.o0,
@@ -2071,12 +2084,13 @@ class BaseBeamStructure:
             thrust_nodes=self.thrust_nodes,
             thrust_direction=self.thrust_direction,
             prescribed_dofs=prescribed_dofs_,
+            t=jnp.zeros(1),
         )
 
     @overload
     def base_dynamic_solve(
         self,
-        struct_case: DynamicStructure,
+        struct_case: StructureCase,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         solve_dofs: tuple[int, ...],
@@ -2089,12 +2103,12 @@ class BaseBeamStructure:
         fsi_convergence_status: None,
         cs_ang_t: None,
         cs_vel_t: None,
-    ) -> DynamicStructure: ...
+    ) -> StructureCase: ...
 
     @overload
     def base_dynamic_solve(
         self,
-        struct_case: DynamicStructure,
+        struct_case: StructureCase,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         solve_dofs: tuple[int, ...],
@@ -2103,15 +2117,15 @@ class BaseBeamStructure:
         f_ext_follower: Array | None,
         thrust_t: dict[str, Array],
         aero_obj: UVLM,
-        aero_case: DynamicAeroCase,
+        aero_case: AeroCase,
         fsi_convergence_status: ConvergenceStatus,
         cs_ang_t: dict[str, Array],
         cs_vel_t: dict[str, Array],
-    ) -> DynamicAeroelastic: ...
+    ) -> AeroelasticCase: ...
 
     def base_dynamic_solve(
         self,
-        struct_case: DynamicStructure,
+        struct_case: StructureCase,
         struct_convergence_status: ConvergenceStatus,
         t: Array,
         solve_dofs: tuple[int, ...],
@@ -2120,11 +2134,11 @@ class BaseBeamStructure:
         f_ext_follower: Array | None,
         thrust_t: dict[str, Array],
         aero_obj: UVLM | None,
-        aero_case: DynamicAeroCase | None,
+        aero_case: AeroCase | None,
         fsi_convergence_status: ConvergenceStatus | None,
         cs_ang_t: dict[str, Array] | None,
         cs_vel_t: dict[str, Array] | None,
-    ) -> DynamicStructure | DynamicAeroelastic:
+    ) -> StructureCase | AeroelasticCase:
         r"""
         Generic dynamic solver. Both the structural dynamic solve, and aeroelastic dynamic solve, are formed as wrappers
         of this
@@ -2175,10 +2189,10 @@ class BaseBeamStructure:
             :param i_ts: Time step index.
             :param struct_convergence_status_: ConvergenceStatus object for the current iteration, used to track
             convergence and print messages.
-            :param hg_n: Transformation matrices at iteration varphi, (n_nodes, 4, 4).
-            :param phi_alpha: Timestep increment to the alpha step, (n_nodes, 6).
-            :param f_ext_aero_alpha_steps: Load steps for the external aerodynamic forcing, (n_steps, n_nodes, 6).
-            :param thrust_alpha: Thrust magnitude at the alpha step, {keys, (1, )}.
+            :param hg_n: Transformation matrices at iteration varphi, ``(n_nodes, 4, 4)``.
+            :param phi_alpha: Timestep increment to the alpha step, ``(n_nodes, 6)``.
+            :param f_ext_aero_alpha_steps: Load steps for the external aerodynamic forcing, ``(n_steps, n_nodes, 6)``.
+            :param thrust_alpha: Thrust magnitude at the alpha step, ``{keys: ()}``.
             :return: Load and time step indices, updated ConvergenceStatus object, updated transformation matrices,
             configuration, velocities and accelerations for iteration n+1.
             """
@@ -2301,7 +2315,7 @@ class BaseBeamStructure:
         @overload
         def time_step_loop(
             i_ts: int,
-            struct_sol: DynamicStructure,
+            struct_sol: StructureCase,
             struct_convergence_status_: ConvergenceStatus,
             aero_sol: None,
             fsi_convergence_status_: None,
@@ -2309,7 +2323,7 @@ class BaseBeamStructure:
             cs_ang_t_: None,
             cs_vel_t_: None,
         ) -> tuple[
-            DynamicStructure,
+            StructureCase,
             ConvergenceStatus,
             None,
             None,
@@ -2321,17 +2335,17 @@ class BaseBeamStructure:
         @overload
         def time_step_loop(
             i_ts: int,
-            struct_sol: DynamicStructure,
+            struct_sol: StructureCase,
             struct_convergence_status_: ConvergenceStatus,
-            aero_sol: DynamicAeroCase,
+            aero_sol: AeroCase,
             fsi_convergence_status_: ConvergenceStatus,
             thrust_t_: dict[str, Array],
             cs_ang_t_: dict[str, Array],
             cs_vel_t_: dict[str, Array],
         ) -> tuple[
-            DynamicStructure,
+            StructureCase,
             ConvergenceStatus,
-            DynamicAeroCase,
+            AeroCase,
             ConvergenceStatus,
             dict[str, Array],
             dict[str, Array],
@@ -2340,17 +2354,17 @@ class BaseBeamStructure:
 
         def time_step_loop(
             i_ts: int,
-            struct_sol: DynamicStructure,
+            struct_sol: StructureCase,
             struct_convergence_status_: ConvergenceStatus,
-            aero_sol: DynamicAeroCase | None,
+            aero_sol: AeroCase | None,
             fsi_convergence_status_: ConvergenceStatus | None,
             thrust_t_: dict[str, Array],
             cs_ang_t_: dict[str, Array] | None,
             cs_vel_t_: dict[str, Array] | None,
         ) -> tuple[
-            DynamicStructure,
+            StructureCase,
             ConvergenceStatus,
-            DynamicAeroCase | None,
+            AeroCase | None,
             ConvergenceStatus | None,
             dict[str, Array],
             dict[str, Array] | None,
@@ -2363,9 +2377,9 @@ class BaseBeamStructure:
             :param struct_convergence_status_: Convergence status object.
             :param aero_sol: Aero solution object, with results up to time step i_ts-1, if aero is included.
             :param fsi_convergence_status_: Convergence status object.
-            :param thrust_t_: Thrust magnitude time history, {name, (n_tstep,)}.
-            :param cs_ang_t_: Control surface angle time history, {name, (n_tstep,)}.
-            :param cs_vel_t_: Control surface velocity time history, {name, (n_tstep,)}.
+            :param thrust_t_: Thrust magnitude time history, ``{name: (n_tstep, )}``.
+            :param cs_ang_t_: Control surface angle time history, ``{name: (n_tstep, )}``.
+            :param cs_vel_t_: Control surface velocity time history, ``{name: (n_tstep, )}``.
             :return: Solution object with results up to time step i_ts.
             """
 
@@ -2594,8 +2608,8 @@ class BaseBeamStructure:
 
         def fsi_convergence_loop(
             i_ts: int,
-            struct_sol: DynamicStructure,
-            aero_sol: DynamicAeroCase,
+            struct_sol: StructureCase,
+            aero_sol: AeroCase,
             struct_convergence_status_: ConvergenceStatus,
             fsi_convergence_status_: ConvergenceStatus,
             phi_alpha_init: Array,
@@ -2608,8 +2622,8 @@ class BaseBeamStructure:
             cs_vel_n: dict[str, Array],
         ) -> tuple[
             int,
-            DynamicStructure,
-            DynamicAeroCase,
+            StructureCase,
+            AeroCase,
             ConvergenceStatus,
             ConvergenceStatus,
             Array,
@@ -2731,11 +2745,11 @@ class BaseBeamStructure:
             :param i_ts: Time step index.
             :param struct_convergence_status_: ConvergenceStatus object to update with convergence information during load
             stepping.
-            :param hg_alpha: Node transformations at the beginning of the load step, (n_nodes, 4, 4).
-            :param phi_alpha: Node configuration increments in algebra space, (n_nodes, 6).
+            :param hg_alpha: Node transformations at the beginning of the load step, ``(n_nodes, 4, 4)``.
+            :param phi_alpha: Node configuration increments in algebra space, ``(n_nodes, 6)``.
             :param q_alpha: Minimal states at intermediate alpha step.
-            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps (n_steps, n_nodes, 6).
-            :param thrust_alpha: Thrust at the alpha step, {key, (1, )}.
+            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps ``(n_steps, n_nodes, 6)``.
+            :param thrust_alpha: Thrust at the alpha step, ``{key: ()}``.
             :return: Time step index, convergence status, and updated configuration, velocities, accelerations, and
             optional aerodynamic forcing.
             """
@@ -2794,11 +2808,11 @@ class BaseBeamStructure:
             Performs load stepping iterations for a given time step. Load stepping is not performed for thrust.
             :param i_ts: Timestep index for which to perform load stepping.
             :param struct_convergence_status_: ConvergenceStatus object to update with load stepping convergence information.
-            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, (n_nodes, 4, 4).
-            :param phi_alpha: Nodal updates to the configuration in the algebra space, (n_nodes, 6).
+            :param hg_alpha: SE(3) nodal transformation matrices at the beginning of the load step, ``(n_nodes, 4, 4)``.
+            :param phi_alpha: Nodal updates to the configuration in the algebra space, ``(n_nodes, 6)``.
             :param q_alpha: Minimal states at intermediate alpha step.
-            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps (n_steps, n_nodes, 6).
-            :param thrust_alpha: Thrust at the alpha step, {key, (1, )}.
+            :param f_ext_aero_steps: Optional aerodynamic forcing alpha load steps ``(n_steps, n_nodes, 6)``.
+            :param thrust_alpha: Thrust at the alpha step, ``{key: ()}``.
             :return: Time step index, updated ConvergenceStatus object, and updated configuration, velocities and accelerations after load stepping
             """
             return jax.lax.fori_loop(
@@ -2836,16 +2850,16 @@ class BaseBeamStructure:
                 raise ValueError("aero_case cannot be None")
 
             from flapjax.coupled.data_structures import (
-                DynamicAeroelastic,
+                AeroelasticCase,
             )  # import here to prevent circular references
 
-            return DynamicAeroelastic(structure=struct_case, aero=aero_case)
+            return AeroelasticCase(structure=struct_case, aero=aero_case)
         else:
             return struct_case
 
     def dynamic_solve(
         self,
-        init_state: DynamicStructureSnapshot | StaticStructure | None,
+        init_state: StructureCase | None,
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         n_tstep: int,
         dt: Array | float,
@@ -2854,20 +2868,21 @@ class BaseBeamStructure:
         f_ext_aero: Array | None = None,
         thrust_t: dict[str, Array] | None = None,
         load_steps: int = 1,
-    ) -> DynamicStructure:
+    ) -> StructureCase:
         r"""
         Perform dynamic solve of the structure under external loads
-        :param init_state: Initial state of the structure, either as a DynamicStructureSnapshot or StaticStructure. If
-        None, the reference configuration is used with zero velocities.
+        :param init_state: Initial state of the structure, either static or a
+        dynamic snapshot. If None, the reference configuration is used with zero
+        velocities.
         :param prescribed_dofs: Degrees of freedom which are prescribed (not solved for).
         :param n_tstep: Number of time steps to simulate.
         :param dt: Time step length.
-        :param f_ext_follower: Following external forces array, (n_tstep, n_node, 6), (n_node, 6) or None for zero external follower forces.
-        :param f_ext_dead: Dead external forces array, (n_tstep, n_node, 6), (n_node, 6) or None for zero external dead forces.
-        :param f_ext_aero: Aerodynamic external forces array, (n_tstep, n_node, 6), (n_node, 6) or None for zero external aerodynamic forces.
-        :param thrust_t: Thrust time history, {key, (n_tstep,)}. If none, this will use the reference value.
+        :param f_ext_follower: Following external forces array, ``(n_tstep, n_node, 6)``, ``(n_node, 6)`` or None for zero external follower forces.
+        :param f_ext_dead: Dead external forces array, ``(n_tstep, n_node, 6)``, ``(n_node, 6)`` or None for zero external dead forces.
+        :param f_ext_aero: Aerodynamic external forces array, ``(n_tstep, n_node, 6)``, ``(n_node, 6)`` or None for zero external aerodynamic forces.
+        :param thrust_t: Thrust time history, ``{key: (n_tstep, )}``. If none, this will use the reference value.
         :param load_steps: Number of load steps to apply the external loads over.
-        :return: DynamicStructure dataclass containing results of the dynamic analysis.
+        :return: Structure dataclass containing results of the dynamic analysis.
         """
 
         # add a warning if using 32-bit floats
@@ -2917,14 +2932,14 @@ class BaseBeamStructure:
         )
 
         def evaluate_initial_equilibrium(
-            init_state__: DynamicStructureSnapshot,
-        ) -> DynamicStructureSnapshot:
+            init_state__: StructureCase,
+        ) -> StructureCase:
             r"""
             Evaluates the forces for a given initial state to check whether it is in equilibrium. If not, a warning is
             raised with the maximum residual force. This is important to ensure that the time integration starts from a
             consistent state.
-            :param init_state__: DynamicStructureSnapshot containing the initial state to evaluate.
-            :return: DynamicStructureSnapshot with the forces evaluated for the initial state.
+            :param init_state__: Structure containing the initial state to evaluate.
+            :return: Structure with the forces evaluated for the initial state.
             """
             d, eps, f_ext_dead_, f_ext_aero_, f_grav, f_int, f_gyr, f_iner, f_res = (
                 self.resolve_forces(
@@ -2948,7 +2963,7 @@ class BaseBeamStructure:
 
             f_elem = self.make_f_elem(eps=eps)
 
-            return DynamicStructureSnapshot(
+            return StructureCase(
                 hg=init_state__.hg,
                 conn=self.connectivity,
                 o0=self.o0,
@@ -2976,28 +2991,32 @@ class BaseBeamStructure:
 
         # time steps
         t = jnp.arange(n_tstep) * dt
-        if isinstance(init_state, DynamicStructure):
-            t += init_state.t[0]
-        elif isinstance(init_state, DynamicStructureSnapshot):
-            t += init_state.t
+        if init_state is not None and init_state.is_dynamic:
+            if init_state.is_batched:
+                t += init_state.t[0]
+            else:
+                t += init_state.t
 
         # set up initial state
         if init_state is None:
-            init_state_: DynamicStructureSnapshot = self.reference_configuration(
+            init_state_: StructureCase = self.reference_configuration(
                 use_f_aero=f_ext_aero is not None,
                 use_f_ext_dead=f_ext_dead is not None,
                 use_f_ext_follower=f_ext_follower is not None,
             ).to_dynamic(t=None)
-        elif isinstance(init_state, StaticStructure):
+        elif not init_state.is_dynamic:
             init_state_ = init_state.to_dynamic(t=None)
-        elif isinstance(init_state, DynamicStructureSnapshot):
+        elif not init_state.is_batched:
             init_state_ = init_state
         else:
-            raise TypeError("Invalid init_state type")
+            raise TypeError(
+                "dynamic_solve init_state cannot be a batched Structure; pass a "
+                "snapshot or static state"
+            )
 
         # check if initial state satisfies equilibrium
         init_state_eval = evaluate_initial_equilibrium(init_state_)
-        dynamic_struct = DynamicStructure.initialise(
+        dynamic_struct = StructureCase.initialise(
             initial_snapshot=init_state_eval,
             t=t,
             use_f_ext_follower=f_ext_follower is not None,
@@ -3028,48 +3047,3 @@ class BaseBeamStructure:
 
         ConvergenceStatus.print_line(dynamic=True)
         return out
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return (
-            "n_nodes",
-            "n_dof",
-            "connectivity",
-            "n_elem_per_node",
-            "n_elem",
-            "dof_per_elem",
-            "y_vector_reference",
-            "use_lumped_mass",
-            "use_gravity",
-            "gravity_vec",
-            "k_cs_index",
-            "m_cs_index",
-            "m_lumped_index",
-            "thrust_nodes",
-            "thrust_direction",
-            "optional_jacobians",
-            "struct_convergence_settings",
-            "relaxation_factor",
-            "spectral_radius",
-        )
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "y_vector",
-            "x0_reference",
-            "x0",
-            "_m_cs",
-            "_k_cs",
-            "_m_lumped",
-            "o0",
-            "l0",
-            "d0",
-            "hg0_reference",
-            "hg0",
-            "ad_inv_o0",
-            "thrust_reference",
-            "orientation_euler",
-            "orientation",
-            "_time_integrator",
-        )

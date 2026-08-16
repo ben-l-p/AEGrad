@@ -8,7 +8,7 @@ from jax.scipy.linalg import lu_factor, lu_solve
 
 from flapjax.algebra.array_utils import check_arr_shape
 from flapjax.algebra.se3 import exp_se3
-from flapjax.structure.data_structures import StaticStructure
+from flapjax.structure.data_structures import StructureCase
 from flapjax.structure.linear.data_structures import (
     BeamInputUnflattened,
     BeamLinearResult,
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 class LinearBeam(
     LinearModel[
-        StaticStructure,
+        StructureCase,
         BeamInputUnflattened,
         BeamStateUnflattened,
         BeamOutputUnflattened,
@@ -39,7 +39,7 @@ class LinearBeam(
     def __init__(
         self,
         beam: BaseBeamStructure,
-        reference: StaticStructure,
+        reference: StructureCase,
         n_modes: int | None,
         dt: float | Array,
         modal_inputs: bool = False,
@@ -81,14 +81,14 @@ class LinearBeam(
         return self._n_modes
 
     @property
-    def reference(self) -> StaticStructure:
+    def reference(self) -> StructureCase:
         return self._reference
 
     def nodal_to_modal(self, q_nodal: Array) -> Array:
         r"""
         Convert a nodal property to a modal property.
-        :param q_nodal: Nodal property, (n_free_dof, ).
-        :return: Modal property, (n_modes, ).
+        :param q_nodal: Nodal property, ``(n_free_dof, )``.
+        :return: Modal property, ``(n_modes, )``.
         """
 
         return self.mode_shapes @ q_nodal
@@ -96,8 +96,8 @@ class LinearBeam(
     def modal_to_nodal(self, q_modal: Array) -> Array:
         r"""
         Convert a modal property to a nodal property.
-        :param q_modal: Mode property, (n_modes, ).
-        :return: Nodal property, (n_free_dofs, ).
+        :param q_modal: Mode property, ``(n_modes, )``.
+        :return: Nodal property, ``(n_free_dofs, )``.
         """
 
         return q_modal @ self.mode_shapes
@@ -176,7 +176,7 @@ class LinearBeam(
 
     def _make_input_slices(
         self,
-        reference: StaticStructure,
+        reference: StructureCase,
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create input slices for the input vector.
@@ -193,7 +193,7 @@ class LinearBeam(
         return self._make_slices(slice_entries)
 
     def _make_state_slices(
-        self, reference: StaticStructure
+        self, reference: StructureCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create state slices for the state vector.
@@ -214,7 +214,7 @@ class LinearBeam(
         return self._make_slices(slice_entries)
 
     def _make_output_slices(
-        self, reference: StaticStructure
+        self, reference: StructureCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create output slices for the output vector.
@@ -326,9 +326,9 @@ class LinearBeam(
         :return: Linear system results.
         """
 
-        assert isinstance(self.reference, StaticStructure), (
-            "Invalid reference structure"
-        )
+        assert (
+            isinstance(self.reference, StructureCase) and not self.reference.is_dynamic
+        ), "Reference structure must be a static Structure"
 
         # has to be specified in the input object, as the linear system does not know how many time steps to run for in
         # the case where there is no external forcing

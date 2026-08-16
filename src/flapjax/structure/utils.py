@@ -13,7 +13,7 @@ from flapjax.algebra.se3 import ha_to_ha_check, ha_to_ha_hat, p, q, q_dot
 def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
     r"""
     Check connectivity array for validity
-    :param connectivity: Connectivity array of arr_list_shapes (n_elem, 2)
+    :param connectivity: Connectivity array, ``(n_elem, 2)``
     :param num_nodes: Number of nodes in the structure
     :raises ValueError: If connectivity array contains invalid node indices, or is missing nodes
     """
@@ -37,8 +37,8 @@ def _check_connectivity(connectivity: Array, num_nodes: int) -> None:
 def _n_elem_per_node(connectivity: Array, n_nodes: int) -> Array:
     r"""
     Computes the number of elements connected to each node in the structure.
-    :param connectivity: Connectivity array of shape (n_elem, 2).
-    :return: Number of elements connected to each node, (num_nodes, ).
+    :param connectivity: Connectivity array, ``(n_elem, 2)``.
+    :return: Number of elements connected to each node, ``(num_nodes, )``.
     """
 
     return jnp.bincount(
@@ -60,14 +60,14 @@ def _k_t_entry(
     r"""
     Computes a stiffness matrix entry between two degrees of freedom. Formulation from Geometrically exact beam finite
     element formulated on the special Euclidean group SE(3), by Sonneville et al., 2013, Eq 76.
-    :param d: Relative se(3) configuration vector, (6,).
-    :param p_d: :math:`\mathbf{P}(\mathbf{d})` matrix, (6, 12).
-    :param length: Element length, (,).
-    :param eps: Beam strain vector, (6,).
-    :param k: Beam cross-sectional stiffness matrix, (6, 6).
-    :param ad_inv: Inverse grads matrix for element, (6, 6).
+    :param d: Relative se(3) configuration vector, ``(6, )``.
+    :param p_d: :math:`\mathbf{P}(\mathbf{d})` matrix, ``(6, 12)``.
+    :param length: Element length, ``()``.
+    :param eps: Beam strain vector, ``(6, )``.
+    :param k: Beam cross-sectional stiffness matrix, ``(6, 6)``.
+    :param ad_inv: Inverse grads matrix for element, ``(6, 6)``.
     :param include_geometric: Whether to include geometric stiffness contribution, bool.
-    :return: Stiffness matrix entry, (12, 12).
+    :return: Stiffness matrix entry, ``(12, 12)``.
     """
 
     k_t = p_d.T @ k @ p_d / length  # (12, 12)
@@ -93,12 +93,12 @@ def _integrate_m_l(
 ) -> Array:
     r"""
     Approximates the integral :math:`\int_L \mathbf{Q}(s, \mathbf{d})^{\top} \mathcal{M}_{CS} \mathbf{Q}(s, \mathbf{d}) \ ds`
-    :param m_cs: Cross sectional mass matrix, (6, 6).
-    :param d: Configuration vector, (6,).
-    :param ad_inv: Inverse grads matrix for element, (6, 6)
+    :param m_cs: Cross sectional mass matrix, ``(6, 6)``.
+    :param d: Configuration vector, ``(6, )``.
+    :param ad_inv: Inverse grads matrix for element, ``(6, 6)``
     :param length: Element length, ()
     :param int_order: Order of integration, 3, 4, or 5.
-    :return: Integrated mass matrix, (12, 12)
+    :return: Integrated mass matrix, ``(12, 12)``
     """
 
     def _inner_func(s_l) -> Array:
@@ -130,15 +130,15 @@ def _integrate_c_t(
     Approximate the integral :math:`C_T = C^L - \int_L \check{(\mathbf{MQv}_{AB})}^{\top} \mathbf{Q} \ ds` where
     :math:`C^L = \int_L \mathbf{Q}^{\top} ( \mathbf{M}_{cs} \dot{\mathbf{Q}} - \hat{\mathbf{Qv}_{AB}}^{\top}
     \mathbf{M}_{cs} \mathbf{Q} ) \ ds`
-    :param m_cs: Cross sectional mass matrix, (6, 6).
-    :param v_ab: Nodal local velocities, (12,).
-    :param d: Configuration vector, (6,).
-    :param d_dot: Configuration velocity vector, (6,).
-    :param ad_inv: Inverse grads matrix for element, (6, 6)
-    :param length: Element length, ()
+    :param m_cs: Cross sectional mass matrix, ``(6, 6)``.
+    :param v_ab: Nodal local velocities, ``(12, )``.
+    :param d: Configuration vector, ``(6, )``.
+    :param d_dot: Configuration velocity vector, ``(6, )``.
+    :param ad_inv: Inverse grads matrix for element, ``(6, 6)``
+    :param length: Element length, ``()``
     :param int_order: Order of integration, 1, 2, or 3
     :param include_q_dot: Whether to compute the contribution of the derivative of q_dot with respect to velocity.
-    :return: Stacked `[C_L, C_T]`, (2, 12, 12)
+    :return: Stacked `[C_L, C_T]`, ``(2, 12, 12)``
     """
 
     if include_q_dot:
@@ -208,9 +208,9 @@ def _make_c_t_lumped(m_lumped: Array, v: Array) -> Array:
     r"""
     Construct lumped damping matrix :math:`C_T` from lumped mass matrix :math:`M_{lumped}` and nodal velocities
     :math:`\mathbf{v}`
-    :param m_lumped: Lumped mass matrix, (6, 6)
+    :param m_lumped: Lumped mass matrix, ``(6, 6)``
     :param v: Nodal local velocities, (6)
-    :return: Stacked gyroscopic matrices, (2, 6, 6)
+    :return: Stacked gyroscopic matrices, ``(2, 6, 6)``
     """
 
     def _g_iner_func(v_: Array) -> Array:
@@ -249,12 +249,31 @@ def input_dof_index_to_tuple(
 def transform_nodal_vect(vect: Array, rmat: Array) -> Array:
     r"""
     Rotate a nodal vector quantity.
-    :param vect: Nodal vectors, (..., n_nodes, 6)
-    :param rmat: Rotation matrix, (..., n_nodes, 3, 3)
-    :return: Rotated vectors, (..., n_nodes, 6)
+    :param vect: Nodal vectors, ``(..., n_nodes, 6)``
+    :param rmat: Rotation matrix, ``(..., n_nodes, 3, 3)``
+    :return: Rotated vectors, ``(..., n_nodes, 6)``
     """
 
     idx = "...ijk,...ik->...ij"
     vect_lin = jnp.einsum(idx, rmat, vect[..., :3])
     vect_rot = jnp.einsum(idx, rmat, vect[..., 3:])
     return jnp.concatenate((vect_lin, vect_rot), axis=-1)
+
+
+_OPTIONAL_FORCE_FIELDS: tuple[str, ...] = (
+    "f_ext_follower",
+    "f_ext_dead",
+    "f_ext_aero",
+    "f_grav",
+)
+
+
+def apply_frame_transform(obj, rmat: Array, extra_fields: tuple[str, ...] = ()) -> None:
+    r"""
+    Rotate all force / velocity fields of a structure state object in place.
+    """
+    for name in _OPTIONAL_FORCE_FIELDS:
+        if getattr(obj, name) is not None:
+            setattr(obj, name, transform_nodal_vect(getattr(obj, name), rmat))
+    for name in ("f_int", "f_res", *extra_fields):
+        setattr(obj, name, transform_nodal_vect(getattr(obj, name), rmat))

@@ -21,24 +21,43 @@ class SupportsPytree(Protocol):
 T = TypeVar("T", bound=SupportsPytree)
 
 
-def make_pytree[T: SupportsPytree](cls: type[T]) -> type[T]:
+def make_pytree[T](cls: type[T]) -> type[T]:
     """
-    Convert an object to a pytree structure.
-    :param cls: Class to be converted to a pytree.
+    Register a class as a JAX pytree.
+
+    When applying to classes, define ``_static: ClassVar[tuple[str, ...]]``, listing
+    field names whose values are hashable / non-traced. Dynamic children are
+    auto-derived from ``vars(self)`` at flatten time. Instance attributes set
+    outside ``__init__`` become part of the pytree structure.
+
     """
+    static_attr = getattr(cls, "_static", None)
 
-    def flatten_func(self: T) -> tuple[tuple[Any], tuple[Any]]:
-        children = tuple(getattr(self, field) for field in self._dynamic_names())
-        aux_data = tuple(getattr(self, field) for field in self._static_names())
-        return children, aux_data
+    if isinstance(static_attr, tuple):
+        static_names: tuple[str, ...] = tuple(static_attr)  # type: ignore[arg-type]
+        static_set = frozenset(static_names)
 
-    def unflatten_func(aux_data: tuple[Any], children: tuple[Any]) -> T:
-        obj = cls.__new__(cls)  # Create an uninitialized instance
-        for field_name, value in zip(cls._dynamic_names(), children):
-            setattr(obj, field_name, value)
-        for field_name, value in zip(cls._static_names(), aux_data):
-            setattr(obj, field_name, value)
-        return obj
+        def flatten_func(self: T) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+            state = vars(self)
+            dynamic_names = tuple(k for k in state if k not in static_set)
+            children = tuple(state[k] for k in dynamic_names)
+            static_vals = tuple(state[k] for k in static_names)
+            return children, (dynamic_names, static_vals)
+
+        def unflatten_func(aux_data: tuple[Any, ...], children: tuple[Any, ...]) -> T:
+            dynamic_names, static_vals = aux_data
+            obj = cls.__new__(cls)
+            for name, val in zip(dynamic_names, children):
+                setattr(obj, name, val)
+            for name, val in zip(static_names, static_vals):
+                setattr(obj, name, val)
+            return obj
+
+    else:
+        raise TypeError(
+            f"@make_pytree on {cls.__name__}: needs a `_static: "
+            f"ClassVar[tuple[str, ...]]` class attribute"
+        )
 
     tree_util.register_pytree_node(cls, flatten_func, unflatten_func)
     return cls
@@ -47,6 +66,22 @@ def make_pytree[T: SupportsPytree](cls: type[T]) -> type[T]:
 def check_type(obj: Any, type_: type) -> None:
     if not isinstance(obj, type_):
         raise TypeError(f"Expected {type_}, but got {obj}.")
+
+
+def dv_or[V](dv_val: V | None, fallback: V) -> V:
+    r"""
+    Return``dv_val`` if it is not None, otherwise return ``fallback``. Used to collapse the
+    ``dv.x if dv.x is not None else self.x`` calls when combining two classes of design variables.
+    """
+    return dv_val if dv_val is not None else fallback
+
+
+def pytree_clone[V](obj: V) -> V:
+    r"""
+    Cheap clone of a pytree-registered object
+    """
+    leaves, treedef = tree_util.tree_flatten(obj)
+    return tree_util.tree_unflatten(treedef, leaves)
 
 
 def shallow_as_dict(obj):

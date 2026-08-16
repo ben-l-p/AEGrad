@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jax import Array, vmap
 
 from flapjax.aero.aic import compute_v_ind
-from flapjax.aero.data_structures import AeroSnapshot, DynamicAeroCase
+from flapjax.aero.data_structures import AeroCase
 from flapjax.aero.flowfields import FlowField
 from flapjax.aero.gradients.data_structures import AeroStates
 from flapjax.aero.linear.data_structures import (
@@ -42,7 +42,7 @@ type LinearWakeType = Literal["frozen", "prescribed", "free"]
 
 class LinearUVLM(
     LinearModel[
-        AeroSnapshot,
+        AeroCase,
         AeroInputUnflattened,
         AeroStateUnflattened,
         AeroOutputUnflattened,
@@ -56,7 +56,7 @@ class LinearUVLM(
     def __init__(
         self,
         case: UVLM,
-        reference: AeroSnapshot,
+        reference: AeroCase,
         wake_type: LinearWakeType = "frozen",
         bound_upwash: bool = True,
         wake_upwash: bool = True,
@@ -124,7 +124,7 @@ class LinearUVLM(
             self.sys = self.linearise()
 
     @property
-    def reference(self) -> AeroSnapshot:
+    def reference(self) -> AeroCase:
         return self._reference
 
     def extract_reference_inputs(
@@ -177,7 +177,7 @@ class LinearUVLM(
         return AeroOutputUnflattened
 
     def _make_input_slices(
-        self, reference: AeroSnapshot
+        self, reference: AeroCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create input slices for the input vector.
@@ -206,7 +206,7 @@ class LinearUVLM(
         return self._make_slices(slice_entries)
 
     def _make_state_slices(
-        self, reference: AeroSnapshot
+        self, reference: AeroCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create state slices for the state vector.
@@ -243,7 +243,7 @@ class LinearUVLM(
         return self._make_slices(slice_entries)
 
     def _make_output_slices(
-        self, reference: AeroSnapshot
+        self, reference: AeroCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create output slices for the output vector.
@@ -266,8 +266,8 @@ class LinearUVLM(
         r"""
         Combined state/output step in vector form, operating on total (reference + perturbation) quantities and
         returning perturbations relative to the reference.
-        :param x_vec: State vector, (n_states, )
-        :param u_vec: Input vector, (n_inputs, )
+        :param x_vec: State vector, ``(n_states, )``
+        :param u_vec: Input vector, ``(n_inputs, )``
         :return: Tuple of (state perturbation vector, output perturbation vector).
         """
 
@@ -529,8 +529,8 @@ class LinearUVLM(
             "Unpacked total state and output must be of type AeroStateUnflattened and AeroOutputUnflattened."
         )
 
-        assert isinstance(self.reference, AeroSnapshot), (
-            "Reference state must be of type AeroSnapshot."
+        assert isinstance(self.reference, AeroCase), (
+            "Reference state must be of type AeroCase."
         )
 
         # save results to object
@@ -549,12 +549,12 @@ class LinearUVLM(
             surf_w_names=self.case.surf_w_names,
         )
 
-    def reference_snapshot(self) -> DynamicAeroCase:
+    def reference_snapshot(self) -> AeroCase:
         r"""
         Get the reference (initial) initial_snapshot of the aerodynamic case. This will set the timestep as -1.
         :return: StaticAero at reference state
         """
-        return DynamicAeroCase(
+        return AeroCase(
             zeta_b=self.reference.zeta_b,
             zeta_b_dot=self.reference.zeta_b_dot,
             zeta_w=self.reference.zeta_w,
@@ -567,8 +567,8 @@ class LinearUVLM(
             cs_vel=self.reference.cs_vel,
             surf_b_names=self.case.surf_b_names,
             surf_w_names=self.case.surf_w_names,
-            i_ts=jnp.atleast_1d(-1),
-            t=jnp.zeros(()),
+            i_ts=-1,
+            t=jnp.array(0.0),
             c=self.reference.c,
             n=self.reference.nc,
             kernels=self.reference.kernels,

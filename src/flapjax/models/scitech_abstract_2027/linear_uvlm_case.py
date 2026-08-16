@@ -13,7 +13,7 @@ from flapjax.aero.linear.data_structures import AeroInputUnflattened
 from flapjax.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.algebra.array_utils import ArrayList
-from flapjax.structure.data_structures import DynamicStructure
+from flapjax.structure.data_structures import StructureCase
 
 if __name__ == "__main__":
     r"""
@@ -88,9 +88,7 @@ if __name__ == "__main__":
     z_t = ampl * 0.5 * (1.0 - jnp.cos(omega * t))
     z_dot_t = ampl * omega * 0.5 * jnp.sin(omega * t)
 
-    hg_t = jnp.zeros((n_tstep, n + 1, 4, 4))
-    hg_t = hg_t.at[:, 3, 3].set(1.0)
-    hg_t = hg_t.at[...].set(hg[None, ...])
+    hg_t = jnp.broadcast_to(hg[None, ...], (n_tstep, n + 1, 4, 4))
     hg_t = hg_t.at[:, :, 2, 3].add(z_t[:, None])
 
     hg_dot_t = jnp.zeros_like(hg_t)
@@ -161,7 +159,7 @@ if __name__ == "__main__":
         in_axes=(0, 0),
         out_axes=0,
     )(jnp.arange(n_tstep), hg_t[:, :, :3, :3])
-    beam = DynamicStructure(
+    beam = StructureCase(
         hg=hg_t,
         conn=tuple((i, i + 1) for i in range(n)),
         o0=jnp.broadcast_to(jnp.eye(3), (n, 3, 3)),
@@ -177,13 +175,12 @@ if __name__ == "__main__":
         f_grav=None,
         f_int=jnp.zeros((n_tstep, n + 1, 6)),
         f_elem=jnp.zeros((n_tstep, n, 6)),
-        f_iner=jnp.zeros((n_tstep, n + 1, 6)),
+        f_iner_gyr=jnp.zeros((n_tstep, n + 1, 6)),
         f_res=jnp.zeros((n_tstep, n + 1, 6)),
         thrust={},
         thrust_nodes=(),
         thrust_direction=(),
         t=t,
-        n_tstep=n_tstep,
         prescribed_dofs=(),
     )
     beam.plot(Path(f"./test_outputs/beam_{ampl:.02f}"))

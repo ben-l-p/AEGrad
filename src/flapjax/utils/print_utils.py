@@ -18,20 +18,19 @@ class Colour(Enum):
 
 type VerbosityLevel = Literal["silent", "warning", "normal", "verbose"]
 
+_VERBOSITY_RANK: dict[VerbosityLevel, int] = {
+    "silent": 0,
+    "warning": 1,
+    "normal": 2,
+    "verbose": 3,
+}
+
 
 def map_verbosity_level(level: VerbosityLevel) -> int:
-    # function to rank verbosity levels for comparison
-    match level:
-        case "silent":
-            return 0
-        case "warning":
-            return 1
-        case "normal":
-            return 2
-        case "verbose":
-            return 3
-        case _:
-            raise ValueError(f"Invalid verbosity level: {level}")
+    try:
+        return _VERBOSITY_RANK[level]
+    except KeyError:
+        raise ValueError(f"Invalid verbosity level: {level}") from None
 
 
 VERBOSITY_LEVEL: VerbosityLevel = "normal"  # default value

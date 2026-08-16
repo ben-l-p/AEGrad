@@ -18,12 +18,12 @@ def compute_aic_grid(
     """
     Compute the aerodynamic influence coefficient (AIC) across grids of points. When normal is provided, fuses the dot
     product inside each map step so the trailing 3-component axis is never accumulated, saving memory.
-    :param c: Collocation points, (c_m, c_n, 3).
-    :param n: Normal vectors at collocation points, (c_m, c_n, 3), or None.
-    :param zeta: Grid vertices, (zeta_m, zeta_n, 3).
+    :param c: Collocation points, ``(c_m, c_n, 3)``.
+    :param n: Normal vectors at collocation points, ``(c_m, c_n, 3)``, or None.
+    :param zeta: Grid vertices, ``(zeta_m, zeta_n, 3)``.
     :param kernel: Kernel function to compute the influence.
     :param batch_size: Batch size for vectorising AIC computations.
-    :return: (c_m, c_n, zeta_m, zeta_n, 3) if normal is None, else (c_m, c_n, zeta_m, zeta_n).
+    :return: ``(c_m, c_n, zeta_m, zeta_n, 3)`` if normal is None, else ``(c_m, c_n, zeta_m, zeta_n)``.
     """
     c_m, c_n = c.shape[:2]
     m_panels, n_panels = zeta.shape[0] - 1, zeta.shape[1] - 1
@@ -74,15 +74,15 @@ def compute_aic_sys(
 ) -> list[list[Array]]:
     """
     Compute the AIC matrix for a system of elements. Returns a list of AIC matrices, one for each element.
-    :param zetas: List of source points to compute the AIC from, (n_source, )(zeta_m, zeta_n, 3).
-    :param cs: List of target points to compute the AIC at, (n_target, )(c_m, c_n, 3).
-    :param ns: Bound normal vectors, (c_m, c_n, 3). If None, no projection will be done.
-    :param kernels: List of kernel functions to use for each source surface, (n_source, ).
+    :param zetas: List of source points to compute the AIC from, ``(n_source,)(zeta_m, zeta_n, 3)``.
+    :param cs: List of target points to compute the AIC at, ``(n_target,)(c_m, c_n, 3)``.
+    :param ns: Bound normal vectors, ``(c_m, c_n, 3)``. If None, no projection will be done.
+    :param kernels: List of kernel functions to use for each source surface, ``(n_source, )``.
     :param batch_size: Batch size for vectorising AIC computations.
-    :param mirror_normal: Normal vector to mirror across, (3, ). If None, no mirroring will be done.
-    :param mirror_point: Point on mirror plane, (3, ). If None, no mirroring will be done.
-    :return: Nested sequences of AIC matrices, (n_target, )(n_source, c_m, c_n, zeta_m, zeta_n, 3), or
-    (n_target, )(n_source, )(c_m, c_n, zeta_m, zeta_n) if projected onto normals.
+    :param mirror_normal: Normal vector to mirror across, ``(3, )``. If None, no mirroring will be done.
+    :param mirror_point: Point on mirror plane, ``(3, )``. If None, no mirroring will be done.
+    :return: Nested sequences of AIC matrices, ``(n_target,)(n_source, c_m, c_n, zeta_m, zeta_n, 3)``, or
+    ``(n_target,)(n_source,)(c_m, c_n, zeta_m, zeta_n)`` if projected onto normals.
     """
 
     aic_mats = []
@@ -115,8 +115,8 @@ def compute_aic_sys(
 def reshape_aic_sys(aic_mat: Array) -> Array:
     r"""
     Reshape an AIC matrix such that the source and target dimensions are flattened.
-    :param aic_mat: Input AIC matrix, (c_m, c_n, zeta_m, zeta_n) or (c_m, c_n, zeta_m, zeta_n, 3).
-    :return: Reshaped AIC matrix, (c_m*c_n, zeta_m*zeta_n) or (c_m*c_n, zeta_m*zeta_n, 3).
+    :param aic_mat: Input AIC matrix, ``(c_m, c_n, zeta_m, zeta_n)`` or ``(c_m, c_n, zeta_m, zeta_n, 3)``.
+    :return: Reshaped AIC matrix, ``(c_m*c_n, zeta_m*zeta_n)`` or ``(c_m*c_n, zeta_m*zeta_n, 3)``.
     """
     shape = aic_mat.shape
     return aic_mat.reshape([shape[0] * shape[1], shape[2] * shape[3]])
@@ -125,8 +125,8 @@ def reshape_aic_sys(aic_mat: Array) -> Array:
 def assemble_aic_sys(aic_mats: Sequence[Sequence[Array]]) -> Array:
     r"""
     Assemble a nested sequence of AIC matrices into a single AIC matrix.
-    :param aic_mats: Nested sequence of AIC matrices, (n_target, )(n_source, )(c_m, c_n, zeta_m, zeta_n) or (n_target, )(n_source, )(c_m, c_n, zeta_m, zeta_n, 3).
-    :return: Assembled AIC matrix, (c_tot, zeta_tot) or (c_tot, zeta_tot, 3).
+    :param aic_mats: Nested sequence of AIC matrices, ``(n_target,)(n_source,)(c_m, c_n, zeta_m, zeta_n)`` or ``(n_target,)(n_source,)(c_m, c_n, zeta_m, zeta_n, 3)``.
+    :return: Assembled AIC matrix, ``(c_tot, zeta_tot)`` or ``(c_tot, zeta_tot, 3)``.
     """
     aic_mats_reshaped = [
         [reshape_aic_sys(aic) for aic in aic_row] for aic_row in aic_mats
@@ -147,17 +147,17 @@ def compute_aic_solve(
 ) -> Array:
     r"""
     Compute the AIC matrix used for the UVLM solve step.
-    :param cs: List of target points to compute the AIC at, (n_target, )(c_m, c_n, 3).
-    :param ns: Bound normal vectors, (n_target, )(c_m, c_n, 3). If None, no projection will be done.
-    :param zetas_b: Bound aerodynamic grids, (n_source, )(zeta_m, zeta_n, 3).
-    :param zetas_w: Wake aerodynamic grids, (n_source, )(zeta_m_star, zeta_n, 3). This is only passed in the static case,
+    :param cs: List of target points to compute the AIC at, ``(n_target,)(c_m, c_n, 3)``.
+    :param ns: Bound normal vectors, ``(n_target,)(c_m, c_n, 3)``. If None, no projection will be done.
+    :param zetas_b: Bound aerodynamic grids, ``(n_source,)(zeta_m, zeta_n, 3)``.
+    :param zetas_w: Wake aerodynamic grids, ``(n_source,)(zeta_m_star, zeta_n, 3)``. This is only passed in the static case,
     as in the dynamic case the wake influence is instead included in the boundary conditions.
     :param kernels_b: Bound grid kernels.
     :param kernels_w: Wake grid kernels.
     :param batch_size: Batch size for vectorising AIC computations.
-    :param mirror_normal: Normal vector to mirror across, (3, ). If None, no mirroring will be done.
-    :param mirror_point: Point on mirror plane, (3, ). If None, no mirroring will be done.
-    :return: Square AIC matrix for the solve step, (c_tot, zeta_tot).
+    :param mirror_normal: Normal vector to mirror across, ``(3, )``. If None, no mirroring will be done.
+    :param mirror_point: Point on mirror plane, ``(3, )``. If None, no mirroring will be done.
+    :return: Square AIC matrix for the solve step, ``(c_tot, zeta_tot)``.
     """
     aic_b_mats = compute_aic_sys(
         cs=cs,
@@ -193,9 +193,9 @@ def add_wake_influence(
     r"""
     Lump the wake influence onto the last column of the bound AIC matrices. This captures the steady Kutta condition
     by ensuring that the trailing edge panels have the same strength as all wake panels along a streamline.
-    :param aic_bs: Bound influence matrices, (n_target, )(n_source, )(c_m, c_n, zeta_m, zeta_n, 3).
-    :param aic_ws: Wake influence matrices, (n_target, )(n_source, )(c_m, c_n, zeta_m_star, zeta_n, 3).
-    :return: Updated bound influence matrices, (n_target, )(n_source, )(c_m, c_n, zeta_m, zeta_n, 3).
+    :param aic_bs: Bound influence matrices, ``(n_target,)(n_source,)(c_m, c_n, zeta_m, zeta_n, 3)``.
+    :param aic_ws: Wake influence matrices, ``(n_target,)(n_source,)(c_m, c_n, zeta_m_star, zeta_n, 3)``.
+    :return: Updated bound influence matrices, ``(n_target,)(n_source,)(c_m, c_n, zeta_m, zeta_n, 3)``.
     """
     for i in range(len(aic_bs)):
         for j in range(len(aic_bs[i])):
@@ -216,12 +216,12 @@ def v_ind_vmap(
     Compute the induced velocity by the aerodynamic elements at some points in space for a single source-target panel
     system. This is done without materialising the full AIC matrix, instead directly computing its contraction with the
     circulation strength.
-    :param c: Points at which to sample the velocity, (c_m, c_n, 3).
-    :param zeta: Filament grid, (zeta_m, zeta_n, 2, 3).
-    :param gamma: Circulation strengths, (zeta_m, zeta_n).
+    :param c: Points at which to sample the velocity, ``(c_m, c_n, 3)``.
+    :param zeta: Filament grid, ``(zeta_m, zeta_n, 2, 3)``.
+    :param gamma: Circulation strengths, ``(zeta_m, zeta_n)``.
     :param kernel: Kernel function.
     :param batch_size: Batch size for vectorising AIC computations.
-    :return: Induced velocity, (c_m, c_n, 3).
+    :return: Induced velocity, ``(c_m, c_n, 3)``.
     """
     c_m, c_n = c.shape[:2]
     c_flat = c.reshape(-1, 3)
@@ -257,14 +257,14 @@ def compute_v_ind[T: Array | ArrayList](
     """
     Compute the induced velocity by multiple surfaces of aerodynamic elements at one or multiple grids of points in
     space. This is done without materialising the full AIC matrix, instead directly computing its contraction with the circulation strength.
-    :param cs: Points at which to sample the velocity, (c_m, c_n, 3) or (n_target, )(c_m, c_n, 3).
-    :param zetas: Filament grid, (n_source, )(zeta_m, zeta_n, 3).
-    :param gammas: Circulation strengths, (n_source, )(zeta_m, zeta_n).
+    :param cs: Points at which to sample the velocity, ``(c_m, c_n, 3)`` or ``(n_target,)(c_m, c_n, 3)``.
+    :param zetas: Filament grid, ``(n_source,)(zeta_m, zeta_n, 3)``.
+    :param gammas: Circulation strengths, ``(n_source,)(zeta_m, zeta_n)``.
     :param kernels: Kernel function.
-    :param mirror_point: Mirror point, (3, ). If None, no mirroring will be done.
-    :param mirror_normal: Normal mirror vector, (3, ). If None, no mirroring will be done.
+    :param mirror_point: Mirror point, ``(3, )``. If None, no mirroring will be done.
+    :param mirror_normal: Normal mirror vector, ``(3, )``. If None, no mirroring will be done.
     :param batch_size: Batch size for vectorising AIC computations.
-    :return: Array or ArrayList of induced velocity, (c_m, c_n, 3) or (n_target, )(c_m, c_n, 3).
+    :return: Array or ArrayList of induced velocity, ``(c_m, c_n, 3)`` or ``(n_target,)(c_m, c_n, 3)``.
     """
 
     # convert cs to an ArrayList. If it is an Array, we will convert back before returning.
@@ -276,17 +276,15 @@ def compute_v_ind[T: Array | ArrayList](
         for zeta, gamma, kernel in zip(zetas, gammas, kernels):
             m_vect = jnp.stack(
                 (zeta[:-1, :, :], zeta[1:, :, :]), axis=-2
-            )  # [m, varphi+1, 2, 3]
+            )  # [m, n+1, 2, 3]
             n_vect = jnp.stack(
                 (zeta[:, :-1, :], zeta[:, 1:, :]), axis=-2
-            )  # [m+1, varphi, 2, 3]
+            )  # [m+1, n, 2, 3]
 
-            gamma_eff_m = jnp.diff(
-                jnp.pad(gamma, ((0, 0), (1, 1))), axis=1
-            )  # [m, varphi+1]
+            gamma_eff_m = jnp.diff(jnp.pad(gamma, ((0, 0), (1, 1))), axis=1)  # [m, n+1]
             gamma_eff_n = -jnp.diff(
                 jnp.pad(gamma, ((1, 1), (0, 0))), axis=0
-            )  # [m+1, varphi]
+            )  # [m+1, n]
 
             v[-1] += v_ind_vmap(
                 c, m_vect, gamma_eff_m, kernel, batch_size
@@ -300,10 +298,10 @@ def compute_v_ind[T: Array | ArrayList](
                 )
                 m_vect_mirror = jnp.stack(
                     (zeta_mirror[:-1, :, :], zeta_mirror[1:, :, :]), axis=-2
-                )  # [m, varphi+1, 2, 3]
+                )  # [m, n+1, 2, 3]
                 n_vect_mirror = jnp.stack(
                     (zeta_mirror[:, :-1, :], zeta_mirror[:, 1:, :]), axis=-2
-                )  # [m+1, varphi, 2, 3]
+                )  # [m+1, n, 2, 3]
 
                 v[-1] -= v_ind_vmap(
                     c, m_vect_mirror, gamma_eff_m, kernel, batch_size

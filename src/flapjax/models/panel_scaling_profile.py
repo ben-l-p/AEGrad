@@ -55,7 +55,7 @@ from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.coupled import (
     CoupledAeroelastic,
-    DynamicAeroelastic,
+    AeroelasticCase,
 )
 from flapjax.coupled.data_structures import (
     AeroelasticDesignVariables,
@@ -151,7 +151,7 @@ def objective(
 
 def make_adjoint_step(
     wing: CoupledAeroelastic,
-    case: DynamicAeroelastic,
+    case: AeroelasticCase,
     matrix_free: bool,
     n_tstep_adjoint: int,
     gmres_precond: bool = True,
@@ -227,7 +227,7 @@ def run_config(m: int, n: int, m_star: int, metric: str, csv_path: Path) -> None
         primal_wing = copy.deepcopy(wing)
 
         @jax.jit
-        def primal_step() -> DynamicAeroelastic:
+        def primal_step() -> AeroelasticCase:
             return primal_wing.dynamic_solve(
                 init_case=static_sol,
                 prescribed_dofs=prescribed_dofs,

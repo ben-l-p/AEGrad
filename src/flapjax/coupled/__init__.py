@@ -1,8 +1,7 @@
 from flapjax.coupled.data_structures import (
+    AeroelasticCase,
     AeroelasticDesignVariables,
     AeroelasticFullStates,
-    DynamicAeroelastic,
-    StaticAeroelastic,
 )
 from flapjax.coupled.gradients.coupled import CoupledAeroelastic
 from flapjax.coupled.gradients.data_structures import (

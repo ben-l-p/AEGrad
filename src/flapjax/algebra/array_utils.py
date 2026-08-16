@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 from functools import singledispatch
 from math import prod
 from types import EllipsisType
-from typing import Self
+from typing import ClassVar, Self
 
 from jax import Array
 from jax import numpy as jnp
@@ -17,7 +17,7 @@ from flapjax.utils.utils import make_pytree
 def check_arr_shape(
     arr: Array, expected_shape: tuple[int | None, ...], name: str | None
 ) -> None:
-    """Asserts that the arr_list_shapes of the given array matches the expected arr_list_shapes.
+    """Asserts that the shape of the given array matches the expected shape.
     :param arr: Input array to check.
     :param expected_shape: Expected shape of the array, as a tuple of integers, with None used for dimensions that can
     be of any size.
@@ -34,7 +34,7 @@ def check_arr_shape(
         else:
             return
 
-    message = f"Expected arr_list_shapes {expected_shape}, but got arr_list_shapes {actual_shape}."
+    message = f"Expected shape {expected_shape}, but got shape {actual_shape}."
     if name is not None:
         message += f"Issue with input '{name}'"
     raise ValueError(message)
@@ -90,9 +90,9 @@ def flatten_to_1d(arrs: Sequence[Array]) -> Array:
 def block_axis(arrs: Sequence[Sequence[Array]], axes: Sequence[int]) -> Array:
     r"""
     Form a block matrix along two given axes
-    :param arrs: Double nested sequence of arrays ()()(varphi, m)
+    :param arrs: Double nested sequence of arrays ``()()(n, m)``
     :param axes: Axes along which to concatenate the arrays
-    :return: Block matrix, (n_total, m_total)
+    :return: Block matrix, ``(n_total, m_total)``
     """
     # obtain the number of levels in the nested sequence
     if len(axes) != 2:
@@ -142,6 +142,8 @@ class ArrayList:
     non-uniform arrays in various calculations.
     :param arrs: Sequence of arrays to hold.
     """
+
+    _static: ClassVar[tuple[str, ...]] = ()
 
     def __init__(self, arrs: Sequence[Array]) -> None:
         self.data: list[Array] = list(arrs)
@@ -224,23 +226,23 @@ class ArrayList:
         return flatten_to_1d(self.data)
 
     @classmethod
-    def from_vector(cls, vect: Array, arr_list_shapes: ArrayListShape) -> ArrayList:
+    def from_vector(cls, vect: Array, shapes: ArrayListShape) -> ArrayList:
         r"""
         Unravel a 1D vector into a sequence of arrays with the given shapes.
         :param vect: Input 1D vector to unravel.
-        :param arr_list_shapes: ArrayListShape containing the shapes of the arrays to unravel into.
+        :param shapes: ArrayListShape containing the shapes of the arrays to unravel into.
         :return: ArrayList containing the unravelled arrays.
         """
 
-        if vect.size != sum(arr_list_shapes.sizes):
+        if vect.size != sum(shapes.sizes):
             raise ValueError(
-                f"Input vector must have the same number of elements as arr_list_shapes. Vector has "
-                f"{vect.size} elements, but shape requires {sum(arr_list_shapes.sizes)}."
+                f"Input vector must have the same number of elements as shapes. Vector has "
+                f"{vect.size} elements, but shape requires {sum(shapes.sizes)}."
             )
 
         arrs = []
         idx = 0
-        for shape in arr_list_shapes.shapes:
+        for shape in shapes.shapes:
             size = math.prod(shape)
             arrs.append(vect[idx : idx + size].reshape(shape))
             idx += size
@@ -287,8 +289,8 @@ class ArrayList:
     @property
     def shape(self) -> ArrayListShape:
         r"""
-        Get the arr_list_shapes of the arrays in the ArrayList.
-        :return: ArrayListShape containing the arr_list_shapes of the arrays in the ArrayList.
+        Get the shapes of the arrays in the ArrayList.
+        :return: ArrayListShape containing the shapes of the arrays in the ArrayList.
         """
         return ArrayListShape(shapes=[arr.shape for arr in self.data])
 
@@ -296,26 +298,10 @@ class ArrayList:
     def size(self) -> int:
         return sum([arr.size for arr in self.data])
 
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        r"""
-        Get the static field names for the pytree.
-        :return: Sequence of static field names.
-        """
-        return ()
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        r"""
-        Get the dynamic field names for the pytree.
-        :return: Sequence of dynamic field names.
-        """
-        return ("data",)
-
 
 class ArrayListShape:
     r"""
-    Class to hold the arr_list_shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.
+    Class to hold the shapes of the arrays in an ArrayList. This is used for indexing and reshaping operations.
     """
 
     def __init__(self, shapes: Sequence[tuple[int, ...]]) -> None:
@@ -347,9 +333,9 @@ def split_to_vertex(arr: Array, axes: int | Sequence[int]) -> Array:
     r"""
     Split the array into its vertex components along the specified axes. This corresponds to the process of splitting
     the forcing generated by a panel into its four corners.
-    :param arr: Input array to split, or equivalent ArrayList. (..., n, ..., m, ...)
+    :param arr: Input array to split, or equivalent ArrayList. ``(..., n, ..., m, ...)``
     :param axes: Axis or axes along which to split.
-    :return: Array with vertex components. (..., n+1, ..., m+1, ...)
+    :return: Array with vertex components. ``(..., n+1, ..., m+1, ...)``
     """
 
     def _single_split_to_vertex(arr_: Array, axis_: int) -> Array:
@@ -407,7 +393,7 @@ def vect_to_arrs(
         elif isinstance(shape, ArrayListShape):
             sz = shape.total_size()
             out_vals[name] = ArrayList.from_vector(
-                vect=vect[cnt : cnt + sz], arr_list_shapes=shape
+                vect=vect[cnt : cnt + sz], shapes=shape
             )
             cnt += sz
         elif shape is None:

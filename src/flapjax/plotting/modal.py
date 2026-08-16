@@ -7,21 +7,21 @@ from typing import TYPE_CHECKING
 from jax import Array, vmap
 from jax import numpy as jnp
 
-from flapjax.aero.data_structures import AeroSnapshot
+from flapjax.aero.data_structures import AeroCase
 from flapjax.algebra.array_utils import ArrayList
 from flapjax.algebra.se3 import exp_se3
 from flapjax.plotting.aerogrid import plot_grid_to_vtk
 from flapjax.plotting.beam import plot_beam_to_vtk
 from flapjax.plotting.pvd import write_pvd
-from flapjax.structure import StaticStructure
+from flapjax.structure import StructureCase
 
 if TYPE_CHECKING:
     from flapjax.aero.uvlm import UVLM
-    from flapjax.coupled import StaticAeroelastic
+    from flapjax.coupled import AeroelasticCase
 
 
 def plot_modes_vtu(
-    reference: StaticAeroelastic | StaticStructure,
+    reference: AeroelasticCase | StructureCase,
     q_full: Array,
     freqs: Array,
     dampings: Array,
@@ -40,12 +40,12 @@ def plot_modes_vtu(
     Plot aeroelastic modes for visualisation in paraview.
     :param reference: Reference aeroelastic model used for linearisation.
     :param directory: Directory for saving data. If not passed, will default to ./modal.
-    :param q_full: Full nodal mode deflections, (n_modes, n_nodes, 6).
-    :param freqs: Damped mode frequencies, Hz. (n_modes), used for file naming.
-    :param dampings: Damping ratios, (n_modes), used for file naming.
+    :param q_full: Full nodal mode deflections, ``(n_modes, n_nodes, 6)``.
+    :param freqs: Damped mode frequencies, Hz. ``(n_modes, )``, used for file naming.
+    :param dampings: Damping ratios, ``(n_modes, )``, used for file naming.
     :param gamma_b_full: Full bound gamma modes, (n_surf)(n_modes, m, n) or None.
-    :param gamma_w_full: Full wake modes, (n_surf)(n_modes, m*, n) or None.
-    :param zeta_w_full: Full wake displacement modes, (n_surf)(n_modes, m_star, n, 3) or None.
+    :param gamma_w_full: Full wake modes, ``(n_surf, )(n_modes, m*, n)`` or None.
+    :param zeta_w_full: Full wake displacement modes, ``(n_surf, )(n_modes, m_star, n, 3)`` or None.
     :param uvlm: UVLM model, used for generating the aerodynamic grid.
     :param n_phase: Number of phase points to plot the modes.
     :param n_interp: Number of interpolation points for plotting the structure.
@@ -71,12 +71,12 @@ def plot_modes_vtu(
     plot_dir = Path(directory)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    if isinstance(reference, StaticStructure):
-        struct_ref: StaticStructure = reference
-        aero_ref: AeroSnapshot | None = None
+    if isinstance(reference, StructureCase):
+        struct_ref: StructureCase = reference
+        aero_ref: AeroCase | None = None
     else:
-        struct_ref: StaticStructure = reference.structure
-        aero_ref: AeroSnapshot | None = reference.aero
+        struct_ref: StructureCase = reference.structure
+        aero_ref: AeroCase | None = reference.aero
 
     conn = jnp.array(struct_ref.conn, dtype=int)
     o0 = struct_ref.o0

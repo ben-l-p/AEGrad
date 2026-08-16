@@ -18,7 +18,7 @@ from flapjax.aero.utils import project_forcing_to_beam
 from flapjax.algebra.array_utils import ArrayList, construct_named_block_jacobian
 from flapjax.algebra.base import ADMode, jacrev_custom
 from flapjax.algebra.se3 import exp_se3, ha_to_ha_tilde
-from flapjax.coupled import StaticAeroelastic
+from flapjax.coupled import AeroelasticCase
 from flapjax.coupled.linear.data_structures import (
     AeroelasticInputUnflattened,
     AeroelasticLinearResult,
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
 class LinearCoupled(
     LinearModel[
-        StaticAeroelastic,
+        AeroelasticCase,
         AeroelasticInputUnflattened,
         AeroelasticStateUnflattened,
         AeroelasticOutputUnflattened,
@@ -58,7 +58,7 @@ class LinearCoupled(
     def __init__(
         self,
         case: BaseCoupledAeroelastic,
-        reference: StaticAeroelastic,
+        reference: AeroelasticCase,
         batch_size: int | None,
         n_struct_modes: int | None,
         wake_type: LinearWakeType = "frozen",
@@ -114,7 +114,7 @@ class LinearCoupled(
         self.sys = self.linearise(batch_size=batch_size)
 
     @property
-    def reference(self) -> StaticAeroelastic:
+    def reference(self) -> AeroelasticCase:
         return self._reference
 
     def extract_reference_inputs(
@@ -170,7 +170,7 @@ class LinearCoupled(
         return AeroelasticOutputUnflattened
 
     def _make_input_slices(
-        self, reference: StaticAeroelastic
+        self, reference: AeroelasticCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create input slices for the input vector.
@@ -205,7 +205,7 @@ class LinearCoupled(
         return self._make_slices(slice_entries)
 
     def _make_state_slices(
-        self, reference: StaticAeroelastic
+        self, reference: AeroelasticCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create state slices for the state vector.
@@ -236,7 +236,7 @@ class LinearCoupled(
         return self._make_slices(slice_entries)
 
     def _make_output_slices(
-        self, reference: StaticAeroelastic
+        self, reference: AeroelasticCase
     ) -> tuple[dict[str, LinearComponent], int]:
         r"""
         Create output slices for the output vector.
@@ -268,23 +268,19 @@ class LinearCoupled(
 
         # unravel vector inputs, falling back to reference values when None
         gamma_b = (
-            ArrayList.from_vector(
-                vect=gamma_b_vec, arr_list_shapes=ref.aero.gamma_b.shape
-            )
+            ArrayList.from_vector(vect=gamma_b_vec, shapes=ref.aero.gamma_b.shape)
             if gamma_b_vec is not None
             else ref.aero.gamma_b
         )
         gamma_w = (
-            ArrayList.from_vector(
-                vect=gamma_w_vec, arr_list_shapes=ref.aero.gamma_w.shape
-            )
+            ArrayList.from_vector(vect=gamma_w_vec, shapes=ref.aero.gamma_w.shape)
             if gamma_w_vec is not None
             else ref.aero.gamma_w
         )
         gamma_b_nm1 = (
             (
                 ArrayList.from_vector(
-                    vect=gamma_b_nm1_vec, arr_list_shapes=ref.aero.gamma_b.shape
+                    vect=gamma_b_nm1_vec, shapes=ref.aero.gamma_b.shape
                 )
                 if gamma_b_nm1_vec is not None
                 else ref.aero.gamma_b
@@ -293,17 +289,13 @@ class LinearCoupled(
             else None
         )
         zeta_w = (
-            ArrayList.from_vector(
-                vect=zeta_w_vec, arr_list_shapes=ref.aero.zeta_w.shape
-            )
+            ArrayList.from_vector(vect=zeta_w_vec, shapes=ref.aero.zeta_w.shape)
             if zeta_w_vec is not None
             else ref.aero.zeta_w
         )
         nu_b = (
             (
-                ArrayList.from_vector(
-                    vect=nu_b_vec, arr_list_shapes=ref.aero.zeta_b.shape
-                )
+                ArrayList.from_vector(vect=nu_b_vec, shapes=ref.aero.zeta_b.shape)
                 if nu_b_vec is not None
                 else ArrayList.zeros_like(ref.aero.zeta_b)
             )
@@ -312,9 +304,7 @@ class LinearCoupled(
         )
         nu_w = (
             (
-                ArrayList.from_vector(
-                    vect=nu_w_vec, arr_list_shapes=ref.aero.zeta_w.shape
-                )
+                ArrayList.from_vector(vect=nu_w_vec, shapes=ref.aero.zeta_w.shape)
                 if nu_w_vec is not None
                 else ArrayList.zeros_like(ref.aero.zeta_w)
             )
@@ -899,7 +889,7 @@ class LinearCoupled(
         :param damp_range: (min, max) damping-ratio window. Modes outside are pushed past the truncation and
         dropped when n_modes is set.
         :param min_struct_content: Minimum fraction of eigenvector energy that must live in the beam
-        (q, q_dot) states in range `[0, 1]`. Modes below this threshold (typically wake convection modes) are pushed
+        ``(q, q_dot)`` states in range `[0, 1]`. Modes below this threshold (typically wake convection modes) are pushed
         past the truncation.
         :param remove_complex_conjugate: If true, one mode from each complex-conjugate pair is dropped.
         :param plot_eigvals: If true, plot the eigenvalues with Matplotlib.
@@ -914,7 +904,7 @@ class LinearCoupled(
         :param max_disp: Maximum linear displacement used to normalise the plotted mode shape (in reference units).
         :param max_ang: Maximum angular displacement used to normalise the plotted mode shape.
         :param max_gamma: Maximum circulation used to normalise the plotted mode shape.
-        :return: Eigenvalues of the system A matrix, (n_states, ) or (n_states, 2) if to_components is True.
+        :return: Eigenvalues of the system A matrix, ``(n_states, )`` or ``(n_states, 2)`` if ``to_components=True``.
         """
 
         evals_d, evecs = jnp.linalg.eig(self.sys.a)

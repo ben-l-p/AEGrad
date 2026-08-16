@@ -16,8 +16,8 @@ def gauss_lobatto(
     Integrate using quadrature with Gauss-Lobatto points. Makes use of function values at the bounds.
     See https://en.wikipedia.org/wiki/Gaussian_quadrature.
     :param f: Function to integrate (must support vector mapping), () -> (...).
-    :param bounds: Scalar bounds of integration in function space, (2, ).
-    :param f_bounds: values of function at the bounds, (2, ...).
+    :param bounds: Scalar bounds of integration in function space, ``(2, )``.
+    :param f_bounds: values of function at the bounds, ``(2, ...)``.
     :param int_order: Order of integration, 3, 4, or 5.
     :return: Integrated value, (...).
     """
@@ -56,7 +56,7 @@ def gauss_legendre(
     r"""
     Integrate using quadrature with Gauss-Legendre points. See https://en.wikipedia.org/wiki/Gaussian_quadrature.
     :param f: Function to integrate (must support vector mapping), () -> (...).
-    :param bounds: Scalar bounds of integration in function space, (2,).
+    :param bounds: Scalar bounds of integration in function space, ``(2, )``.
     :param int_order: Order of integration.
     :return: Integrated value, (...).
     """

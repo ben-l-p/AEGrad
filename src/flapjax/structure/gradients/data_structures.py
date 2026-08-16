@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import jax
 from jax import Array
@@ -19,10 +18,7 @@ from flapjax.utils.data_structures import DesignVariables
 from flapjax.utils.utils import make_pytree
 
 if TYPE_CHECKING:
-    from flapjax.structure.data_structures import (
-        DynamicStructureSnapshot,
-        StaticStructure,
-    )
+    from flapjax.structure.data_structures import StructureCase
 
 
 @jax.tree_util.register_dataclass
@@ -103,6 +99,8 @@ class BeamJacobianApproximations:
 
 @make_pytree
 class StructuralDesignVariables(DesignVariables):
+    _static: ClassVar[tuple[str, ...]] = ("f_shape", "f_size", "n_x", "shapes")
+
     def __init__(
         self,
         x0: Array | None,
@@ -220,7 +218,7 @@ class StructuralDesignVariables(DesignVariables):
 
     def plot(
         self,
-        case: StaticStructure | DynamicStructureSnapshot,
+        case: StructureCase,
         directory: os.PathLike | str,
         n_interp: int = 0,
     ) -> Path:
@@ -295,21 +293,3 @@ class StructuralDesignVariables(DesignVariables):
             "f_ext_dead": self.f_ext_dead,
             "thrust_t": self.thrust_t,
         }
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "x0",
-            "orientation_euler",
-            "k_cs",
-            "m_cs",
-            "m_lumped",
-            "f_ext_follower",
-            "f_ext_dead",
-            "thrust_t",
-            "mapping",
-        )
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return "f_shape", "f_size", "n_x", "shapes"

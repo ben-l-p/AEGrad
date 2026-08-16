@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 def matrix2(mat: Array) -> Array:
     r"""
     Computes the square of a matrix.
-    :param mat: Matrix, (n, n).
-    :return: Matrix squared, (n, n).
+    :param mat: Matrix, ``(n, n)``.
+    :return: Matrix squared, ``(n, n)``.
     """
     return mat @ mat
 
@@ -43,8 +43,8 @@ def clip_to_pi(val: float | Array):
 def chi(rmat: Array) -> Array:
     r"""
     Converts a 3x3 rotation matrix to a 6x6 matrix used in spatial transformations.
-    :param rmat: Rotation matrix, (a, b).
-    :return: Block matrix with diagonal rotation matrices, (2a, 2b).
+    :param rmat: Rotation matrix, ``(a, b)``.
+    :return: Block matrix with diagonal rotation matrices, ``(2a, 2b)``.
     """
     return jnp.block([[rmat, jnp.zeros_like(rmat)], [jnp.zeros_like(rmat), rmat]])
 
@@ -99,9 +99,9 @@ def finite_difference(
 def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the matrix exponential using truncated summation.
-    :param a: Algebra matrix to exponentiate, (n, n).
+    :param a: Algebra matrix to exponentiate, ``(n, n)``.
     :param order: Order of summation.
-    :return: Exponential of matrix, (n, n)
+    :return: Exponential of matrix, ``(n, n)``
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:
@@ -116,9 +116,9 @@ def exp_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the matrix logarithm using truncated summation.
-    :param g: Group matrix to exponentiate, (n, n).
+    :param g: Group matrix to exponentiate, ``(n, n)``.
     :param order: Order of summation.
-    :return: Logarithm of matrix, (n, n)
+    :return: Logarithm of matrix, ``(n, n)``
     """
 
     if g.ndim != 2 or g.shape[0] != g.shape[1]:
@@ -135,9 +135,9 @@ def log_sum(g: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the tangent operator truncated summation. This is used to validate other implementations.
-    :param a: Adjoint action matrix, (n, n)
+    :param a: Adjoint action matrix, ``(n, n)``
     :param order: Order of summation.
-    :return: Tangent operator, (n, n)
+    :return: Tangent operator, ``(n, n)``
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:
@@ -152,9 +152,9 @@ def t_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
 def t_inv_sum(a: Array, order: int = BASE_SUMMATION_ORDER) -> Array:
     r"""
     Computes the inverse tangent operator truncated summation.
-    :param a: Adjoint action matrix, (n, n)
+    :param a: Adjoint action matrix, ``(n, n)``
     :param order: Order of summation.
-    :return: Inverse tangent operator, (n, n)
+    :return: Inverse tangent operator, ``(n, n)``
     """
 
     if a.ndim != 2 or a.shape[0] != a.shape[1]:

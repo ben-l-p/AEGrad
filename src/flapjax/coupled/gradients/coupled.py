@@ -18,7 +18,6 @@ from flapjax.aero.utils import project_forcing_to_beam
 from flapjax.algebra.array_utils import ArrayList
 from flapjax.algebra.base import ADMode
 from flapjax.algebra.se3 import exp_se3
-from flapjax.coupled import DynamicAeroelastic
 from flapjax.coupled.coupled import BaseCoupledAeroelastic
 from flapjax.coupled.data_structures import (
     AeroelasticDesignVariables,
@@ -46,10 +45,10 @@ from flapjax.utils.print_utils import (
     verbosity,
     warn,
 )
-from flapjax.utils.utils import make_pytree
+from flapjax.utils.utils import dv_or, make_pytree, pytree_clone
 
 if TYPE_CHECKING:
-    from flapjax.coupled.coupled import StaticAeroelastic
+    from flapjax.coupled.coupled import AeroelasticCase
 
 type AeroelasticObjectiveFunction = (
     Callable[[AeroelasticFullStates, AeroelasticDesignVariables, None], Array]
@@ -74,42 +73,33 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         """
 
         # make a copy of the structure object to prevent modifying the original states
-        inner_case = deepcopy(self)
+        inner_case = pytree_clone(self)
 
+        struct_dv = dv.structure
+        aero_dv = dv.aero
+        struct = self.structure
+        aero = self.aero
+        flowfield = (
+            aero.flowfield.from_design_variables(design_variables=aero_dv.flowfield)
+            if aero_dv.flowfield is not None
+            else aero.flowfield
+        )
         inner_case.set_design_variables(
-            coords=dv.structure.x0
-            if dv.structure.x0 is not None
-            else self.structure.x0,
-            k_cs=dv.structure.k_cs
-            if dv.structure.k_cs is not None
-            else self.structure.k_cs,
-            m_cs=dv.structure.m_cs
-            if dv.structure.m_cs is not None
-            else self.structure.m_cs,
-            m_lumped=None
-            if not self.structure.use_lumped_mass
-            else dv.structure.m_lumped
-            if dv.structure.m_lumped is not None
-            else self.structure.m_lumped,
-            thrust_reference=dv.structure.thrust_t
-            if dv.structure.thrust_t is not None
-            else self.structure.thrust_reference,
-            flowfield=self.aero.flowfield.from_design_variables(
-                design_variables=dv.aero.flowfield
-            )
-            if dv.aero.flowfield is not None
-            else self.aero.flowfield,
-            delta_w=self.aero.delta_w,
-            dt=self.aero.dt,
-            x0_aero=dv.aero.zeta_b0
-            if dv.aero.zeta_b0 is not None
-            else self.aero.zeta_b0,
-            orientation_euler=dv.structure.orientation_euler
-            if dv.structure.orientation_euler is not None
-            else self.structure.orientation_euler,
-            cs_angles_reference=dv.aero.cs_ang_t
-            if dv.aero.cs_ang_t is not None
-            else self.aero.cs_ang0,
+            coords=dv_or(struct_dv.x0, struct.x0),
+            k_cs=dv_or(struct_dv.k_cs, struct.k_cs),
+            m_cs=dv_or(struct_dv.m_cs, struct.m_cs),
+            m_lumped=dv_or(struct_dv.m_lumped, struct.m_lumped)
+            if struct.use_lumped_mass
+            else None,
+            thrust_reference=dv_or(struct_dv.thrust_t, struct.thrust_reference),
+            flowfield=flowfield,
+            delta_w=aero.delta_w,
+            dt=aero.dt,
+            x0_aero=dv_or(aero_dv.zeta_b0, aero.zeta_b0),
+            orientation_euler=dv_or(
+                struct_dv.orientation_euler, struct.orientation_euler
+            ),
+            cs_angles_reference=dv_or(aero_dv.cs_ang_t, aero.cs_ang0),
             remove_checks=True,
         )
 
@@ -204,7 +194,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 6))
     def static_adjoint(
         self,
-        case: StaticAeroelastic,
+        case: AeroelasticCase,
         objective: AeroelasticObjectiveFunction,
         grads_to_compute: AeroelasticGradsToCompute = DEFAULT_GRADS_TO_COMPUTE,
         optional_jacobians: OptionalJacobians | None = DEFAULT_OPTIONAL_JACOBIANS,
@@ -214,7 +204,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         r"""
         Computes the static grads of the structure, which is used to compute gradients of the loss with respect to
         the structure's parameters.
-        :param case: StaticAeroelastic containing the current state of the aeroelastic system.
+        :param case: AeroelasticCase containing the current state of the aeroelastic system.
         :param objective: Objective function that takes the structure and design variables and returns an array
         :param grads_to_compute: Data structure which specifies which gradients to compute. This is used to speed up the
         adjoint solve by only computing the necessary Jacobian blocks.
@@ -364,7 +354,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     def compute_p_j0_p_x(
         self,
-        case: StaticAeroelastic,
+        case: AeroelasticCase,
         objective: AeroelasticObjectiveFunction,
         grads_to_compute: AeroelasticGradsToCompute | None,
         horseshoe: bool = False,
@@ -376,7 +366,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         r"""
         Build the VJP of the initial-timestep objective for pertubations in the design variables, and optionally the
         initial states.
-        :param case: StaticAeroelastic solution for the initial timestep.
+        :param case: AeroelasticCase solution for the initial timestep.
         :param objective: Objective function which takes the system full states, design variables and timestep index.
         :param grads_to_compute: Grads to compute when computing design gradient.
         :param horseshoe: Flag for using horseshoe wake.
@@ -392,7 +382,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         varphi = case.structure.varphi
         n_dof = self.structure.n_dof
-        aero_shapes = case.aero.get_states(i_ts=0).shapes()
 
         @jax.checkpoint
         def objective_from_varphi(
@@ -469,7 +458,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 q=AeroelasticMinimalStates.from_vector(
                     vect=q0,
                     n_dof=n_dof,
-                    aero_shapes=aero_shapes,
+                    aero_shapes=q_aero.shapes(),
                 ),
                 dv=dv_,
                 dv_full=dv_full,
@@ -484,7 +473,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     def _initial_timestep_grad_contribution(
         self,
-        case: StaticAeroelastic,
+        case: AeroelasticCase,
         objective: AeroelasticObjectiveFunction,
         grads_to_compute: AeroelasticGradsToCompute | None,
         p_varphi_p_x: Array | None,
@@ -494,7 +483,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     ) -> AeroelasticDesignVariables:
         r"""
         Assemble the initial-timestep contribution to ``d_j_d_x``.
-        :param case: StaticAeroelastic case.
+        :param case: AeroelasticCase object.
         :param objective: Aeroelastic objective function.
         :param grads_to_compute: Class outlining the gradients to be computed.
         :param p_varphi_p_x: Sensitivity of initial deformation to design variables.
@@ -572,7 +561,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         :param thrust_t: Thrust time history, {key: [n_tstep]}.
         :param solve_dofs: Structural degrees of freedom which are solved for.
         :param approx_grads: If True, remove some gradient terms which are generally small.
-        :return: Coupled residual (n_adj_dof, ).
+        :return: Coupled residual ``(n_adj_dof, )``.
         """
         assert (
             q_n.structure.f_ext_aero is not None
@@ -802,7 +791,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     def construct_approximate_jacobians(
         self,
-        sol: DynamicAeroelastic,
+        sol: AeroelasticCase,
         jacobian_approximations: AeroelasticJacobianApproximations,
     ) -> dict[str, dict[str, Callable[..., Any] | None]]:
         r"""
@@ -838,7 +827,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         return aero_options | struct_options
 
     def evaluate_dynamic_objective(
-        self, case: DynamicAeroelastic, objective: AeroelasticObjectiveFunction
+        self, case: AeroelasticCase, objective: AeroelasticObjectiveFunction
     ) -> Array:
         r"""
         Evaluate the dynamic objective for a given case.
@@ -858,7 +847,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     def make_frozen_wake_preconditioner(
         self,
-        case: DynamicAeroelastic,
+        case: AeroelasticCase,
         dv_full: AeroelasticDesignVariables,
         solve_dofs: tuple[int, ...],
         approx_grads: bool = False,
@@ -1003,7 +992,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15))
     def dynamic_adjoint(
         self,
-        case: DynamicAeroelastic,
+        case: AeroelasticCase,
         objective: AeroelasticObjectiveFunction,
         matrix_free: bool = True,
         jacobian_approximations: AeroelasticJacobianApproximations | None = None,
@@ -1396,7 +1385,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
     def dynamic_adjoint_profile(
         self,
-        case: DynamicAeroelastic,
+        case: AeroelasticCase,
         approx_grads: bool,
         jacobian_approximations: AeroelasticJacobianApproximations | None = None,
         grads_to_compute: AeroelasticGradsToCompute | None = None,
@@ -1467,7 +1456,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         horseshoe: bool = False,
         method: Literal["adjoint", "finite_difference"] = "finite_difference",
         broyden_fd_step: float = 1e-3,
-    ) -> tuple[StaticAeroelastic, TrimVariables]:
+    ) -> tuple[AeroelasticCase, TrimVariables]:
         r"""
         Trim an aircraft such that the resulting sum of forces on the aircraft is zero without any supports.
         :param prescribed_dofs: Degrees of freedom which are clamped for the trim process.
@@ -1558,9 +1547,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             def trim_body(
                 i_iter: int,
                 trim_variables_: TrimVariables,
-                sol_: StaticAeroelastic,
+                sol_: AeroelasticCase,
                 f_clamp_: Array,
-            ) -> tuple[int, TrimVariables, StaticAeroelastic, Array]:
+            ) -> tuple[int, TrimVariables, AeroelasticCase, Array]:
                 i_iter, _, tv, sol, fc = self.trim_iter(
                     i_iter,
                     inner_case,
@@ -1615,10 +1604,10 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             def trim_body_broyden(
                 i_iter: int,
                 trim_variables_: TrimVariables,
-                sol_: StaticAeroelastic,
+                sol_: AeroelasticCase,
                 f_clamp_: Array,
                 b_approx_: Array,
-            ) -> tuple[int, TrimVariables, StaticAeroelastic, Array, Array]:
+            ) -> tuple[int, TrimVariables, AeroelasticCase, Array, Array]:
                 i_iter, _, tv, sol, fc, b = self._trim_iter_fd(
                     i_iter,
                     inner_case,
@@ -1684,7 +1673,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         Find the 3 Euler angles describing the aircraft orientation. This allows for any combination to be set by
         the trim routine, with values not passed using the fixed values provided in the reference orientation.
         :param trim_angles: Dictionary of axis-angle pairs.
-        :return: Euler angles describing the aircraft orientation, (3, ).
+        :return: Euler angles describing the aircraft orientation, ``(3, )``.
         """
 
         orientation_euler = self.structure.orientation_euler
@@ -1703,8 +1692,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         t: Array,
         load_steps: int,
         horseshoe: bool,
-    ) -> tuple[StaticAeroelastic, Array]:
-        """Push trim variables into inner_case, run a static solve, and return (solution, clamp-force residual)."""
+    ) -> tuple[AeroelasticCase, Array]:
+        """Push trim variables into inner_case, run a static solve, and return ``(solution, clamp-force residual)``."""
         inner_case.set_design_variables(
             coords=inner_case.structure.x0,
             k_cs=inner_case.structure.k_cs,
@@ -1773,7 +1762,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         i_iter: int,
         inner_case: CoupledAeroelastic,
         trim_variables: TrimVariables,
-        _: StaticAeroelastic,
+        _: AeroelasticCase,
         __: Array,
         *,
         prescribed_dofs: tuple[int, ...],
@@ -1787,7 +1776,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Sequence[str],
         thrust_nodes: Sequence[str],
         trim_orientation: Sequence[str],
-    ) -> tuple[int, CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array]:
+    ) -> tuple[int, CoupledAeroelastic, TrimVariables, AeroelasticCase, Array]:
         ae_sol, f_clamp = CoupledAeroelastic._trim_solve_f_clamp(
             inner_case=inner_case,
             trim_variables=trim_variables,
@@ -1907,7 +1896,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Sequence[str],
         thrust_nodes: Sequence[str],
         trim_orientation: Sequence[str],
-    ) -> tuple[Array, Array, StaticAeroelastic]:
+    ) -> tuple[Array, Array, AeroelasticCase]:
         """
         Obtain the Broyden Jacobian with a forward finite-difference sweep: perturb each trim variable in turn by
         `fd_step`, solve, and build the corresponding column.
@@ -1981,7 +1970,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         i_iter: int,
         inner_case: CoupledAeroelastic,
         trim_variables: TrimVariables,
-        _: StaticAeroelastic,
+        _: AeroelasticCase,
         f_clamp: Array,
         b_approx: Array,
         *,
@@ -1996,7 +1985,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_cs: Sequence[str],
         thrust_nodes: Sequence[str],
         trim_orientation: Sequence[str],
-    ) -> tuple[int, CoupledAeroelastic, TrimVariables, StaticAeroelastic, Array, Array]:
+    ) -> tuple[int, CoupledAeroelastic, TrimVariables, AeroelasticCase, Array, Array]:
         """
         One Broyden trim iteration: take a step using the current Jacobian approximation, re-solve at the new point,
         then update the Jacobian with the Broyden rank-1 formula.

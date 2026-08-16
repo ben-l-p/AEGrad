@@ -8,7 +8,7 @@ from pathlib import Path
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.data_structures import AeroSnapshot
+from flapjax.aero.data_structures import AeroCase
 from flapjax.algebra.array_utils import ArrayList
 from flapjax.plotting.pvd import write_pvd
 
@@ -39,7 +39,7 @@ class AeroOutputUnflattened:
 class AeroLinearResult:
     def __init__(
         self,
-        reference: AeroSnapshot,
+        reference: AeroCase,
         u_t: AeroInputUnflattened,
         x_t: AeroStateUnflattened,
         y_t: AeroOutputUnflattened,
@@ -64,7 +64,7 @@ class AeroLinearResult:
         self.t: Array = t
         self.surf_b_names: list[str] = surf_b_names
         self.surf_w_names: list[str] = surf_w_names
-        self.reference: AeroSnapshot = reference
+        self.reference: AeroCase = reference
 
     def plot(
         self,
@@ -107,11 +107,11 @@ class AeroLinearResult:
             except IndexError:
                 pass
 
-    def __getitem__(self, i_ts: int) -> AeroSnapshot:
+    def __getitem__(self, i_ts: int) -> AeroCase:
         r"""
         Get initial_snapshot of aerodynamic surface at a single time step
         :param i_ts: Timestep index
-        :return: DynamicAeroCase at specified time step
+        :return: AeroCase at specified time step
         """
 
         if i_ts < 0 or i_ts >= self.n_tstep:
@@ -136,7 +136,7 @@ class AeroLinearResult:
             else None
         )
 
-        return AeroSnapshot(
+        return AeroCase(
             zeta_b=zeta_b_tot,
             zeta_b_dot=zeta_b_dot_tot,
             zeta_w=zeta_w_tot,
@@ -150,7 +150,7 @@ class AeroLinearResult:
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=i_ts,
-            t=self.t,
+            t=self.t[i_ts],
             static_horseshoe=False,
             c=None,
             n=None,

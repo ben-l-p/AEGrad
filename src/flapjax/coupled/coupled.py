@@ -1,27 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax
 from jax import Array, vmap
 from jax import numpy as jnp
 
-from flapjax.aero.data_structures import DynamicAeroCase
+from flapjax.aero.data_structures import AeroCase
 from flapjax.aero.flowfields import FlowField
 from flapjax.aero.linear import LinearWakeType
 from flapjax.aero.utils import cs_ang_to_cs_vel
 from flapjax.algebra.array_utils import ArrayList, check_arr_shape
 from flapjax.algebra.se3 import hg_to_d
 from flapjax.coupled.data_structures import (
+    AeroelasticCase,
     AeroelasticDesignVariables,
-    DynamicAeroelastic,
-    DynamicAeroelasticSnapshot,
-    StaticAeroelastic,
 )
 from flapjax.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from flapjax.coupled.linear.linear_coupled import LinearCoupled
-from flapjax.structure import BeamStructure, StaticStructure
+from flapjax.structure import BeamStructure, StructureCase
 from flapjax.structure.time_integration import TimeIntegrator
 from flapjax.structure.utils import get_solve_dofs, transform_nodal_vect
 from flapjax.utils.constants import BASE_LOBATTO_ORDER
@@ -48,6 +46,8 @@ DEFAULT_FSI_CONVERGENCE_SETTINGS = ConvergenceSettings(
 
 @make_pytree
 class BaseCoupledAeroelastic:
+    _static: ClassVar[tuple[str, ...]] = ("fsi_convergence_settings",)
+
     def __init__(
         self,
         structure: BeamStructure,
@@ -100,7 +100,7 @@ class BaseCoupledAeroelastic:
 
     def get_design_variables(
         self,
-        case: StaticAeroelastic | DynamicAeroelastic,
+        case: AeroelasticCase,
         grads_to_compute: AeroelasticGradsToCompute | None,
     ) -> AeroelasticDesignVariables:
         r"""
@@ -134,7 +134,7 @@ class BaseCoupledAeroelastic:
         use_f_ext_follower: bool = False,
         use_f_ext_dead: bool = False,
         t_init: float | Array = 0.0,
-    ) -> StaticAeroelastic:
+    ) -> AeroelasticCase:
         r"""
         Obtain the static aeroelastic object describing the undeformed wing.
         :param prescribed_dofs: Prescribed dofs for the structure.
@@ -145,7 +145,7 @@ class BaseCoupledAeroelastic:
         :param t_init: Initial time
         :return: Static aeroelastic object for undeformed wing
         """
-        return StaticAeroelastic(
+        return AeroelasticCase(
             structure=self.structure.reference_configuration(
                 use_f_grav=self.structure.use_gravity,
                 use_f_ext_dead=use_f_ext_dead,
@@ -168,7 +168,7 @@ class BaseCoupledAeroelastic:
         horseshoe: bool = False,
         fsi_relaxation: float = 0.6,
         fsi_omega_min: float = 1e-2,
-    ) -> StaticAeroelastic:
+    ) -> AeroelasticCase:
         warn_if_32_bit()
 
         prescribed_dofs: tuple[int, ...] = self.structure.make_prescribed_dofs_tuple(
@@ -195,11 +195,11 @@ class BaseCoupledAeroelastic:
 
         def _convergence_loop(
             converge_status_: ConvergenceStatus,
-            struct_case_n: StaticStructure,
-            aero_case_n: DynamicAeroCase,
+            struct_case_n: StructureCase,
+            aero_case_n: AeroCase,
             omega_prev: Array,
             r_prev: Array,
-        ) -> tuple[ConvergenceStatus, StaticStructure, DynamicAeroCase, Array, Array]:
+        ) -> tuple[ConvergenceStatus, StructureCase, AeroCase, Array, Array]:
             f_aero_new = aero_case_n.project_forcing_to_beam(
                 i_ts=0,
                 rmat=struct_case_n.hg[:, :3, :3],
@@ -302,14 +302,11 @@ class BaseCoupledAeroelastic:
 
         fsi_converge_status.print_line(dynamic=False)
 
-        return StaticAeroelastic(structure=struct_case, aero=aero_case)
+        return AeroelasticCase(structure=struct_case, aero=aero_case)
 
     def dynamic_solve(
         self,
-        init_case: StaticAeroelastic
-        | DynamicAeroelastic
-        | DynamicAeroelasticSnapshot
-        | None,
+        init_case: AeroelasticCase | None,
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         n_tstep: int,
         f_ext_follower: Array | None = None,
@@ -319,7 +316,7 @@ class BaseCoupledAeroelastic:
         thrust_t: dict[str, Array] | None = None,
         cs_ang_t: dict[str, Array] | None = None,
         cs_vel_t: dict[str, Array] | None = None,
-    ) -> DynamicAeroelastic:
+    ) -> AeroelasticCase:
         warn_if_32_bit()
 
         # check control inputs
@@ -375,7 +372,7 @@ class BaseCoupledAeroelastic:
 
         # initialise aeroelastic case object
         if init_case is None:
-            case: DynamicAeroelastic = DynamicAeroelastic.initialise(
+            case: AeroelasticCase = AeroelasticCase.initialise(
                 initial_snapshot=self.reference_configuration(
                     prescribed_dofs=prescribed_dofs,
                     use_f_ext_follower=f_ext_follower is not None,
@@ -399,27 +396,14 @@ class BaseCoupledAeroelastic:
                         f_ext=f_ext_dead[0, ...], rmat=case.structure.hg[0, :, :3, :3]
                     )
                 )
-
-        elif isinstance(init_case, StaticAeroelastic | DynamicAeroelasticSnapshot):
-            case = DynamicAeroelastic.initialise(
-                initial_snapshot=init_case,  # type: ignore
-                t=t,
-                use_f_ext_follower=f_ext_follower is not None,
-                use_f_ext_dead=f_ext_dead is not None,
-                aeroelastic_object=self,
-            )
-        elif isinstance(init_case, DynamicAeroelastic):
-            if init_case.aero.n_tstep != 1:
-                raise ValueError("init_case.aero.n_tstep != 1")
-            case = DynamicAeroelastic.initialise(
-                initial_snapshot=init_case[0],
-                t=t,
-                use_f_ext_follower=f_ext_follower is not None,
-                use_f_ext_dead=f_ext_dead is not None,
-                aeroelastic_object=self,
-            )
         else:
-            raise NotImplementedError
+            case = AeroelasticCase.initialise(
+                initial_snapshot=init_case,
+                t=t,
+                use_f_ext_follower=f_ext_follower is not None,
+                use_f_ext_dead=f_ext_dead is not None,
+                aeroelastic_object=self,
+            )
 
         # propagate the dynamic prescribed_dofs to the case
         case.structure.prescribed_dofs = prescribed_dofs
@@ -450,9 +434,7 @@ class BaseCoupledAeroelastic:
         fsi_converge_status.print_line(dynamic=True)
         return out
 
-    def initialise_dynamic(
-        self, static_case: StaticAeroelastic
-    ) -> DynamicAeroelasticSnapshot:
+    def initialise_dynamic(self, static_case: AeroelasticCase) -> AeroelasticCase:
         r"""
         Initialise a dynamic aeroelastic snapshot from a static aeroelastic case. This takes a static aeroelastic case
         obtained under clamped conditions (i.e. `relative_motion` is True for the free stream), and sets the structural
@@ -477,7 +459,7 @@ class BaseCoupledAeroelastic:
 
     def linearise(
         self,
-        reference: StaticAeroelastic,
+        reference: AeroelasticCase,
         wake_type: LinearWakeType = "frozen",
         batch_size: int | None = 64,
         n_struct_modes: int | None = None,
@@ -500,11 +482,3 @@ class BaseCoupledAeroelastic:
             skip_checks=skip_checks,
             n_struct_modes=n_struct_modes,
         )
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "structure", "aero"
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ("fsi_convergence_settings",)

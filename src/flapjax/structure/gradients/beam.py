@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from copy import deepcopy
 from dataclasses import fields
 from typing import Any, cast
 
@@ -16,12 +15,9 @@ from flapjax.algebra.base import (
     jacrev_custom,
 )
 from flapjax.algebra.se3 import exp_se3, log_se3
-from flapjax.structure import DynamicStructure, OptionalJacobians
+from flapjax.structure import OptionalJacobians, StructureCase
 from flapjax.structure.beam import BaseBeamStructure
-from flapjax.structure.data_structures import (
-    StaticStructure,
-    StructureMinimalStates,
-)
+from flapjax.structure.data_structures import StructureMinimalStates
 from flapjax.structure.gradients.data_structures import (
     AApprox,
     BeamJacobianApproximations,
@@ -38,7 +34,7 @@ from flapjax.utils.print_utils import (
     print_table_line,
     print_table_title,
 )
-from flapjax.utils.utils import make_pytree
+from flapjax.utils.utils import dv_or, make_pytree, pytree_clone
 
 type StructuralObjectiveFunction = (
     Callable[[StructureFullStates, StructuralDesignVariables, int], Array]
@@ -55,12 +51,12 @@ class BeamStructure(BaseBeamStructure):
         :param dv: Design variables.
         :return: Beam structure object with the same functionality as self.
         """
-        inner_case = deepcopy(self)
+        inner_case = pytree_clone(self)
         inner_case.set_design_variables(
-            coords=dv.x0 if dv.x0 is not None else self.x0,
-            k_cs=dv.k_cs if dv.k_cs is not None else self.k_cs,
-            m_cs=dv.m_cs if dv.m_cs is not None else self.m_cs,
-            m_lumped=dv.m_lumped if dv.m_lumped is not None else self._m_lumped,
+            coords=dv_or(dv.x0, self.x0),
+            k_cs=dv_or(dv.k_cs, self.k_cs),
+            m_cs=dv_or(dv.m_cs, self.m_cs),
+            m_lumped=dv_or(dv.m_lumped, self._m_lumped),
             remove_checks=True,
         )
 
@@ -185,7 +181,7 @@ class BeamStructure(BaseBeamStructure):
 
     def static_adjoint(
         self,
-        structure: StaticStructure,
+        structure: StructureCase,
         objective: StructuralObjectiveFunction,
         optional_jacobians: OptionalJacobians | None = OPTIONAL_JACOBIANS_DEFAULT,
         ad_mode: ADMode = "reverse",
@@ -193,7 +189,7 @@ class BeamStructure(BaseBeamStructure):
         r"""
         Computes the static grads of the structure, which is used to compute gradients of the loss with respect to
         the structure's parameters.
-        :param structure: StaticStructure containing the current state of the structure.
+        :param structure: StructureCase containing the current state of the structure.
         :param objective: Objective function that takes the structure and design variables and returns an array
         :param optional_jacobians: OptionalJacobians object specifying which Jacobians to compute.
         :param ad_mode: Flag on which to use of the forward or reverse adjoint.
@@ -512,10 +508,10 @@ class BeamStructure(BaseBeamStructure):
         :param q_nm1: Previous minimal state.
         :param q_n: Current minimal state.
         :param dv_: Design variables.
-        :param thrust_t: Thrust time history, {key, (n_tstep, )}.
+        :param thrust_t: Thrust time history, ``{key, (n_tstep, )}``.
         :param solve_dofs: Solve degrees of freedom.
         :param approx_grads: If true, block gradients from some parts of the solution.
-        :return: Residual vector, (4 * n_solve_dof, ).
+        :return: Residual vector, ``(4 * n_solve_dof,)``.
         """
         return jnp.stack(
             (
@@ -588,10 +584,10 @@ class BeamStructure(BaseBeamStructure):
         :param i_ts: Time step index.
         :param q_nm1: Previous minimal states.
         :param q_n: Current minimal states.
-        :param f_ext_aero_nm1: Optional aerodynamic forcing for previous time step, (n_nodes, 6).
-        :param f_ext_aero_n: Optional aerodynamic forcing for current time step, (n_nodes, 6).
+        :param f_ext_aero_nm1: Optional aerodynamic forcing for previous time step, ``(n_nodes, 6)``.
+        :param f_ext_aero_n: Optional aerodynamic forcing for current time step, ``(n_nodes, 6)``.
         :param dv: Design variables.
-        :param thrust_t: Thrust time history, {key, (n_tstep, )}.
+        :param thrust_t: Thrust time history, ``{key, (n_tstep, )}``.
         :param solve_dofs: Index of degrees of freedom to solve for.
         :param approx_grads: If True, remove some gradient terms which are generally small.
         :param n_profile_loops: Number of profile loops to run for timing function. If None, no profiling is done.
@@ -792,7 +788,7 @@ class BeamStructure(BaseBeamStructure):
         p_r_np1_p_q_n: Array | None,
         adj_t_p_r_np1_p_q_n: Array | None,
         q_n: StructureMinimalStates,
-        structure: DynamicStructure,
+        structure: StructureCase,
         objective: StructuralObjectiveFunction,
         dv: StructuralDesignVariables,
         dv_full: StructuralDesignVariables,
@@ -810,17 +806,17 @@ class BeamStructure(BaseBeamStructure):
         :param rev_i_ts: Reversed timestep index. JAX loop does not allow for reverse indexing, and so this is.
         explicitly reversed within the function body to obtain i_ts.
         :param d_j_d_x_: Design gradient to accumulate.
-        :param adj_: Full grads matrix which is updated inplace, (n_tstep, *j_shape, 5*n_dof).
+        :param adj_: Full grads matrix which is updated inplace, ``(n_tstep, *j_shape, 5*n_dof)``.
         :param p_r_np1_p_q_n: Gradient of future step with respect to current state, used when computing the full
-        Jacobian (5*n_dof, 5*n_dof).
+        Jacobian ``(5*n_dof, 5*n_dof)``.
         :param adj_t_p_r_np1_p_q_n: VJP of the future adjoint step and the Jacobian of the future residual with respect
-        to the current state, (n_adj_dof, ).
+        to the current state, ``(n_adj_dof, )``.
         :param q_n: Current minimal states.
         :param structure: Dynamic structure solution.
         :param objective: Objective function.
         :param dv: Structure design variables.
         :param dv_full: Structure design variables which are defined for all entries.
-        :param thrust_t: Thrust time history, {key, (n_tstep, )}.
+        :param thrust_t: Thrust time history, ``{key, (n_tstep, )}``.
         :param solve_dofs: Tuple of dof index to solve.
         :param approx_grads: Whether to approximate the gradient or not.
         :param save_adjoint: Whether to save the full adjoint time history.
@@ -982,7 +978,7 @@ class BeamStructure(BaseBeamStructure):
 
     def construct_approximate_jacobians(
         self,
-        sol: DynamicStructure,
+        sol: StructureCase,
         jacobian_approximations: BeamJacobianApproximations,
     ) -> dict[str, dict[str, Callable[..., Any] | None]]:
         r"""
@@ -1083,7 +1079,7 @@ class BeamStructure(BaseBeamStructure):
 
     def dynamic_adjoint(
         self,
-        structure: DynamicStructure,
+        structure: StructureCase,
         objective: StructuralObjectiveFunction,
         matrix_free: bool = False,
         jacobian_approximations: BeamJacobianApproximations = JACOBIAN_APPROXIMATIONS_DEFAULT,
@@ -1294,7 +1290,7 @@ class BeamStructure(BaseBeamStructure):
 
     def dynamic_adjoint_jacobian_profile(
         self,
-        sol: DynamicStructure,
+        sol: StructureCase,
         approx_grads: bool,
         jacobian_approximations: BeamJacobianApproximations = JACOBIAN_APPROXIMATIONS_DEFAULT,
         grads_to_compute: StructuralGradsToCompute | None = None,

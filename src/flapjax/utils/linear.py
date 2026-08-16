@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import prod
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax
 from jax import Array
@@ -20,21 +20,21 @@ from flapjax.utils.print_utils import jax_print, warn
 from flapjax.utils.utils import make_pytree, shallow_as_dict
 
 if TYPE_CHECKING:
-    from flapjax.aero.data_structures import AeroSnapshot
+    from flapjax.aero.data_structures import AeroCase
     from flapjax.aero.linear.data_structures import (
         AeroInputUnflattened,
         AeroLinearResult,
         AeroOutputUnflattened,
         AeroStateUnflattened,
     )
-    from flapjax.coupled.data_structures import StaticAeroelastic
+    from flapjax.coupled.data_structures import AeroelasticCase
     from flapjax.coupled.linear.data_structures import (
         AeroelasticInputUnflattened,
         AeroelasticLinearResult,
         AeroelasticOutputUnflattened,
         AeroelasticStateUnflattened,
     )
-    from flapjax.structure import StaticStructure
+    from flapjax.structure import StructureCase
     from flapjax.structure.linear.data_structures import (
         BeamInputUnflattened,
         BeamLinearResult,
@@ -51,7 +51,7 @@ type StateUnflattened = (
 type OutputUnflattened = (
     AeroOutputUnflattened | BeamOutputUnflattened | AeroelasticOutputUnflattened
 )
-type ReferenceObject = StaticStructure | AeroSnapshot | StaticAeroelastic
+type ReferenceObject = StructureCase | AeroCase | AeroelasticCase
 
 type LinearResult = AeroLinearResult | BeamLinearResult | AeroelasticLinearResult
 
@@ -231,7 +231,7 @@ class LinearModel[
     ) -> dict[str, Array | ArrayList | None]:
         r"""
         Unpack a vector into its components based on the provided slices.
-        :param x: Vector to unpack, (n_elements,) or (n_tstep, n_elements)
+        :param x: Vector to unpack, ``(n_elements, )`` or ``(n_tstep, n_elements)``
         :param slices: Slice name and linear component mapping.
         :param add_t: If true, the first dimension of x_target is time steps.
         :return: Dictionary mapping of names to unpacked ArrayLists.
@@ -278,7 +278,7 @@ class LinearModel[
     def _unpack_input_vector(self, u: Array) -> I:
         r"""
         Unpack an input vector into its components.
-        :param u: Input vector, (n_inputs,)
+        :param u: Input vector, ``(n_inputs, )``
         :return: InputUnflattened object.
         """
         return self.input_object(**self._unpack_vector(x=u, slices=self.input_slices))
@@ -286,7 +286,7 @@ class LinearModel[
     def _unpack_state_vector(self, x: Array) -> S:
         r"""
         Unpack a state vector into its components.
-        :param x: State vector, (n_states,)
+        :param x: State vector, ``(n_states, )``
         :return: StateUnflattened object.
         """
         return self.state_object(**self._unpack_vector(x=x, slices=self.state_slices))
@@ -294,7 +294,7 @@ class LinearModel[
     def _unpack_output_vector(self, y: Array) -> O:
         r"""
         Unpack an output vector into its components.
-        :param y: Output vector, (n_outputs,)
+        :param y: Output vector, ``(n_outputs, )``
         :return: OutputUnflattened object.
         """
         return self.output_object(**self._unpack_vector(x=y, slices=self.output_slices))
@@ -302,7 +302,7 @@ class LinearModel[
     def _unpack_input_vector_t(self, u_t: Array) -> I:
         r"""
         Unpack a time history of input vectors into its components.
-        :param u_t: Input vector time history, (n_tstep, n_inputs)
+        :param u_t: Input vector time history, ``(n_tstep, n_inputs)``
         :return: InputUnflattened object.
         """
         return self.input_object(
@@ -312,7 +312,7 @@ class LinearModel[
     def _unpack_state_vector_t(self, x_t: Array) -> S:
         r"""
         Unpack a time history of state vectors into its components.
-        :param x_t: State vector time history, (n_tstep, n_states)
+        :param x_t: State vector time history, ``(n_tstep, n_states)``
         :return: StateUnflattened object.
         """
         return self.state_object(
@@ -322,7 +322,7 @@ class LinearModel[
     def _unpack_output_vector_t(self, y_t: Array) -> O:
         r"""
         Unpack a time history of output vectors into its components.
-        :param y_t: Output vector time history, (n_tstep, n_outputs)
+        :param y_t: Output vector time history, ``(n_tstep, n_outputs)``
         :return: OutputUnflattened object.
         """
         return self.output_object(
@@ -363,7 +363,7 @@ class LinearModel[
         r"""
         Pack an input unflattened object into a vector.
         :param u_input: InputUnflattened object.
-        :return: Input vector, (n_inputs, ).
+        :return: Input vector, ``(n_inputs, )``.
         """
         return self._pack_vector(
             slices=self.input_slices,
@@ -375,7 +375,7 @@ class LinearModel[
         r"""
         Pack a state unflattened object into a vector.
         :param x_state: StateUnflattened object.
-        :return: State vector, (n_states, ).
+        :return: State vector, ``(n_states, )``.
         """
         return self._pack_vector(
             slices=self.state_slices,
@@ -387,7 +387,7 @@ class LinearModel[
         r"""
         Pack an output unflattened object into a vector.
         :param y_output: OutputUnflattened object.
-        :return: Output vector, (n_outputs, ).
+        :return: Output vector, ``(n_outputs, )``.
         """
         return self._pack_vector(
             slices=self.output_slices,
@@ -406,7 +406,7 @@ class LinearModel[
         :param slices: Dictionary mapping names to linear components.
         :param vec_length: Length of the output vector.
         :param arrs: Dictionary mapping names to ArrayLists to pack.
-        :return: Array, (n_tstep, vec_length)
+        :return: Array, ``(n_tstep, vec_length)``
         """
 
         # find number of timesteps from first surface with valid entry
@@ -447,7 +447,7 @@ class LinearModel[
         r"""
         Pack a time history of input unflattened objects into a time history of input vectors.
         :param u_input: InputUnflattened object.
-        :return: Input vector time history, (n_tstep, n_inputs)
+        :return: Input vector time history, ``(n_tstep, n_inputs)``
         """
         return self._pack_vector_t(
             slices=self.input_slices,
@@ -459,7 +459,7 @@ class LinearModel[
         r"""
         Pack a time history of state unflattened objects into a time history of state vectors.
         :param x_state: StateUnflattened object.
-        :return: State vector time history, (n_tstep, n_states)
+        :return: State vector time history, ``(n_tstep, n_states)``
         """
         return self._pack_vector_t(
             slices=self.state_slices,
@@ -471,7 +471,7 @@ class LinearModel[
         r"""
         Pack a time history of output unflattened objects into a time history of output vectors.
         :param y_output: OutputUnflattened object.
-        :return: Output vector time history, (n_tstep, n_outputs)
+        :return: Output vector time history, ``(n_tstep, n_outputs)``
         """
         return self._pack_vector_t(
             slices=self.output_slices,
@@ -650,7 +650,7 @@ class LinearModel[
         r"""
         Obtain an ArrayList of arrays from a subvector based on the provided component.
         :param vec: Total vector, [n_elements]
-        :param component: LinearComponent defining the slices and arr_list_shapes.
+        :param component: LinearComponent defining the slices and shape.
         :return: ArrayList of arrays for each surface for the given component.
         """
 
@@ -674,6 +674,13 @@ class LinearSystem:
     r"""
     Linear system represented in state-space form, with tools for time-stepping
     """
+
+    _static: ClassVar[tuple[str, ...]] = (
+        "n_inputs",
+        "n_states",
+        "n_outputs",
+        "continuous_time",
+    )
 
     def __init__(
         self,
@@ -768,9 +775,9 @@ class LinearSystem:
     def run(self, u: Array, x0: Array | None = None) -> tuple[Array, Array]:
         r"""
         Run the linear system for a time history of input vector u.
-        :param u: Time history of input vectors, shape (n_tstep, n_inputs)
-        :param x0: Initial state vector, (n_states,). If None, assumed to be zero.
-        :return: State history and output history, arr_list_shapes (n_tstep, n_states) and (n_tstep, n_outputs)
+        :param u: Time history of input vectors, shape ``(n_tstep, n_inputs)``
+        :param x0: Initial state vector, ``(n_states, )``. If None, assumed to be zero.
+        :return: State history and output history, ``(n_tstep, n_states)`` and ``(n_tstep, n_outputs)``
         """
         if x0 is not None:
             check_arr_shape(x0, (self.n_states,), "x0")
@@ -784,8 +791,8 @@ class LinearSystem:
             r"""
             State update function for time step i_ts, given as :math:`x_{varphi} = A x_{varphi-1} + B u_{varphi-1}` or :math:`x_n = A x_{varphi-1} + B u_n`.
             :param i_ts: Time step index to obtain new states for.
-            :param x_: State history array being updated, (n_tstep, n_states)
-            :return: Updated state history array, (n_tstep, n_states)
+            :param x_: State history array being updated, ``(n_tstep, n_states)``
+            :return: Updated state history array, ``(n_tstep, n_states)``
             """
             jax_print(
                 "Linear system state step {i_ts}",
@@ -804,8 +811,8 @@ class LinearSystem:
             r"""
             Output computation function for time step i_ts, given as :math:`y_n = C x_n + D u_n`.
             :param i_ts: Time step index to obtain outputs for.
-            :param y_: Output history array being updated, (n_tstep, n_outputs)
-            :return: Updated output history array, (n_tstep, n_outputs)
+            :param y_: Output history array being updated, ``(n_tstep, n_outputs)``
+            :return: Updated output history array, ``(n_tstep, n_outputs)``
             """
             jax_print("Linear system output step {i_ts}", i_ts=i_ts)
             return y_.at[i_ts, ...].set(self.c @ x[i_ts, ...] + self.d @ u[i_ts, ...])
@@ -813,22 +820,6 @@ class LinearSystem:
         y = jnp.zeros((n_tstep, self.n_outputs))
         y = jax.lax.fori_loop(0, n_tstep, output_func, y)
         return x, y
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        r"""
-        Output the names of all static attributes for pytree serialization.
-        :return: Sequence of static attribute names.
-        """
-        return "n_inputs", "n_states", "n_outputs"
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        r"""
-        Output the names of all dynamic attributes for pytree serialization.
-        :return: Sequence of dynamic attribute names.
-        """
-        return "a", "b", "c", "d", "removed_u_np1"
 
 
 def conjugate_partner_mask(
@@ -842,10 +833,10 @@ def conjugate_partner_mask(
     Modes are first sorted by frequency, and falls back to a tiebreaker (typically the real part of the eigenvalue) as a
     secondary key. Each mode whose predecessor matches in frequency and \|damping\|
     is then flagged.
-    :param freq_hz: Natural frequency of each mode (n_modes,).
-    :param damping: Damping ratio of each mode (n_modes,).
-    :param tiebreaker: Secondary sort key used to keep conjugate partners adjacent (n_modes,).
-    :return: Boolean mask, True where the mode is the redundant partner in a conjugate pair (n_modes,).
+    :param freq_hz: Natural frequency of each mode ``(n_modes, )``.
+    :param damping: Damping ratio of each mode ``(n_modes, )``.
+    :param tiebreaker: Secondary sort key used to keep conjugate partners adjacent ``(n_modes, )``.
+    :return: Boolean mask, True where the mode is the redundant partner in a conjugate pair ``(n_modes, )``.
     """
     idx = jnp.lexsort((tiebreaker, freq_hz))
     freq_sorted = freq_hz[idx]

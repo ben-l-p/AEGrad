@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Sequence
 from dataclasses import dataclass
 from math import prod
+from typing import ClassVar
 
 import numpy as np
 from jax import Array
@@ -30,6 +30,8 @@ class ConvergenceSettings:
 
 @make_pytree
 class ConvergenceStatus:
+    _static: ClassVar[tuple[str, ...]] = ("convergence_settings",)
+
     def __init__(self, convergence_settings: ConvergenceSettings):
         r"""
         Object to track convergence status of an iterative solver based on absolute and relative tolerances. Absolute
@@ -95,12 +97,10 @@ class ConvergenceStatus:
 
         # check absolute displacement convergence
         if delta_disp is not None:
-            self.abs_disp_val = self.abs_disp_val.at[...].set(
-                jnp.linalg.norm(delta_disp)
-            )
+            self.abs_disp_val = jnp.linalg.norm(delta_disp)
 
             # NaNs are checked for with displacement magnitude
-            self.has_nan = self.has_nan.at[...].set(jnp.isnan(delta_disp).any())
+            self.has_nan = jnp.isnan(delta_disp).any()
 
         if self.convergence_settings.abs_disp_tol is not None:
             self.converged_abs_disp = (
@@ -112,10 +112,8 @@ class ConvergenceStatus:
             if total_disp is None:
                 raise ValueError("total_disp cannot be None")
             max_total_elem = jnp.linalg.norm(total_disp)
-            self.rel_disp_val = self.rel_disp_val.at[...].set(
-                self.abs_disp_val / max_total_elem
-            )
-            self.converged_rel_disp = self.converged_rel_disp.at[...].set(
+            self.rel_disp_val = self.abs_disp_val / max_total_elem
+            self.converged_rel_disp = (
                 jnp.nan_to_num(self.rel_disp_val, True, jnp.inf)
                 < self.convergence_settings.rel_disp_tol
             )
@@ -124,9 +122,7 @@ class ConvergenceStatus:
         if self.convergence_settings.abs_force_tol is not None:
             if delta_force is None:
                 raise ValueError("delta_force cannot be None")
-            self.abs_force_val = self.abs_force_val.at[...].set(
-                jnp.linalg.norm(delta_force)
-            )
+            self.abs_force_val = jnp.linalg.norm(delta_force)
             self.converged_abs_force = (
                 self.abs_force_val < self.convergence_settings.abs_force_tol
             )
@@ -136,30 +132,23 @@ class ConvergenceStatus:
             if total_force is None:
                 raise ValueError("total_force cannot be None")
             max_total_elem = jnp.abs(total_force).max()
-            self.rel_force_val = self.rel_force_val.at[...].set(
-                self.abs_force_val / max_total_elem
-            )
-            self.converged_rel_force = self.converged_rel_force.at[...].set(
+            self.rel_force_val = self.abs_force_val / max_total_elem
+            self.converged_rel_force = (
                 jnp.nan_to_num(self.rel_force_val, True, jnp.inf)
                 < self.convergence_settings.rel_force_tol
             )
 
         # find convergence status of numerics (excluding failure modes such as max iterations or nans)
-        self.converged = self.converged.at[...].set(
-            (
-                self.converged_rel_disp
-                | self.converged_abs_disp
-                | self.converged_rel_force
-                | self.converged_abs_force
-            )
-            & (self.i_iter > 0)
-        )
+        self.converged = (
+            self.converged_rel_disp
+            | self.converged_abs_disp
+            | self.converged_rel_force
+            | self.converged_abs_force
+        ) & (self.i_iter > 0)
 
         # check for failure modes
         if self.convergence_settings.max_n_iter is not None:
-            self.final_iter = self.final_iter.at[...].set(
-                self.i_iter >= self.convergence_settings.max_n_iter
-            )
+            self.final_iter = self.i_iter >= self.convergence_settings.max_n_iter
 
     def get_status(self) -> Array:
         """Get overall convergence status."""
@@ -169,86 +158,63 @@ class ConvergenceStatus:
         r"""
         Reset convergence status for next load step, setting all convergence flags to False.
         """
-        self.converged = self.converged.at[...].set(False)
-        self.converged_abs_disp = self.converged_abs_disp.at[...].set(False)
-        self.converged_rel_disp = self.converged_rel_disp.at[...].set(False)
-        self.converged_rel_force = self.converged_rel_force.at[...].set(False)
-        self.converged_abs_force = self.converged_abs_force.at[...].set(False)
-        self.rel_disp_val = self.rel_disp_val.at[...].set(0.0)
-        self.abs_disp_val = self.abs_disp_val.at[...].set(0.0)
-        self.rel_force_val = self.rel_force_val.at[...].set(0.0)
-        self.abs_force_val = self.abs_force_val.at[...].set(0.0)
-        self.has_nan = self.has_nan.at[...].set(False)
-        self.final_iter = self.final_iter.at[...].set(False)
-        self.i_iter = self.i_iter.at[...].set(0)
+        false_ = jnp.zeros((), dtype=bool)
+        zero_ = jnp.zeros(())
+        self.converged = false_
+        self.converged_abs_disp = false_
+        self.converged_rel_disp = false_
+        self.converged_rel_force = false_
+        self.converged_abs_force = false_
+        self.rel_disp_val = zero_
+        self.abs_disp_val = zero_
+        self.rel_force_val = zero_
+        self.abs_force_val = zero_
+        self.has_nan = false_
+        self.final_iter = false_
+        self.i_iter = jnp.zeros((), dtype=int)
+
+    def _print_convergence_message(
+        self,
+        label: str,
+        i_ts: int | None,
+        t: Array | None,
+        i_load_step: int | None,
+    ) -> None:
+        parts: list[str] = ["|"]
+        kw: dict[str, Array | int] = {
+            "i_iter": self.i_iter,
+            "conv": self.converged,
+            "rel_disp_val": self.rel_disp_val,
+            "abs_disp_val": self.abs_disp_val,
+            "rel_force_val": self.rel_force_val,
+            "abs_force_val": self.abs_force_val,
+        }
+        if t is not None:
+            parts.append("{i_ts:<8} | {t:.03e} |")
+            kw["i_ts"] = i_ts  # type: ignore[assignment]
+            kw["t"] = t
+        if label == "Struct":
+            parts.append("Struct: {i_iter:<3} |")
+        else:
+            parts.append("FSI: {i_iter:<3}    |")
+        parts.append("{conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} |")
+        parts.append("{rel_force_val:.03e} | {abs_force_val:.03e} |")
+        if i_load_step is not None:
+            parts.append("{i_load_step:<2}        |")
+            kw["i_load_step"] = i_load_step
+        else:
+            parts.append("          |")
+        jax_print(" ".join(parts), verbose_level="normal", **kw)
 
     def print_struct_message(
         self, i_ts: int | None, t: Array | None, i_load_step: int
     ) -> None:
         """Print convergence message for structure based on status."""
-
-        if t is None:
-            # static message
-            jax_print(
-                "| Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
-                "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
-                verbose_level="normal",
-                i_load_step=i_load_step,
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
-        else:
-            # dynamic message
-            jax_print(
-                "| {i_ts:<8} | {t:.03e} | Struct: {i_iter:<3} | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
-                "{rel_force_val:.03e} | {abs_force_val:.03e} | {i_load_step:<2}        |",
-                verbose_level="normal",
-                i_ts=i_ts,
-                t=t,
-                i_load_step=i_load_step,
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
+        self._print_convergence_message("Struct", i_ts, t, i_load_step)
 
     def print_fsi_message(self, i_ts: int | None, t: Array | None) -> None:
-        """Print convergence message for structure based on status."""
-
-        if t is None:
-            # static message
-            jax_print(
-                "| FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | {rel_force_val:.03e} | "
-                "{abs_force_val:.03e} |           |",
-                verbose_level="normal",
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
-        else:
-            # dynamic message
-            jax_print(
-                "| {i_ts:<8} | {t:.03e} | FSI: {i_iter:<3}    | {conv!s:<5} | {rel_disp_val:.03e} | {abs_disp_val:.03e} | "
-                "{rel_force_val:.03e} | {abs_force_val:.03e} |           |",
-                verbose_level="normal",
-                i_ts=i_ts,
-                t=t,
-                i_iter=self.i_iter,
-                conv=self.converged,
-                rel_disp_val=self.rel_disp_val,
-                abs_disp_val=self.abs_disp_val,
-                rel_force_val=self.rel_force_val,
-                abs_force_val=self.abs_force_val,
-            )
+        """Print convergence message for FSI based on status."""
+        self._print_convergence_message("FSI", i_ts, t, None)
 
     @classmethod
     def print_header(cls, dynamic: bool) -> None:
@@ -269,27 +235,6 @@ class ConvergenceStatus:
     @staticmethod
     def print_line(dynamic: bool) -> None:
         print_table_line(inner_width=104 if dynamic else 81)
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ("convergence_settings",)
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "i_iter",
-            "rel_disp_val",
-            "abs_disp_val",
-            "rel_force_val",
-            "abs_force_val",
-            "converged",
-            "converged_abs_disp",
-            "converged_rel_disp",
-            "converged_rel_force",
-            "converged_abs_force",
-            "final_iter",
-            "has_nan",
-        )
 
 
 class DesignVariables:
@@ -488,11 +433,3 @@ class DesignVariables:
             else:
                 raise ValueError("Invalid shape type in DesignVariables.")
         return type(dvs[0])(**out_dict, f_shape=(f_shape,))  # type: ignore
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ("shapes",)
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return ("mapping",)

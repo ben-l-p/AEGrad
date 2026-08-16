@@ -15,7 +15,7 @@ from vtk.numpy_interface import dataset_adapter as dsa
 def create_structured_grid(grid_arr: Array, is_planar: bool) -> vtk.vtkStructuredGrid:
     r"""
     Create a VTK structured grid from a JAX array.
-    :param grid_arr: Array of grid points, [m, varphi, 3] or [m, varphi, p, 3].
+    :param grid_arr: Array of grid points, ``(m, n, 3)`` or ``(m, n, p, 3)``.
     :param is_planar: If true, the grid is planar (2D), otherwise volumetric (3D).
     :return: VTK structured grid.
     """

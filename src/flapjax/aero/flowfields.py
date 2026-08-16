@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import ClassVar
 
 import jax
 from jax import Array
@@ -15,6 +15,8 @@ class FlowField:
     Base class for background flow field definitions.
     """
 
+    _static: ClassVar[tuple[str, ...]] = ("relative_motion",)
+
     def __init__(
         self,
         u_inf: Array,
@@ -22,7 +24,7 @@ class FlowField:
         relative_motion: bool,
     ):
         r"""
-        :param u_inf: Base flow velocity, (3, ).
+        :param u_inf: Base flow velocity, ``(3, )``.
         :param rho: Flow density.
         :param relative_motion: If True, the air moves, if False, the plane moves.
         """
@@ -38,18 +40,18 @@ class FlowField:
         """
         Evaluate the flow field at a spatial and temporal coordinate.
 
-        :param x: Spatial coordinate, (3, )
+        :param x: Spatial coordinate, ``(3, )``
         :param t: Time, ().
-        :return: Sampled velocity, (3, ).
+        :return: Sampled velocity, ``(3, )``.
         """
         raise NotImplementedError("__call__ method must be implemented in subclasses.")
 
     def vmap_call(self, x: Array, t: Array) -> Array:
         """
         Vectorized version of the __call__ method. This maps over all leading dimensions of x.
-        :param x: Spatial coordinates, (..., 3)
+        :param x: Spatial coordinates, ``(..., 3)``
         :param t: Time, ()
-        :return: Flow field values at the specified coordinates, (..., 3)
+        :return: Flow field values at the specified coordinates, ``(..., 3)``
         """
         n_vmap = x.ndim - 1
         func = self.__call__
@@ -60,9 +62,9 @@ class FlowField:
     def surf_vmap_call(self, xs: ArrayList, t: Array) -> ArrayList:
         """
         Vectorized version of the __call__ method over a list of surfaces.
-        :param xs: Spatial coordinates, (n_surf, )(..., 3)
+        :param xs: Spatial coordinates, ``(n_surf,)(..., 3)``
         :param t: Time, ()
-        :return: Flow field values at the specified coordinates, (n_surf, )(..., 3)
+        :return: Flow field values at the specified coordinates, ``(n_surf, )(..., 3)``
         """
         return ArrayList([self.vmap_call(x, t) for x in xs])
 
@@ -80,20 +82,6 @@ class FlowField:
         :return: New FlowField object.
         """
         return self.__class__(**design_variables, relative_motion=self.relative_motion)
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            "u_inf",
-            "rho",
-            "u_inf_mag",
-            "u_inf_dir",
-            "q_inf",
-        )
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ("relative_motion",)
 
 
 @make_pytree
@@ -127,16 +115,16 @@ class OneMinusCosine(FlowField):
         gust_x0: Array | None = None,
     ):
         r"""
-        :param u_inf: Base flow velocity, (3, ).
+        :param u_inf: Base flow velocity, ``(3, )``.
         :param rho: Flow density.
         :param relative_motion: If True, the air moves, if False, the plane moves.
         :param gust_length: Gust length.
         :param gust_amplitude: Gust amplitude.
-        :param gust_travel_direction: Vector which defines the direction that the gust travels, (3, ). Defaults to the
+        :param gust_travel_direction: Vector which defines the direction that the gust travels, ``(3, )``. Defaults to the
         freestream direction if None.
-        :param gust_amplitude_direction: Vector which defines the direction that the gust amplitude acts, (3, ). Defaults
+        :param gust_amplitude_direction: Vector which defines the direction that the gust amplitude acts, ``(3, )``. Defaults
         to the z-direction if None.
-        :param gust_x0: Coordinate on the initial leading edge of the gust, (3, ). Defaults to 0 if None.
+        :param gust_x0: Coordinate on the initial leading edge of the gust, ``(3, )``. Defaults to 0 if None.
         """
         super().__init__(u_inf, rho, relative_motion)
 
@@ -209,15 +197,4 @@ class OneMinusCosine(FlowField):
             gust_travel_direction=self.gust_travel_direction,
             gust_amplitude_direction=self.gust_amplitude_direction,
             gust_x0=self.gust_x0,
-        )
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return (
-            *FlowField._dynamic_names(),
-            "gust_amplitude",
-            "gust_length",
-            "gust_travel_direction",
-            "gust_amplitude_direction",
-            "gust_x0",
         )

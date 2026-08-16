@@ -1,7 +1,5 @@
 from flapjax.aero.data_structures import (
-    AeroSnapshot,
-    AeroSurfaceSnapshot,
-    DynamicAeroCase,
+    AeroCase,
     GridDiscretisation,
 )
 from flapjax.aero.flowfields import Constant, OneMinusCosine

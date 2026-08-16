@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from jax import Array
 from jax import numpy as jnp
@@ -36,6 +36,8 @@ class AeroelasticJacobianApproximations:
 
 @make_pytree
 class TrimVariables:
+    _static: ClassVar[tuple[str, ...]] = ()
+
     def __init__(
         self,
         cs_ang: dict[str, Array],
@@ -118,10 +120,3 @@ class TrimVariables:
             content += " " * padding + "|"
             jax_print(content, **kwargs, verbose_level="normal")
 
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ()
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "cs_ang", "thrust", "trim_angles"

@@ -6,13 +6,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from jax import Array
 from jax import numpy as jnp
 
 if TYPE_CHECKING:
-    from flapjax.aero.data_structures import DynamicAeroCase
+    from flapjax.aero.data_structures import AeroCase
 from flapjax.algebra.array_utils import ArrayList, ArrayListShape, vect_to_arrs
 from flapjax.plotting.aerogrid import plot_grid_to_vtk
 from flapjax.utils.data_structures import DesignVariables
@@ -116,6 +116,8 @@ class AeroStates:
     Aerodynamic states used for the adjoint solve.
     """
 
+    _static: ClassVar[tuple[str, ...]] = ()
+
     def __init__(
         self,
         gamma_b: ArrayList,
@@ -124,10 +126,10 @@ class AeroStates:
         zeta_w: ArrayList,
     ) -> None:
         r"""
-        :param gamma_b: Bound panel circulation strengths. (n_surf, )(m, n)
-        :param gamma_w: Wake panel circulation strengths. (n_surf, )(m_star, n)
-        :param gamma_b_dot: Bound grid circulation time derivatives. (n_surf, )(m, n)
-        :param zeta_w: Wake grid coordinates. (n_surf, )(m_star + 1, n + 1, 3)
+        :param gamma_b: Bound panel circulation strengths. ``(n_surf, )(m, n)``
+        :param gamma_w: Wake panel circulation strengths. ``(n_surf, )(m_star, n)``
+        :param gamma_b_dot: Bound grid circulation time derivatives. ``(n_surf, )(m, n)``
+        :param zeta_w: Wake grid coordinates. ``(n_surf, )(m_star + 1, n + 1, 3)``
         """
         self.gamma_b: ArrayList = gamma_b
         self.gamma_w: ArrayList = gamma_w
@@ -190,20 +192,14 @@ class AeroStates:
             + self.zeta_w.size
         )
 
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ()
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "gamma_b", "gamma_w", "gamma_b_dot", "zeta_w"
-
 
 @make_pytree
 class AeroDesignVariables(DesignVariables):
     r"""
     Class to hold all differentiable aerodynamic design variables.
     """
+
+    _static: ClassVar[tuple[str, ...]] = ("f_size", "f_shape", "n_x", "shapes")
 
     def __init__(
         self,
@@ -214,10 +210,10 @@ class AeroDesignVariables(DesignVariables):
         f_shape: tuple[int, ...],
     ):
         r"""
-        :param zeta_b0: Bound aerodynamic grid local reference coordinates. (n_surf, )(m+1, n+1, 3)
+        :param zeta_b0: Bound aerodynamic grid local reference coordinates. ``(n_surf, )(m+1, n+1, 3)``
         :param flowfield: Dictionary of flowfield variables.
-        :param cs_ang_t: Control surface angle time histories, {name: (n_tstep, )}.
-        :param cs_vel_t: Control velocity time histories, {name: (n_tstep, )}.
+        :param cs_ang_t: Control surface angle time histories, {name: ``(n_tstep, )``}.
+        :param cs_vel_t: Control velocity time histories, {name: ``(n_tstep, )``}.
         :param f_shape: Shape of objective. As this class can hold both the primal design variables and the gradient of
         the objective with respect to design variables, the latter case results in arrays which have a shape which
         depends on the objective shape. In this case, all data has (*f_shape, *dv.shape) dimensionality.
@@ -344,7 +340,7 @@ class AeroDesignVariables(DesignVariables):
 
     def plot(
         self,
-        case: DynamicAeroCase,
+        case: AeroCase,
         rmat_nodal: ArrayList | None,
         directory: os.PathLike | str,
     ) -> Sequence[Path]:
@@ -399,11 +395,3 @@ class AeroDesignVariables(DesignVariables):
             )
 
         return paths
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "zeta_b0", "flowfield", "cs_ang_t", "cs_vel_t", "mapping"
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return "f_size", "f_shape", "n_x", "shapes"

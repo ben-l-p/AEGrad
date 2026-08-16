@@ -11,17 +11,17 @@ def check_if_so3_g(
 ) -> bool:
     r"""
     Check if rotation matrix is a valid SO3 group element
-    :param rmat: Rotation matrix, (3, 3)
+    :param rmat: Rotation matrix, ``(3, 3)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is SO3
     """
     column_mags = jnp.linalg.norm(rmat, axis=0)
     row_mags = jnp.linalg.norm(rmat, axis=1)
 
-    # if not correct arr_list_shapes
+    # if not correct shape
     if rmat.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not SO3 as arr_list_shapes is not (3, 3)")
+            raise ValueError("Matrix not SO3 as shape is not (3, 3)")
         return False
 
     # if not unit magnitude
@@ -46,14 +46,14 @@ def check_if_so3_g(
 def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
     r"""
     Check if rotation matrix is a valid so3 algebra element
-    :param h_tilde: Algebra matrix, (3, 3)
+    :param h_tilde: Algebra matrix, ``(3, 3)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is so3
     """
-    # check arr_list_shapes
+    # check shape
     if h_tilde.shape != (3, 3):
         if raise_if_false:
-            raise ValueError("Matrix not so3 as arr_list_shapes is not (3, 3)")
+            raise ValueError("Matrix not so3 as shape is not (3, 3)")
         return False
 
     # check for nonzero diagonal elements
@@ -73,14 +73,14 @@ def check_if_so3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
 def check_if_se3_g(hg: Array, raise_if_false: bool = True) -> bool:
     r"""
     Check if matrix is a valid SE3 group element
-    :param hg: SE(3) matrix, (4, 4)
+    :param hg: SE(3) matrix, ``(4, 4)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is SE(3)
     """
-    # check arr_list_shapes
+    # check shape
     if hg.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not SE3 as arr_list_shapes is not (4, 4)")
+            raise ValueError("Matrix not SE3 as shape is not (4, 4)")
         return False
 
     # check rotational component
@@ -98,7 +98,7 @@ def check_if_se3_g(hg: Array, raise_if_false: bool = True) -> bool:
 def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
     r"""
     Check if array of matrices are valid SE3 group elements
-    :param hgs: SE(3) matrices, (..., 4, 4)
+    :param hgs: SE(3) matrices, ``(..., 4, 4)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if all matrices are SE(3)
     """
@@ -138,14 +138,14 @@ def check_if_all_se3_g(hgs: Array, raise_if_false: bool = True) -> bool:
 def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
     r"""
     Check if matrix is a valid se(3) group element
-    :param h_tilde: se(3) matrix, (4, 4)
+    :param h_tilde: se(3) matrix, ``(4, 4)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if matrix is se(3)
     """
-    # check arr_list_shapes
+    # check shape
     if h_tilde.shape != (4, 4):
         if raise_if_false:
-            raise ValueError("Matrix not se3 as arr_list_shapes is not (4, 4)")
+            raise ValueError("Matrix not se3 as shape is not (4, 4)")
         return False
 
     # check so3 component
@@ -163,7 +163,7 @@ def check_if_se3_a(h_tilde: Array, raise_if_false: bool = True) -> bool:
 def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
     r"""
     Check if array of matrices are valid se(3) algebra elements
-    :param h_tildes: se(3) matrices, (..., 4, 4)
+    :param h_tildes: se(3) matrices, ``(..., 4, 4)``
     :param raise_if_false: If the check fails, raise ValueError
     :return: Boolean indicating if all matrices are se(3)
     """
@@ -193,14 +193,14 @@ def check_if_all_se3_a(h_tildes: Array, raise_if_false: bool = True) -> bool:
 def k_t_expected(coeffs: Array | Sequence[float], length: Array | float) -> Array:
     r"""
     Compute expected two-node beam undeformed element stiffness matrix given coefficients and length
-    :param coeffs: Stiffness coefficients which make up the diagonal of the local stiffness matrix, (6, ).
+    :param coeffs: Stiffness coefficients which make up the diagonal of the local stiffness matrix, ``(6, )``.
     :param length: Beam length, ()
-    :return: Beam tangent stiffness matrix, (12, 12)
+    :return: Beam tangent stiffness matrix, ``(12, 12)``
     """
     if (isinstance(coeffs, Array) and coeffs.shape != (6,)) or (
         isinstance(coeffs, Sequence) and len(coeffs) != 6
     ):
-        raise ValueError("Coefficients array must be of arr_list_shapes (6, )")
+        raise ValueError("Coefficients array must be of shape (6, )")
 
     if isinstance(length, Array) and not jnp.isscalar(length):
         raise ValueError("Length l0 must be a scalar value")
@@ -244,10 +244,10 @@ def const_curvature_beam(
     r"""
     For a beam with constant curvature, with base node at the origin and curvature in the positive z direction
     (i.e., existing in the x_target-y plane with z=0), obtain the coordinates along the beam length for
-    :param kappa: Curvature of the element, ()
-    :param s: Position along the beam length, ()
-    :param direction: Direction of moment applied, either 'y' or 'z'
-    :return: Coordinate of point along the beam, (3, ).
+    :param kappa: Curvature of the element, ``()``
+    :param s: Position along the beam length, ``()``
+    :param direction: Direction of moment applied, either ``y`` or ``z``
+    :return: Coordinate of point along the beam, ``(3, )``.
     """
 
     x = jnp.sin(s * kappa) / kappa
@@ -265,7 +265,7 @@ def const_curvature_beam(
 def get_curvature(d: Array) -> Array:
     r"""
     Obtain curvature from relative configuration vector
-    :param d: Relative configuration vector, (6, )
+    :param d: Relative configuration vector, ``(6, )``
     :return: Curvature of neutral axis, ()
     """
     return jnp.linalg.norm(jnp.cross(d[3:], d[:3])) / jnp.linalg.norm(d[:3])
@@ -274,7 +274,7 @@ def get_curvature(d: Array) -> Array:
 def get_torsion(d: Array) -> Array:
     r"""
     Obtain torsion from relative configuration vector
-    :param d: Relative configuration vector, (6, )
+    :param d: Relative configuration vector, ``(6, )``
     :return: Torsion of neutral axis, ()
     """
     return -jnp.inner(d[3:], d[:3]) / jnp.linalg.norm(d[:3])

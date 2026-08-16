@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from jax import Array
 
-from flapjax.structure import StaticStructure
+from flapjax.structure import StructureCase
 
 
 @dataclass
@@ -28,7 +28,7 @@ class BeamOutputUnflattened:
 class BeamLinearResult:
     def __init__(
         self,
-        reference: StaticStructure,
+        reference: StructureCase,
         f_ext: Array | None,
         delta_q: Array,
         delta_q_dot: Array,
@@ -42,7 +42,7 @@ class BeamLinearResult:
         self._hg: Array | None = hg
         self.n_tstep: int = len(t)
         self.t: Array = t
-        self.reference: StaticStructure = reference
+        self.reference: StructureCase = reference
 
     @property
     def hg(self) -> Array:

@@ -6,146 +6,134 @@ from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Self, overload
+from typing import TYPE_CHECKING, ClassVar, Self, overload
 
 import jax
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.data_structures import AeroSnapshot, DynamicAeroCase
+from flapjax.aero.data_structures import AeroCase
 from flapjax.aero.gradients.data_structures import AeroDesignVariables, AeroStates
 from flapjax.algebra.array_utils import ArrayList, ArrayListShape
 from flapjax.coupled.gradients.data_structures import AeroelasticGradsToCompute
-from flapjax.structure.data_structures import DynamicStructure, StructureMinimalStates
+from flapjax.structure.data_structures import StructureCase, StructureMinimalStates
 from flapjax.structure.gradients.data_structures import StructuralDesignVariables
 from flapjax.utils.data_structures import DesignVariables
 from flapjax.utils.utils import make_pytree
 
 if TYPE_CHECKING:
     from flapjax.coupled.coupled import BaseCoupledAeroelastic
-    from flapjax.structure.data_structures import (
-        DynamicStructureSnapshot,
-        StaticStructure,
-        StructureFullStates,
-    )
+    from flapjax.structure.data_structures import StructureFullStates
 
 
 @make_pytree
-class StaticAeroelastic:
-    def __init__(self, structure: StaticStructure, aero: AeroSnapshot):
-        self.structure: StaticStructure = structure
-        self.aero: AeroSnapshot = aero
+class AeroelasticCase:
+    """Coupled aeroelastic case, which is a wrapper around a ``StructureCase`` and a ``AeroCase`` pair.
 
-    def plot(
-        self,
-        directory: os.PathLike | str,
-        n_interp: int = 0,
-        plot_bound: bool = True,
-        plot_wake: bool = True,
-    ):
-        self.structure.plot(directory, n_interp=n_interp)
-        self.aero.plot(directory, plot_bound=plot_bound, plot_wake=plot_wake)  # type: ignore
+    A single instance may represent any of three flavours (derived from the
+    wrapped ``structure``):
 
-    def get_full_states(self):
-        if self.structure.f_ext_aero is None:
-            raise ValueError("f_ext_aero is None")
+    * **Static**: static snapshot ``structure`` and snapshot ``aero``.
+    * **Dynamic snapshot**: dynamic snapshot``structure`` and snapshot
+      ``aero``.
+    * **Dynamic trajectory**: batched ``structure`` and batched ``aero``.
 
-        return AeroelasticFullStates(
-            structure=self.structure.get_full_states(),
-            aero=self.aero.get_states(i_ts=0),
+    Use :attr:`is_dynamic` and :attr:`is_batched` to distinguish at runtime.
+    """
+
+    _static: ClassVar[tuple[str, ...]] = ()
+
+    def __init__(self, structure: StructureCase, aero: AeroCase):
+        self.structure: StructureCase = structure
+        self.aero: AeroCase = aero
+
+    @property
+    def is_dynamic(self) -> bool:
+        return self.structure.is_dynamic
+
+    @property
+    def is_batched(self) -> bool:
+        return self.structure.is_batched
+
+    @overload
+    def to_dynamic(self) -> AeroelasticCase: ...
+
+    @overload
+    def to_dynamic(self, t: None) -> AeroelasticCase: ...
+
+    @overload
+    def to_dynamic(self, t: Array) -> AeroelasticCase: ...
+
+    def to_dynamic(self, t: Array | None = None) -> AeroelasticCase:
+        """Convert a static snapshot to a dynamic snapshot (``t=None``) or a batched
+        trajectory (``t`` provided). Calling on an already-dynamic case returns
+        ``self``.
+        """
+        if self.is_dynamic:
+            return self
+        if t is None:
+            return AeroelasticCase(
+                structure=self.structure.to_dynamic(), aero=self.aero
+            )
+        return AeroelasticCase(
+            structure=self.structure.to_dynamic(t),
+            aero=self.aero.to_dynamic(i_ts=0, n_tstep=len(t)),
         )
 
-    @overload
-    def to_dynamic(self, t: None) -> DynamicAeroelasticSnapshot: ...
-
-    @overload
-    def to_dynamic(self, t: Array) -> DynamicAeroelastic: ...
-
-    def to_dynamic(
-        self, t: Array | None
-    ) -> DynamicAeroelasticSnapshot | DynamicAeroelastic:
-        if t is None:
-            struct = self.structure.to_dynamic(t=t)
-            return DynamicAeroelasticSnapshot(structure=struct, aero=self.aero)
-        else:
-            struct = self.structure.to_dynamic(t=t)
-            aero = self.aero.to_dynamic(i_ts=0, n_tstep=len(t) if t is not None else 1)
-            return DynamicAeroelastic(structure=struct, aero=aero)
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "structure", "aero"
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return []
-
-
-class DynamicAeroelasticSnapshot:
-    def __init__(self, structure: DynamicStructureSnapshot, aero: AeroSnapshot):
-        self.structure: DynamicStructureSnapshot = structure
-        self.aero: AeroSnapshot = aero
-
-    def to_static(self) -> StaticAeroelastic:
-        return StaticAeroelastic(
+    def to_static(self) -> AeroelasticCase:
+        """Return a static AeroelasticCase, dropping the structure's
+        velocity/acceleration fields.
+        """
+        if not self.is_dynamic:
+            return self
+        if self.is_batched:
+            raise ValueError(
+                "to_static() on a batched AeroelasticCase is ambiguous; index a "
+                "single time step first (e.g. `case[i_ts].to_static()`)."
+            )
+        return AeroelasticCase(
             structure=self.structure.to_static(),
             aero=self.aero,
         )
 
-
-@make_pytree
-class DynamicAeroelastic:
-    def __init__(self, structure: DynamicStructure, aero: DynamicAeroCase):
-        self.structure: DynamicStructure = structure
-        self.aero: DynamicAeroCase = aero
-
-    def __getitem__(self, i_ts: int) -> DynamicAeroelasticSnapshot:
-        return DynamicAeroelasticSnapshot(
-            structure=self.structure[i_ts], aero=self.aero[i_ts]
-        )
+    def __getitem__(self, i_ts: int) -> AeroelasticCase:
+        """Extract a snapshot at a specific time index from a batched case."""
+        if not self.is_batched:
+            raise TypeError("__getitem__ only supported for batched AeroelasticCase")
+        return AeroelasticCase(structure=self.structure[i_ts], aero=self.aero[i_ts])
 
     @classmethod
     def initialise(
         cls,
-        initial_snapshot: DynamicAeroelasticSnapshot
-        | DynamicAeroelastic
-        | StaticAeroelastic,
+        initial_snapshot: AeroelasticCase,
         t: Array,
         use_f_ext_follower: bool,
         use_f_ext_dead: bool,
         aeroelastic_object: BaseCoupledAeroelastic,
-    ) -> DynamicAeroelastic:
-        if isinstance(initial_snapshot, DynamicAeroelasticSnapshot):
-            init_struct: DynamicStructureSnapshot = initial_snapshot.structure
-            init_aero: AeroSnapshot = initial_snapshot.aero
-        elif isinstance(initial_snapshot, StaticAeroelastic):
-            init_struct: DynamicStructureSnapshot = (
-                initial_snapshot.structure.to_dynamic(t=None)
-            )
-            init_aero: AeroSnapshot = initial_snapshot.aero
-        elif isinstance(initial_snapshot, DynamicAeroelastic):
+    ) -> AeroelasticCase:
+        """Build a batched AeroelasticCase from any single-timestep case."""
+        if initial_snapshot.is_batched:
             if initial_snapshot.structure.n_tstep != 1:
                 raise ValueError("initial_snapshot.structure.n_tstep != 1")
             if initial_snapshot.aero.n_tstep != 1:
                 raise ValueError("initial_snapshot.aero.n_tstep != 1")
-
-            init_struct: DynamicStructureSnapshot = initial_snapshot.structure[0]
-            init_aero: AeroSnapshot = initial_snapshot.aero[0]
+            init_struct: StructureCase = initial_snapshot.structure[0]
+            init_aero: AeroCase = initial_snapshot.aero[0]
+        elif not initial_snapshot.is_dynamic:
+            init_struct = initial_snapshot.structure.to_dynamic(t=None)
+            init_aero = initial_snapshot.aero
         else:
-            raise TypeError(
-                "initial_snapshot must be DynamicAeroelastic or DynamicAeroCase"
-            )
+            init_struct = initial_snapshot.structure
+            init_aero = initial_snapshot.aero
 
-        struct_case = DynamicStructure.initialise(
+        struct_case = StructureCase.initialise(
             initial_snapshot=init_struct,
             t=t,
             use_f_ext_aero=True,
             use_f_ext_follower=use_f_ext_follower,
             use_f_ext_dead=use_f_ext_dead,
         )
-        aero_case = DynamicAeroCase.initialise(
-            initial_snapshot=init_aero, n_tstep=len(t)
-        )
+        aero_case = AeroCase.initialise(initial_snapshot=init_aero, n_tstep=len(t))
 
         # compute aerodynamic forcing at timestep 0
         f_aero_init = aero_case.project_forcing_to_beam(
@@ -163,26 +151,33 @@ class DynamicAeroelastic:
 
         struct_case.f_ext_aero = struct_case.f_ext_aero.at[0, ...].set(f_aero_local)
 
-        return DynamicAeroelastic(structure=struct_case, aero=aero_case)
+        return AeroelasticCase(structure=struct_case, aero=aero_case)
 
-    def get_full_states(self, i_ts: int | Array) -> AeroelasticFullStates:
+    def get_full_states(self, i_ts: int | Array | None = None) -> AeroelasticFullStates:
         r"""
-        Get the full aeroelastic states for the system at a given timestep.
-        :param i_ts: Time step index .
-        :return: Full aeroelastic states.
+        Get the full aeroelastic states. For a batched case, ``i_ts`` selects the
+        timestep; for a snapshot, ``i_ts`` is ignored.
         """
+        if self.is_batched:
+            if i_ts is None:
+                raise ValueError("i_ts must be provided for batched AeroelasticCase")
+            return AeroelasticFullStates(
+                structure=self.structure.get_full_states(i_ts=i_ts),
+                aero=self.aero.get_states(i_ts=i_ts),
+            )
+        if self.structure.f_ext_aero is None:
+            raise ValueError("f_ext_aero is None")
         return AeroelasticFullStates(
-            structure=self.structure.get_full_states(i_ts=i_ts),
-            aero=self.aero.get_states(i_ts=i_ts),
+            structure=self.structure.get_full_states(),
+            aero=self.aero.get_states(i_ts=0 if self.is_dynamic else None),
         )
 
     def get_minimal_states(self, i_ts: int | Array) -> AeroelasticMinimalStates:
-        r"""
-        Get the minimal aeroelastic states for the system at a given timestep.
-        :param i_ts: Time step index.
-        :return: Minimal aeroelastic states.
-        """
-
+        r"""Get minimal aeroelastic states at the given timestep (batched only)."""
+        if not self.is_batched:
+            raise TypeError(
+                "get_minimal_states only supported for batched AeroelasticCase"
+            )
         return AeroelasticMinimalStates(
             structure=self.structure.get_minimal_states(i_ts=i_ts),
             aero=self.aero.get_states(i_ts=i_ts),
@@ -196,33 +191,29 @@ class DynamicAeroelastic:
         plot_bound: bool = True,
         plot_wake: bool = True,
     ) -> tuple[Path, Sequence[Path]]:
-        r"""
-        Plots the aeroelastic dynamic system.
+        r"""Plot the aeroelastic case.
         :param directory: Directory to save the plots to.
-        :param index: Index of timesteps to plot.
+        :param index: For batched cases, timestep indices to plot; ignored for
+            snapshots.
         :param n_interp: Number of interpolation points for plotting the structure.
         :param plot_bound: Whether to plot the bound aerodynamic panels.
         :param plot_wake: Whether to plot the wake aerodynamic panels.
-        :return: Paths of the structural and aerodynamic PVD files.
+        :return: ``(structure_path, aero_paths)``. For batched cases the
+            structure path is a PVD; for snapshots it is a single VTU.
         """
-        struct_pvd: Path = self.structure.plot(
-            directory=directory, n_interp=n_interp, index=index
-        )
-        aero_pvd: Sequence[Path] = self.aero.plot(
+        if self.is_batched:
+            struct_out: Path = self.structure.plot(
+                directory=directory, n_interp=n_interp, index=index
+            )
+        else:
+            struct_out = self.structure.plot(directory=directory, n_interp=n_interp)
+        aero_out: Sequence[Path] = self.aero.plot(
             directory=directory,  # type: ignore
             plot_bound=plot_bound,
             plot_wake=plot_wake,
             index=index,
         )
-        return struct_pvd, aero_pvd
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ()
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "structure", "aero"
+        return struct_out, aero_out
 
 
 @jax.tree_util.register_dataclass
@@ -234,6 +225,8 @@ class AeroelasticFullStates:
 
 @make_pytree
 class AeroelasticMinimalStates:
+    _static: ClassVar[tuple[str, ...]] = ()
+
     def __init__(self, structure: StructureMinimalStates, aero: AeroStates):
         self.structure: StructureMinimalStates = structure
         self.aero: AeroStates = aero
@@ -264,17 +257,11 @@ class AeroelasticMinimalStates:
     def n_states(self) -> int:
         return self.structure.n_states + self.aero.n_states
 
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return ()
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "structure", "aero"
-
 
 @make_pytree
 class AeroelasticDesignVariables(DesignVariables):
+    _static: ClassVar[tuple[str, ...]] = ("shapes", "n_x")
+
     def __init__(
         self,
         structure_dv: StructuralDesignVariables,
@@ -336,7 +323,7 @@ class AeroelasticDesignVariables(DesignVariables):
     @staticmethod
     def zeros(
         system: BaseCoupledAeroelastic,
-        case: DynamicAeroelastic,
+        case: AeroelasticCase,
         grads_to_compute: AeroelasticGradsToCompute | None,
         j_shape: tuple[int, ...],
     ) -> AeroelasticDesignVariables:
@@ -420,22 +407,20 @@ class AeroelasticDesignVariables(DesignVariables):
 
     def plot(
         self,
-        case: StaticAeroelastic | DynamicAeroelastic,
+        case: AeroelasticCase,
         i_ts: int | None,
         directory: os.PathLike | str,
     ) -> Sequence[Path]:
         paths = []
 
-        if isinstance(case, StaticAeroelastic):
-            struct_snapshot: StaticStructure | DynamicStructureSnapshot = case.structure
-            aero_snapshot: AeroSnapshot = case.aero
-        elif isinstance(case, DynamicAeroelastic):
+        if case.is_batched:
             if i_ts is None:
                 raise ValueError("Time step index must be specified")
-            struct_snapshot = case.structure[i_ts]
-            aero_snapshot: AeroSnapshot = case.aero[i_ts]
+            struct_snapshot: StructureCase = case.structure[i_ts]
+            aero_snapshot: AeroCase = case.aero[i_ts]
         else:
-            raise TypeError("Case must be StaticAeroelastic or DynamicAeroelastic")
+            struct_snapshot = case.structure
+            aero_snapshot = case.aero
 
         if self.structure is not None:
             paths.append(
@@ -453,7 +438,3 @@ class AeroelasticDesignVariables(DesignVariables):
                 )
             )
         return paths
-
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "structure", "aero"

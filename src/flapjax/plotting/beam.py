@@ -18,12 +18,12 @@ def interpolate_beam(
 ) -> Array:
     """
     Interpolate beam geometry and orientation between two nodes.
-    :param hg1: SE(3) transform of node 1, (4, 4)
-    :param hg2: SE(3) transform of node 2, (4, 4)
-    :param o0: Local beam orientation transformation, (3, 3)
+    :param hg1: SE(3) transform of node 1, ``(4, 4)``
+    :param hg2: SE(3) transform of node 2, ``(4, 4)``
+    :param o0: Local beam orientation transformation, ``(3, 3)``
     :param n_interp: Number of interpolation points to compute.
     :param include_endpoints: Whether to include the original nodes in the output (if False, only the interpolated points are returned)
-    :return: Interpolated SE(3) transforms along the beam, (n_interp, 4, 4)
+    :return: Interpolated SE(3) transforms along the beam, ``(n_interp, 4, 4)``
     """
     # beam-wise coordinates, [n_interp]
     s_l = (
@@ -57,9 +57,9 @@ def create_beam_unstructured_grid(
 ) -> tuple[vtk.vtkUnstructuredGrid, Array | None, Array | None]:
     """
     Create a VTK UnstructuredGrid representing line (beam) elements.
-    :param hg: Array of node SE(3) transformations, (n_nodes, 4, 4).
-    :param conn: Connectivity array with shape, (n_elem, 2).
-    :param o0: Array of local beam orientation transformations, (n_elem, 3, 3).
+    :param hg: Array of node SE(3) transformations, ``(n_nodes, 4, 4)``.
+    :param conn: Connectivity array with shape, ``(n_elem, 2)``.
+    :param o0: Array of local beam orientation transformations, ``(n_elem, 3, 3)``.
     :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints).
     :return: vtkUnstructuredGrid with VTK_LINE cells, array of SE(3) transforms interpolated case, and element mapping
     array (mapping each new interpolated element to the original element index).
@@ -175,16 +175,16 @@ def plot_beam_to_vtk(
     """
     Write beam (line element) data to a VTU file.
 
-    :param hg: Array of SE(3) elements, (n_nodes, 4, 4)
-    :param conn: Connectivity array, (n_elem, 2)
-    :param o0: Array of local beam orientation transformations, (n_elem, 3, 3)
+    :param hg: Array of SE(3) elements, ``(n_nodes, 4, 4)``
+    :param conn: Connectivity array, ``(n_elem, 2)``
+    :param o0: Array of local beam orientation transformations, ``(n_elem, 3, 3)``
     :param n_interp: Number of interpolation points to add along each beam element (does not include endpoints)
     :param filename: Base filename (directory + base name); _ts_<i_ts> will be appended if i_ts provided
     :param i_ts: Optional time step index to append to filename
-    :param node_scalar_data: dict of [name, [n_nodes]]
-    :param node_vector_data: dict of [name, [n_nodes, 3]]
-    :param cell_scalar_data: dict of [name, [n_elem]]
-    :param cell_vector_data: dict of [name, [n_elem, 3]]
+    :param node_scalar_data: dict of ``{name, (n_nodes)}``
+    :param node_vector_data: dict of ``{name, (n_nodes, 3)}``
+    :param cell_scalar_data: dict of ``{name, (n_elem)}``
+    :param cell_vector_data: dict of ``{name, (n_elem, 3)}``
     :return: Path of the written VTU file
     """
 

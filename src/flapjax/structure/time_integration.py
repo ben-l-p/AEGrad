@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from typing import ClassVar
 
 from jax import Array, vmap
 
@@ -13,6 +13,14 @@ class TimeIntegrator:
     r"""
     Container for time integration parameters.
     """
+
+    _static: ClassVar[tuple[str, ...]] = (
+        "spectral_radius",
+        "alpha_m",
+        "alpha_f",
+        "gamma",
+        "beta",
+    )
 
     def __init__(
         self,
@@ -38,10 +46,10 @@ class TimeIntegrator:
     def calculate_a_n(self, v_dot_nm1: Array, v_dot_n: Array, a_nm1: Array) -> Array:
         r"""
         Calculate the pseudo-acceleration at the next time step.
-        :param v_dot_nm1: Previous acceleration, (n_nodes, 6).
-        :param v_dot_n: Next acceleration, (n_nodes, 6).
-        :param a_nm1: Previous pseudo-acceleration, (n_nodes, 6).
-        :return: pseudo-acceleration at next time step, (n_nodes, 6).
+        :param v_dot_nm1: Previous acceleration, ``(n_nodes, 6)``.
+        :param v_dot_n: Next acceleration, ``(n_nodes, 6)``.
+        :param a_nm1: Previous pseudo-acceleration, ``(n_nodes, 6)``.
+        :return: pseudo-acceleration at next time step, ``(n_nodes, 6)``.
         """
         return (
             1.0
@@ -149,31 +157,18 @@ class TimeIntegrator:
     def calculate_phi_from_phi_alpha(self, phi_alpha: Array) -> Array:
         r"""
         Obtain the full timestep increment from the alpha increment.
-        :param phi_alpha: Increment from timestep n-1 to alpha, (n_nodes, 6).
-        :return: Increment for timestep n, (n_nodes, 6).
+        :param phi_alpha: Increment from timestep n-1 to alpha, ``(n_nodes, 6)``.
+        :return: Increment for timestep n, ``(n_nodes, 6)``.
         """
         return phi_alpha / (1.0 - self.alpha_f)
 
     def calculate_v_from_v_alpha(self, v_alpha: Array, v_nm1: Array) -> Array:
         r"""
         Obtain the full timestep velocity from the alpha increment and the previous velocity.
-        :param v_alpha: Velocity at alpha step, (n_nodes, 6).
-        :param v_nm1: Velocity at timestep n-1, (n_nodes, 6).
-        :return: Velocity at timestep n, (n_nodes, 6).
+        :param v_alpha: Velocity at alpha step, ``(n_nodes, 6)``.
+        :param v_nm1: Velocity at timestep n-1, ``(n_nodes, 6)``.
+        :return: Velocity at timestep n, ``(n_nodes, 6)``.
         """
 
         return (v_alpha - self.alpha_f * v_nm1) / (1.0 - self.alpha_f)
 
-    @staticmethod
-    def _dynamic_names() -> Sequence[str]:
-        return "dt", "gamma_prime", "beta_prime"
-
-    @staticmethod
-    def _static_names() -> Sequence[str]:
-        return (
-            "spectral_radius",
-            "alpha_m",
-            "alpha_f",
-            "gamma",
-            "beta",
-        )
