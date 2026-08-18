@@ -24,8 +24,14 @@ jobs:
       - name: Set up Python
         run: uv python install
 
-      - name: Build distributions
+      - name: Check version parity
+        run: uv run python scripts/check_version_parity.py
+
+      - name: Build flapjax (wheel + sdist)
         run: uv build
+
+      - name: Build flapjax-full (wheel only)
+        run: uv build --wheel packaging/full --out-dir dist
 
       - name: Check distributions
         run: uvx twine check dist/*

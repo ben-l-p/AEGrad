@@ -1,7 +1,7 @@
 [project]
-name = "flapjax"
+name = "flapjax-full"
 version = "1.2.0.dev0"
-description = "Solver for computing aeroelastic responses and corresponding design derivatives."
+description = "FLAPJAX with tests and tutorial notebooks bundled. Install this OR flapjax, not both."
 authors = [{ name = "Ben Preston", email = "b.preston23@imperial.ac.uk" }]
 keywords = ["aeroelasticity", "unsteady vortex lattice method", "nonlinear beam", "adjoint methods"]
 classifiers = [
@@ -24,6 +24,7 @@ dependencies = [
     "vtk>=9.4",
     "scipy>=1.13",
     "matplotlib>=3.8",
+    "pytest>=9.0",
 ]
 
 [project.urls]
@@ -32,70 +33,19 @@ Documentation = "https://ben-l-p.github.io/flapjax/"
 Repository = "https://github.com/ben-l-p/flapjax"
 Issues = "https://github.com/ben-l-p/flapjax/issues"
 
-[dependency-groups]
-dev = [
-    "scipy-stubs>=1.17",
-    "pytest>=9.0",
-    "pytest-cov>=7.1",
-    "pytest-xdist>=3.6",
-    "ruff>=0.15",
-    "ipykernel>=7.3.0",
-    "pandas>=3.0.5",
-    "pandas-stubs~=3.0.5",
-]
-docs = [
-    "mkdocs>=1.6",
-    "mkdocs-material>=9.5",
-    "mkdocstrings[python]>=0.27",
-    "mkdocs-jupyter>=0.25",
-]
-
-[tool.pyright]
-pythonVersion = "3.12"
-
-[tool.pytest.ini_options]
-minversion = "7.0"
-pythonpath = ["src", "."]
-testpaths = ["src/flapjax/tests"]
-python_files = ["test*.py"]
-addopts = "-q --tb=short"
-
-[tool.coverage.run]
-source = ["flapjax"]
-branch = true
-parallel = true
-
-[tool.coverage.report]
-show_missing = true
-skip_empty = true
-precision = 1
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.",
-    "if TYPE_CHECKING:",
-    "raise NotImplementedError",
-    "@(abc\\.)?abstractmethod",
-]
-
-[tool.coverage.html]
-directory = "htmlcov"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/flapjax"]
-exclude = ["src/flapjax/tests", "**/*.ipynb"]
+bypass-selection = true
+
+[tool.hatch.build.targets.wheel.force-include]
+"../../src/flapjax" = "flapjax"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "src/flapjax",
-    "docs",
-    "mkdocs.yml",
     "README.md",
     "LICENSE",
     "pyproject.toml",
-    "uv.lock",
 ]
-

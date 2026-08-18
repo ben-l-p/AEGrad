@@ -18,10 +18,18 @@ Full documentation, including tutorials, API reference and theory, is available 
 
 ## Installation
 
-Installation is available using PyPi with:
+Two PyPI distributions are provided:
+
+| Package        | Contents                                  |
+|----------------|-------------------------------------------|
+| `flapjax`      | Library only                              |
+| `flapjax-full` | Library + test suite + tutorial notebooks |
+
+Install one distribution — they provide the same `flapjax` import path.
 
 ```bash
-pip install flapjax
+pip install flapjax        # minimal
+pip install flapjax-full   # includes tests and tutorial notebooks
 ```
 
 Cloning the full repository and installing with uv is also supported, which allows for development installation:
@@ -30,12 +38,9 @@ Cloning the full repository and installing with uv is also supported, which allo
 uv sync
 ```
 
-An extensive test suite is included to verify the correctness of the code. This verified the numerics, and takes
-approximately 30 minutes to run on an M2 MacBook Air. Tests can be run using pytest.
-
-```bash
-uv run pytest
-```
+An extensive test suite is included to verify the correctness of the code. This verifies the numerics, and takes
+approximately 30 minutes to run on an M2 MacBook Air. Tests can be run with pytest, either against a `flapjax-full`
+install (`pytest --pyargs flapjax`) or from a repository clone (`uv run pytest`).
 
 
 

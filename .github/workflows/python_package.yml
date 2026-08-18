@@ -21,6 +21,14 @@ jobs:
       - name: Install
         run: uv sync
 
+      - name: Check version parity
+        run: uv run python scripts/check_version_parity.py
+
+      - name: Build both wheels
+        run: |
+          uv build --wheel
+          uv build --wheel packaging/full
+
       - name: Run tests and coverage
         run: uv run pytest --cov --cov-report json
 
