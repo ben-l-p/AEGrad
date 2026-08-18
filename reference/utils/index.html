@@ -2565,13 +2565,13 @@ convergence failure.</p>
 <span class="normal">77</span>
 <span class="normal">78</span>
 <span class="normal">79</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">convergence_settings</span><span class="p">:</span> <span class="n">ConvergenceSettings</span><span class="p">):</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Object to track convergence status of an iterative solver based on absolute and relative tolerances. Absolute</span>
 <span class="sd">    convergence is measured for the delta vector, while relative convergence is measured as the ratio of the maximum</span>
 <span class="sd">    element in the delta vector to the total vector.</span>
 <span class="sd">    :param convergence_settings: Convergence settings object containing tolerances and maximum iteration count for</span>
 <span class="sd">    convergence failure.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="c1"># make sure settings allow for loop to be broken</span>
     <span class="k">if</span> <span class="p">(</span>
@@ -2582,11 +2582,11 @@ convergence failure.</p>
     <span class="p">):</span>
         <span class="k">if</span> <span class="n">convergence_settings</span><span class="o">.</span><span class="n">max_n_iter</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;No convergence criteria provided, at least one tolerance or maximum iteration count &quot;</span>
-                <span class="s2">&quot;must be specified.&quot;</span>
+                <span class="s2">"No convergence criteria provided, at least one tolerance or maximum iteration count "</span>
+                <span class="s2">"must be specified."</span>
             <span class="p">)</span>
         <span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;No convergence tolerances provided, will iterate until maximum iteration counter.&quot;</span>
+            <span class="s2">"No convergence tolerances provided, will iterate until maximum iteration counter."</span>
         <span class="p">)</span>
 
     <span class="c1"># base parameters</span>
@@ -2805,13 +2805,13 @@ current solution vector.</p>
     <span class="n">delta_force</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">total_force</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    :param delta_disp: Difference in displacement vector between current and previous iteration.</span>
 <span class="sd">    :param total_disp: Total displacement for time step, used for relative convergence calculation, typically the</span>
 <span class="sd">    current solution vector.</span>
 <span class="sd">    :param delta_force: Residual force vector, used for force convergence calculation.</span>
 <span class="sd">    :param total_force: Total force vector for time step, used for relative convergence calculation.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># update iteration counter</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">i_iter</span> <span class="o">+=</span> <span class="mi">1</span>
 
@@ -2830,7 +2830,7 @@ current solution vector.</p>
     <span class="c1"># check relative displacement convergence:</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">convergence_settings</span><span class="o">.</span><span class="n">rel_disp_tol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">total_disp</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;total_disp cannot be None&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"total_disp cannot be None"</span><span class="p">)</span>
         <span class="n">max_total_elem</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">total_disp</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">rel_disp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">abs_disp_val</span> <span class="o">/</span> <span class="n">max_total_elem</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">converged_rel_disp</span> <span class="o">=</span> <span class="p">(</span>
@@ -2841,7 +2841,7 @@ current solution vector.</p>
     <span class="c1"># check absolute force convergence</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">convergence_settings</span><span class="o">.</span><span class="n">abs_force_tol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">delta_force</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;delta_force cannot be None&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"delta_force cannot be None"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">abs_force_val</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">delta_force</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">converged_abs_force</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">abs_force_val</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">convergence_settings</span><span class="o">.</span><span class="n">abs_force_tol</span>
@@ -2850,7 +2850,7 @@ current solution vector.</p>
     <span class="c1"># check relative force convergence:</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">convergence_settings</span><span class="o">.</span><span class="n">rel_force_tol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">total_force</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;total_force cannot be None&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"total_force cannot be None"</span><span class="p">)</span>
         <span class="n">max_total_elem</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">total_force</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">rel_force_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">abs_force_val</span> <span class="o">/</span> <span class="n">max_total_elem</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">converged_rel_force</span> <span class="o">=</span> <span class="p">(</span>
@@ -2896,7 +2896,7 @@ current solution vector.</p>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">153</span>
 <span class="normal">154</span>
 <span class="normal">155</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_status</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get overall convergence status.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Get overall convergence status."""</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">converged</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">has_nan</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iter</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -2940,9 +2940,9 @@ current solution vector.</p>
 <span class="normal">172</span>
 <span class="normal">173</span>
 <span class="normal">174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reset_status</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Reset convergence status for next load step, setting all convergence flags to False.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">false_</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
     <span class="n">zero_</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(())</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">converged</span> <span class="o">=</span> <span class="n">false_</span>
@@ -2990,8 +2990,8 @@ current solution vector.</p>
 <span class="normal">213</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">print_struct_message</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">i_load_step</span><span class="p">:</span> <span class="nb">int</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Print convergence message for structure based on status.&quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_print_convergence_message</span><span class="p">(</span><span class="s2">&quot;Struct&quot;</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">i_load_step</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">"""Print convergence message for structure based on status."""</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_print_convergence_message</span><span class="p">(</span><span class="s2">"Struct"</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">i_load_step</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3021,8 +3021,8 @@ current solution vector.</p>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">215</span>
 <span class="normal">216</span>
 <span class="normal">217</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">print_fsi_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Print convergence message for FSI based on status.&quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_print_convergence_message</span><span class="p">(</span><span class="s2">&quot;FSI&quot;</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">"""Print convergence message for FSI based on status."""</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_print_convergence_message</span><span class="p">(</span><span class="s2">"FSI"</span><span class="p">,</span> <span class="n">i_ts</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3248,11 +3248,11 @@ current solution vector.</p>
 <span class="normal">530</span>
 <span class="normal">531</span>
 <span class="normal">532</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_input</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">InputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total input by adding the reference to the input perturbation.</span>
 <span class="sd">    :param u: InputUnflattened perturbation object.</span>
 <span class="sd">    :return: InputUnflattened total object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">u</span><span class="p">),</span> <span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reference_inputs</span><span class="p">)</span>
@@ -3347,11 +3347,11 @@ current solution vector.</p>
 <span class="normal">542</span>
 <span class="normal">543</span>
 <span class="normal">544</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StateUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total state by adding the reference to the state perturbation.</span>
 <span class="sd">    :param x: StateUnflattened perturbation object.</span>
 <span class="sd">    :return: StateUnflattened total object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reference_states</span><span class="p">)</span>
@@ -3446,11 +3446,11 @@ current solution vector.</p>
 <span class="normal">554</span>
 <span class="normal">555</span>
 <span class="normal">556</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_output</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total output by adding the reference to the output perturbation.</span>
 <span class="sd">    :param y: OutputUnflattened perturbation object.</span>
 <span class="sd">    :return: OutputUnflattened total object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">y</span><span class="p">),</span> <span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reference_outputs</span><span class="p">)</span>
@@ -3549,11 +3549,11 @@ current solution vector.</p>
 <span class="normal">568</span>
 <span class="normal">569</span>
 <span class="normal">570</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_input_t</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u_t</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">InputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total input time history by adding the reference to the input perturbation time history.</span>
 <span class="sd">    :param u_t: InputUnflattened perturbation time history object.</span>
 <span class="sd">    :return: InputUnflattened total time history object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">input_</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">u_t</span><span class="p">),</span>
@@ -3654,11 +3654,11 @@ current solution vector.</p>
 <span class="normal">582</span>
 <span class="normal">583</span>
 <span class="normal">584</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_state_t</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x_t</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StateUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total state time history by adding the reference to the state perturbation time history.</span>
 <span class="sd">    :param x_t: StateUnflattened perturbation time history object.</span>
 <span class="sd">    :return: StateUnflattened total time history object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">x_t</span><span class="p">),</span>
@@ -3759,11 +3759,11 @@ current solution vector.</p>
 <span class="normal">596</span>
 <span class="normal">597</span>
 <span class="normal">598</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_total_output_t</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_t</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get the total output time history by adding the reference to the output perturbation time history.</span>
 <span class="sd">    :param y_t: OutputUnflattened perturbation time history object.</span>
 <span class="sd">    :return: OutputUnflattened total time history object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_object</span><span class="p">(</span>
         <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_total</span><span class="p">(</span>
             <span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">y_t</span><span class="p">),</span>
@@ -3824,10 +3824,10 @@ current solution vector.</p>
 <span class="normal">630</span>
 <span class="normal">631</span>
 <span class="normal">632</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_zero_input</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">InputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get a zero input unflattened object.</span>
 <span class="sd">    :return: InputUnflattened object with zero arrays.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_zero</span><span class="p">(</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_slices</span><span class="p">)))</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3882,10 +3882,10 @@ current solution vector.</p>
 <span class="normal">637</span>
 <span class="normal">638</span>
 <span class="normal">639</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_zero_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StateUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get a zero state unflattened object.</span>
 <span class="sd">    :return: StateUnflattened object with zero arrays.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_zero</span><span class="p">(</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state_slices</span><span class="p">)))</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3940,10 +3940,10 @@ current solution vector.</p>
 <span class="normal">644</span>
 <span class="normal">645</span>
 <span class="normal">646</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_zero_output</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OutputUnflattened</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Get a zero output unflattened object.</span>
 <span class="sd">    :return: OutputUnflattened object with zero arrays.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_zero</span><span class="p">(</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">)))</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -4128,14 +4128,14 @@ current solution vector.</p>
     <span class="n">continuous_time</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">removed_u_np1</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Initialise the LinearSystem with state-space linear operators.</span>
 <span class="sd">    :param a: System matrix A</span>
 <span class="sd">    :param b: Input matrix B</span>
 <span class="sd">    :param c: Output matrix C</span>
 <span class="sd">    :param d: Feedthrough matrix D</span>
 <span class="sd">    :param removed_u_np1: If true, indicates that the system is in terms of inputs at time step n only.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">:</span> <span class="n">Array</span> <span class="o">=</span> <span class="n">a</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">:</span> <span class="n">Array</span> <span class="o">=</span> <span class="n">b</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="p">:</span> <span class="n">Array</span> <span class="o">=</span> <span class="n">c</span>
@@ -4192,12 +4192,12 @@ current solution vector.</p>
 <span class="normal">722</span>
 <span class="normal">723</span>
 <span class="normal">724</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">remove_u_np1</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Remove the dependence on u at time varphi+1 from the linear system, modifying b and d accordingly.</span>
 <span class="sd">    :math:`D_{new} = C B + D` and :math:`B_{new} = A B`</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">removed_u_np1</span><span class="p">:</span>
-        <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;u_np1 has already been removed from the system. Skipping.&quot;</span><span class="p">)</span>
+        <span class="n">warn</span><span class="p">(</span><span class="s2">"u_np1 has already been removed from the system. Skipping."</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
@@ -4217,7 +4217,7 @@ current solution vector.</p>
 
 <a href="#flapjax.utils.linear.LinearSystem.continuous_to_discrete" class="headerlink" title="Permanent link">&para;</a></h5>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">continuous_to_discrete</span><span class="p">(</span>
-    <span class="n">method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;zoh&quot;</span><span class="p">,</span> <span class="s2">&quot;tustin&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;tustin&quot;</span><span class="p">,</span>
+    <span class="n">method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"zoh"</span><span class="p">,</span> <span class="s2">"tustin"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"tustin"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LinearSystem</span>
 </code></pre></div>
 
@@ -4276,24 +4276,24 @@ current solution vector.</p>
 <span class="normal">771</span>
 <span class="normal">772</span>
 <span class="normal">773</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">continuous_to_discrete</span><span class="p">(</span>
-    <span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;zoh&quot;</span><span class="p">,</span> <span class="s2">&quot;tustin&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;tustin&quot;</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"zoh"</span><span class="p">,</span> <span class="s2">"tustin"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"tustin"</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LinearSystem</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Convert the continuous-time linear system to a discrete-time linear system.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">jax_print</span><span class="p">(</span>
-        <span class="s2">&quot;Converting continuous-time system to discrete-time system.&quot;</span><span class="p">,</span>
-        <span class="n">verbose_level</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
+        <span class="s2">"Converting continuous-time system to discrete-time system."</span><span class="p">,</span>
+        <span class="n">verbose_level</span><span class="o">=</span><span class="s2">"normal"</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">continuous_time</span><span class="p">:</span>
-        <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;System is already discrete-time.&quot;</span><span class="p">)</span>
+        <span class="n">warn</span><span class="p">(</span><span class="s2">"System is already discrete-time."</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>
 
     <span class="n">a_c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span>
     <span class="n">b_c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
 
     <span class="k">match</span> <span class="n">method</span><span class="p">:</span>
-        <span class="k">case</span> <span class="s2">&quot;zoh&quot;</span><span class="p">:</span>
+        <span class="k">case</span> <span class="s2">"zoh"</span><span class="p">:</span>
             <span class="c1"># perform a ZOH conversion</span>
             <span class="c1"># create a matrix aug = [[A, B], [0, 0]], exp(aug * dt) = [[Ad, Bd], [0, I]]</span>
             <span class="n">aug</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">block</span><span class="p">(</span>
@@ -4307,14 +4307,14 @@ current solution vector.</p>
                 <span class="p">]</span>
             <span class="p">)</span>
             <span class="k">assert</span> <span class="n">aug</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">aug</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">(</span>
-                <span class="s2">&quot;Augmented matrix must be square for matrix exponential.&quot;</span>
+                <span class="s2">"Augmented matrix must be square for matrix exponential."</span>
             <span class="p">)</span>
 
             <span class="n">exp_aug</span> <span class="o">=</span> <span class="n">jsp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">expm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dt</span> <span class="o">*</span> <span class="n">aug</span><span class="p">)</span>
 
             <span class="n">a_d</span> <span class="o">=</span> <span class="n">exp_aug</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
             <span class="n">b_d</span> <span class="o">=</span> <span class="n">exp_aug</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="p">:]</span>
-        <span class="k">case</span> <span class="s2">&quot;tustin&quot;</span><span class="p">:</span>
+        <span class="k">case</span> <span class="s2">"tustin"</span><span class="p">:</span>
             <span class="c1"># Tustin bilinear transformation</span>
             <span class="n">mat_inv</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">-</span> <span class="n">a_c</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">)</span>
             <span class="n">a_d</span> <span class="o">=</span> <span class="n">mat_inv</span> <span class="o">@</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">+</span> <span class="n">a_c</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">)</span>
@@ -4467,31 +4467,31 @@ current solution vector.</p>
 <span class="normal">820</span>
 <span class="normal">821</span>
 <span class="normal">822</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">x0</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Array</span><span class="p">,</span> <span class="n">Array</span><span class="p">]:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Run the linear system for a time history of input vector u.</span>
 <span class="sd">    :param u: Time history of input vectors, shape ``(n_tstep, n_inputs)``</span>
 <span class="sd">    :param x0: Initial state vector, ``(n_states, )``. If None, assumed to be zero.</span>
 <span class="sd">    :return: State history and output history, ``(n_tstep, n_states)`` and ``(n_tstep, n_outputs)``</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="n">x0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">check_arr_shape</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_states</span><span class="p">,),</span> <span class="s2">&quot;x0&quot;</span><span class="p">)</span>
-    <span class="n">check_arr_shape</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_inputs</span><span class="p">),</span> <span class="s2">&quot;u&quot;</span><span class="p">)</span>
+        <span class="n">check_arr_shape</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_states</span><span class="p">,),</span> <span class="s2">"x0"</span><span class="p">)</span>
+    <span class="n">check_arr_shape</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_inputs</span><span class="p">),</span> <span class="s2">"u"</span><span class="p">)</span>
     <span class="n">n_tstep</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">continuous_time</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">continuous_to_discrete</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">state_func</span><span class="p">(</span><span class="n">i_ts</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">x_</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
-<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">        State update function for time step i_ts, given as :math:`x_{varphi} = A x_{varphi-1} + B u_{varphi-1}` or :math:`x_n = A x_{varphi-1} + B u_n`.</span>
 <span class="sd">        :param i_ts: Time step index to obtain new states for.</span>
 <span class="sd">        :param x_: State history array being updated, ``(n_tstep, n_states)``</span>
 <span class="sd">        :return: Updated state history array, ``(n_tstep, n_states)``</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">jax_print</span><span class="p">(</span>
-            <span class="s2">&quot;Linear system state step </span><span class="si">{i_ts}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">"Linear system state step </span><span class="si">{i_ts}</span><span class="s2">"</span><span class="p">,</span>
             <span class="n">i_ts</span><span class="o">=</span><span class="n">i_ts</span><span class="p">,</span>
-            <span class="n">verbose_level</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
+            <span class="n">verbose_level</span><span class="o">=</span><span class="s2">"normal"</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">this_u</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">i_ts</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">removed_u_np1</span> <span class="k">else</span> <span class="n">u</span><span class="p">[</span><span class="n">i_ts</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">x_</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">i_ts</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">@</span> <span class="n">x_</span><span class="p">[</span><span class="n">i_ts</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">@</span> <span class="n">this_u</span><span class="p">)</span>
@@ -4502,13 +4502,13 @@ current solution vector.</p>
     <span class="n">x</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">fori_loop</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_tstep</span><span class="p">,</span> <span class="n">state_func</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">output_func</span><span class="p">(</span><span class="n">i_ts</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">y_</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
-<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">        Output computation function for time step i_ts, given as :math:`y_n = C x_n + D u_n`.</span>
 <span class="sd">        :param i_ts: Time step index to obtain outputs for.</span>
 <span class="sd">        :param y_: Output history array being updated, ``(n_tstep, n_outputs)``</span>
 <span class="sd">        :return: Updated output history array, ``(n_tstep, n_outputs)``</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">jax_print</span><span class="p">(</span><span class="s2">&quot;Linear system output step </span><span class="si">{i_ts}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">i_ts</span><span class="o">=</span><span class="n">i_ts</span><span class="p">)</span>
+<span class="sd">        """</span>
+        <span class="n">jax_print</span><span class="p">(</span><span class="s2">"Linear system output step </span><span class="si">{i_ts}</span><span class="s2">"</span><span class="p">,</span> <span class="n">i_ts</span><span class="o">=</span><span class="n">i_ts</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">y_</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">i_ts</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">@</span> <span class="n">x</span><span class="p">[</span><span class="n">i_ts</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">@</span> <span class="n">u</span><span class="p">[</span><span class="n">i_ts</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span>
 
     <span class="n">y</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n_tstep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_outputs</span><span class="p">))</span>
@@ -4675,7 +4675,7 @@ is then flagged.</p>
     <span class="n">damping</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">tiebreaker</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Return a boolean mask identifying the second member of each complex-conjugate mode pair.</span>
 
 <span class="sd">    Modes are first sorted by frequency, and falls back to a tiebreaker (typically the real part of the eigenvalue) as a</span>
@@ -4685,7 +4685,7 @@ is then flagged.</p>
 <span class="sd">    :param damping: Damping ratio of each mode ``(n_modes, )``.</span>
 <span class="sd">    :param tiebreaker: Secondary sort key used to keep conjugate partners adjacent ``(n_modes, )``.</span>
 <span class="sd">    :return: Boolean mask, True where the mode is the redundant partner in a conjugate pair ``(n_modes, )``.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">idx</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">lexsort</span><span class="p">((</span><span class="n">tiebreaker</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">))</span>
     <span class="n">freq_sorted</span> <span class="o">=</span> <span class="n">freq_hz</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
     <span class="n">damp_sorted</span> <span class="o">=</span> <span class="n">damping</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
@@ -4811,10 +4811,10 @@ is then flagged.</p>
 <span class="normal">54</span>
 <span class="normal">55</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@contextmanager</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">verbosity</span><span class="p">(</span><span class="n">level</span><span class="p">:</span> <span class="n">VerbosityLevel</span><span class="p">):</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Context manager to temporarily change the verbosity level.</span>
 <span class="sd">    :param level: Custom verbosity to use in context.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">old</span> <span class="o">=</span> <span class="n">VERBOSITY_LEVEL</span>
     <span class="n">set_verbosity</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
@@ -4929,7 +4929,7 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="normal">61</span>
 <span class="normal">62</span>
 <span class="normal">63</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_pytree</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="bp">cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">T</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Register a class as a JAX pytree.</span>
 
 <span class="sd">    When applying to classes, define ``_static: ClassVar[tuple[str, ...]]``, listing</span>
@@ -4937,8 +4937,8 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="sd">    auto-derived from ``vars(self)`` at flatten time. Instance attributes set</span>
 <span class="sd">    outside ``__init__`` become part of the pytree structure.</span>
 
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">static_attr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="s2">&quot;_static&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="sd">    """</span>
+    <span class="n">static_attr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="s2">"_static"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">static_attr</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
         <span class="n">static_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">static_attr</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
@@ -4962,8 +4962,8 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;@make_pytree on </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: needs a `_static: &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;ClassVar[tuple[str, ...]]` class attribute&quot;</span>
+            <span class="sa">f</span><span class="s2">"@make_pytree on </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: needs a `_static: "</span>
+            <span class="sa">f</span><span class="s2">"ClassVar[tuple[str, ...]]` class attribute"</span>
         <span class="p">)</span>
 
     <span class="n">tree_util</span><span class="o">.</span><span class="n">register_pytree_node</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">flatten_func</span><span class="p">,</span> <span class="n">unflatten_func</span><span class="p">)</span>
@@ -4999,10 +4999,10 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="normal">74</span>
 <span class="normal">75</span>
 <span class="normal">76</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dv_or</span><span class="p">[</span><span class="n">V</span><span class="p">](</span><span class="n">dv_val</span><span class="p">:</span> <span class="n">V</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">fallback</span><span class="p">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">V</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Return``dv_val`` if it is not None, otherwise return ``fallback``. Used to collapse the</span>
 <span class="sd">    ``dv.x if dv.x is not None else self.x`` calls when combining two classes of design variables.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="n">dv_val</span> <span class="k">if</span> <span class="n">dv_val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">fallback</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -5034,9 +5034,9 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="normal">82</span>
 <span class="normal">83</span>
 <span class="normal">84</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pytree_clone</span><span class="p">[</span><span class="n">V</span><span class="p">](</span><span class="n">obj</span><span class="p">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">V</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Cheap clone of a pytree-registered object</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">leaves</span><span class="p">,</span> <span class="n">treedef</span> <span class="o">=</span> <span class="n">tree_util</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">tree_util</span><span class="o">.</span><span class="n">tree_unflatten</span><span class="p">(</span><span class="n">treedef</span><span class="p">,</span> <span class="n">leaves</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -5159,12 +5159,12 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="normal">113</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">index_to_arr</span><span class="p">(</span>
     <span class="n">index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">n_entries</span><span class="p">:</span> <span class="nb">int</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Convert an input index to an Array index.</span>
 <span class="sd">    :param index: Index to apply to a sequence</span>
 <span class="sd">    :param n_entries: Number of entries in the full un-indexed sequence</span>
 <span class="sd">    :return: Array index corresponding to the input index</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_entries</span><span class="p">)[</span><span class="n">index</span><span class="p">]</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">):</span>
@@ -5176,7 +5176,7 @@ outside <code>__init__</code> become part of the pytree structure.</p>
     <span class="k">elif</span> <span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_entries</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;index must be a slices, sequence of ints, or Array&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">"index must be a slices, sequence of ints, or Array"</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5213,9 +5213,9 @@ outside <code>__init__</code> become part of the pytree structure.</p>
 <span class="normal">125</span>
 <span class="normal">126</span>
 <span class="normal">127</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">nested_list_to_tuple</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Convert nested lists to nested tuples.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">inner_func</span><span class="p">(</span><span class="n">a_</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
@@ -5408,7 +5408,7 @@ done.</p>
     <span class="n">func_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">arg_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">U</span><span class="p">,</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Function wrapper which optionally profiles it.</span>
 <span class="sd">    :param func: Function to be profiled.</span>
 <span class="sd">    :param n_loops: Number of times to run the function, where the average time will be taken. If None, no profiling is</span>
@@ -5417,13 +5417,13 @@ done.</p>
 <span class="sd">    :param arg_name: Name of the argument to be profiled, used for console printing.</span>
 <span class="sd">    :return: New function which returns the same value as `func`, alongside the compile time and average run time of</span>
 <span class="sd">    `func`, which are substituted for None when no profiling is done.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">if</span> <span class="n">n_loops</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="k">lambda</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="p">(</span><span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">),</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n_loops</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">n_loops</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;n_loops must be a positive int&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"n_loops must be a positive int"</span><span class="p">)</span>
         <span class="n">loops</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">n_loops</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">inner_func</span><span class="p">(</span><span class="o">*</span><span class="n">args_</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">a_</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">U</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
@@ -5441,8 +5441,8 @@ done.</p>
             <span class="n">compile_time</span> <span class="o">=</span> <span class="n">compile_run_time</span> <span class="o">-</span> <span class="n">run_time</span>
 
             <span class="n">jax_print</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;| Function: </span><span class="si">{</span><span class="n">func_name</span><span class="si">:</span><span class="s2">&lt;14</span><span class="si">}</span><span class="s2"> Argument: </span><span class="si">{</span><span class="n">arg_name</span><span class="si">:</span><span class="s2">&lt;16</span><span class="si">}</span><span class="s2"> Compile time: </span><span class="si">{</span><span class="n">compile_time</span><span class="si">:</span><span class="s2">&lt;8.4f</span><span class="si">}</span><span class="s2"> Run time: </span><span class="si">{</span><span class="n">run_time</span><span class="si">:</span><span class="s2">&lt;8.4f</span><span class="si">}</span><span class="s2"> |&quot;</span><span class="p">,</span>
-                <span class="n">verbose_level</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"| Function: </span><span class="si">{</span><span class="n">func_name</span><span class="si">:</span><span class="s2">&lt;14</span><span class="si">}</span><span class="s2"> Argument: </span><span class="si">{</span><span class="n">arg_name</span><span class="si">:</span><span class="s2">&lt;16</span><span class="si">}</span><span class="s2"> Compile time: </span><span class="si">{</span><span class="n">compile_time</span><span class="si">:</span><span class="s2">&lt;8.4f</span><span class="si">}</span><span class="s2"> Run time: </span><span class="si">{</span><span class="n">run_time</span><span class="si">:</span><span class="s2">&lt;8.4f</span><span class="si">}</span><span class="s2"> |"</span><span class="p">,</span>
+                <span class="n">verbose_level</span><span class="o">=</span><span class="s2">"normal"</span><span class="p">,</span>
             <span class="p">)</span>
 
             <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">compile_time</span><span class="p">,</span> <span class="n">run_time</span>
