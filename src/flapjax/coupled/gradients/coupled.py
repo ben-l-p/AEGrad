@@ -396,7 +396,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
             # solve aero problem
             hg = inner_case.structure.calculate_hg_from_varphi(varphi=varphi_)
-            _, _, gamma_b, gamma_w, _, _, zeta_w, _, f_steady, _ = (
+            _, _, gamma_b, gamma_w, _, _, zeta_w, _, f_steady, _, _ = (
                 inner_case.aero.base_solve(
                     q_nm1=None,
                     t_n=case.aero.t,

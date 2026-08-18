@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Self, overload
 
-import jax
 from jax import Array
 from jax import numpy as jnp
 
@@ -216,9 +215,11 @@ class AeroelasticCase:
         return struct_out, aero_out
 
 
-@jax.tree_util.register_dataclass
+@make_pytree
 @dataclass
 class AeroelasticFullStates:
+    _static: ClassVar[tuple[str, ...]] = ()
+
     aero: AeroStates
     structure: StructureFullStates
 

@@ -7,7 +7,6 @@ from math import prod
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Self
 
-import jax
 from jax import Array
 from jax import numpy as jnp
 
@@ -21,9 +20,11 @@ if TYPE_CHECKING:
     from flapjax.structure.data_structures import StructureCase
 
 
-@jax.tree_util.register_dataclass
+@make_pytree
 @dataclass
 class StructureFullStates:
+    _static: ClassVar[tuple[str, ...]] = ()
+
     v: Array | None
     v_dot: Array | None
     varphi: Array
@@ -266,9 +267,7 @@ class StructuralDesignVariables(DesignVariables):
         cell_vector_data = {}
 
         Path(directory).mkdir(parents=True, exist_ok=True)
-        file_name = Path(directory).joinpath(
-            "beam_gradient"
-        )  # default file name for beam objects is "beam"
+        file_name = Path(directory).joinpath("beam_gradient")  # default file name
         return plot_beam_to_vtk(
             hg=case.hg,
             conn=jnp.array(case.conn),

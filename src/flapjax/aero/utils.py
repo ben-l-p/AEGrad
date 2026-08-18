@@ -15,6 +15,7 @@ from flapjax.utils.constants import EPSILON, R_CUTOFF
 from flapjax.utils.utils import index_to_arr
 
 type KernelFunction = Callable[[Array, Array], Array]
+type PolarFunction = Callable[[Array], tuple[Array, Array, Array]]
 
 
 def make_rectangular_grid(
@@ -218,6 +219,171 @@ def calculate_steady_forcing(
             split_to_vertex(f_chordwise, 0) + split_to_vertex(f_spanwise, 1)
         )  # (gamma_m+1, gamma_n+1, 3)
     return f_steady
+
+
+def strip_alpha(
+    zeta_b: ArrayList,
+    f_steady: ArrayList,
+    v_func: Callable[[Array], Array],
+    rho: Array,
+) -> ArrayList:
+    r"""
+    Compute the per-strip effective angle of attack from the UVLM sectional forcing. For each spanwise strip, the strip
+    total force is projected onto the local lift direction to obtain the strip lift coefficient. The angle of attack is
+    found by using a lift slope of 2 pi.
+
+    :param zeta_b: Bound grid coordinates, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    :param f_steady: Steady forcing, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    :param v_func: Reference velocity as a function of position, ``(..., 3) -> (..., 3)``.
+    :param rho: Flow density.
+    :return: Per-surface strip angle of attack, ``(n_surf, )(n_strip,)``.
+    """
+    alphas = ArrayList([])
+    for zeta_surf, f_surf in zip(zeta_b, f_steady):
+        # find mid-panel chord length
+        zeta_le = zeta_surf[0, :, :]
+        zeta_te = zeta_surf[-1, :, :]
+        le_j = 0.5 * (zeta_le[:-1, :] + zeta_le[1:, :])
+        te_j = 0.5 * (zeta_te[:-1, :] + zeta_te[1:, :])
+
+        chord_vec = te_j - le_j  # (n, 3)
+        c_len = jnp.linalg.norm(chord_vec, axis=-1)  # (n)
+
+        span_vec = 0.5 * (
+            (zeta_le[1:, :] + zeta_te[1:, :]) - (zeta_le[:-1, :] + zeta_te[:-1, :])
+        )  # (n, 3)
+        b_len = jnp.linalg.norm(span_vec, axis=-1)  # (n)
+        e_s = span_vec / b_len[:, None]  # unit vector in span direction
+
+        strip_mid = 0.5 * (le_j + te_j)  # centre of strip
+        v_ref = v_func(strip_mid)  # evaluate velocity at mid-strip
+        v_mag2 = jnp.sum(v_ref * v_ref, axis=-1)
+
+        e_l = jnp.cross(v_ref, e_s)  # vector in lift direction
+        e_l /= jnp.linalg.norm(e_l, axis=-1, keepdims=True)  # make unit vector
+
+        f_strip = neighbour_average(f_surf, axes=1).sum(axis=0)
+        q = 0.5 * rho * v_mag2
+
+        # correct from 2 pi lift slope to custom input
+        cl_uvlm = jnp.sum(f_strip * e_l, axis=-1) / (q * c_len * b_len)
+        alphas.append(cl_uvlm / (2.0 * jnp.pi))
+    return alphas
+
+
+def apply_polar_correction(
+    zeta_b: ArrayList,
+    f_steady: ArrayList,
+    v_func: Callable[[Array], Array],
+    rho: Array,
+    polars: Sequence[Sequence[PolarFunction] | None],
+    alpha: ArrayList | None = None,
+) -> ArrayList:
+    r"""
+    Replace UVLM strip forcing with a sectional force built from tabulated airfoil polars.
+
+    For each surface where polars are provided, and for each spanwise strip, we firstly compute the strip forcing in the
+    global frame. This forcing can then be converted into the local strip coordinate frame. We compute the velocity at
+    the mid-strip point, from which we can calculate the lift coefficient. By assuming a ``2*pi`` potential flow lift
+    slope, we can correct the forcing from tabulate data of the airfoil polar for lift, drag and moment. To correct the
+    output, we distribure the forcing back onto the grid in a way which satisfies the moment and force balance.
+    :param zeta_b: Bound grid coordinates, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    :param f_steady: Steady vertex forcing, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    :param v_func: Reference velocity as a function of position, ``(..., 3) -> (..., 3)``.
+    :param rho: Flow density.
+    :param polars: Per-surface polar tables. Each entry is either ``None`` (no correction for
+        that surface) or a sequence of length ``n`` of callables mapping
+        ``alpha -> (cl, cd, cm)`` about the quarter-chord.
+    :param alpha: Optional precomputed per-strip angle of attack, ``(n_surf, )(n_strip,)``. If
+        ``None``, computed internally via :func:`strip_alpha` with the same ``v_func``.
+    :return: Corrected vertex forcing, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    """
+    if alpha is None:
+        # compute the angles of attack for each strip if not passed
+        alpha = strip_alpha(zeta_b=zeta_b, f_steady=f_steady, v_func=v_func, rho=rho)
+
+    f_out = ArrayList([])
+    for i_surf, (zeta_surf, f_surf, polar_surf, alpha_surf) in enumerate(
+        zip(zeta_b, f_steady, polars, alpha)
+    ):
+        if polar_surf is None:
+            # no correction to apply
+            f_out.append(f_surf)
+            continue
+
+        zeta_m, zeta_n, _ = zeta_surf.shape
+        m = zeta_m - 1
+        n = zeta_n - 1
+
+        if len(polar_surf) != n:
+            raise ValueError(
+                f"Expected {n} polar callables for surface {i_surf}, got {len(polar_surf)}"
+            )
+
+        # find leading and trailing edges of centre of strip
+        zeta_le = zeta_surf[0, :, :]
+        zeta_te = zeta_surf[-1, :, :]
+        le_j = 0.5 * (zeta_le[:-1, :] + zeta_le[1:, :])
+        te_j = 0.5 * (zeta_te[:-1, :] + zeta_te[1:, :])
+
+        chord_vec = te_j - le_j
+        c_len = jnp.linalg.norm(chord_vec, axis=-1)  # chord of strips, (n, ).
+        e_c = chord_vec / c_len[:, None]  # unit vector in chordwise direction, (n, 3)
+
+        span_vec = 0.5 * (
+            (zeta_le[1:, :] + zeta_te[1:, :]) - (zeta_le[:-1, :] + zeta_te[:-1, :])
+        )
+        b_len = jnp.linalg.norm(span_vec, axis=-1)  # span of strips, (n, ).
+        e_s = span_vec / b_len[:, None]  # unit vector in spanwise direction, (n, 3)
+
+        e_n = jnp.cross(e_c, e_s)
+        e_n /= jnp.linalg.norm(
+            e_n, axis=-1, keepdims=True
+        )  # unit vector in normal direction, (n, 3)
+
+        # compute dynamic pressure at centroid of strip
+        strip_mid = 0.5 * (le_j + te_j)
+        v_ref = v_func(strip_mid)
+        v_mag2 = jnp.sum(v_ref * v_ref, axis=-1)
+        v_mag = jnp.sqrt(v_mag2)
+        q = 0.5 * rho * v_mag2
+
+        e_l = jnp.cross(v_ref, e_s)
+        e_l /= jnp.linalg.norm(
+            e_l, axis=-1, keepdims=True
+        )  # unit vector in flow direction, (n, 3)
+        e_d = v_ref / v_mag[:, None]
+
+        # extract from polar data
+        cl_p = jnp.stack([polar_surf[j](alpha_surf[j])[0] for j in range(n)])
+        cd_p = jnp.stack([polar_surf[j](alpha_surf[j])[1] for j in range(n)])
+        cm_p = jnp.stack([polar_surf[j](alpha_surf[j])[2] for j in range(n)])
+
+        qcb = q * c_len * b_len
+        f_lump = qcb[:, None] * (cl_p[:, None] * e_l + cd_p[:, None] * e_d)
+        f_couple = (qcb * cm_p)[:, None] * e_n  # rotate back into normal direction
+
+        # chordwise triangular weights placing the lumped force at c/4
+        chord_fracs = jnp.linspace(0.0, 1.0, zeta_m)
+        w_chord = jnp.clip(1.0 - jnp.abs(chord_fracs - 0.25) * m, 0.0, 1.0)
+
+        f_corrected = jnp.zeros_like(f_surf)
+
+        # split force across the two bounding spanwise vertex columns
+        lump_contrib = 0.5 * w_chord[:, None, None] * f_lump[None, :, :]
+        f_corrected = f_corrected.at[:, :-1, :].add(lump_contrib)
+        f_corrected = f_corrected.at[:, 1:, :].add(lump_contrib)
+
+        # correct for moment with LE/TE opposing forces
+        couple_contrib = 0.5 * f_couple
+        f_corrected = f_corrected.at[0, :-1, :].add(couple_contrib)
+        f_corrected = f_corrected.at[0, 1:, :].add(couple_contrib)
+        f_corrected = f_corrected.at[-1, :-1, :].add(-couple_contrib)
+        f_corrected = f_corrected.at[-1, 1:, :].add(-couple_contrib)
+
+        f_out.append(f_corrected)
+
+    return f_out
 
 
 def propagate_surf_wake(

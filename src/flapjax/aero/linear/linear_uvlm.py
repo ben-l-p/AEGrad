@@ -332,6 +332,7 @@ class LinearUVLM(
             _,
             _,
             _,
+            _,
         ) = self.case.base_solve_from_grid(
             q_nm1=q_n,
             t_n=ref.t,
@@ -571,6 +572,7 @@ class LinearUVLM(
             t=jnp.array(0.0),
             c=self.reference.c,
             n=self.reference.nc,
+            alpha=self.reference.alpha,
             kernels=self.reference.kernels,
             mirror_normal=self.reference.mirror_normal,
             mirror_point=self.reference.mirror_point,

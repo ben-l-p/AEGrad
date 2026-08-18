@@ -1,0 +1,130 @@
+from jax import Array
+from jax import numpy as jnp
+
+from flapjax.aero.data_structures import GridDiscretisation
+from flapjax.aero.flowfields import Constant
+from flapjax.aero.utils import PolarFunction, make_rectangular_grid
+from flapjax.aero.uvlm import UVLM
+
+
+def _build_pseudo_infinite_wing(
+    alpha_deg: float,
+    polars: list[list[PolarFunction] | None] | None = None,
+    m: int = 4,
+    n: int = 12,
+    chord: float = 1.0,
+    span: float = 48.0,
+    u_mag: float = 20.0,
+    ea: float = 0.25,
+) -> tuple[UVLM, Array, float, float, float]:
+    r"""
+    Build a pseudo-infinite mirrored wing at a fixed geometric angle of attack. This behaves like a 2D section
+    for the inboard strips.
+    """
+    alpha_rad = jnp.deg2rad(alpha_deg)
+    u_inf = jnp.array((u_mag * jnp.cos(alpha_rad), 0.0, u_mag * jnp.sin(alpha_rad)))
+    flowfield = Constant(u_inf=u_inf, rho=1.225, relative_motion=True)
+
+    disc = GridDiscretisation(m=m, n=n, m_star=2)
+
+    hg = jnp.zeros((n + 1, 4, 4))
+    beam_coords = jnp.zeros((n + 1, 3)).at[:, 1].set(jnp.linspace(0.0, span, n + 1))
+    hg = hg.at[:, :3, :3].set(jnp.eye(3)[None, :, :])
+    hg = hg.at[:, :3, 3].set(beam_coords)
+
+    x_grid = make_rectangular_grid(m=m, n=n, chord=chord, ea=ea)
+    dt = chord / (u_mag * m)
+
+    uvlm = UVLM(
+        grid_shapes=[disc],
+        dof_mapping=jnp.arange(n + 1),
+        mirror_point=jnp.zeros(3),
+        mirror_normal=jnp.array((0.0, 1.0, 0.0)),
+        polars=polars,
+    )
+    uvlm.set_design_variables(dt=dt, flowfield=flowfield, zeta_b0=x_grid, hg0=hg)
+    return uvlm, alpha_rad, u_mag, chord, span
+
+
+class TestPseudoInfiniteWing:
+    @staticmethod
+    def test_strip_aoa_matches_geometric():
+        r"""
+        Ensure that the measured AoA from the output matches the geometric AoA for the inboard strips.
+        """
+        alpha_deg = 3.0
+        uvlm, alpha_rad, *_ = _build_pseudo_infinite_wing(alpha_deg=alpha_deg)
+        sol = uvlm.solve_static(horseshoe=True)
+
+        alpha_strip = sol.alpha[0]  # (n_strip, )
+
+        # inboard quarter of the span, excluding the mirror-plane edge strip
+        n_interior = alpha_strip.shape[0] // 4
+        interior = alpha_strip[1:n_interior]
+
+        max_rel_err = jnp.max(jnp.abs(interior - alpha_rad) / alpha_rad)
+        assert max_rel_err < 0.02, (
+            f"Inboard strip alpha does not match from geometric alpha, measued={interior}, expected={alpha_rad}"
+        )
+
+    @staticmethod
+    def test_polar_correction_lift():
+        r"""
+        Test a polar with constant lift slope and zero drag/moment.
+        """
+        alpha_deg = 3.0
+
+        def polar_half(a: Array) -> tuple[Array, Array, Array]:
+            # lift only
+            return jnp.pi * a, jnp.array(0.0), jnp.array(0.0)
+
+        uvlm, alpha_rad, _, chord, span = _build_pseudo_infinite_wing(
+            alpha_deg=alpha_deg
+        )
+        n_strip = uvlm.grid_disc[0].n
+        polars: list[list[PolarFunction] | None] = [[polar_half] * n_strip]
+        uvlm, *_ = _build_pseudo_infinite_wing(alpha_deg=alpha_deg, polars=polars)
+        sol = uvlm.solve_static(horseshoe=True)
+
+        measured_force = jnp.sum(
+            sol.f_steady[0] * jnp.array((-jnp.sin(alpha_rad), 0.0, jnp.cos(alpha_rad)))
+        )  # rotation into freestream frame and sum force over surface
+
+        b_strip = span / n_strip  # span of each strip
+        lift_expected = (  # use polars from aoa extracted from model
+            sol.flowfield.q_inf * chord * b_strip * jnp.pi * jnp.sum(sol.alpha[0])
+        )
+
+        rel_err = jnp.abs(measured_force - lift_expected) / jnp.abs(lift_expected)
+        assert rel_err < 1e-6, (
+            f"Mismatch in forces, measured: {float(measured_force):.6e}, expected: {float(lift_expected):.6e}"
+        )
+
+    @staticmethod
+    def test_polar_correction_drag():
+        r"""
+        Test a wing with a constant drag coefficient (independent of alpha).
+        """
+        alpha_deg = 3.0
+        cd0 = 0.02
+
+        def polar_drag_only(_: Array) -> tuple[Array, Array, Array]:
+            return jnp.array(0.0), jnp.array(cd0), jnp.array(0.0)
+
+        uvlm, alpha_rad, _, chord, span = _build_pseudo_infinite_wing(
+            alpha_deg=alpha_deg
+        )
+        n_strip = uvlm.grid_disc[0].n
+        polars: list[list[PolarFunction] | None] = [[polar_drag_only] * n_strip]
+        uvlm, *_ = _build_pseudo_infinite_wing(alpha_deg=alpha_deg, polars=polars)
+        sol = uvlm.solve_static(horseshoe=True)
+
+        e_drag = jnp.array((jnp.cos(alpha_rad), 0.0, jnp.sin(alpha_rad)))
+        drag_polar = jnp.sum(sol.f_steady[0] * e_drag)
+
+        drag_measured = sol.flowfield.q_inf * chord * (span / n_strip) * cd0 * n_strip
+
+        rel_err = jnp.abs(drag_polar - drag_measured) / jnp.abs(drag_measured)
+        assert rel_err < 1e-6, (
+            f"Expected drag {float(drag_polar):.06e} does not match measured drag {float(drag_measured):.06e}"
+        )

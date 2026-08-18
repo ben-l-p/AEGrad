@@ -31,12 +31,15 @@ from flapjax.aero.gradients.data_structures import (
 )
 from flapjax.aero.utils import (
     KernelFunction,
+    PolarFunction,
+    apply_polar_correction,
     biot_savart_epsilon,
     calculate_steady_forcing,
     compute_c,
     compute_nc,
     project_forcing_to_beam,
     propagate_wake,
+    strip_alpha,
 )
 from flapjax.algebra.array_utils import (
     ArrayList,
@@ -96,6 +99,7 @@ class UVLM:
         "include_unsteady_force",
         "grid_func",
         "batch_size",
+        "polars",
     )
 
     @property
@@ -171,6 +175,7 @@ class UVLM:
         gamma_dot_relaxation: float | Array = 0.7,
         include_unsteady_force: bool = True,
         batch_size: int | None = 64,
+        polars: Sequence[Sequence[PolarFunction] | None] | None = None,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters.
@@ -191,6 +196,10 @@ class UVLM:
         :param include_unsteady_force: If True, include forces due to apparent mass for simulation.
         :param batch_size: Batch size for vectorising AIC computations. Larger values may result in faster computations,
         at the expense of increased memory usage. Setting to None is equivelant to a vmap.
+        :param polars: Optional per-surface tabulated airfoil polars used to correct the UVLM sectional forcing. Each
+        entry is either ``None``, which applies no correction, or a sequence of ``n`` per-strip
+        callables mapping ``alpha -> (cl, cd, cm)`` about the quarter-chord. If ``None``, no correction is applied on
+        any surface.
         """
 
         # case for single inputs
@@ -274,6 +283,18 @@ class UVLM:
         self.gamma_dot_relaxation: float | Array = gamma_dot_relaxation
         self.include_unsteady_force: bool = include_unsteady_force
         self.batch_size: int | None = batch_size
+
+        # optional per-surface, per-strip polar callables for sectional forcing correction
+        if polars is None:
+            self.polars: tuple[tuple[PolarFunction, ...] | None, ...] = tuple(
+                None for _ in range(self.n_surf)
+            )
+        else:
+            if len(polars) != self.n_surf:
+                raise ValueError(
+                    f"Expected {self.n_surf} polar entries, got {len(polars)}"
+                )
+            self.polars = tuple(tuple(p) if p is not None else None for p in polars)
 
         # mirror definitions
         if (mirror_point is None and mirror_normal is not None) or (
@@ -733,6 +754,7 @@ class UVLM:
         ArrayList | None,
         ArrayList,
         ArrayList | None,
+        ArrayList,
     ]:
         r"""
         Solve the UVLM equations for a single time step from beam coordinate inputs.
@@ -749,7 +771,8 @@ class UVLM:
         :param cs_ang_nm1: Control surface angle at timestep n - 1, {name, ()}.
         :param cs_vel_n: Control surface velocity at timestep n, {name, ()}.
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
-        derivative, bound grid, wake grid, bound grid time derivative, steady forcing and unsteady forcing.
+        derivative, bound grid, wake grid, bound grid time derivative, steady forcing, unsteady forcing, and per-strip
+        effective angle of attack.
         """
 
         if horseshoe and any(gd.m_star == 0 for gd in self.grid_disc):
@@ -810,6 +833,7 @@ class UVLM:
         ArrayList | None,
         ArrayList,
         ArrayList | None,
+        ArrayList,
     ]:
         r"""
         Solve the UVLM equations for a single time step from aerodynamic grid inputs.
@@ -828,7 +852,8 @@ class UVLM:
         :param nu_w: Optional additive wake-convection velocity at wake vertices, ``(n_surf, )(zeta_m_star, zeta_n, 3)``.
         Used by the linear system; ignored if not supplied.
         :return: Collocation points, bound normals, bound circulation, wake circulation, bound circulation time
-        derivative, bound grid, wake grid, bound grid velocity, steady forcing, unsteady forcing.
+        derivative, bound grid, wake grid, bound grid velocity, steady forcing, unsteady forcing, per-strip effective
+        angle of attack.
         """
         if isinstance(
             self.gamma_dot_relaxation,
@@ -1028,6 +1053,27 @@ class UVLM:
             v_inputs=nu_b,
         )
 
+        def v_freestream_func(x: Array) -> Array:
+            return self.flowfield.vmap_call(x=x, t=t_n)
+
+        alpha_n = strip_alpha(
+            zeta_b=zeta_b_n,
+            f_steady=f_steady,
+            v_func=v_freestream_func,
+            rho=self.flowfield.rho,
+        )
+
+        if any(p is not None for p in self.polars):
+            # update forcing with polar corrections
+            f_steady = apply_polar_correction(
+                zeta_b=zeta_b_n,
+                f_steady=f_steady,
+                v_func=v_freestream_func,
+                rho=self.flowfield.rho,
+                polars=self.polars,
+                alpha=alpha_n,
+            )
+
         return (
             c_n,
             nc_n,
@@ -1039,6 +1085,7 @@ class UVLM:
             zeta_b_dot_n,
             f_steady,
             f_unsteady,
+            alpha_n,
         )
 
     def case_solve(
@@ -1096,6 +1143,7 @@ class UVLM:
             zeta_b_dot_n,
             f_steady,
             f_unsteady,
+            alpha_n,
         ) = self.base_solve(
             q_nm1=q_nm1,
             t_n=case.t[i_ts, ...],
@@ -1115,6 +1163,7 @@ class UVLM:
         case.set_arraylist_at_ts("gamma_w", values=gamma_w_n, i_ts=i_ts)
         case.set_arraylist_at_ts("zeta_b", values=zeta_b_n, i_ts=i_ts)
         case.set_arraylist_at_ts("f_steady", values=f_steady, i_ts=i_ts)
+        case.set_arraylist_at_ts("alpha", values=alpha_n, i_ts=i_ts)
 
         if not static:
             if gamma_b_dot_n is None:
@@ -1186,6 +1235,7 @@ class UVLM:
             f_unsteady=ArrayList(
                 [jnp.zeros((n_tstep, gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
+            alpha=ArrayList([jnp.zeros((n_tstep, gd.n)) for gd in self.grid_disc]),
             c=ArrayList([jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]),
             n=ArrayList([jnp.zeros((n_tstep, gd.m, gd.n, 3)) for gd in self.grid_disc]),
             kernels=[*self.kernels_b, *self.kernels_w],
@@ -1349,6 +1399,7 @@ class UVLM:
             f_unsteady=ArrayList(
                 [jnp.zeros((gd.m + 1, gd.n + 1, 3)) for gd in self.grid_disc]
             ),
+            alpha=ArrayList([jnp.zeros((gd.n,)) for gd in self.grid_disc]),
             surf_b_names=self.surf_b_names,
             surf_w_names=self.surf_w_names,
             i_ts=-1,
@@ -1417,6 +1468,7 @@ class UVLM:
             _,
             f_steady,
             f_unsteady,
+            _,
         ) = inner_case.base_solve(
             q_nm1=q_nm1,
             t_n=t_n,
