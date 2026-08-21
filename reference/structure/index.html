@@ -2230,6 +2230,61 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_input_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_input_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flapjax.structure.linear.linear_beam.LinearBeam.get_total_input" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3863,6 +3918,61 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_input_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_input_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flapjax.structure.linear.linear_beam.LinearBeam.get_total_input" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4304,7 +4414,8 @@
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Array defining the index from the library of k_cs to use for each element, <code>(n_elem, )</code>.</p>
+                <p>Array defining the index from the library of k_cs to use for each element, <code>(n_elem, )</code>.
+If <code>None</code>, all elements will use the first entry in the k_cs library.</p>
               </div>
             </td>
             <td>
@@ -4320,7 +4431,8 @@
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Array defining the index from the library of m_cs to use for each element, <code>(n_elem, )</code>.</p>
+                <p>Array defining the index from the library of m_cs to use for each element, <code>(n_elem, )</code>.
+If <code>None</code>, all elements will use the first entry in the m_cs library.</p>
               </div>
             </td>
             <td>
@@ -4471,8 +4583,7 @@ a value of 1 is undamped.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">145</span>
-<span class="normal">146</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">146</span>
 <span class="normal">147</span>
 <span class="normal">148</span>
 <span class="normal">149</span>
@@ -4643,7 +4754,10 @@ a value of 1 is undamped.</p>
 <span class="normal">314</span>
 <span class="normal">315</span>
 <span class="normal">316</span>
-<span class="normal">317</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">num_nodes</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">connectivity</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -4665,7 +4779,9 @@ a value of 1 is undamped.</p>
 <span class="sd">    :param connectivity: Connectivity array, `(n_elem, 2)``.</span>
 <span class="sd">    :param y_vector: Vector defining the y direction for each element, ``(n_elem, 3)``.</span>
 <span class="sd">    :param k_cs_index: Array defining the index from the library of k_cs to use for each element, ``(n_elem, )``.</span>
+<span class="sd">    If ``None``, all elements will use the first entry in the k_cs library.</span>
 <span class="sd">    :param m_cs_index: Array defining the index from the library of m_cs to use for each element, ``(n_elem, )``.</span>
+<span class="sd">    If ``None``, all elements will use the first entry in the m_cs library.</span>
 <span class="sd">    :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as</span>
 <span class="sd">    that for the lumped mass data ``(n_lumped_mass, )``.</span>
 <span class="sd">    :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, ``(3, )``.</span>
@@ -4989,10 +5105,7 @@ z-y-x order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">319</span>
-<span class="normal">320</span>
-<span class="normal">321</span>
-<span class="normal">322</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">322</span>
 <span class="normal">323</span>
 <span class="normal">324</span>
 <span class="normal">325</span>
@@ -5140,7 +5253,10 @@ z-y-x order.</p>
 <span class="normal">467</span>
 <span class="normal">468</span>
 <span class="normal">469</span>
-<span class="normal">470</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">set_design_variables</span><span class="p">(</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">set_design_variables</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">coords</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">k_cs</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -5408,10 +5524,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">472</span>
-<span class="normal">473</span>
-<span class="normal">474</span>
-<span class="normal">475</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">475</span>
 <span class="normal">476</span>
 <span class="normal">477</span>
 <span class="normal">478</span>
@@ -5463,7 +5576,10 @@ variables are obtained.</p>
 <span class="normal">524</span>
 <span class="normal">525</span>
 <span class="normal">526</span>
-<span class="normal">527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_design_variables</span><span class="p">(</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_design_variables</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">struct_case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
@@ -5572,10 +5688,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">529</span>
-<span class="normal">530</span>
-<span class="normal">531</span>
-<span class="normal">532</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">532</span>
 <span class="normal">533</span>
 <span class="normal">534</span>
 <span class="normal">535</span>
@@ -5604,7 +5717,10 @@ variables are obtained.</p>
 <span class="normal">558</span>
 <span class="normal">559</span>
 <span class="normal">560</span>
-<span class="normal">561</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reference_configuration</span><span class="p">(</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reference_configuration</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">use_f_ext_follower</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">use_f_ext_dead</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -5715,13 +5831,13 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">588</span>
-<span class="normal">589</span>
-<span class="normal">590</span>
-<span class="normal">591</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">591</span>
 <span class="normal">592</span>
 <span class="normal">593</span>
-<span class="normal">594</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_varphi_from_hg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">594</span>
+<span class="normal">595</span>
+<span class="normal">596</span>
+<span class="normal">597</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_varphi_from_hg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Calculate the twist vector from the reference configuration to hg</span>
 <span class="sd">    :param hg: Deformed coordinates, ``(n_nodes, 4, 4)``</span>
@@ -5806,10 +5922,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">600</span>
-<span class="normal">601</span>
-<span class="normal">602</span>
-<span class="normal">603</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">603</span>
 <span class="normal">604</span>
 <span class="normal">605</span>
 <span class="normal">606</span>
@@ -5823,7 +5936,10 @@ variables are obtained.</p>
 <span class="normal">614</span>
 <span class="normal">615</span>
 <span class="normal">616</span>
-<span class="normal">617</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_matrix_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_matrix_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global matrix from element entries</span>
 <span class="sd">    :param entries: Array of element matrix entries, ``(n_elem, 12, 12)``</span>
@@ -5919,16 +6035,16 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">619</span>
-<span class="normal">620</span>
-<span class="normal">621</span>
-<span class="normal">622</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">622</span>
 <span class="normal">623</span>
 <span class="normal">624</span>
 <span class="normal">625</span>
 <span class="normal">626</span>
 <span class="normal">627</span>
-<span class="normal">628</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_vector_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">628</span>
+<span class="normal">629</span>
+<span class="normal">630</span>
+<span class="normal">631</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_vector_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global vector from element entries</span>
 <span class="sd">    :param entries: Array of element vector entries, ``(n_elem, 12)``</span>
@@ -6034,10 +6150,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">630</span>
-<span class="normal">631</span>
-<span class="normal">632</span>
-<span class="normal">633</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">633</span>
 <span class="normal">634</span>
 <span class="normal">635</span>
 <span class="normal">636</span>
@@ -6052,7 +6165,10 @@ variables are obtained.</p>
 <span class="normal">645</span>
 <span class="normal">646</span>
 <span class="normal">647</span>
-<span class="normal">648</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_arr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">648</span>
+<span class="normal">649</span>
+<span class="normal">650</span>
+<span class="normal">651</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_arr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add lumped contributions to an array</span>
 <span class="sd">    :param arr: Full array, ``(6*n_node, 6*n_node)``</span>
@@ -6167,10 +6283,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">650</span>
-<span class="normal">651</span>
-<span class="normal">652</span>
-<span class="normal">653</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">653</span>
 <span class="normal">654</span>
 <span class="normal">655</span>
 <span class="normal">656</span>
@@ -6181,7 +6294,10 @@ variables are obtained.</p>
 <span class="normal">661</span>
 <span class="normal">662</span>
 <span class="normal">663</span>
-<span class="normal">664</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_vec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_vec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add lumped contributions to an array</span>
 <span class="sd">    :param vec: Full vector, ``(6*n_node, )``</span>
@@ -6306,10 +6422,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">711</span>
-<span class="normal">712</span>
-<span class="normal">713</span>
-<span class="normal">714</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">714</span>
 <span class="normal">715</span>
 <span class="normal">716</span>
 <span class="normal">717</span>
@@ -6334,7 +6447,10 @@ variables are obtained.</p>
 <span class="normal">736</span>
 <span class="normal">737</span>
 <span class="normal">738</span>
-<span class="normal">739</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t</span><span class="p">(</span>
+<span class="normal">739</span>
+<span class="normal">740</span>
+<span class="normal">741</span>
+<span class="normal">742</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -6528,10 +6644,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">828</span>
-<span class="normal">829</span>
-<span class="normal">830</span>
-<span class="normal">831</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">831</span>
 <span class="normal">832</span>
 <span class="normal">833</span>
 <span class="normal">834</span>
@@ -6563,7 +6676,10 @@ variables are obtained.</p>
 <span class="normal">860</span>
 <span class="normal">861</span>
 <span class="normal">862</span>
-<span class="normal">863</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t_full</span><span class="p">(</span>
+<span class="normal">863</span>
+<span class="normal">864</span>
+<span class="normal">865</span>
+<span class="normal">866</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t_full</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -6697,10 +6813,7 @@ the lumped mass contribution.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">865</span>
-<span class="normal">866</span>
-<span class="normal">867</span>
-<span class="normal">868</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">868</span>
 <span class="normal">869</span>
 <span class="normal">870</span>
 <span class="normal">871</span>
@@ -6709,7 +6822,10 @@ the lumped mass contribution.</p>
 <span class="normal">874</span>
 <span class="normal">875</span>
 <span class="normal">876</span>
-<span class="normal">877</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_m_t</span><span class="p">(</span>
+<span class="normal">877</span>
+<span class="normal">878</span>
+<span class="normal">879</span>
+<span class="normal">880</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_m_t</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">int_order</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">BASE_LOBATTO_ORDER</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
@@ -6821,10 +6937,7 @@ global perturbations in acceleration and displacement, respectively.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">879</span>
-<span class="normal">880</span>
-<span class="normal">881</span>
-<span class="normal">882</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">882</span>
 <span class="normal">883</span>
 <span class="normal">884</span>
 <span class="normal">885</span>
@@ -6899,7 +7012,10 @@ global perturbations in acceleration and displacement, respectively.</p>
 <span class="normal">954</span>
 <span class="normal">955</span>
 <span class="normal">956</span>
-<span class="normal">957</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_nodal_m_k</span><span class="p">(</span>
+<span class="normal">957</span>
+<span class="normal">958</span>
+<span class="normal">959</span>
+<span class="normal">960</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_nodal_m_k</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">int_order</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">BASE_LOBATTO_ORDER</span><span class="p">,</span>
@@ -7270,10 +7386,7 @@ normalisation <code>(n_modes, n_free_dof)</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 979</span>
-<span class="normal"> 980</span>
-<span class="normal"> 981</span>
-<span class="normal"> 982</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 982</span>
 <span class="normal"> 983</span>
 <span class="normal"> 984</span>
 <span class="normal"> 985</span>
@@ -7339,7 +7452,10 @@ normalisation <code>(n_modes, n_free_dof)</code>.</p>
 <span class="normal">1045</span>
 <span class="normal">1046</span>
 <span class="normal">1047</span>
-<span class="normal">1048</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">modal</span><span class="p">(</span>
+<span class="normal">1048</span>
+<span class="normal">1049</span>
+<span class="normal">1050</span>
+<span class="normal">1051</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">modal</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">remove_complex_conjugate</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -7558,10 +7674,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1180</span>
-<span class="normal">1181</span>
-<span class="normal">1182</span>
-<span class="normal">1183</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1183</span>
 <span class="normal">1184</span>
 <span class="normal">1185</span>
 <span class="normal">1186</span>
@@ -7583,7 +7696,10 @@ linear dynamic analysis.</p>
 <span class="normal">1202</span>
 <span class="normal">1203</span>
 <span class="normal">1204</span>
-<span class="normal">1205</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">linearise</span><span class="p">(</span>
+<span class="normal">1205</span>
+<span class="normal">1206</span>
+<span class="normal">1207</span>
+<span class="normal">1208</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">linearise</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">reference</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
@@ -7687,10 +7803,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1302</span>
-<span class="normal">1303</span>
-<span class="normal">1304</span>
-<span class="normal">1305</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1305</span>
 <span class="normal">1306</span>
 <span class="normal">1307</span>
 <span class="normal">1308</span>
@@ -7709,7 +7822,10 @@ linear dynamic analysis.</p>
 <span class="normal">1321</span>
 <span class="normal">1322</span>
 <span class="normal">1323</span>
-<span class="normal">1324</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_centre_of_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1324</span>
+<span class="normal">1325</span>
+<span class="normal">1326</span>
+<span class="normal">1327</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_centre_of_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the centre of mass for an arbitrary system.</span>
 <span class="sd">    :param hg: Node SE(3) coordinates, ``(n_node, 4, 4)`` or ``(n_tstep, n_node, 4, 4)``.</span>
@@ -7727,7 +7843,7 @@ linear dynamic analysis.</p>
         <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"ij,jk-&gt;k"</span><span class="p">,</span> <span class="n">m_lin</span><span class="p">,</span> <span class="n">hg_</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span> <span class="o">/</span> <span class="n">m_lin</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>  <span class="c1"># (3, )</span>
 
     <span class="k">if</span> <span class="n">hg</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">inner_func</span><span class="p">(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># single timestep, (3, )</span>
+        <span class="k">return</span> <span class="n">inner_func</span><span class="p">(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># single timestep, (3, ).</span>
     <span class="k">elif</span> <span class="n">hg</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">vmap</span><span class="p">(</span><span class="n">inner_func</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># multiple timesteps, (n_tstep, 3)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -7810,13 +7926,13 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1326</span>
-<span class="normal">1327</span>
-<span class="normal">1328</span>
-<span class="normal">1329</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1329</span>
 <span class="normal">1330</span>
 <span class="normal">1331</span>
-<span class="normal">1332</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_elem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1332</span>
+<span class="normal">1333</span>
+<span class="normal">1334</span>
+<span class="normal">1335</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_elem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the forces within the elements as :math:`\mathbf{f}_{elem} = \mathcal{K}_{cs} \epsilon`.</span>
 <span class="sd">    :param eps: Element strain vectors, ``(n_elem, 6)``.</span>
@@ -7917,15 +8033,15 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1334</span>
-<span class="normal">1335</span>
-<span class="normal">1336</span>
-<span class="normal">1337</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1337</span>
 <span class="normal">1338</span>
 <span class="normal">1339</span>
 <span class="normal">1340</span>
 <span class="normal">1341</span>
-<span class="normal">1342</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1342</span>
+<span class="normal">1343</span>
+<span class="normal">1344</span>
+<span class="normal">1345</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global internal force vector as a function of the element relative configuration vectors.</span>
 <span class="sd">    :param p_d: P(d) operator, ``(n_elem, 6, 12)``.</span>
@@ -8032,16 +8148,16 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1383</span>
-<span class="normal">1384</span>
-<span class="normal">1385</span>
-<span class="normal">1386</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1386</span>
 <span class="normal">1387</span>
 <span class="normal">1388</span>
 <span class="normal">1389</span>
 <span class="normal">1390</span>
 <span class="normal">1391</span>
-<span class="normal">1392</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1392</span>
+<span class="normal">1393</span>
+<span class="normal">1394</span>
+<span class="normal">1395</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_f_dead_ext</span><span class="p">(</span><span class="n">f_ext</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the global external dead force vector.</span>
@@ -8147,10 +8263,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1446</span>
-<span class="normal">1447</span>
-<span class="normal">1448</span>
-<span class="normal">1449</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1449</span>
 <span class="normal">1450</span>
 <span class="normal">1451</span>
 <span class="normal">1452</span>
@@ -8159,7 +8272,10 @@ linear dynamic analysis.</p>
 <span class="normal">1455</span>
 <span class="normal">1456</span>
 <span class="normal">1457</span>
-<span class="normal">1458</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_thrust_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">thrust</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1458</span>
+<span class="normal">1459</span>
+<span class="normal">1460</span>
+<span class="normal">1461</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_thrust_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">thrust</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add thrust acting at nodes onto full system forcing.</span>
 <span class="sd">    :param force: Input forcing, ``(n_node, 6)``.</span>
@@ -8252,16 +8368,16 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1460</span>
-<span class="normal">1461</span>
-<span class="normal">1462</span>
-<span class="normal">1463</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1463</span>
 <span class="normal">1464</span>
 <span class="normal">1465</span>
 <span class="normal">1466</span>
 <span class="normal">1467</span>
 <span class="normal">1468</span>
-<span class="normal">1469</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_eps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1469</span>
+<span class="normal">1470</span>
+<span class="normal">1471</span>
+<span class="normal">1472</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_eps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from</span>
 <span class="sd">    Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,</span>
@@ -8349,13 +8465,13 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1471</span>
-<span class="normal">1472</span>
-<span class="normal">1473</span>
-<span class="normal">1474</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1474</span>
 <span class="normal">1475</span>
 <span class="normal">1476</span>
-<span class="normal">1477</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_p_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1477</span>
+<span class="normal">1478</span>
+<span class="normal">1479</span>
+<span class="normal">1480</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_p_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the P(d) operator as a function of the element relative configuration vectors.</span>
 <span class="sd">    :param d: Relative configuration vectors, ``(n_elem, 6)``</span>
@@ -8440,10 +8556,7 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1479</span>
-<span class="normal">1480</span>
-<span class="normal">1481</span>
-<span class="normal">1482</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1482</span>
 <span class="normal">1483</span>
 <span class="normal">1484</span>
 <span class="normal">1485</span>
@@ -8458,7 +8571,10 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 <span class="normal">1494</span>
 <span class="normal">1495</span>
 <span class="normal">1496</span>
-<span class="normal">1497</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1497</span>
+<span class="normal">1498</span>
+<span class="normal">1499</span>
+<span class="normal">1500</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the element relative configuration vectors from the nodal homogeneous transformation matrices</span>
 <span class="sd">    :param hg: Nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``</span>
@@ -8575,17 +8691,17 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1517</span>
-<span class="normal">1518</span>
-<span class="normal">1519</span>
-<span class="normal">1520</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1520</span>
 <span class="normal">1521</span>
 <span class="normal">1522</span>
 <span class="normal">1523</span>
 <span class="normal">1524</span>
 <span class="normal">1525</span>
 <span class="normal">1526</span>
-<span class="normal">1527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1527</span>
+<span class="normal">1528</span>
+<span class="normal">1529</span>
+<span class="normal">1530</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_hg_dot</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Obtain the time derivative of the nodal coordinates.</span>
@@ -8868,10 +8984,7 @@ gyroscopic forces, inertial forces and residual forces.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1577</span>
-<span class="normal">1578</span>
-<span class="normal">1579</span>
-<span class="normal">1580</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1580</span>
 <span class="normal">1581</span>
 <span class="normal">1582</span>
 <span class="normal">1583</span>
@@ -8999,7 +9112,10 @@ gyroscopic forces, inertial forces and residual forces.</p>
 <span class="normal">1705</span>
 <span class="normal">1706</span>
 <span class="normal">1707</span>
-<span class="normal">1708</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_forces</span><span class="p">(</span>
+<span class="normal">1708</span>
+<span class="normal">1709</span>
+<span class="normal">1710</span>
+<span class="normal">1711</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_forces</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">dynamic</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -9444,10 +9560,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1746</span>
-<span class="normal">1747</span>
-<span class="normal">1748</span>
-<span class="normal">1749</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1749</span>
 <span class="normal">1750</span>
 <span class="normal">1751</span>
 <span class="normal">1752</span>
@@ -9537,7 +9650,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">1836</span>
 <span class="normal">1837</span>
 <span class="normal">1838</span>
-<span class="normal">1839</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_res</span><span class="p">(</span>
+<span class="normal">1839</span>
+<span class="normal">1840</span>
+<span class="normal">1841</span>
+<span class="normal">1842</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_res</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">solve_dofs</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -9729,10 +9845,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1841</span>
-<span class="normal">1842</span>
-<span class="normal">1843</span>
-<span class="normal">1844</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1844</span>
 <span class="normal">1845</span>
 <span class="normal">1846</span>
 <span class="normal">1847</span>
@@ -9741,7 +9854,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">1850</span>
 <span class="normal">1851</span>
 <span class="normal">1852</span>
-<span class="normal">1853</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1853</span>
+<span class="normal">1854</span>
+<span class="normal">1855</span>
+<span class="normal">1856</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">update_hg</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">phi</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Update the nodal homogeneous transformation matrices with the configuration increments.</span>
@@ -9906,10 +10022,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1875</span>
-<span class="normal">1876</span>
-<span class="normal">1877</span>
-<span class="normal">1878</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1878</span>
 <span class="normal">1879</span>
 <span class="normal">1880</span>
 <span class="normal">1881</span>
@@ -10119,7 +10232,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">2085</span>
 <span class="normal">2086</span>
 <span class="normal">2087</span>
-<span class="normal">2088</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">static_solve</span><span class="p">(</span>
+<span class="normal">2088</span>
+<span class="normal">2089</span>
+<span class="normal">2090</span>
+<span class="normal">2091</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">static_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">prescribed_dofs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -10372,7 +10488,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
@@ -10388,7 +10504,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -10404,10 +10520,7 @@ of this</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2126</span>
-<span class="normal">2127</span>
-<span class="normal">2128</span>
-<span class="normal">2129</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2129</span>
 <span class="normal">2130</span>
 <span class="normal">2131</span>
 <span class="normal">2132</span>
@@ -11136,7 +11249,10 @@ of this</p>
 <span class="normal">2855</span>
 <span class="normal">2856</span>
 <span class="normal">2857</span>
-<span class="normal">2858</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">base_dynamic_solve</span><span class="p">(</span>
+<span class="normal">2858</span>
+<span class="normal">2859</span>
+<span class="normal">2860</span>
+<span class="normal">2861</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">base_dynamic_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">struct_case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">struct_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span><span class="p">,</span>
@@ -11146,7 +11262,7 @@ of this</p>
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -12091,10 +12207,7 @@ velocities.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2860</span>
-<span class="normal">2861</span>
-<span class="normal">2862</span>
-<span class="normal">2863</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2863</span>
 <span class="normal">2864</span>
 <span class="normal">2865</span>
 <span class="normal">2866</span>
@@ -12280,7 +12393,10 @@ velocities.</p>
 <span class="normal">3046</span>
 <span class="normal">3047</span>
 <span class="normal">3048</span>
-<span class="normal">3049</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dynamic_solve</span><span class="p">(</span>
+<span class="normal">3049</span>
+<span class="normal">3050</span>
+<span class="normal">3051</span>
+<span class="normal">3052</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dynamic_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">init_state</span><span class="p">:</span> <span class="n">StructureCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">prescribed_dofs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -13714,7 +13830,8 @@ batched Structure, a PVD is written alongside per-timestep VTUs.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Array defining the index from the library of k_cs to use for each element, <code>(n_elem, )</code>.</p>
+                <p>Array defining the index from the library of k_cs to use for each element, <code>(n_elem, )</code>.
+If <code>None</code>, all elements will use the first entry in the k_cs library.</p>
               </div>
             </td>
             <td>
@@ -13730,7 +13847,8 @@ batched Structure, a PVD is written alongside per-timestep VTUs.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Array defining the index from the library of m_cs to use for each element, <code>(n_elem, )</code>.</p>
+                <p>Array defining the index from the library of m_cs to use for each element, <code>(n_elem, )</code>.
+If <code>None</code>, all elements will use the first entry in the m_cs library.</p>
               </div>
             </td>
             <td>
@@ -13881,8 +13999,7 @@ a value of 1 is undamped.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">145</span>
-<span class="normal">146</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">146</span>
 <span class="normal">147</span>
 <span class="normal">148</span>
 <span class="normal">149</span>
@@ -14053,7 +14170,10 @@ a value of 1 is undamped.</p>
 <span class="normal">314</span>
 <span class="normal">315</span>
 <span class="normal">316</span>
-<span class="normal">317</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">num_nodes</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">connectivity</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -14075,7 +14195,9 @@ a value of 1 is undamped.</p>
 <span class="sd">    :param connectivity: Connectivity array, `(n_elem, 2)``.</span>
 <span class="sd">    :param y_vector: Vector defining the y direction for each element, ``(n_elem, 3)``.</span>
 <span class="sd">    :param k_cs_index: Array defining the index from the library of k_cs to use for each element, ``(n_elem, )``.</span>
+<span class="sd">    If ``None``, all elements will use the first entry in the k_cs library.</span>
 <span class="sd">    :param m_cs_index: Array defining the index from the library of m_cs to use for each element, ``(n_elem, )``.</span>
+<span class="sd">    If ``None``, all elements will use the first entry in the m_cs library.</span>
 <span class="sd">    :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as</span>
 <span class="sd">    that for the lumped mass data ``(n_lumped_mass, )``.</span>
 <span class="sd">    :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, ``(3, )``.</span>
@@ -18466,10 +18588,7 @@ z-y-x order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">319</span>
-<span class="normal">320</span>
-<span class="normal">321</span>
-<span class="normal">322</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">322</span>
 <span class="normal">323</span>
 <span class="normal">324</span>
 <span class="normal">325</span>
@@ -18617,7 +18736,10 @@ z-y-x order.</p>
 <span class="normal">467</span>
 <span class="normal">468</span>
 <span class="normal">469</span>
-<span class="normal">470</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">set_design_variables</span><span class="p">(</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">set_design_variables</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">coords</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">k_cs</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -18885,10 +19007,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">472</span>
-<span class="normal">473</span>
-<span class="normal">474</span>
-<span class="normal">475</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">475</span>
 <span class="normal">476</span>
 <span class="normal">477</span>
 <span class="normal">478</span>
@@ -18940,7 +19059,10 @@ variables are obtained.</p>
 <span class="normal">524</span>
 <span class="normal">525</span>
 <span class="normal">526</span>
-<span class="normal">527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_design_variables</span><span class="p">(</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_design_variables</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">struct_case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
@@ -19049,10 +19171,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">529</span>
-<span class="normal">530</span>
-<span class="normal">531</span>
-<span class="normal">532</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">532</span>
 <span class="normal">533</span>
 <span class="normal">534</span>
 <span class="normal">535</span>
@@ -19081,7 +19200,10 @@ variables are obtained.</p>
 <span class="normal">558</span>
 <span class="normal">559</span>
 <span class="normal">560</span>
-<span class="normal">561</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reference_configuration</span><span class="p">(</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reference_configuration</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">use_f_ext_follower</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">use_f_ext_dead</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -19192,13 +19314,13 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">588</span>
-<span class="normal">589</span>
-<span class="normal">590</span>
-<span class="normal">591</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">591</span>
 <span class="normal">592</span>
 <span class="normal">593</span>
-<span class="normal">594</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_varphi_from_hg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">594</span>
+<span class="normal">595</span>
+<span class="normal">596</span>
+<span class="normal">597</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_varphi_from_hg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Calculate the twist vector from the reference configuration to hg</span>
 <span class="sd">    :param hg: Deformed coordinates, ``(n_nodes, 4, 4)``</span>
@@ -19283,10 +19405,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">600</span>
-<span class="normal">601</span>
-<span class="normal">602</span>
-<span class="normal">603</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">603</span>
 <span class="normal">604</span>
 <span class="normal">605</span>
 <span class="normal">606</span>
@@ -19300,7 +19419,10 @@ variables are obtained.</p>
 <span class="normal">614</span>
 <span class="normal">615</span>
 <span class="normal">616</span>
-<span class="normal">617</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_matrix_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_matrix_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global matrix from element entries</span>
 <span class="sd">    :param entries: Array of element matrix entries, ``(n_elem, 12, 12)``</span>
@@ -19396,16 +19518,16 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">619</span>
-<span class="normal">620</span>
-<span class="normal">621</span>
-<span class="normal">622</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">622</span>
 <span class="normal">623</span>
 <span class="normal">624</span>
 <span class="normal">625</span>
 <span class="normal">626</span>
 <span class="normal">627</span>
-<span class="normal">628</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_vector_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">628</span>
+<span class="normal">629</span>
+<span class="normal">630</span>
+<span class="normal">631</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">assemble_vector_from_entries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global vector from element entries</span>
 <span class="sd">    :param entries: Array of element vector entries, ``(n_elem, 12)``</span>
@@ -19511,10 +19633,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">630</span>
-<span class="normal">631</span>
-<span class="normal">632</span>
-<span class="normal">633</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">633</span>
 <span class="normal">634</span>
 <span class="normal">635</span>
 <span class="normal">636</span>
@@ -19529,7 +19648,10 @@ variables are obtained.</p>
 <span class="normal">645</span>
 <span class="normal">646</span>
 <span class="normal">647</span>
-<span class="normal">648</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_arr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">648</span>
+<span class="normal">649</span>
+<span class="normal">650</span>
+<span class="normal">651</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_arr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_arr</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add lumped contributions to an array</span>
 <span class="sd">    :param arr: Full array, ``(6*n_node, 6*n_node)``</span>
@@ -19644,10 +19766,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">650</span>
-<span class="normal">651</span>
-<span class="normal">652</span>
-<span class="normal">653</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">653</span>
 <span class="normal">654</span>
 <span class="normal">655</span>
 <span class="normal">656</span>
@@ -19658,7 +19777,10 @@ variables are obtained.</p>
 <span class="normal">661</span>
 <span class="normal">662</span>
 <span class="normal">663</span>
-<span class="normal">664</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_vec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_lumped_contributions_to_vec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">lumped_vec</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add lumped contributions to an array</span>
 <span class="sd">    :param vec: Full vector, ``(6*n_node, )``</span>
@@ -19783,10 +19905,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">711</span>
-<span class="normal">712</span>
-<span class="normal">713</span>
-<span class="normal">714</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">714</span>
 <span class="normal">715</span>
 <span class="normal">716</span>
 <span class="normal">717</span>
@@ -19811,7 +19930,10 @@ variables are obtained.</p>
 <span class="normal">736</span>
 <span class="normal">737</span>
 <span class="normal">738</span>
-<span class="normal">739</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t</span><span class="p">(</span>
+<span class="normal">739</span>
+<span class="normal">740</span>
+<span class="normal">741</span>
+<span class="normal">742</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -20005,10 +20127,7 @@ variables are obtained.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">828</span>
-<span class="normal">829</span>
-<span class="normal">830</span>
-<span class="normal">831</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">831</span>
 <span class="normal">832</span>
 <span class="normal">833</span>
 <span class="normal">834</span>
@@ -20040,7 +20159,10 @@ variables are obtained.</p>
 <span class="normal">860</span>
 <span class="normal">861</span>
 <span class="normal">862</span>
-<span class="normal">863</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t_full</span><span class="p">(</span>
+<span class="normal">863</span>
+<span class="normal">864</span>
+<span class="normal">865</span>
+<span class="normal">866</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_k_t_full</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -20174,10 +20296,7 @@ the lumped mass contribution.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">865</span>
-<span class="normal">866</span>
-<span class="normal">867</span>
-<span class="normal">868</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">868</span>
 <span class="normal">869</span>
 <span class="normal">870</span>
 <span class="normal">871</span>
@@ -20186,7 +20305,10 @@ the lumped mass contribution.</p>
 <span class="normal">874</span>
 <span class="normal">875</span>
 <span class="normal">876</span>
-<span class="normal">877</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_m_t</span><span class="p">(</span>
+<span class="normal">877</span>
+<span class="normal">878</span>
+<span class="normal">879</span>
+<span class="normal">880</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_m_t</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">int_order</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">BASE_LOBATTO_ORDER</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
@@ -20298,10 +20420,7 @@ global perturbations in acceleration and displacement, respectively.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">879</span>
-<span class="normal">880</span>
-<span class="normal">881</span>
-<span class="normal">882</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">882</span>
 <span class="normal">883</span>
 <span class="normal">884</span>
 <span class="normal">885</span>
@@ -20376,7 +20495,10 @@ global perturbations in acceleration and displacement, respectively.</p>
 <span class="normal">954</span>
 <span class="normal">955</span>
 <span class="normal">956</span>
-<span class="normal">957</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_nodal_m_k</span><span class="p">(</span>
+<span class="normal">957</span>
+<span class="normal">958</span>
+<span class="normal">959</span>
+<span class="normal">960</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_nodal_m_k</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">int_order</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">BASE_LOBATTO_ORDER</span><span class="p">,</span>
@@ -20747,10 +20869,7 @@ normalisation <code>(n_modes, n_free_dof)</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 979</span>
-<span class="normal"> 980</span>
-<span class="normal"> 981</span>
-<span class="normal"> 982</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 982</span>
 <span class="normal"> 983</span>
 <span class="normal"> 984</span>
 <span class="normal"> 985</span>
@@ -20816,7 +20935,10 @@ normalisation <code>(n_modes, n_free_dof)</code>.</p>
 <span class="normal">1045</span>
 <span class="normal">1046</span>
 <span class="normal">1047</span>
-<span class="normal">1048</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">modal</span><span class="p">(</span>
+<span class="normal">1048</span>
+<span class="normal">1049</span>
+<span class="normal">1050</span>
+<span class="normal">1051</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">modal</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">remove_complex_conjugate</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -21035,10 +21157,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1180</span>
-<span class="normal">1181</span>
-<span class="normal">1182</span>
-<span class="normal">1183</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1183</span>
 <span class="normal">1184</span>
 <span class="normal">1185</span>
 <span class="normal">1186</span>
@@ -21060,7 +21179,10 @@ linear dynamic analysis.</p>
 <span class="normal">1202</span>
 <span class="normal">1203</span>
 <span class="normal">1204</span>
-<span class="normal">1205</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">linearise</span><span class="p">(</span>
+<span class="normal">1205</span>
+<span class="normal">1206</span>
+<span class="normal">1207</span>
+<span class="normal">1208</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">linearise</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">reference</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
@@ -21164,10 +21286,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1302</span>
-<span class="normal">1303</span>
-<span class="normal">1304</span>
-<span class="normal">1305</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1305</span>
 <span class="normal">1306</span>
 <span class="normal">1307</span>
 <span class="normal">1308</span>
@@ -21186,7 +21305,10 @@ linear dynamic analysis.</p>
 <span class="normal">1321</span>
 <span class="normal">1322</span>
 <span class="normal">1323</span>
-<span class="normal">1324</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_centre_of_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1324</span>
+<span class="normal">1325</span>
+<span class="normal">1326</span>
+<span class="normal">1327</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_centre_of_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the centre of mass for an arbitrary system.</span>
 <span class="sd">    :param hg: Node SE(3) coordinates, ``(n_node, 4, 4)`` or ``(n_tstep, n_node, 4, 4)``.</span>
@@ -21204,7 +21326,7 @@ linear dynamic analysis.</p>
         <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"ij,jk-&gt;k"</span><span class="p">,</span> <span class="n">m_lin</span><span class="p">,</span> <span class="n">hg_</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span> <span class="o">/</span> <span class="n">m_lin</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>  <span class="c1"># (3, )</span>
 
     <span class="k">if</span> <span class="n">hg</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">inner_func</span><span class="p">(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># single timestep, (3, )</span>
+        <span class="k">return</span> <span class="n">inner_func</span><span class="p">(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># single timestep, (3, ).</span>
     <span class="k">elif</span> <span class="n">hg</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">vmap</span><span class="p">(</span><span class="n">inner_func</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)(</span><span class="n">hg</span><span class="p">)</span>  <span class="c1"># multiple timesteps, (n_tstep, 3)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -21287,13 +21409,13 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1326</span>
-<span class="normal">1327</span>
-<span class="normal">1328</span>
-<span class="normal">1329</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1329</span>
 <span class="normal">1330</span>
 <span class="normal">1331</span>
-<span class="normal">1332</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_elem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1332</span>
+<span class="normal">1333</span>
+<span class="normal">1334</span>
+<span class="normal">1335</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_elem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the forces within the elements as :math:`\mathbf{f}_{elem} = \mathcal{K}_{cs} \epsilon`.</span>
 <span class="sd">    :param eps: Element strain vectors, ``(n_elem, 6)``.</span>
@@ -21394,15 +21516,15 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1334</span>
-<span class="normal">1335</span>
-<span class="normal">1336</span>
-<span class="normal">1337</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1337</span>
 <span class="normal">1338</span>
 <span class="normal">1339</span>
 <span class="normal">1340</span>
 <span class="normal">1341</span>
-<span class="normal">1342</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1342</span>
+<span class="normal">1343</span>
+<span class="normal">1344</span>
+<span class="normal">1345</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Assemble global internal force vector as a function of the element relative configuration vectors.</span>
 <span class="sd">    :param p_d: P(d) operator, ``(n_elem, 6, 12)``.</span>
@@ -21509,16 +21631,16 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1383</span>
-<span class="normal">1384</span>
-<span class="normal">1385</span>
-<span class="normal">1386</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1386</span>
 <span class="normal">1387</span>
 <span class="normal">1388</span>
 <span class="normal">1389</span>
 <span class="normal">1390</span>
 <span class="normal">1391</span>
-<span class="normal">1392</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1392</span>
+<span class="normal">1393</span>
+<span class="normal">1394</span>
+<span class="normal">1395</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_f_dead_ext</span><span class="p">(</span><span class="n">f_ext</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">rmat</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the global external dead force vector.</span>
@@ -21624,10 +21746,7 @@ linear dynamic analysis.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1446</span>
-<span class="normal">1447</span>
-<span class="normal">1448</span>
-<span class="normal">1449</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1449</span>
 <span class="normal">1450</span>
 <span class="normal">1451</span>
 <span class="normal">1452</span>
@@ -21636,7 +21755,10 @@ linear dynamic analysis.</p>
 <span class="normal">1455</span>
 <span class="normal">1456</span>
 <span class="normal">1457</span>
-<span class="normal">1458</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_thrust_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">thrust</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1458</span>
+<span class="normal">1459</span>
+<span class="normal">1460</span>
+<span class="normal">1461</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">add_thrust_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">thrust</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Add thrust acting at nodes onto full system forcing.</span>
 <span class="sd">    :param force: Input forcing, ``(n_node, 6)``.</span>
@@ -21729,16 +21851,16 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1460</span>
-<span class="normal">1461</span>
-<span class="normal">1462</span>
-<span class="normal">1463</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1463</span>
 <span class="normal">1464</span>
 <span class="normal">1465</span>
 <span class="normal">1466</span>
 <span class="normal">1467</span>
 <span class="normal">1468</span>
-<span class="normal">1469</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_eps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1469</span>
+<span class="normal">1470</span>
+<span class="normal">1471</span>
+<span class="normal">1472</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_eps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the element strain vectors as a function of the element relative configuration vectors. Formulation from</span>
 <span class="sd">    Geometrically exact beam finite element formulated on the special Euclidean group SE(3), by Sonneville et al.,</span>
@@ -21826,13 +21948,13 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1471</span>
-<span class="normal">1472</span>
-<span class="normal">1473</span>
-<span class="normal">1474</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1474</span>
 <span class="normal">1475</span>
 <span class="normal">1476</span>
-<span class="normal">1477</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_p_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1477</span>
+<span class="normal">1478</span>
+<span class="normal">1479</span>
+<span class="normal">1480</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_p_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the P(d) operator as a function of the element relative configuration vectors.</span>
 <span class="sd">    :param d: Relative configuration vectors, ``(n_elem, 6)``</span>
@@ -21917,10 +22039,7 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1479</span>
-<span class="normal">1480</span>
-<span class="normal">1481</span>
-<span class="normal">1482</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1482</span>
 <span class="normal">1483</span>
 <span class="normal">1484</span>
 <span class="normal">1485</span>
@@ -21935,7 +22054,10 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 <span class="normal">1494</span>
 <span class="normal">1495</span>
 <span class="normal">1496</span>
-<span class="normal">1497</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1497</span>
+<span class="normal">1498</span>
+<span class="normal">1499</span>
+<span class="normal">1500</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Compute the element relative configuration vectors from the nodal homogeneous transformation matrices</span>
 <span class="sd">    :param hg: Nodal homogeneous transformation matrices, ``(n_nodes, 4, 4)``</span>
@@ -22052,17 +22174,17 @@ Geometrically exact beam finite element formulated on the special Euclidean grou
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1517</span>
-<span class="normal">1518</span>
-<span class="normal">1519</span>
-<span class="normal">1520</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1520</span>
 <span class="normal">1521</span>
 <span class="normal">1522</span>
 <span class="normal">1523</span>
 <span class="normal">1524</span>
 <span class="normal">1525</span>
 <span class="normal">1526</span>
-<span class="normal">1527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1527</span>
+<span class="normal">1528</span>
+<span class="normal">1529</span>
+<span class="normal">1530</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_hg_dot</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Obtain the time derivative of the nodal coordinates.</span>
@@ -22345,10 +22467,7 @@ gyroscopic forces, inertial forces and residual forces.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1577</span>
-<span class="normal">1578</span>
-<span class="normal">1579</span>
-<span class="normal">1580</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1580</span>
 <span class="normal">1581</span>
 <span class="normal">1582</span>
 <span class="normal">1583</span>
@@ -22476,7 +22595,10 @@ gyroscopic forces, inertial forces and residual forces.</p>
 <span class="normal">1705</span>
 <span class="normal">1706</span>
 <span class="normal">1707</span>
-<span class="normal">1708</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_forces</span><span class="p">(</span>
+<span class="normal">1708</span>
+<span class="normal">1709</span>
+<span class="normal">1710</span>
+<span class="normal">1711</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_forces</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
     <span class="n">dynamic</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -22921,10 +23043,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1746</span>
-<span class="normal">1747</span>
-<span class="normal">1748</span>
-<span class="normal">1749</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1749</span>
 <span class="normal">1750</span>
 <span class="normal">1751</span>
 <span class="normal">1752</span>
@@ -23014,7 +23133,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">1836</span>
 <span class="normal">1837</span>
 <span class="normal">1838</span>
-<span class="normal">1839</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_res</span><span class="p">(</span>
+<span class="normal">1839</span>
+<span class="normal">1840</span>
+<span class="normal">1841</span>
+<span class="normal">1842</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_f_res</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">solve_dofs</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">p_d</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span>
@@ -23206,10 +23328,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1841</span>
-<span class="normal">1842</span>
-<span class="normal">1843</span>
-<span class="normal">1844</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1844</span>
 <span class="normal">1845</span>
 <span class="normal">1846</span>
 <span class="normal">1847</span>
@@ -23218,7 +23337,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">1850</span>
 <span class="normal">1851</span>
 <span class="normal">1852</span>
-<span class="normal">1853</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
+<span class="normal">1853</span>
+<span class="normal">1854</span>
+<span class="normal">1855</span>
+<span class="normal">1856</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@staticmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">update_hg</span><span class="p">(</span><span class="n">hg</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">phi</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Update the nodal homogeneous transformation matrices with the configuration increments.</span>
@@ -23383,10 +23505,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1875</span>
-<span class="normal">1876</span>
-<span class="normal">1877</span>
-<span class="normal">1878</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1878</span>
 <span class="normal">1879</span>
 <span class="normal">1880</span>
 <span class="normal">1881</span>
@@ -23596,7 +23715,10 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
 <span class="normal">2085</span>
 <span class="normal">2086</span>
 <span class="normal">2087</span>
-<span class="normal">2088</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">static_solve</span><span class="p">(</span>
+<span class="normal">2088</span>
+<span class="normal">2089</span>
+<span class="normal">2090</span>
+<span class="normal">2091</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">static_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">prescribed_dofs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -23849,7 +23971,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
@@ -23865,7 +23987,7 @@ This is the force imbalance that the nonlinear solver will seek to drive to zero
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -23881,10 +24003,7 @@ of this</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2126</span>
-<span class="normal">2127</span>
-<span class="normal">2128</span>
-<span class="normal">2129</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2129</span>
 <span class="normal">2130</span>
 <span class="normal">2131</span>
 <span class="normal">2132</span>
@@ -24613,7 +24732,10 @@ of this</p>
 <span class="normal">2855</span>
 <span class="normal">2856</span>
 <span class="normal">2857</span>
-<span class="normal">2858</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">base_dynamic_solve</span><span class="p">(</span>
+<span class="normal">2858</span>
+<span class="normal">2859</span>
+<span class="normal">2860</span>
+<span class="normal">2861</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">base_dynamic_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">struct_case</span><span class="p">:</span> <span class="n">StructureCase</span><span class="p">,</span>
     <span class="n">struct_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span><span class="p">,</span>
@@ -24623,7 +24745,7 @@ of this</p>
     <span class="n">f_ext_dead</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">f_ext_follower</span><span class="p">:</span> <span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">thrust_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">],</span>
-    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">UVLM</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">aero_obj</span><span class="p">:</span> <span class="n">DynamicAeroSolver</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">aero_case</span><span class="p">:</span> <span class="n">AeroCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fsi_convergence_status</span><span class="p">:</span> <span class="n">ConvergenceStatus</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">cs_ang_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Array</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -25568,10 +25690,7 @@ velocities.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/structure/beam.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2860</span>
-<span class="normal">2861</span>
-<span class="normal">2862</span>
-<span class="normal">2863</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2863</span>
 <span class="normal">2864</span>
 <span class="normal">2865</span>
 <span class="normal">2866</span>
@@ -25757,7 +25876,10 @@ velocities.</p>
 <span class="normal">3046</span>
 <span class="normal">3047</span>
 <span class="normal">3048</span>
-<span class="normal">3049</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dynamic_solve</span><span class="p">(</span>
+<span class="normal">3049</span>
+<span class="normal">3050</span>
+<span class="normal">3051</span>
+<span class="normal">3052</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dynamic_solve</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">init_state</span><span class="p">:</span> <span class="n">StructureCase</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">prescribed_dofs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -26928,6 +27050,485 @@ velocities.</p>
         <span class="n">delta_q_dot</span><span class="o">=</span><span class="n">delta_q_dot_t</span><span class="p">,</span>
         <span class="n">hg</span><span class="o">=</span><span class="n">hg_t</span><span class="p">,</span>
         <span class="n">t</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_tstep</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="flapjax.structure.linear.linear_beam.LinearBeam.unpack_state_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">unpack_state_vector</span>
+
+
+<a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_state_vector" class="headerlink" title="Permanent link">&para;</a></h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">unpack_state_vector</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">S</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Unpack a state vector into its components.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>x</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>State vector, <code>(n_states, )</code></p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="flapjax.utils.linear.LinearModel[S]">S</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>StateUnflattened object.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">unpack_state_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">S</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Unpack a state vector into its components.</span>
+<span class="sd">    :param x: State vector, ``(n_states, )``</span>
+<span class="sd">    :return: StateUnflattened object.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_unpack_vector</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_slices</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="flapjax.structure.linear.linear_beam.LinearBeam.unpack_output_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">unpack_output_vector</span>
+
+
+<a href="#flapjax.structure.linear.linear_beam.LinearBeam.unpack_output_vector" class="headerlink" title="Permanent link">&para;</a></h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">unpack_output_vector</span><span class="p">(</span><span class="n">y</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">O</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Unpack an output vector into its components.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output vector, <code>(n_outputs, )</code></p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="flapjax.utils.linear.LinearModel[O]">O</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OutputUnflattened object.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">unpack_output_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">O</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Unpack an output vector into its components.</span>
+<span class="sd">    :param y: Output vector, ``(n_outputs, )``</span>
+<span class="sd">    :return: OutputUnflattened object.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_unpack_vector</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="flapjax.structure.linear.linear_beam.LinearBeam.pack_input_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_input_vector</span>
+
+
+<a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_input_vector" class="headerlink" title="Permanent link">&para;</a></h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_input_vector</span><span class="p">(</span><span class="n">u_input</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack an input unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>u_input</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.InputUnflattened">InputUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>InputUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Input vector, <code>(n_inputs, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_input_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u_input</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack an input unflattened object into a vector.</span>
+<span class="sd">    :param u_input: InputUnflattened object.</span>
+<span class="sd">    :return: Input vector, ``(n_inputs, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">input_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_inputs</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">u_input</span><span class="p">),</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="flapjax.structure.linear.linear_beam.LinearBeam.pack_state_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_state_vector</span>
+
+
+<a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_state_vector" class="headerlink" title="Permanent link">&para;</a></h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_state_vector</span><span class="p">(</span><span class="n">x_state</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack a state unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>x_state</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.StateUnflattened">StateUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>StateUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>State vector, <code>(n_states, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_state_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x_state</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack a state unflattened object into a vector.</span>
+<span class="sd">    :param x_state: StateUnflattened object.</span>
+<span class="sd">    :return: State vector, ``(n_states, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_states</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">x_state</span><span class="p">),</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="flapjax.structure.linear.linear_beam.LinearBeam.pack_output_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_output_vector</span>
+
+
+<a href="#flapjax.structure.linear.linear_beam.LinearBeam.pack_output_vector" class="headerlink" title="Permanent link">&para;</a></h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_output_vector</span><span class="p">(</span><span class="n">y_output</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack an output unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_output</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.OutputUnflattened">OutputUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OutputUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output vector, <code>(n_outputs, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_output_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_output</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack an output unflattened object into a vector.</span>
+<span class="sd">    :param y_output: OutputUnflattened object.</span>
+<span class="sd">    :return: Output vector, ``(n_outputs, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_outputs</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">y_output</span><span class="p">),</span>
     <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>

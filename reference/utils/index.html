@@ -1403,6 +1403,61 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.unpack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.unpack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_input_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_input_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flapjax.utils.linear.LinearModel.get_total_input" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2078,6 +2133,61 @@
   
     <nav class="md-nav" aria-label="LinearModel">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.unpack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.unpack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        unpack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_input_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_input_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_state_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_state_vector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.linear.LinearModel.pack_output_vector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pack_output_vector
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#flapjax.utils.linear.LinearModel.get_total_input" class="md-nav__link">
@@ -3134,7 +3244,7 @@ current solution vector.</p>
     <span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_output_slices</span><span class="p">(</span>
         <span class="n">reference</span><span class="o">=</span><span class="n">reference</span>
     <span class="p">)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">Array</span> <span class="o">=</span> <span class="n">dt</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">:</span> <span class="n">Array</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span>
 
     <span class="bp">self</span><span class="o">.</span><span class="n">_reference</span><span class="p">:</span> <span class="n">R</span> <span class="o">=</span> <span class="n">reference</span>
 
@@ -3164,6 +3274,485 @@ current solution vector.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="flapjax.utils.linear.LinearModel.unpack_state_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">unpack_state_vector</span>
+
+
+<a href="#flapjax.utils.linear.LinearModel.unpack_state_vector" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">unpack_state_vector</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">S</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Unpack a state vector into its components.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>x</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>State vector, <code>(n_states, )</code></p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="flapjax.utils.linear.LinearModel[S]">S</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>StateUnflattened object.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">unpack_state_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">S</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Unpack a state vector into its components.</span>
+<span class="sd">    :param x: State vector, ``(n_states, )``</span>
+<span class="sd">    :return: StateUnflattened object.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_unpack_vector</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_slices</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="flapjax.utils.linear.LinearModel.unpack_output_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">unpack_output_vector</span>
+
+
+<a href="#flapjax.utils.linear.LinearModel.unpack_output_vector" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">unpack_output_vector</span><span class="p">(</span><span class="n">y</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">O</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Unpack an output vector into its components.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output vector, <code>(n_outputs, )</code></p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="flapjax.utils.linear.LinearModel[O]">O</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OutputUnflattened object.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">unpack_output_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">O</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Unpack an output vector into its components.</span>
+<span class="sd">    :param y: Output vector, ``(n_outputs, )``</span>
+<span class="sd">    :return: OutputUnflattened object.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_object</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_unpack_vector</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="flapjax.utils.linear.LinearModel.pack_input_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_input_vector</span>
+
+
+<a href="#flapjax.utils.linear.LinearModel.pack_input_vector" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_input_vector</span><span class="p">(</span><span class="n">u_input</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack an input unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>u_input</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.InputUnflattened">InputUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>InputUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Input vector, <code>(n_inputs, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_input_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u_input</span><span class="p">:</span> <span class="n">InputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack an input unflattened object into a vector.</span>
+<span class="sd">    :param u_input: InputUnflattened object.</span>
+<span class="sd">    :return: Input vector, ``(n_inputs, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">input_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_inputs</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">u_input</span><span class="p">),</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="flapjax.utils.linear.LinearModel.pack_state_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_state_vector</span>
+
+
+<a href="#flapjax.utils.linear.LinearModel.pack_state_vector" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_state_vector</span><span class="p">(</span><span class="n">x_state</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack a state unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>x_state</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.StateUnflattened">StateUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>StateUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>State vector, <code>(n_states, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_state_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x_state</span><span class="p">:</span> <span class="n">StateUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack a state unflattened object into a vector.</span>
+<span class="sd">    :param x_state: StateUnflattened object.</span>
+<span class="sd">    :return: State vector, ``(n_states, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_states</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">x_state</span><span class="p">),</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="flapjax.utils.linear.LinearModel.pack_output_vector" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">pack_output_vector</span>
+
+
+<a href="#flapjax.utils.linear.LinearModel.pack_output_vector" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">pack_output_vector</span><span class="p">(</span><span class="n">y_output</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Pack an output unflattened object into a vector.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_output</code>
+            </td>
+            <td>
+                  <code><span title="flapjax.utils.linear.OutputUnflattened">OutputUnflattened</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OutputUnflattened object.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output vector, <code>(n_outputs, )</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/linear.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pack_output_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_output</span><span class="p">:</span> <span class="n">OutputUnflattened</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
+<span class="sd">    Pack an output unflattened object into a vector.</span>
+<span class="sd">    :param y_output: OutputUnflattened object.</span>
+<span class="sd">    :return: Output vector, ``(n_outputs, )``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_vector</span><span class="p">(</span>
+        <span class="n">slices</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_slices</span><span class="p">,</span>
+        <span class="n">vec_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_outputs</span><span class="p">,</span>
+        <span class="n">arrs</span><span class="o">=</span><span class="n">shallow_as_dict</span><span class="p">(</span><span class="n">y_output</span><span class="p">),</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 
