@@ -1,6 +1,6 @@
 [project]
 name = "flapjax-full"
-version = "1.2.0.dev0"
+version = "1.2.1"
 description = "FLAPJAX with tests and tutorial notebooks bundled. Install this OR flapjax, not both."
 authors = [{ name = "Ben Preston", email = "b.preston23@imperial.ac.uk" }]
 keywords = ["aeroelasticity", "unsteady vortex lattice method", "nonlinear beam", "adjoint methods"]
@@ -19,11 +19,11 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-    "jax>=0.4.32",
+    "jax>=0.8.1",
     "numpy>=2.0",
     "vtk>=9.4",
     "scipy>=1.13",
-    "matplotlib>=3.8",
+    "matplotlib>=3.8.4",
     "pytest>=9.0",
 ]
 

@@ -100,6 +100,7 @@ class UVLM:
         "grid_func",
         "batch_size",
         "polars",
+        "polar_circulation_scale",
     )
 
     @property
@@ -176,6 +177,7 @@ class UVLM:
         include_unsteady_force: bool = True,
         batch_size: int | None = 64,
         polars: Sequence[Sequence[PolarFunction] | None] | None = None,
+        polar_circulation_scale: float = 0.0,
     ) -> None:
         r"""
         Initialise UVLM class with all non-design parameters.
@@ -200,6 +202,10 @@ class UVLM:
         entry is either ``None``, which applies no correction, or a sequence of ``n`` per-strip
         callables mapping ``alpha -> (cl, cd, cm)`` about the quarter-chord. If ``None``, no correction is applied on
         any surface.
+        :param polar_circulation_scale: Factor in ``[0, 1]`` controlling how much of the per-strip lift
+        correction factor ``cl_polar / cl_uvlm`` is applied to the bound circulation before it is stored and convected
+        into the wake. A valud of 0 does not correct the circulation, whereas 1 fully rescales it so the shed vortex
+        strength matches the polar-corrected lift.
         """
 
         # case for single inputs
@@ -295,6 +301,12 @@ class UVLM:
                     f"Expected {self.n_surf} polar entries, got {len(polars)}"
                 )
             self.polars = tuple(tuple(p) if p is not None else None for p in polars)
+
+        if not 0.0 <= polar_circulation_scale <= 1.0:
+            raise ValueError(
+                f"polar_circulation_scale must be in [0, 1], got {polar_circulation_scale}."
+            )
+        self.polar_circulation_scale: float = float(polar_circulation_scale)
 
         # mirror definitions
         if (mirror_point is None and mirror_normal is not None) or (
@@ -698,8 +710,8 @@ class UVLM:
 
         # blend with relaxation parameter
         return (
-            gamma_dot_relaxation * gamma_b_dot_curr
-            + (1.0 - gamma_dot_relaxation) * gamma_b_dot_nm1
+            gamma_b_dot_curr * gamma_dot_relaxation
+            + gamma_b_dot_nm1 * (1.0 - gamma_dot_relaxation)
         )
 
     @singledispatchmethod
@@ -980,34 +992,8 @@ class UVLM:
                 )
             )
 
-        if static:
-            gamma_b_dot_n: ArrayList | None = None
-            f_unsteady: ArrayList | None = None
-        else:
-            if q_nm1 is None:
-                raise ValueError("q_nm1 needs to be specified for dynamic solve")
-
-            gamma_b_dot_n = self.compute_gamma_dot(
-                gamma_b_n=gamma_b_n,
-                gamma_b_nm1=q_nm1.gamma_b,
-                gamma_b_dot_nm1=q_nm1.gamma_b_dot,
-                dt=self.dt,
-                gamma_dot_relaxation=self.gamma_dot_relaxation,
-            )
-            f_unsteady = ArrayList(
-                [
-                    split_to_vertex(
-                        self.flowfield.rho
-                        * gamma_b_dot_n[i_surf][..., None]
-                        * nc_n[i_surf],
-                        (0, 1),
-                    )
-                    for i_surf in range(self.n_surf)
-                ]
-            )
-
-        if static:
-            gamma_w_n = ArrayList(
+        def _static_wake_from_gamma_b(gamma_b: ArrayList) -> ArrayList:
+            return ArrayList(
                 [
                     jnp.broadcast_to(
                         gb[[-1], ...],
@@ -1018,9 +1004,12 @@ class UVLM:
                             gd.n,
                         ),
                     )
-                    for gb, gd in zip(gamma_b_n, self.grid_disc)
+                    for gb, gd in zip(gamma_b, self.grid_disc)
                 ]
             )
+
+        if static:
+            gamma_w_n = _static_wake_from_gamma_b(gamma_b_n)
 
         assert gamma_w_n is not None
         assert zeta_w_n is not None
@@ -1065,13 +1054,52 @@ class UVLM:
 
         if any(p is not None for p in self.polars):
             # update forcing with polar corrections
-            f_steady = apply_polar_correction(
+            f_steady, lift_scale = apply_polar_correction(
                 zeta_b=zeta_b_n,
                 f_steady=f_steady,
                 v_func=v_freestream_func,
                 rho=self.flowfield.rho,
                 polars=self.polars,
                 alpha=alpha_n,
+            )
+
+            if self.polar_circulation_scale != 0.0:
+                # blend bound (and, in the static case, wake) circulation towards the polar-corrected lift
+                # scale=0 leaves gamma unchanged; scale=1 fully rescales it to lift_scale
+                s = self.polar_circulation_scale
+                gamma_b_n = ArrayList(
+                    [
+                        gb * (1.0 + s * (ls[None, :] - 1.0))
+                        for gb, ls in zip(gamma_b_n, lift_scale)
+                    ]
+                )
+                if static:
+                    gamma_w_n = _static_wake_from_gamma_b(gamma_b_n)
+
+        if static:
+            gamma_b_dot_n: ArrayList | None = None
+            f_unsteady: ArrayList | None = None
+        else:
+            if q_nm1 is None:
+                raise ValueError("q_nm1 needs to be specified for dynamic solve")
+
+            gamma_b_dot_n = self.compute_gamma_dot(
+                gamma_b_n=gamma_b_n,
+                gamma_b_nm1=q_nm1.gamma_b,
+                gamma_b_dot_nm1=q_nm1.gamma_b_dot,
+                dt=self.dt,
+                gamma_dot_relaxation=self.gamma_dot_relaxation,
+            )
+            f_unsteady = ArrayList(
+                [
+                    split_to_vertex(
+                        self.flowfield.rho
+                        * gamma_b_dot_n[i_surf][..., None]
+                        * nc_n[i_surf],
+                        (0, 1),
+                    )
+                    for i_surf in range(self.n_surf)
+                ]
             )
 
         return (

@@ -15,3 +15,4 @@ from flapjax.coupled.linear.data_structures import (
     AeroelasticStateUnflattened,
 )
 from flapjax.coupled.linear.linear_coupled import LinearCoupled
+from flapjax.coupled.linear_aero_coupled import NonlinearBeamLinearAero

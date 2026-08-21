@@ -14,3 +14,9 @@ jax.config.update("jax_enable_x64", True)
 @pytest.fixture(autouse=True, scope="session")
 def silence_output():
     set_verbosity("warning")
+
+
+@pytest.fixture(autouse=True, scope="module")
+def clear_jax_cache():
+    yield
+    jax.clear_caches()

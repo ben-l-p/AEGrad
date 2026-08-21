@@ -14,6 +14,7 @@ from flapjax.aero.linear.data_structures import (
     AeroOutputUnflattened,
     AeroStateUnflattened,
 )
+from flapjax.aero.linear.linear_uvlm import LinearInputProjection
 from flapjax.aero.utils import project_forcing_to_beam
 from flapjax.algebra.array_utils import ArrayList, construct_named_block_jacobian
 from flapjax.algebra.base import ADMode, jacrev_custom
@@ -364,15 +365,15 @@ class LinearCoupled(
             zeta_b=zeta_b if self.aero.prescribed_wake else None,
         )
 
-        u_n_aero_vec = self.aero._pack_input_vector(u_n_aero)
-        x_n_aero_vec = self.aero._pack_state_vector(x_n_aero)
+        u_n_aero_vec = self.aero.pack_input_vector(u_n_aero)
+        x_n_aero_vec = self.aero.pack_state_vector(x_n_aero)
 
         x_np1_aero_vec, y_np1_aero_vec = self.aero.step_vec(
             x_vec=x_n_aero_vec, u_vec=u_n_aero_vec
         )
 
-        x_np1_aero = self.aero._unpack_state_vector(x=x_np1_aero_vec)
-        y_np1_aero = self.aero._unpack_output_vector(y=y_np1_aero_vec)
+        x_np1_aero = self.aero.unpack_state_vector(x=x_np1_aero_vec)
+        y_np1_aero = self.aero.unpack_output_vector(y=y_np1_aero_vec)
         assert isinstance(x_np1_aero, AeroStateUnflattened) and isinstance(
             y_np1_aero, AeroOutputUnflattened
         ), (
@@ -699,6 +700,56 @@ class LinearCoupled(
 
         return linear_args, jac_options
 
+    def _build_beam_projection(self) -> LinearInputProjection:
+        r"""
+        Build the beam kinematics projection ``(q_n, q_dot_n) -> (zeta_b_vec, zeta_b_dot_vec)``.
+        """
+        ref = self.reference
+
+        def to_zeta(q_n: Array, q_dot_n: Array) -> tuple[Array, Array]:
+            q_nodal = self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n
+            q_dot_nodal = (
+                self.beam.modal_to_nodal(q_dot_n) if self.beam.modal_states else q_dot_n
+            )
+            q_full = (
+                jnp.zeros(self.n_nodes * 6)
+                .at[self.free_dofs]
+                .set(q_nodal)
+                .reshape(self.n_nodes, 6)
+            )
+            q_dot_full = (
+                jnp.zeros(self.n_nodes * 6)
+                .at[self.free_dofs]
+                .set(q_dot_nodal)
+                .reshape(self.n_nodes, 6)
+            )
+            hg = jnp.einsum("ijk,ikl->ijl", ref.structure.hg, vmap(exp_se3)(q_full))
+            hg_dot = jnp.einsum(
+                "ijk,ikl->ijl",
+                ref.structure.hg,
+                vmap(ha_to_ha_tilde)(q_dot_full),
+            )
+            zeta_b = self.aero.case.hg_to_zeta_b(
+                hg_n=hg, cs_ang_n=self.aero.case.cs_ang0
+            )
+            zeta_b_dot = self.aero.case.hg_dot_to_zeta_b_dot(
+                hg_n=hg,
+                hg_dot_n=hg_dot,
+                cs_ang_n=self.aero.case.cs_ang0,
+                cs_vel_n=self.aero.case.cs_vel0,
+            )
+            return zeta_b.ravel(), zeta_b_dot.ravel()
+
+        return LinearInputProjection(
+            arg_names=("q_n", "q_dot_n"),
+            arg_sizes=(self.n_beam_state_dof, self.n_beam_state_dof),
+            arg_refs=(
+                jnp.zeros(self.n_beam_state_dof),
+                jnp.zeros(self.n_beam_state_dof),
+            ),
+            to_zeta=to_zeta,
+        )
+
     def create_jacobians(
         self,
         mode: ADMode | dict[str, ADMode] = "reverse",
@@ -710,6 +761,10 @@ class LinearCoupled(
         dict[str, dict[str, float]] | None,
         dict[str, dict[str, float]] | None,
     ]:
+        """
+        Assemble the per-residual Jacobians for the coupled linearisation. When
+        ``n_profile_loops`` is set, all Jacobian constructions are looped locally so that they can be timed.
+        """
         res_args, jac_options_exp = self.compute_jacobians()
         jac_options_total: dict[str, dict[str, Callable[..., Any] | None]] = (
             jac_options if jac_options is not None else {}
@@ -719,7 +774,13 @@ class LinearCoupled(
         compile_time: dict[str, dict[str, float]] = {}
         run_time: dict[str, dict[str, float]] = {}
 
+        aero_residual_names = {"gamma_b", "gamma_w", "gamma_b_nm1", "zeta_w"}
+        delegate_aero = n_profile_loops is None
+
         for res_name, (res_func, args, diff_arg_names) in res_args.items():
+            if delegate_aero and res_name in aero_residual_names:
+                continue
+
             res_jac_options: dict[str, Callable[..., Any] | None] = {
                 arg: None for arg in diff_arg_names
             }
@@ -752,6 +813,25 @@ class LinearCoupled(
                 assert res_compile_time is not None and res_run_time is not None
                 compile_time[res_name] = res_compile_time
                 run_time[res_name] = res_run_time
+
+        if delegate_aero:
+            # delegate aero linearisation to the aero system, with the beam kinematics wrapped as an input projection
+            beam_proj = self._build_beam_projection()
+            aero_mode: ADMode | dict[str, ADMode]
+            if isinstance(mode, dict):
+                aero_mode = {k: mode[k] for k in aero_residual_names if k in mode}
+            else:
+                aero_mode = mode
+            aero_jacs = self.aero.create_jacobians(
+                mode=aero_mode,
+                batch_size=batch_size,
+                input_projection=beam_proj,
+            )
+            # discard aero-only inputs/outputs
+            aero_jacs.pop("zeta_b", None)
+            aero_jacs.pop("f_steady", None)
+            aero_jacs.pop("f_unsteady", None)
+            jacobians.update(aero_jacs)
 
         return (
             jacobians,

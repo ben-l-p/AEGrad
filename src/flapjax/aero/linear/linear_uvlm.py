@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import jax
 import jax.numpy as jnp
 from jax import Array, vmap
 
@@ -25,7 +25,12 @@ from flapjax.aero.utils import (
     calculate_steady_forcing,
     compute_nc,
 )
-from flapjax.algebra.array_utils import ArrayList, split_to_vertex
+from flapjax.algebra.array_utils import (
+    ArrayList,
+    construct_named_block_jacobian,
+    split_to_vertex,
+)
+from flapjax.algebra.base import ADMode, jacrev_custom
 from flapjax.utils.linear import (
     LinearComponent,
     LinearModel,
@@ -38,6 +43,37 @@ if TYPE_CHECKING:
     from flapjax.aero.uvlm import UVLM
 
 type LinearWakeType = Literal["frozen", "prescribed", "free"]
+
+
+@dataclass
+class LinearInputProjection:
+    r"""
+    Projection of grid coordinates and velocities from a lower-dimensional input space (e.g. beam DOFs) to
+    ``(zeta_b_np1_vec, zeta_b_dot_np1_vec)``.
+    :param arg_names: Names of the projected input dofs (used as column labels).
+    :param arg_sizes: Sizes of each projected input dof block.
+    :param arg_refs: Reference values for the projected inputs.
+    :param to_zeta: Callable ``(**{arg_name: vec}) -> (zeta_b_vec, zeta_b_dot_vec)`` returning their total values.
+    """
+
+    arg_names: tuple[str, ...]
+    arg_sizes: tuple[int, ...]
+    arg_refs: tuple[Array, ...]
+    to_zeta: Callable[..., tuple[Array, Array]]
+
+
+@dataclass
+class LinearOutputProjection:
+    r"""
+    Projection of forces from the full aerodynamic grid to a single output space.
+    :param name: Name of the projected output block (used as row label).
+    :param size: Size of the projected output.
+    :param to_output: Callable ``(f_steady_vec, f_unsteady_vec | None) -> projected_vec``.
+    """
+
+    name: str
+    size: int
+    to_output: Callable[[Array, Array | None], Array]
 
 
 class LinearUVLM(
@@ -74,7 +110,6 @@ class LinearUVLM(
         :param wake_upwash: If true, include wake surface upwash velocities as inputs.
         :param unsteady_force: If true, include unsteady force.
         """
-
         # options
         self.prescribed_wake, self.free_wake = {
             "frozen": (False, False),
@@ -272,7 +307,7 @@ class LinearUVLM(
         """
 
         u_np1 = self._unpack_input_vector(u_vec)
-        x_n = self._unpack_state_vector(x_vec)
+        x_n = self.unpack_state_vector(x_vec)
 
         assert isinstance(u_np1, AeroInputUnflattened) and isinstance(
             x_n, AeroStateUnflattened
@@ -282,7 +317,7 @@ class LinearUVLM(
 
         x_np1, y_n = self.step(u_np1=u_np1, x_n=x_n)
 
-        return self._pack_state_vector(x_np1), self._pack_output_vector(y_n)
+        return self.pack_state_vector(x_np1), self.pack_output_vector(y_n)
 
     def step(
         self,
@@ -394,33 +429,440 @@ class LinearUVLM(
 
         return x_np1, y_n
 
-    def linearise(self) -> LinearSystem:
+    def _step_from_vecs(
+        self,
+        gamma_b_n_vec: Array | None = None,
+        gamma_w_n_vec: Array | None = None,
+        gamma_b_nm1_vec: Array | None = None,
+        zeta_w_n_vec: Array | None = None,
+        zeta_b_n_vec: Array | None = None,
+        zeta_b_np1_vec: Array | None = None,
+        zeta_b_dot_np1_vec: Array | None = None,
+        nu_b_np1_vec: Array | None = None,
+        nu_w_np1_vec: Array | None = None,
+    ) -> tuple[AeroStateUnflattened, AeroOutputUnflattened]:
+        r"""
+        Unravel vectors into their shaped forms and step the system.
+        """
+        ref = self.reference
+
+        def _unravel(vec: Array | None, template: ArrayList) -> ArrayList:
+            return (
+                ArrayList.from_vector(vect=vec, shapes=template.shape)
+                if vec is not None
+                else template
+            )
+
+        gamma_b = _unravel(gamma_b_n_vec, ref.gamma_b)
+        gamma_w = _unravel(gamma_w_n_vec, ref.gamma_w)
+        gamma_b_nm1 = (
+            _unravel(gamma_b_nm1_vec, ref.gamma_b) if self.unsteady_force else None
+        )
+        zeta_b_np1 = _unravel(zeta_b_np1_vec, ref.zeta_b)
+        zeta_b_dot_np1 = _unravel(zeta_b_dot_np1_vec, ref.zeta_b_dot)
+        zeta_w_n = _unravel(zeta_w_n_vec, ref.zeta_w) if self.prescribed_wake else None
+        zeta_b_n = _unravel(zeta_b_n_vec, ref.zeta_b) if self.prescribed_wake else None
+        nu_b = (
+            _unravel(nu_b_np1_vec, ref.zeta_b)
+            if self.bound_upwash and nu_b_np1_vec is not None
+            else (ArrayList.zeros_like(ref.zeta_b) if self.bound_upwash else None)
+        )
+        nu_w = (
+            _unravel(nu_w_np1_vec, ref.zeta_w)
+            if self.wake_upwash and nu_w_np1_vec is not None
+            else (ArrayList.zeros_like(ref.zeta_w) if self.wake_upwash else None)
+        )
+
+        u_np1 = AeroInputUnflattened(
+            zeta_b=zeta_b_np1,
+            zeta_b_dot=zeta_b_dot_np1,
+            nu_b=nu_b,
+            nu_w=nu_w,
+        )
+        x_n = AeroStateUnflattened(
+            gamma_b=gamma_b,
+            gamma_w=gamma_w,
+            gamma_b_nm1=gamma_b_nm1,
+            zeta_w=zeta_w_n,
+            zeta_b=zeta_b_n,
+        )
+        return self.step(u_np1=u_np1, x_n=x_n)
+
+    def gamma_b_step(self, **kwargs: Any) -> Array:
+        x_np1, _ = self._step_from_vecs(**kwargs)
+        return x_np1.gamma_b.ravel()
+
+    def wake_prop_step(self, **kwargs: Any) -> tuple[Array | None, Array]:
+        x_np1, _ = self._step_from_vecs(**kwargs)
+        return (
+            x_np1.zeta_w.ravel() if x_np1.zeta_w is not None else None,
+            x_np1.gamma_w.ravel(),
+        )
+
+    def f_steady_step(self, **kwargs: Any) -> Array:
+        _, y_n = self._step_from_vecs(**kwargs)
+        return y_n.f_steady.ravel()
+
+    def f_unsteady_step(self, **kwargs: Any) -> Array:
+        _, y_n = self._step_from_vecs(**kwargs)
+        assert y_n.f_unsteady is not None, "unsteady_force must be enabled"
+        return y_n.f_unsteady.ravel()
+
+    def compute_jacobians(
+        self,
+        input_projection: LinearInputProjection | None = None,
+        output_projection: LinearOutputProjection | None = None,
+    ) -> dict[str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]]:
+        r"""
+        Build the Jacobians for the linear system.
+        :param input_projection: If set, projects the inputs onto a different space.
+        :param output_projection: If set, projects the forcing outputs onto a different space.
+        :return: Mapping of residual name to Jacobian(s).
+        """
+        ref = self.reference
+
+        # bound circulation
+        gamma_b_args: dict[str, Any] = {
+            "gamma_b_n_vec": ref.gamma_b.ravel(),
+            "gamma_w_n_vec": ref.gamma_w.ravel(),
+            "zeta_b_np1_vec": ref.zeta_b.ravel(),
+            "zeta_b_dot_np1_vec": ref.zeta_b_dot.ravel(),
+        }
+        gamma_b_diff = [
+            "gamma_b_n_vec",
+            "gamma_w_n_vec",
+            "zeta_b_np1_vec",
+            "zeta_b_dot_np1_vec",
+        ]
+        if self.prescribed_wake:
+            gamma_b_args["zeta_w_n_vec"] = ref.zeta_w.ravel()
+            gamma_b_args["zeta_b_n_vec"] = ref.zeta_b.ravel()
+            gamma_b_diff.extend(["zeta_w_n_vec", "zeta_b_n_vec"])
+        if self.bound_upwash:
+            gamma_b_args["nu_b_np1_vec"] = jnp.zeros(ref.zeta_b.size)
+            gamma_b_diff.append("nu_b_np1_vec")
+        if self.wake_upwash:
+            gamma_b_args["nu_w_np1_vec"] = jnp.zeros(ref.zeta_w.size)
+            gamma_b_diff.append("nu_w_np1_vec")
+
+        # wake propagation (gamma_w and optionally zeta_w)
+        wake_args: dict[str, Any] = {
+            "gamma_b_n_vec": ref.gamma_b.ravel(),
+            "gamma_w_n_vec": ref.gamma_w.ravel(),
+        }
+        gamma_w_diff = ["gamma_b_n_vec", "gamma_w_n_vec"]
+        zeta_w_diff: list[str] = []
+        if self.prescribed_wake:
+            wake_args["zeta_w_n_vec"] = ref.zeta_w.ravel()
+            wake_args["zeta_b_np1_vec"] = ref.zeta_b.ravel()
+            zeta_w_diff.extend(["zeta_w_n_vec", "zeta_b_np1_vec"])
+        if self.wake_upwash:
+            wake_args["nu_w_np1_vec"] = jnp.zeros(ref.zeta_w.size)
+            zeta_w_diff.append("nu_w_np1_vec")
+        if self.free_wake:
+            zeta_w_diff.extend(["gamma_b_n_vec", "gamma_w_n_vec"])
+
+        # steady forcing
+        f_steady_args: dict[str, Any] = {
+            "gamma_b_n_vec": ref.gamma_b.ravel(),
+            "gamma_w_n_vec": ref.gamma_w.ravel(),
+            "zeta_b_np1_vec": ref.zeta_b.ravel(),
+            "zeta_b_dot_np1_vec": ref.zeta_b_dot.ravel(),
+        }
+        f_steady_diff = [
+            "gamma_b_n_vec",
+            "gamma_w_n_vec",
+            "zeta_b_np1_vec",
+            "zeta_b_dot_np1_vec",
+        ]
+        if self.prescribed_wake:
+            f_steady_args["zeta_w_n_vec"] = ref.zeta_w.ravel()
+            f_steady_diff.append("zeta_w_n_vec")
+        if self.bound_upwash:
+            f_steady_args["nu_b_np1_vec"] = jnp.zeros(ref.zeta_b.size)
+            f_steady_diff.append("nu_b_np1_vec")
+
+        residuals: dict[
+            str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]
+        ] = {
+            "gamma_b": (self.gamma_b_step, gamma_b_args, gamma_b_diff),
+            "gamma_w": (
+                lambda **kw: self.wake_prop_step(**kw)[1],
+                wake_args,
+                gamma_w_diff,
+            ),
+        }
+        if self.prescribed_wake:
+            residuals["zeta_w"] = (
+                lambda **kw: self.wake_prop_step(**kw)[0],
+                wake_args,
+                zeta_w_diff,
+            )
+        if self.unsteady_force:
+            residuals["gamma_b_nm1"] = (
+                lambda **kw: kw["gamma_b_n_vec"],
+                {"gamma_b_n_vec": ref.gamma_b.ravel()},
+                ["gamma_b_n_vec"],
+            )
+        if self.prescribed_wake:
+            # zeta_b state at n+1 == zeta_b input at n+1
+            residuals["zeta_b"] = (
+                lambda **kw: kw["zeta_b_np1_vec"],
+                {"zeta_b_np1_vec": ref.zeta_b.ravel()},
+                ["zeta_b_np1_vec"],
+            )
+        residuals["f_steady"] = (self.f_steady_step, f_steady_args, f_steady_diff)
+        if self.unsteady_force:
+            f_unsteady_args: dict[str, Any] = {
+                "gamma_b_n_vec": ref.gamma_b.ravel(),
+                "gamma_b_nm1_vec": ref.gamma_b.ravel(),
+                "zeta_b_np1_vec": ref.zeta_b.ravel(),
+            }
+            residuals["f_unsteady"] = (
+                self.f_unsteady_step,
+                f_unsteady_args,
+                ["gamma_b_n_vec", "gamma_b_nm1_vec", "zeta_b_np1_vec"],
+            )
+
+        # apply I/O projections if provided
+        if input_projection is not None:
+            residuals = self._apply_input_projection(residuals, input_projection)
+        if output_projection is not None:
+            residuals = self._apply_output_projection(residuals, output_projection)
+
+        return residuals
+
+    @staticmethod
+    def _apply_input_projection(
+        residuals: dict[str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]],
+        proj: LinearInputProjection,
+    ) -> dict[str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]]:
+        r"""
+        Project residual functions onto a given input space.
+        """
+        zeta_args_replaced = {"zeta_b_np1_vec", "zeta_b_dot_np1_vec", "zeta_b_n_vec"}
+        proj_names = tuple(proj.arg_names)
+
+        new_residuals: dict[
+            str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]
+        ] = {}
+        for name, (func, args, diff_arg_names) in residuals.items():
+            if not any(k in args for k in zeta_args_replaced):
+                new_residuals[name] = (func, args, diff_arg_names)
+                continue
+
+            new_args = {k: v for k, v in args.items() if k not in zeta_args_replaced}
+            for aname, aref in zip(proj_names, proj.arg_refs, strict=True):
+                new_args[aname] = aref
+
+            new_diff = [k for k in diff_arg_names if k not in zeta_args_replaced]
+            for aname in proj_names:
+                if aname not in new_diff:
+                    new_diff.append(aname)
+
+            def _wrap(
+                inner: Callable[..., Any],
+                needs_zeta_b_np1: bool = "zeta_b_np1_vec" in args,
+                needs_zeta_b_dot_np1: bool = "zeta_b_dot_np1_vec" in args,
+                needs_zeta_b_n: bool = "zeta_b_n_vec" in args,
+            ) -> Callable[..., Any]:
+                def wrapped(**kwargs: Any) -> Any:
+                    proj_kwargs = {n: kwargs.pop(n) for n in proj_names if n in kwargs}
+                    zb, zbd = proj.to_zeta(**proj_kwargs)
+                    if needs_zeta_b_np1:
+                        kwargs["zeta_b_np1_vec"] = zb
+                    if needs_zeta_b_dot_np1:
+                        kwargs["zeta_b_dot_np1_vec"] = zbd
+                    if needs_zeta_b_n:
+                        # previous-step bound geometry uses the same projection output
+                        kwargs["zeta_b_n_vec"] = zb
+                    return inner(**kwargs)
+
+                return wrapped
+
+            new_residuals[name] = (_wrap(func), new_args, new_diff)
+
+        return new_residuals
+
+    @staticmethod
+    def _apply_output_projection(
+        residuals: dict[str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]],
+        proj: LinearOutputProjection,
+    ) -> dict[str, tuple[Callable[..., Any], dict[str, Any], Sequence[str]]]:
+        r"""
+        Project forcing outputs into a given output space.
+        """
+        f_steady_entry = residuals.get("f_steady")
+        f_unsteady_entry = residuals.get("f_unsteady")
+        assert f_steady_entry is not None
+
+        f_steady_func, f_steady_args, f_steady_diff = f_steady_entry
+        f_unsteady_func: Callable[..., Any] | None
+        if f_unsteady_entry is not None:
+            f_unsteady_func, f_unsteady_args, f_unsteady_diff = f_unsteady_entry
+        else:
+            f_unsteady_func = None
+            f_unsteady_args = {}
+            f_unsteady_diff = []
+
+        combined_args = {**f_steady_args, **f_unsteady_args}
+        combined_diff_ordered: list[str] = []
+        for name in list(f_steady_diff) + list(f_unsteady_diff):
+            if name not in combined_diff_ordered:
+                combined_diff_ordered.append(name)
+
+        f_steady_kwargs_names = set(f_steady_args.keys())
+        f_unsteady_kwargs_names = set(f_unsteady_args.keys())
+
+        def combined(
+            f_unsteady_func_: Callable[..., Any] | None = f_unsteady_func,
+            **kwargs: Any,
+        ) -> Array:
+            f_steady_kwargs = {
+                k: v for k, v in kwargs.items() if k in f_steady_kwargs_names
+            }
+            f_steady = f_steady_func(**f_steady_kwargs)
+            if f_unsteady_func_ is not None:
+                f_unsteady_kwargs = {
+                    k: v for k, v in kwargs.items() if k in f_unsteady_kwargs_names
+                }
+                f_unsteady = f_unsteady_func_(**f_unsteady_kwargs)
+            else:
+                f_unsteady = None
+            return proj.to_output(f_steady, f_unsteady)
+
+        new_residuals = {
+            k: v for k, v in residuals.items() if k not in ("f_steady", "f_unsteady")
+        }
+        new_residuals[proj.name] = (combined, combined_args, combined_diff_ordered)
+
+        return new_residuals
+
+    def create_jacobians(
+        self,
+        mode: ADMode | dict[str, ADMode] = "reverse",
+        batch_size: int | None = None,
+        input_projection: LinearInputProjection | None = None,
+        output_projection: LinearOutputProjection | None = None,
+    ) -> dict[str, dict[str, Array]]:
+        r"""
+        Compute the per-residual Jacobians using :func:`jacrev_custom`.
+        """
+        residuals = self.compute_jacobians(
+            input_projection=input_projection,
+            output_projection=output_projection,
+        )
+
+        jacobians: dict[str, dict[str, Array]] = {}
+        for res_name, (res_func, args, diff_arg_names) in residuals.items():
+            res_jac_options: dict[str, Callable[..., Array] | None] = {
+                arg: None for arg in diff_arg_names
+            }
+
+            res_mode: ADMode = (
+                mode.get(res_name, "reverse") if isinstance(mode, dict) else mode
+            )
+
+            jacs, _, _ = jacrev_custom(
+                func=res_func,
+                jac_options=res_jac_options,
+                n_profile_loops=None,
+                func_name=res_name,
+                map_batch_size=batch_size,
+                mode=res_mode,
+            )(**args)
+            jacobians[res_name] = jacs
+
+        return jacobians
+
+    def linearise(
+        self,
+        batch_size: int | None = None,
+        *,
+        input_projection: LinearInputProjection | None = None,
+        output_projection: LinearOutputProjection | None = None,
+    ) -> LinearSystem:
         r"""
         Build the linear state-space system.
+        :param batch_size: If not None, batch the Jacobian passes to reduce memory.
+        :param input_projection: Optional projection from lower-dim inputs (e.g. beam DOFs) to
+        ``(zeta_b, zeta_b_dot)``.
+        :param output_projection: Optional projection from ``(f_steady, f_unsteady)`` to a
+        smaller output (e.g. beam force); when set, C/D rows correspond to the projected output.
+        :return: LinearSystem object.
         """
-
-        u_ref = AeroInputUnflattened(
-            zeta_b=self.reference.zeta_b,
-            zeta_b_dot=self.reference.zeta_b_dot,
-            nu_b=ArrayList.zeros_like(self.reference.zeta_b)
-            if self.bound_upwash
-            else None,
-            nu_w=ArrayList.zeros_like(self.reference.zeta_w)
-            if self.wake_upwash
-            else None,
-        )
-        x_ref = AeroStateUnflattened(
-            gamma_b=self.reference.gamma_b,
-            gamma_w=self.reference.gamma_w,
-            gamma_b_nm1=self.reference.gamma_b if self.unsteady_force else None,
-            zeta_w=self.reference.zeta_w if self.prescribed_wake else None,
-            zeta_b=self.reference.zeta_b if self.prescribed_wake else None,
+        jacobians = self.create_jacobians(
+            mode="reverse",
+            batch_size=batch_size,
+            input_projection=input_projection,
+            output_projection=output_projection,
         )
 
-        u_ref_vec = self._pack_input_vector(u_ref)
-        x_ref_vec = self._pack_state_vector(x_ref)
+        # (row, column, size)
+        ref = self.reference
+        state_specs: list[tuple[str, str, int]] = [
+            ("gamma_b", "gamma_b_n_vec", ref.gamma_b.size),
+            ("gamma_w", "gamma_w_n_vec", ref.gamma_w.size),
+        ]
+        if self.unsteady_force:
+            state_specs.append(("gamma_b_nm1", "gamma_b_nm1_vec", ref.gamma_b.size))
+        if self.prescribed_wake:
+            state_specs.append(("zeta_w", "zeta_w_n_vec", ref.zeta_w.size))
+            state_specs.append(("zeta_b", "zeta_b_n_vec", ref.zeta_b.size))
+        state_names = [s[0] for s in state_specs]
+        state_arg_names = [s[1] for s in state_specs]
+        state_sizes = [s[2] for s in state_specs]
 
-        (a, b), (c, d) = jax.jacfwd(self.step_vec, argnums=(0, 1))(x_ref_vec, u_ref_vec)
+        if input_projection is None:
+            input_specs: list[tuple[str, int]] = [
+                ("zeta_b_np1_vec", ref.zeta_b.size),
+                ("zeta_b_dot_np1_vec", ref.zeta_b.size),
+            ]
+        else:
+            input_specs = list(
+                zip(input_projection.arg_names, input_projection.arg_sizes)
+            )
+        if self.bound_upwash:
+            input_specs.append(("nu_b_np1_vec", ref.zeta_b.size))
+        if self.wake_upwash:
+            input_specs.append(("nu_w_np1_vec", ref.zeta_w.size))
+        input_arg_names = [s[0] for s in input_specs]
+        input_sizes = [s[1] for s in input_specs]
+
+        if output_projection is None:
+            n_fs = sum(3 * (m + 1) * (n + 1) for (m, n) in ref.gamma_b.shape)
+            output_specs: list[tuple[str, int]] = [("f_steady", n_fs)]
+            if self.unsteady_force:
+                output_specs.append(("f_unsteady", n_fs))
+        else:
+            output_specs = [(output_projection.name, output_projection.size)]
+        output_names = [s[0] for s in output_specs]
+        output_sizes = [s[1] for s in output_specs]
+
+        a = construct_named_block_jacobian(
+            entries=tuple(jacobians[k] for k in state_names),
+            keys=state_arg_names,
+            widths=state_sizes,
+            heights=state_sizes,
+        )
+        b = construct_named_block_jacobian(
+            entries=tuple(jacobians[k] for k in state_names),
+            keys=input_arg_names,
+            widths=input_sizes,
+            heights=state_sizes,
+        )
+        c = construct_named_block_jacobian(
+            entries=tuple(jacobians[k] for k in output_names),
+            keys=state_arg_names,
+            widths=state_sizes,
+            heights=output_sizes,
+        )
+        d = construct_named_block_jacobian(
+            entries=tuple(jacobians[k] for k in output_names),
+            keys=input_arg_names,
+            widths=input_sizes,
+            heights=output_sizes,
+        )
 
         return LinearSystem(a=a, b=b, c=c, d=d, dt=self.dt)
 

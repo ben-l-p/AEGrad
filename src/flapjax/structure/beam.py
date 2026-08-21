@@ -62,6 +62,7 @@ from flapjax.utils.utils import (
 )
 
 if TYPE_CHECKING:
+    from flapjax.aero.utils import DynamicAeroSolver
     from flapjax.aero.uvlm import UVLM
     from flapjax.coupled.data_structures import AeroelasticCase
 
@@ -164,7 +165,9 @@ class BaseBeamStructure:
         :param connectivity: Connectivity array, `(n_elem, 2)``.
         :param y_vector: Vector defining the y direction for each element, ``(n_elem, 3)``.
         :param k_cs_index: Array defining the index from the library of k_cs to use for each element, ``(n_elem, )``.
+        If ``None``, all elements will use the first entry in the k_cs library.
         :param m_cs_index: Array defining the index from the library of m_cs to use for each element, ``(n_elem, )``.
+        If ``None``, all elements will use the first entry in the m_cs library.
         :param m_lumped_index: Node index for nodes which are to have a lumped mass attached. The order is the same as
         that for the lumped mass data ``(n_lumped_mass, )``.
         :param gravity: Gravity vector in global reference frame, or None for no gravity_vec, ``(3, )``.
@@ -1317,7 +1320,7 @@ class BaseBeamStructure:
             return jnp.einsum("ij,jk->k", m_lin, hg_[:, :3, 3]) / m_lin.sum()  # (3, )
 
         if hg.ndim == 3:
-            return inner_func(hg)  # single timestep, (3, )
+            return inner_func(hg)  # single timestep, (3, ).
         elif hg.ndim == 4:
             return vmap(inner_func, 0, 0)(hg)  # multiple timesteps, (n_tstep, 3)
         else:
@@ -2116,7 +2119,7 @@ class BaseBeamStructure:
         f_ext_dead: Array | None,
         f_ext_follower: Array | None,
         thrust_t: dict[str, Array],
-        aero_obj: UVLM,
+        aero_obj: DynamicAeroSolver,
         aero_case: AeroCase,
         fsi_convergence_status: ConvergenceStatus,
         cs_ang_t: dict[str, Array],
@@ -2133,7 +2136,7 @@ class BaseBeamStructure:
         f_ext_dead: Array | None,
         f_ext_follower: Array | None,
         thrust_t: dict[str, Array],
-        aero_obj: UVLM | None,
+        aero_obj: DynamicAeroSolver | None,
         aero_case: AeroCase | None,
         fsi_convergence_status: ConvergenceStatus | None,
         cs_ang_t: dict[str, Array] | None,

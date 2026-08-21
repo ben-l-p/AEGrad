@@ -3,7 +3,7 @@ from jax import numpy as jnp
 
 from flapjax.aero.flowfields import OneMinusCosine
 from flapjax.aero.gradients.data_structures import AeroGradsToCompute
-from flapjax.coupled import CoupledAeroelastic, AeroelasticCase
+from flapjax.coupled import AeroelasticCase, CoupledAeroelastic
 from flapjax.coupled.data_structures import AeroelasticFullStates
 from flapjax.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from flapjax.models.cantilever_wing import generate_cantilever_wing
@@ -74,9 +74,7 @@ def _run_primal(k_cs: Array, gust_amplitude: float | Array):
     return wing, static_sol, dynamic_sol
 
 
-def _total_objective(
-    wing: CoupledAeroelastic, dynamic_sol: AeroelasticCase
-) -> Array:
+def _total_objective(wing: CoupledAeroelastic, dynamic_sol: AeroelasticCase) -> Array:
     """Sum the per-timestep objective over the full trajectory."""
     dv = wing.get_design_variables(case=dynamic_sol, grads_to_compute=None)
     total = jnp.array(0.0)

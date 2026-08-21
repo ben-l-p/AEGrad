@@ -27,11 +27,3 @@ pip install flapjax-full   # includes tests and tutorial notebooks
 ```bash
 pytest --pyargs flapjax
 ```
-
-## Locating the notebooks
-
-The tutorial notebooks ship inside the installed package. Find them with:
-
-```bash
-python -c "import flapjax, pathlib; print(pathlib.Path(flapjax.__file__).parent / 'models')"
-```

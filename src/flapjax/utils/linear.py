@@ -88,7 +88,7 @@ class LinearModel[
         self.output_slices, self.n_outputs = self._make_output_slices(
             reference=reference
         )
-        self.dt: float | Array = dt
+        self.dt: Array = jnp.array(dt)
 
         self._reference: R = reference
 
@@ -283,7 +283,7 @@ class LinearModel[
         """
         return self.input_object(**self._unpack_vector(x=u, slices=self.input_slices))
 
-    def _unpack_state_vector(self, x: Array) -> S:
+    def unpack_state_vector(self, x: Array) -> S:
         r"""
         Unpack a state vector into its components.
         :param x: State vector, ``(n_states, )``
@@ -291,7 +291,7 @@ class LinearModel[
         """
         return self.state_object(**self._unpack_vector(x=x, slices=self.state_slices))
 
-    def _unpack_output_vector(self, y: Array) -> O:
+    def unpack_output_vector(self, y: Array) -> O:
         r"""
         Unpack an output vector into its components.
         :param y: Output vector, ``(n_outputs, )``
@@ -359,7 +359,7 @@ class LinearModel[
                     raise ValueError("Invalid slices type")
         return vec
 
-    def _pack_input_vector(self, u_input: InputUnflattened) -> Array:
+    def pack_input_vector(self, u_input: InputUnflattened) -> Array:
         r"""
         Pack an input unflattened object into a vector.
         :param u_input: InputUnflattened object.
@@ -371,7 +371,7 @@ class LinearModel[
             arrs=shallow_as_dict(u_input),
         )
 
-    def _pack_state_vector(self, x_state: StateUnflattened) -> Array:
+    def pack_state_vector(self, x_state: StateUnflattened) -> Array:
         r"""
         Pack a state unflattened object into a vector.
         :param x_state: StateUnflattened object.
@@ -383,7 +383,7 @@ class LinearModel[
             arrs=shallow_as_dict(x_state),
         )
 
-    def _pack_output_vector(self, y_output: OutputUnflattened) -> Array:
+    def pack_output_vector(self, y_output: OutputUnflattened) -> Array:
         r"""
         Pack an output unflattened object into a vector.
         :param y_output: OutputUnflattened object.

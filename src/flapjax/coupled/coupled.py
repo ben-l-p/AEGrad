@@ -381,7 +381,8 @@ class BaseCoupledAeroelastic:
                 t=t,
                 use_f_ext_follower=f_ext_follower is not None,
                 use_f_ext_dead=f_ext_dead is not None,
-                aeroelastic_object=self,
+                structure=self.structure,
+                x0_aero=self.aero.zeta_b0,
             )
 
             # set forces at timestep 0
@@ -402,7 +403,8 @@ class BaseCoupledAeroelastic:
                 t=t,
                 use_f_ext_follower=f_ext_follower is not None,
                 use_f_ext_dead=f_ext_dead is not None,
-                aeroelastic_object=self,
+                structure=self.structure,
+                x0_aero=self.aero.zeta_b0,
             )
 
         # propagate the dynamic prescribed_dofs to the case

@@ -16,6 +16,7 @@ def _build_pseudo_infinite_wing(
     span: float = 48.0,
     u_mag: float = 20.0,
     ea: float = 0.25,
+    polar_circulation_scale: float = 0.0,
 ) -> tuple[UVLM, Array, float, float, float]:
     r"""
     Build a pseudo-infinite mirrored wing at a fixed geometric angle of attack. This behaves like a 2D section
@@ -41,6 +42,7 @@ def _build_pseudo_infinite_wing(
         mirror_point=jnp.zeros(3),
         mirror_normal=jnp.array((0.0, 1.0, 0.0)),
         polars=polars,
+        polar_circulation_scale=polar_circulation_scale,
     )
     uvlm.set_design_variables(dt=dt, flowfield=flowfield, zeta_b0=x_grid, hg0=hg)
     return uvlm, alpha_rad, u_mag, chord, span
@@ -98,6 +100,43 @@ class TestPseudoInfiniteWing:
         rel_err = jnp.abs(measured_force - lift_expected) / jnp.abs(lift_expected)
         assert rel_err < 1e-6, (
             f"Mismatch in forces, measured: {float(measured_force):.6e}, expected: {float(lift_expected):.6e}"
+        )
+
+    @staticmethod
+    def test_polar_correction_circulation_scaling():
+        r"""
+        With a reduced lift slope and  ``polar_circulation_scale=1.0``, the bound and
+        wake circulations should be linearly scaled relative to the base UVLM solution.
+        """
+        alpha_deg = 3.0
+
+        def polar_half(a: Array) -> tuple[Array, Array, Array]:
+            return jnp.pi * a, jnp.array(0.0), jnp.array(0.0)
+
+        uvlm_ref, *_ = _build_pseudo_infinite_wing(alpha_deg=alpha_deg)
+        n_strip = uvlm_ref.grid_disc[0].n
+        polars: list[list[PolarFunction] | None] = [[polar_half] * n_strip]
+
+        sol_ref = uvlm_ref.solve_static(horseshoe=True)
+
+        uvlm_corr, *_ = _build_pseudo_infinite_wing(
+            alpha_deg=alpha_deg,
+            polars=polars,
+            polar_circulation_scale=1.0,
+        )
+        sol_corr = uvlm_corr.solve_static(horseshoe=True)
+
+        # scale should be half
+        gamma_b_ratio = sol_corr.gamma_b[0] / sol_ref.gamma_b[0]
+        gamma_w_ratio = sol_corr.gamma_w[0] / sol_ref.gamma_w[0]
+
+        assert jnp.max(jnp.abs(gamma_b_ratio - 0.5)) < 1e-6, (
+            f"Bound circulation not scaled to 0.5, max deviation "
+            f"{float(jnp.max(jnp.abs(gamma_b_ratio - 0.5))):.6e}"
+        )
+        assert jnp.max(jnp.abs(gamma_w_ratio - 0.5)) < 1e-6, (
+            f"Wake circulation not scaled to 0.5, max deviation "
+            f"{float(jnp.max(jnp.abs(gamma_w_ratio - 0.5))):.6e}"
         )
 
     @staticmethod

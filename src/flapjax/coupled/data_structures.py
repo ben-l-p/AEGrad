@@ -23,6 +23,7 @@ from flapjax.utils.utils import make_pytree
 if TYPE_CHECKING:
     from flapjax.coupled.coupled import BaseCoupledAeroelastic
     from flapjax.structure.data_structures import StructureFullStates
+    from flapjax.structure.gradients.beam import BeamStructure
 
 
 @make_pytree
@@ -108,7 +109,8 @@ class AeroelasticCase:
         t: Array,
         use_f_ext_follower: bool,
         use_f_ext_dead: bool,
-        aeroelastic_object: BaseCoupledAeroelastic,
+        structure: BeamStructure,
+        x0_aero: ArrayList,
     ) -> AeroelasticCase:
         """Build a batched AeroelasticCase from any single-timestep case."""
         if initial_snapshot.is_batched:
@@ -138,10 +140,10 @@ class AeroelasticCase:
         f_aero_init = aero_case.project_forcing_to_beam(
             i_ts=0,
             rmat=struct_case.hg[0, :, :3, :3],
-            x0_aero=aeroelastic_object.aero.zeta_b0,
+            x0_aero=x0_aero,
             include_unsteady=False,
         )
-        f_aero_local = aeroelastic_object.structure.make_f_dead_ext(
+        f_aero_local = structure.make_f_dead_ext(
             f_ext=f_aero_init, rmat=struct_case.hg[0, :, :3, :3]
         )
 

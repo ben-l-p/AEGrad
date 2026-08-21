@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, Protocol, overload
 
 import jax
 from jax import Array, vmap
 from jax import numpy as jnp
 from jax.lax import cond
 
+if TYPE_CHECKING:
+    from flapjax.aero import AeroCase
 from flapjax.algebra.array_utils import ArrayList, neighbour_average, split_to_vertex
 from flapjax.algebra.base import finite_difference
 from flapjax.algebra.so3 import exp_so3
@@ -278,7 +280,7 @@ def apply_polar_correction(
     rho: Array,
     polars: Sequence[Sequence[PolarFunction] | None],
     alpha: ArrayList | None = None,
-) -> ArrayList:
+) -> tuple[ArrayList, ArrayList]:
     r"""
     Replace UVLM strip forcing with a sectional force built from tabulated airfoil polars.
 
@@ -296,24 +298,28 @@ def apply_polar_correction(
         ``alpha -> (cl, cd, cm)`` about the quarter-chord.
     :param alpha: Optional precomputed per-strip angle of attack, ``(n_surf, )(n_strip,)``. If
         ``None``, computed internally via :func:`strip_alpha` with the same ``v_func``.
-    :return: Corrected vertex forcing, ``(n_surf, )(zeta_m, zeta_n, 3)``.
+    :return: Corrected vertex forcing, ``(n_surf, )(zeta_m, zeta_n, 3)`` and per-strip lift scale factors,
+        ``(n_surf, )(n, )`` which can be used to scale the circulation strengths if requested.
     """
     if alpha is None:
         # compute the angles of attack for each strip if not passed
         alpha = strip_alpha(zeta_b=zeta_b, f_steady=f_steady, v_func=v_func, rho=rho)
 
     f_out = ArrayList([])
+    lift_scale_out = ArrayList([])
     for i_surf, (zeta_surf, f_surf, polar_surf, alpha_surf) in enumerate(
         zip(zeta_b, f_steady, polars, alpha)
     ):
+        n = zeta_surf.shape[1] - 1
+
         if polar_surf is None:
             # no correction to apply
             f_out.append(f_surf)
+            lift_scale_out.append(jnp.ones(n))
             continue
 
-        zeta_m, zeta_n, _ = zeta_surf.shape
+        zeta_m = zeta_surf.shape[0]
         m = zeta_m - 1
-        n = zeta_n - 1
 
         if len(polar_surf) != n:
             raise ValueError(
@@ -359,6 +365,11 @@ def apply_polar_correction(
         cd_p = jnp.stack([polar_surf[j](alpha_surf[j])[1] for j in range(n)])
         cm_p = jnp.stack([polar_surf[j](alpha_surf[j])[2] for j in range(n)])
 
+        # lift scale factor cl_polar / cl_uvlm with cl_uvlm = 2 pi alpha
+        cl_uvlm = 2.0 * jnp.pi * alpha_surf
+        lift_scale = jnp.where(jnp.abs(cl_uvlm) > EPSILON, cl_p / cl_uvlm, 1.0)
+        lift_scale_out.append(lift_scale)
+
         qcb = q * c_len * b_len
         f_lump = qcb[:, None] * (cl_p[:, None] * e_l + cd_p[:, None] * e_d)
         f_couple = (qcb * cm_p)[:, None] * e_n  # rotate back into normal direction
@@ -383,7 +394,7 @@ def apply_polar_correction(
 
         f_out.append(f_corrected)
 
-    return f_out
+    return f_out, lift_scale_out
 
 
 def propagate_surf_wake(
@@ -699,7 +710,7 @@ def cs_ang_to_cs_vel(cs_ang_t: dict[str, Array], dt: float | Array) -> dict[str,
         cs_vel_t[k] = vmap(
             lambda i_ts: finite_difference(
                 i_=i_ts,
-                data=v,
+                data=v,  # noqa: B023
                 delta=jnp.array(dt),
                 axis=0,
             ),
@@ -720,3 +731,28 @@ def cs_vel_to_cs_ang(cs_vel_t: dict[str, Array], dt: float | Array) -> dict[str,
     for k, v in cs_vel_t.items():
         cs_ang_t[k] = jnp.cumsum(v, axis=0) * dt
     return cs_ang_t
+
+
+class DynamicAeroSolver(Protocol):
+    r"""
+    Required methods for a dynamic aerodynamic solver that can be coupled into the structural solver.
+    """
+
+    include_unsteady_force: bool
+
+    @property
+    def zeta_b0(self) -> ArrayList: ...
+
+    def case_solve(
+        self,
+        case: AeroCase,
+        i_ts: int,
+        hg_n: Array | None,
+        hg_nm1: Array | None,
+        hg_dot_n: Array | None,
+        static: bool,
+        horseshoe: bool,
+        cs_ang_n: dict[str, Array],
+        cs_ang_nm1: dict[str, Array] | None,
+        cs_vel_n: dict[str, Array] | None,
+    ) -> AeroCase: ...
