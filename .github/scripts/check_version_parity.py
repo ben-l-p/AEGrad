@@ -6,7 +6,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PYPROJECTS = {
     "flapjax": REPO_ROOT / "pyproject.toml",
     "flapjax-full": REPO_ROOT / "packaging" / "full" / "pyproject.toml",
