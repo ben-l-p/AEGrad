@@ -112,6 +112,7 @@ class BeamStructure(BaseBeamStructure):
             else None,
             v=q.v,
             v_dot=q.v_dot,
+            i_ts=i_ts,
         )[0]
         return StructureFullStates(
             v=q.v,

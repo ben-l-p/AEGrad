@@ -23,6 +23,7 @@ from flapjax.algebra.se3 import (
 )
 from flapjax.algebra.so3 import vec_to_skew
 from flapjax.plotting.modal import plot_modes_vtu
+from flapjax.structure.constraints import NodalConstraint
 from flapjax.structure.data_structures import (
     OptionalJacobians,
     StructureCase,
@@ -158,6 +159,7 @@ class BaseBeamStructure:
         relaxation_factor: float = 1.0,
         spectral_radius: float = 0.9,
         struct_convergence_settings: ConvergenceSettings = DEFAULT_STRUCT_CONVERGENCE_SETTINGS,
+        nodal_constraints: NodalConstraint | Sequence[NodalConstraint] | None = None,
     ) -> None:
         r"""
         Initialise BaseBeamStructure class with all non-design parameters.
@@ -180,6 +182,8 @@ class BaseBeamStructure:
         :param spectral_radius: Spectral radius for structural time integrator, where a value of 0 is highly damped and
         a value of 1 is undamped.
         :param struct_convergence_settings: Structure convergence settings.
+        :param nodal_constraints: Optional sequence of single-node constraints (springs, dampers,
+        prescribed motions) that add residual + tangent contributions at their target nodes.
         """
 
         check_type(num_nodes, int)
@@ -318,6 +322,16 @@ class BaseBeamStructure:
         self.spectral_radius: float = spectral_radius
 
         self.time_integrator = None
+
+        # dynamic pytree entries for the constraints
+        if isinstance(nodal_constraints, NodalConstraint):
+            self.nodal_constraints: Sequence[NodalConstraint] = (nodal_constraints,)
+        elif isinstance(nodal_constraints, Sequence):
+            self.nodal_constraints = nodal_constraints
+        elif nodal_constraints is None:
+            self.nodal_constraints = ()
+        else:
+            raise TypeError()
 
     def set_design_variables(
         self,
@@ -471,6 +485,10 @@ class BaseBeamStructure:
         )  # (n_nodes, 4, 4)
         self.hg0 = self.hg0.at[:, :3, 3].set(self.x0)
         self.hg0 = self.hg0.at[:, 3, 3].set(1.0)
+
+        # add reference frames to the nodal constraints
+        for con in self.nodal_constraints:
+            con.resolve_hg_ref(self.hg0)
 
     def get_design_variables(
         self,
@@ -1061,7 +1079,9 @@ class BaseBeamStructure:
         # ensure symmetry
         m_sym = 0.5 * (m_nodal + m_nodal.T)
         k_sym = 0.5 * (k_nodal + k_nodal.T)
-        l_chol = jnp.linalg.cholesky(m_sym)
+
+        # add a small value to prevent numerical issues when having very small eigenvalues
+        l_chol = jnp.linalg.cholesky(m_sym + jnp.eye(m_nodal.shape[0]) * 1e-12)
         x = jnp.linalg.solve(l_chol, k_sym)
         a_sym = jnp.linalg.solve(l_chol, x.T).T
         a_sym = 0.5 * (a_sym + a_sym.T)
@@ -1300,6 +1320,32 @@ class BaseBeamStructure:
                 arr=mat, lumped_arr=c_t_lumped * ti.gamma_prime
             )
 
+        return mat
+
+    def _apply_nodal_constraint_tangent(
+        self,
+        mat: Array,
+        hg: Array,
+        i_ts: int,
+        gamma_prime: float | Array | None,
+    ) -> Array:
+        r"""
+        Add nodal constraint contributions to a system matrix.
+        :param mat: System matrix to update, ``(n_dof, n_dof)``.
+        :param hg: SE(3) coordiantes, ``(n_nodes, 4, 4)``.
+        :param i_ts: Time-step index (0 for static solves).
+        :param gamma_prime: Time-integrator gamma_prime for damping scaling, or ``None`` to skip damping.
+        :return: Updated system matrix.
+        """
+        for con in self.nodal_constraints:
+            node = con.node_index
+            hg_i = hg[node]
+            dofs = node * 6 + jnp.arange(6)
+            mat = mat.at[jnp.ix_(dofs, dofs)].add(con.k_tangent(hg_i, i_ts))
+            if gamma_prime is not None:
+                mat = mat.at[jnp.ix_(dofs, dofs)].add(
+                    gamma_prime * con.c_tangent(hg_i, i_ts)
+                )
         return mat
 
     def calculate_centre_of_mass(self, hg: Array) -> Array:
@@ -1726,6 +1772,7 @@ class BaseBeamStructure:
         c_l_lumped: Array | None,
         v: Array,
         v_dot: Array,
+        i_ts: int = 0,
     ) -> tuple[Array, Array]: ...
 
     @overload
@@ -1744,6 +1791,7 @@ class BaseBeamStructure:
         c_l_lumped: None,
         v: None,
         v_dot: None,
+        i_ts: int = 0,
     ) -> tuple[Array, Array]: ...
 
     def make_f_res(
@@ -1761,6 +1809,7 @@ class BaseBeamStructure:
         c_l_lumped,
         v,
         v_dot,
+        i_ts: int = 0,
     ) -> tuple[Array, Array]:
         r"""
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
@@ -1779,6 +1828,7 @@ class BaseBeamStructure:
         :param c_l_lumped: Lumped gyroscopic matrix, ``(n_nodes, 6, 6)``.
         :param v: Nodal velocities, ``(n_nodes, 6)``.
         :param v_dot: Nodal accelerations, ``(n_node, 6)``.
+        :param i_ts: Time-step index (0 for static solves).
         :return: Residual force vector, ``(n_dof, )``, absolute sum of forces, ``(n_dof, )``.
         """
 
@@ -1833,6 +1883,15 @@ class BaseBeamStructure:
                 f_abs_sum_vect = self.add_lumped_contributions_to_vec(
                     vec=f_abs_sum_vect, lumped_vec=f_grav_lumped
                 )
+
+        # nodal constraint contributions
+        for con in self.nodal_constraints:
+            node = con.node_index
+            v_node = v[node] if dynamic else jnp.zeros(6)
+            f_constraint = con.f_res(hg[node], v_node, i_ts)
+            dofs = node * 6 + jnp.arange(6)
+            f_res_vect = f_res_vect.at[dofs].add(f_constraint)
+            f_abs_sum_vect = f_abs_sum_vect.at[dofs].add(jnp.abs(f_constraint))
 
         if solve_dofs is not None:
             return f_res_vect[solve_dofs], f_abs_sum_vect[
@@ -1947,15 +2006,20 @@ class BaseBeamStructure:
                 f_ext_dead_steps, f_ext_aero_steps, i_load_step
             )
 
-            # assemble tangent stiffness matrix, (n_solve_dof, n_solve_dof)
-            k_t_solve_n = self.make_k_t_full(
-                d_n,
-                p_d_n,
-                eps_n,
-                total_f_ext_dead_step,
-                hg_n[:, :3, :3],
-                m_t,
-            )[jnp.ix_(solve_dofs, solve_dofs)]
+            # assemble tangent stiffness matrix, (n_dof, n_dof)
+            k_t_full_n = self.make_k_t_full(
+                d=d_n,
+                p_d=p_d_n,
+                eps=eps_n,
+                f_ext_dead=total_f_ext_dead_step,
+                rmat=hg_n[:, :3, :3],
+                m_t=m_t,
+            )
+            # apply nodal constraint contributions
+            k_t_full_n = self._apply_nodal_constraint_tangent(
+                mat=k_t_full_n, hg=hg_n, i_ts=0, gamma_prime=None
+            )
+            k_t_solve_n = k_t_full_n[jnp.ix_(solve_dofs, solve_dofs)]
 
             # compute residual forces, (n_solve_dofs, )
             f_res_solve_n, f_abs_sum_n = self.make_f_res(
@@ -2257,17 +2321,26 @@ class BaseBeamStructure:
                 c_l_lumped=c_l_lumped,
                 v=q_alpha.v,
                 v_dot=q_alpha.v_dot,
+                i_ts=i_ts,
             )
 
-            # system matrix, (n_solve_dofs, n_solve_dofs)
-            sys_mat = self._make_sys_matrix(
+            # system matrix, (n_dof, n_dof)
+            sys_mat_full = self._make_sys_matrix(
                 m_t=m_t,
                 c_t=c_t,
                 c_t_lumped=c_t_lumped,
                 k_t=k_t,
                 t_n=t_n,
                 ti=self.time_integrator,
-            )[jnp.ix_(solve_dofs_arr, solve_dofs_arr)]
+            )
+            # add nodal constraint contributions
+            sys_mat_full = self._apply_nodal_constraint_tangent(
+                mat=sys_mat_full,
+                hg=hg_update,
+                i_ts=i_ts,
+                gamma_prime=self.time_integrator.gamma_prime,
+            )
+            sys_mat = sys_mat_full[jnp.ix_(solve_dofs_arr, solve_dofs_arr)]
 
             # solve for configuration increment, (n_solve_dofs, )
             d_n_np1 = jnp.linalg.solve(sys_mat, f_res_n_solve) * self.relaxation_factor
