@@ -365,12 +365,12 @@ class BaseBeamStructure:
                 seq="zyx", angles=orientation_euler
             ).as_matrix()
 
-            # rotate the y vectors
-            self.y_vector = jnp.einsum(
-                "jk,ik->ij",
-                self.orientation,
-                self.y_vector_reference_arr,
-            )
+        # rotate the y vectors
+        self.y_vector = jnp.einsum(
+            "jk,ik->ij",
+            self.orientation,
+            self.y_vector_reference_arr,
+        )
 
         # coordinates
         check_arr_shape(coords, (self.n_nodes, 3), "coords")
@@ -1080,14 +1080,19 @@ class BaseBeamStructure:
         m_sym = 0.5 * (m_nodal + m_nodal.T)
         k_sym = 0.5 * (k_nodal + k_nodal.T)
 
-        # add a small value to prevent numerical issues when having very small eigenvalues
-        l_chol = jnp.linalg.cholesky(m_sym + jnp.eye(m_nodal.shape[0]) * 1e-12)
-        x = jnp.linalg.solve(l_chol, k_sym)
+        # spectral shift so rigid-body modes are well identified (alpha can be tuned)
+        alpha = 1e-3
+        sigma = alpha * jnp.trace(k_sym) / jnp.trace(m_sym)
+        k_shift = k_sym + sigma * m_sym
+
+        l_chol = jnp.linalg.cholesky(m_sym)
+        x = jnp.linalg.solve(l_chol, k_shift)
         a_sym = jnp.linalg.solve(l_chol, x.T).T
         a_sym = 0.5 * (a_sym + a_sym.T)
-        omega_sq, y = jnp.linalg.eigh(a_sym)
+        mu, y = jnp.linalg.eigh(a_sym)
         modes = jax.scipy.linalg.solve_triangular(l_chol.T, y, lower=False)
 
+        omega_sq = mu - sigma
         omega = jnp.sqrt(jnp.maximum(omega_sq, 0.0))
         freq_hz = omega / (2.0 * jnp.pi)
         damping = jnp.zeros_like(freq_hz)
@@ -1141,7 +1146,9 @@ class BaseBeamStructure:
         ordered_freq = ordered_freq[range_idx]
         out_damping = out_damping[range_idx]
         out_modes = modes[:, idx].real
-        out_modes /= jnp.linalg.norm(out_modes, axis=0, keepdims=True)
+        # per-mode mass normalisation: phi^T M phi = 1
+        m_diag = jnp.einsum("im,ij,jm->m", out_modes, m_nodal, out_modes)
+        out_modes /= jnp.sqrt(jnp.abs(m_diag))
         return ordered_freq, out_damping, out_modes
 
     def base_modal(
@@ -1941,6 +1948,8 @@ class BaseBeamStructure:
         f_ext_dead: Array | None = None,
         f_ext_aero: Array | None = None,
         load_steps: int = 1,
+        *,
+        print_header: bool = True,
     ) -> StructureCase:
         r"""
         Perform static solve of the structure under external loads.
@@ -1949,6 +1958,7 @@ class BaseBeamStructure:
         :param f_ext_aero: External forces array of aerodynamic loads ``(n_node, 6)``.
         :param prescribed_dofs: Index of degrees of freedom which are prescribed (not solved for).
         :param load_steps: Number of load steps to apply the external loads over.
+        :param print_header: If False, suppress the "Static Solve" table header and trailing line.
         :return: StructureCase object containing results of the static analysis.
         """
 
@@ -2103,7 +2113,9 @@ class BaseBeamStructure:
 
             return hg_solve
 
-        if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+        if print_header and map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+            "normal"
+        ):
             ConvergenceStatus.print_header(dynamic=False)
 
         # solve for each load step
@@ -2114,7 +2126,9 @@ class BaseBeamStructure:
             self.hg0,
         )
 
-        if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+        if print_header and map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+            "normal"
+        ):
             ConvergenceStatus.print_line(dynamic=False)
 
         # postprocess final results

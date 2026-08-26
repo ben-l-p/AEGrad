@@ -29,6 +29,12 @@ from flapjax.coupled.gradients.data_structures import (
     AeroelasticJacobianApproximations,
     TrimVariables,
 )
+from flapjax.coupled.gradients.utils import (
+    check_unique_members,
+    expand_groups,
+    group_key,
+    parse_groups,
+)
 from flapjax.structure import StructuralDesignVariables
 from flapjax.structure.data_structures import OptionalJacobians, StructureMinimalStates
 from flapjax.structure.gradients.data_structures import (
@@ -59,7 +65,7 @@ ORIENTATION_DICT: Final[dict[str, int]] = {"x": 0, "y": 1, "z": 2}
 
 @make_pytree
 class CoupledAeroelastic(BaseCoupledAeroelastic):
-    def _aeroelastic_states_res_from_dv_varphi(
+    def aeroelastic_states_res_from_dv_varphi(
         self,
         dv: AeroelasticDesignVariables,
         varphi: Array,
@@ -278,7 +284,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             r"""
             Helper function to give the static aeroelastic residual for a given deformation and design variables.
             """
-            return self._aeroelastic_states_res_from_dv_varphi(
+            return self.aeroelastic_states_res_from_dv_varphi(
                 dv=dv_,
                 varphi=varphi_vec.reshape(self.structure.n_nodes, 6),
                 thrust=case.structure.thrust,
@@ -1444,8 +1450,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         self,
         prescribed_dofs: Sequence[int] | Array | slice | int | None,
         zero_force_dofs: Sequence[int] | Array | slice | int | None,
-        trim_cs: Sequence[str] | str | None,
-        thrust_nodes: Sequence[str] | str | None,
+        trim_cs: Sequence[str | Sequence[str]] | str | None,
+        thrust_nodes: Sequence[str | Sequence[str]] | str | None,
         trim_orientation: str | Sequence[str] | None = "x",
         trim_f_abs_tolerance: float = 1e-2,
         f_ext_follower: Array | None = None,
@@ -1456,6 +1462,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         horseshoe: bool = False,
         method: Literal["adjoint", "finite_difference"] = "finite_difference",
         broyden_fd_step: float = 1e-3,
+        max_iter: int = 100,
     ) -> tuple[AeroelasticCase, TrimVariables]:
         r"""
         Trim an aircraft such that the resulting sum of forces on the aircraft is zero without any supports.
@@ -1464,8 +1471,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         necessarily the same as prescribed_dofs, as in some cases there are degrees of freedom we will allow to have a
         non-zero clamping force. For example in the case of a clamped cantilever wing where we wish to find the angle
         of attack that gives lift equal to the weight, there would be a nonzero pitching moment.
-        :param trim_cs: Keys of control surfaces which are to be used to trim the aircraft.
-        :param thrust_nodes: Keys of thrust nodes which are to be used to trim the aircraft.
+        :param trim_cs: Keys of control surfaces which are to be used to trim the aircraft. Each element may either be
+        a single control-surface key (that surface gets its own independent deflection) or a sequence of keys (those
+        surfaces are tied together and share a single deflection).
+        :param thrust_nodes: Keys of thrust nodes which are to be used to trim the aircraft. Each element may either be
+        a single node key (that node gets its own independent thrust value) or a sequence of node keys (those nodes are
+        tied together and share a single thrust value).
         :param trim_orientation: Inertial axis (or axes if a sequence is provided) around which the aircraft is
         rotated about at the clamp to achieve trim.
         :param trim_f_abs_tolerance: Absolute maximum force residual at the clamped nodes for convergence to be achieved.
@@ -1479,30 +1490,19 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         approximates the Jacobian with a forward finite-difference sweep. Usually the latter is faster assuming a small
         number of trim variables.
         :param broyden_fd_step: Step size used for the finite-difference bootstrap of the Broyden Jacobian.
+        :param max_iter: Maximum number of trim iterations. A warning is emitted if the routine fails to converge within
+        this limit.
         :return: Aeroelastic solution object for the trimmed aircraft.
         """
 
-        if isinstance(trim_cs, str):
-            trim_cs_ = [trim_cs]
-        elif isinstance(trim_cs, Sequence):
-            trim_cs_ = list(trim_cs)
-        elif trim_cs is None:
-            trim_cs_ = []
-        else:
-            raise ValueError(
-                f"trim_cs must be a string, a sequence of strings, or None. Got {type(trim_cs)}."
-            )
+        # parse groups for paired thrust nodes/control surfaces
+        cs_groups: list[tuple[str, ...]] = parse_groups(trim_cs, "trim_cs")
+        thrust_groups: list[tuple[str, ...]] = parse_groups(
+            thrust_nodes, "thrust_nodes"
+        )
 
-        if isinstance(thrust_nodes, str):
-            thrust_nodes_ = [thrust_nodes]
-        elif isinstance(thrust_nodes, Sequence):
-            thrust_nodes_ = list(thrust_nodes)
-        elif thrust_nodes is None:
-            thrust_nodes_ = []
-        else:
-            raise ValueError(
-                f"thrust_nodes must be a string, a sequence of strings, or None. Got {type(thrust_nodes)}."
-            )
+        check_unique_members(cs_groups, "trim_cs")
+        check_unique_members(thrust_groups, "thrust_nodes")
 
         trim_orientation_: Sequence[str] = (
             [trim_orientation]
@@ -1523,10 +1523,13 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         if not self.structure.use_gravity:
             warn("Gravity is not enabled. Trim may result in unexpected behaviour.")
 
-        # initial set of variables
+        # initial set of variables. Tied members share a single value, initialised from the first member.
         trim_variables_init: TrimVariables = TrimVariables(
-            cs_ang={k: self.aero.cs_ang0[k] for k in trim_cs_},
-            thrust={k: self.structure.thrust_reference[k] for k in thrust_nodes_},
+            cs_ang={group_key(g): self.aero.cs_ang0[g[0]] for g in cs_groups},
+            thrust={
+                group_key(g): self.structure.thrust_reference[g[0]]
+                for g in thrust_groups
+            },
             trim_angles={
                 k: self.structure.orientation_euler[ORIENTATION_DICT[k]]
                 for k in trim_orientation_
@@ -1563,16 +1566,19 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     t=jnp.array(t),
                     load_steps=load_steps,
                     horseshoe=horseshoe,
-                    trim_cs=trim_cs_,
-                    thrust_nodes=thrust_nodes_,
+                    cs_groups=cs_groups,
+                    thrust_groups=thrust_groups,
                     trim_orientation=trim_orientation_,
                     trim_relaxation=trim_relaxation,
                 )
                 return i_iter, tv, sol, fc
 
             print_table_title(title="Trim (Adjoint)", inner_width=81)
-            _, trim_variables, ae_sol, _ = jax.lax.while_loop(
-                lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+            n_iter, trim_variables, ae_sol, _ = jax.lax.while_loop(
+                lambda args_: jnp.logical_and(
+                    jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+                    args_[0] < max_iter,
+                ),
                 body_fun=lambda args_: trim_body(*args_),
                 init_val=(
                     0,
@@ -1596,8 +1602,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 t=jnp.array(t),
                 load_steps=load_steps,
                 horseshoe=horseshoe,
-                trim_cs=trim_cs_,
-                thrust_nodes=thrust_nodes_,
+                cs_groups=cs_groups,
+                thrust_groups=thrust_groups,
                 trim_orientation=trim_orientation_,
             )
 
@@ -1622,15 +1628,18 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     t=jnp.array(t),
                     load_steps=load_steps,
                     horseshoe=horseshoe,
-                    trim_cs=trim_cs_,
-                    thrust_nodes=thrust_nodes_,
+                    cs_groups=cs_groups,
+                    thrust_groups=thrust_groups,
                     trim_orientation=trim_orientation_,
                     trim_relaxation=trim_relaxation,
                 )
                 return i_iter, tv, sol, fc, b
 
-            _, trim_variables, ae_sol, _, _ = jax.lax.while_loop(
-                lambda args_: jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+            n_iter, trim_variables, ae_sol, _, _ = jax.lax.while_loop(
+                lambda args_: jnp.logical_and(
+                    jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
+                    args_[0] < max_iter,
+                ),
                 body_fun=lambda args_: trim_body_broyden(*args_),
                 init_val=(
                     0,
@@ -1643,6 +1652,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             print_table_line(inner_width=81)
         else:
             raise ValueError(f"Unknown trim method: {method!r}.")
+
+        if int(n_iter) >= max_iter:
+            warn(
+                f"Trim did not converge to tolerance {trim_f_abs_tolerance} within {max_iter} iterations."
+            )
 
         new_orientation: Array = self.structure.orientation_euler
         for k, v in trim_variables.trim_angles.items():
@@ -1660,9 +1674,11 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             flowfield=self.aero.flowfield,
             delta_w=self.aero.delta_w,
             x0_aero=self.aero.zeta_b0,
-            thrust_reference=self.structure.thrust_reference | trim_variables.thrust,
+            thrust_reference=self.structure.thrust_reference
+            | expand_groups(trim_variables.thrust, thrust_groups),
             orientation_euler=new_orientation,
-            cs_angles_reference=self.aero.cs_ang0 | trim_variables.cs_ang,
+            cs_angles_reference=self.aero.cs_ang0
+            | expand_groups(trim_variables.cs_ang, cs_groups),
             remove_checks=True,
         )
 
@@ -1692,6 +1708,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         t: Array,
         load_steps: int,
         horseshoe: bool,
+        cs_groups: Sequence[Sequence[str]],
+        thrust_groups: Sequence[Sequence[str]],
     ) -> tuple[AeroelasticCase, Array]:
         """Push trim variables into inner_case, run a static solve, and return ``(solution, clamp-force residual)``."""
         inner_case.set_design_variables(
@@ -1702,7 +1720,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             if inner_case.structure.use_lumped_mass
             else None,
             thrust_reference=inner_case.structure.thrust_reference
-            | trim_variables.thrust,
+            | expand_groups(trim_variables.thrust, thrust_groups),
             dt=inner_case.aero.dt,
             flowfield=inner_case.aero.flowfield,
             delta_w=inner_case.aero.delta_w,
@@ -1710,7 +1728,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             orientation_euler=inner_case.trim_angles_to_euler(
                 trim_variables.trim_angles
             ),
-            cs_angles_reference=inner_case.aero.cs_ang0 | trim_variables.cs_ang,
+            cs_angles_reference=inner_case.aero.cs_ang0
+            | expand_groups(trim_variables.cs_ang, cs_groups),
             remove_checks=True,
         )
         with verbosity(
@@ -1733,19 +1752,21 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
     def _apply_trim_update(
         trim_variables: TrimVariables,
         trim_update: Array,
-        trim_cs: Sequence[str],
-        thrust_nodes: Sequence[str],
+        cs_groups: Sequence[Sequence[str]],
+        thrust_groups: Sequence[Sequence[str]],
         trim_orientation: Sequence[str],
     ) -> TrimVariables:
         """Subtract the flat trim_update vector from the current variables and return a new TrimVariables."""
         idx = 0
         updated_cs_ang = {}
-        for k in trim_cs:
-            updated_cs_ang[k] = trim_variables.cs_ang[k] - trim_update[idx]
+        for group in cs_groups:
+            key = group_key(group)
+            updated_cs_ang[key] = trim_variables.cs_ang[key] - trim_update[idx]
             idx += 1
         updated_thrust = {}
-        for k in thrust_nodes:
-            updated_thrust[k] = trim_variables.thrust[k] - trim_update[idx]
+        for group in thrust_groups:
+            key = group_key(group)
+            updated_thrust[key] = trim_variables.thrust[key] - trim_update[idx]
             idx += 1
         updated_trim_angles = {}
         for k in trim_orientation:
@@ -1773,8 +1794,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         load_steps: int,
         trim_relaxation: float,
         horseshoe: bool,
-        trim_cs: Sequence[str],
-        thrust_nodes: Sequence[str],
+        cs_groups: Sequence[Sequence[str]],
+        thrust_groups: Sequence[Sequence[str]],
         trim_orientation: Sequence[str],
     ) -> tuple[int, CoupledAeroelastic, TrimVariables, AeroelasticCase, Array]:
         ae_sol, f_clamp = CoupledAeroelastic._trim_solve_f_clamp(
@@ -1787,6 +1808,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             t=t,
             load_steps=load_steps,
             horseshoe=horseshoe,
+            cs_groups=cs_groups,
+            thrust_groups=thrust_groups,
         )
 
         with verbosity(
@@ -1828,23 +1851,29 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         d_f_clamp_d_cs_ang = (
             jnp.concatenate(
                 [
-                    d_f_clamp_d_x.aero.cs_ang_t[k].reshape(n_zero_force, -1)
-                    for k in trim_cs
+                    sum(
+                        d_f_clamp_d_x.aero.cs_ang_t[k].reshape(n_zero_force, -1)
+                        for k in group
+                    )
+                    for group in cs_groups
                 ],
                 axis=1,
             )
-            if trim_cs
+            if cs_groups
             else jnp.zeros((n_zero_force, 0))
         )
         d_f_clamp_d_thrust = (
             jnp.concatenate(
                 [
-                    d_f_clamp_d_x.structure.thrust_t[k].reshape(n_zero_force, -1)
-                    for k in thrust_nodes
+                    sum(
+                        d_f_clamp_d_x.structure.thrust_t[k].reshape(n_zero_force, -1)
+                        for k in group
+                    )
+                    for group in thrust_groups
                 ],
                 axis=1,
             )
-            if thrust_nodes
+            if thrust_groups
             else jnp.zeros((n_zero_force, 0))
         )
         d_f_clamp_d_trim_angles = (
@@ -1872,8 +1901,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_variables = CoupledAeroelastic._apply_trim_update(
             trim_variables=trim_variables,
             trim_update=trim_update,
-            trim_cs=trim_cs,
-            thrust_nodes=thrust_nodes,
+            cs_groups=cs_groups,
+            thrust_groups=thrust_groups,
             trim_orientation=trim_orientation,
         )
 
@@ -1893,8 +1922,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         t: Array,
         load_steps: int,
         horseshoe: bool,
-        trim_cs: Sequence[str],
-        thrust_nodes: Sequence[str],
+        cs_groups: Sequence[Sequence[str]],
+        thrust_groups: Sequence[Sequence[str]],
         trim_orientation: Sequence[str],
     ) -> tuple[Array, Array, AeroelasticCase]:
         """
@@ -1911,6 +1940,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             t=t,
             load_steps=load_steps,
             horseshoe=horseshoe,
+            cs_groups=cs_groups,
+            thrust_groups=thrust_groups,
         )
 
         def eval_perturbed(tv_p_: TrimVariables) -> Array:
@@ -1924,25 +1955,29 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 t=t,
                 load_steps=load_steps,
                 horseshoe=horseshoe,
+                cs_groups=cs_groups,
+                thrust_groups=thrust_groups,
             )
             return (f_p - f_clamp_0) / fd_step
 
         columns: list[Array] = []
-        for k in trim_cs:
+        for group in cs_groups:
+            group_k = group_key(group)
             tv_p = TrimVariables(
                 cs_ang={
-                    kk: (v + fd_step if kk == k else v)
+                    kk: (v + fd_step if kk == group_k else v)
                     for kk, v in trim_variables.cs_ang.items()
                 },
                 thrust=trim_variables.thrust,
                 trim_angles=trim_variables.trim_angles,
             )
             columns.append(eval_perturbed(tv_p))
-        for k in thrust_nodes:
+        for group in thrust_groups:
+            group_k = group_key(group)
             tv_p = TrimVariables(
                 cs_ang=trim_variables.cs_ang,
                 thrust={
-                    kk: (v + fd_step if kk == k else v)
+                    kk: (v + fd_step if kk == group_k else v)
                     for kk, v in trim_variables.thrust.items()
                 },
                 trim_angles=trim_variables.trim_angles,
@@ -1982,8 +2017,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         load_steps: int,
         trim_relaxation: float,
         horseshoe: bool,
-        trim_cs: Sequence[str],
-        thrust_nodes: Sequence[str],
+        cs_groups: Sequence[Sequence[str]],
+        thrust_groups: Sequence[Sequence[str]],
         trim_orientation: Sequence[str],
     ) -> tuple[int, CoupledAeroelastic, TrimVariables, AeroelasticCase, Array, Array]:
         """
@@ -1994,8 +2029,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         trim_variables_new = CoupledAeroelastic._apply_trim_update(
             trim_variables=trim_variables,
             trim_update=trim_update,
-            trim_cs=trim_cs,
-            thrust_nodes=thrust_nodes,
+            cs_groups=cs_groups,
+            thrust_groups=thrust_groups,
             trim_orientation=trim_orientation,
         )
 
@@ -2009,6 +2044,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             t=t,
             load_steps=load_steps,
             horseshoe=horseshoe,
+            cs_groups=cs_groups,
+            thrust_groups=thrust_groups,
         )
 
         s = -trim_update  # actual step taken in trim-variable space

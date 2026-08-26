@@ -242,6 +242,7 @@ class BaseCoupledAeroelastic:
                 f_ext_aero=f_aero_n,
                 prescribed_dofs=prescribed_dofs,
                 load_steps=load_steps,
+                print_header=False,
             )
 
             # compute the full varphi delta

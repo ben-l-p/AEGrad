@@ -22,6 +22,13 @@ def generate_simple_hale(
     sigma_fuselage: float = 10.0,
     sigma_tail: float = 100.0,
     flowfield: FlowField = FLOWFIELD_DEFAULT,
+    m_wing: int = 4,
+    m_tail: int = 4,
+    n_half_wing: int = 16,
+    n_fuselage: int = 8,
+    n_fin: int = 4,
+    n_half_tail: int = 4,
+    m_star: int = 20,
 ) -> CoupledAeroelastic:
     r"""
     Generate the simple HALE aircraft. Reference parameters are derived from the SHARPy case.
@@ -29,6 +36,13 @@ def generate_simple_hale(
     :param sigma_fuselage: Stiffness multiplier for the fuselage structure.
     :param sigma_tail: Stiffness multiplier for the tail structure.
     :param flowfield: FlowField object.
+    :param m_wing: Number of chordwise aerodynamic panels for the wing.
+    :param m_tail: Number of chordwise aerodynamic panels for the tail.
+    :param n_half_wing: Number of spanwise panels for each wing.
+    :param n_fuselage: Number of beam elements in the fuselage.
+    :param n_fin: Number of height-wise panels in the tail fin.
+    :param n_half_tail: Number of spanwise panels for each horizontal stabiliser half.
+    :param m_star: Number of trailing wake panels.
     :return: HALE aircraft object.
     """
     # geometry
@@ -58,15 +72,8 @@ def generate_simple_hale(
     eiz = 4e6  # in-plane
 
     # discretisation
-    n_half_wing: int = 16
     n_outer_wing: int = int(n_half_wing * dihedral_fraction)
     n_inner_wing: int = n_half_wing - n_outer_wing
-    m_wing: int = 4
-    n_fuselage: int = 8
-    n_fin: int = 4
-    n_half_tail: int = 4
-    m_tail: int = 4
-    m_star: int = 20
 
     # other variables
     dt: float = c_wing / (m_wing * float(jnp.linalg.norm(flowfield.u_inf)))

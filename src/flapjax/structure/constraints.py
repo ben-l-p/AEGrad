@@ -129,7 +129,9 @@ class Hinge(SpringDamper):
         :param k_translation: Translation-blocking stiffness, () | (3, ).
         :param k_perpendicular: Rotation-blocking stiffness for axes perpendicular to the hinge axis.
         :param k_axis: Torsional stiffness about the hinge axis.
-        :param c_translation, c_perpendicular, c_axis: Damping counterparts.
+        :param c_translation: Translation-blocking damping, () | (3, ).
+        :param c_perpendicular: Rotation-blocking damping for axes perpendicular to the hinge axis.
+        :param c_axis: Torsional damping about the hinge axis.
         """
         a = axis / jnp.linalg.norm(axis)  # normalised hinge axis
         p_axis = jnp.outer(a, a)
