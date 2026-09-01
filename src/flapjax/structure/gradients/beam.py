@@ -85,6 +85,29 @@ class BeamStructure(BaseBeamStructure):
         eps = struct.make_eps(d=d)
         f_elem = struct.make_f_elem(eps=eps)
 
+        f_ext_dead_i = (
+            dv.f_ext_dead[i_ts, ...]
+            if dv.f_ext_dead is not None
+            else dv_full.f_ext_dead[i_ts, ...]
+            if dv_full.f_ext_dead is not None
+            else None
+        )
+        m_t = struct.make_m_t(d=d)
+
+        # k_t_assembled is only required when Rayleigh damping is active. Skip the extra assembly when unused.
+        k_t_assembled = (
+            struct.make_k_t_full(
+                d=d,
+                p_d=p_d,
+                eps=eps,
+                f_ext_dead=f_ext_dead_i,
+                rmat=hg[:, :3, :3],
+                m_t=m_t,
+            )
+            if struct.beta_k != 0.0
+            else None
+        )
+
         assert dv_full.thrust_t is not None
         f_res = struct.make_f_res(
             solve_dofs=None,
@@ -96,16 +119,12 @@ class BeamStructure(BaseBeamStructure):
             else dv_full.f_ext_follower[i_ts, ...]
             if dv_full.f_ext_follower is not None
             else None,
-            f_ext_dead_n=dv.f_ext_dead[i_ts, ...]
-            if dv.f_ext_dead is not None
-            else dv_full.f_ext_dead[i_ts, ...]
-            if dv_full.f_ext_dead is not None
-            else None,
+            f_ext_dead_n=f_ext_dead_i,
             thrust_n={k: v[i_ts] for k, v in dv.thrust_t.items()}
             if dv.thrust_t is not None
             else {k: v[i_ts] for k, v in dv_full.thrust_t.items()},
             dynamic=True,
-            m_t=self.make_m_t(d=d),
+            m_t=m_t,
             c_l=self._make_c_t(d=d, d_dot=self._make_d_dot(p_d=p_d, v=q.v), v=q.v)[0],
             c_l_lumped=self._make_c_t_lumped(v=q.v)[0]
             if self.use_lumped_mass
@@ -113,6 +132,7 @@ class BeamStructure(BaseBeamStructure):
             v=q.v,
             v_dot=q.v_dot,
             i_ts=i_ts,
+            k_t_assembled=k_t_assembled,
         )[0]
         return StructureFullStates(
             v=q.v,

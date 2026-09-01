@@ -984,7 +984,7 @@ class LinearCoupled(
         :param max_disp: Maximum linear displacement used to normalise the plotted mode shape (in reference units).
         :param max_ang: Maximum angular displacement used to normalise the plotted mode shape.
         :param max_gamma: Maximum circulation used to normalise the plotted mode shape.
-        :return: Eigenvalues of the system A matrix, ``(n_states, )`` or ``(n_states, 2)`` if ``to_components=True``.
+        :return: Continuous-time eigenvalues of the system A matrix, ``(n_states, )`` or ``(n_states, 2)`` if ``to_components=True``.
         """
 
         evals_d, evecs = jnp.linalg.eig(self.sys.a)

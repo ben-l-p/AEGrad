@@ -43,7 +43,7 @@ from flapjax.structure.gradients.data_structures import (
 )
 from flapjax.structure.utils import get_solve_dofs, transform_nodal_vect
 from flapjax.utils.print_utils import (
-    VERBOSITY_LEVEL,
+    get_verbosity,
     jax_print,
     map_verbosity_level,
     print_table_line,
@@ -1221,7 +1221,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 _, pull_all = jax.vjp(_residual_all, q_n, q_nm1, dv)
 
                 def matvec_qn_t(v: Array) -> Array:
-                    if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+                    if map_verbosity_level(get_verbosity()) >= map_verbosity_level(
                         "normal"
                     ):
                         # print a dot for every GMRES iteration. Due to the jax GMRES function not returning the number
@@ -1573,7 +1573,9 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 )
                 return i_iter, tv, sol, fc
 
-            print_table_title(title="Trim (Adjoint)", inner_width=81)
+            f_clamp_init = jnp.full((len(zero_force_dofs_)), 1e10)
+            print_table_title(title="Trim (Adjoint)", inner_width=104)
+            trim_variables_init.print_header(f_clamp=f_clamp_init)
             n_iter, trim_variables, ae_sol, _ = jax.lax.while_loop(
                 lambda args_: jnp.logical_and(
                     jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
@@ -1584,12 +1586,12 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     0,
                     trim_variables_init,
                     ae_sol_init,
-                    jnp.full((len(zero_force_dofs_)), 1e10),
+                    f_clamp_init,
                 ),
             )
-            print_table_line(inner_width=81)
+            print_table_line(inner_width=104)
         elif method == "finite_difference":
-            print_table_title(title="Trim (Finite Difference)", inner_width=81)
+            print_table_title(title="Trim (Finite Difference)", inner_width=104)
 
             b_approx_init, f_clamp_init, ae_sol_bootstrap = self._trim_fd_jacobian(
                 inner_case=inner_case,
@@ -1635,6 +1637,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 )
                 return i_iter, tv, sol, fc, b
 
+            trim_variables_init.print_header(f_clamp=f_clamp_init)
             n_iter, trim_variables, ae_sol, _, _ = jax.lax.while_loop(
                 lambda args_: jnp.logical_and(
                     jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
@@ -1649,7 +1652,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                     b_approx_init,
                 ),
             )
-            print_table_line(inner_width=81)
+            print_table_line(inner_width=104)
         else:
             raise ValueError(f"Unknown trim method: {method!r}.")
 
@@ -1734,8 +1737,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         )
         with verbosity(
             level="silent"
-            if map_verbosity_level(VERBOSITY_LEVEL) <= map_verbosity_level("normal")
-            else VERBOSITY_LEVEL
+            if map_verbosity_level(get_verbosity()) <= map_verbosity_level("normal")
+            else get_verbosity()
         ):
             ae_sol = inner_case.static_solve(
                 prescribed_dofs=prescribed_dofs,
@@ -1814,8 +1817,8 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
 
         with verbosity(
             level="silent"
-            if map_verbosity_level(VERBOSITY_LEVEL) <= map_verbosity_level("normal")
-            else VERBOSITY_LEVEL
+            if map_verbosity_level(get_verbosity()) <= map_verbosity_level("normal")
+            else get_verbosity()
         ):
 
             def objective(states: AeroelasticFullStates, *_) -> Array:
@@ -1906,7 +1909,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             trim_orientation=trim_orientation,
         )
 
-        trim_variables.print(i_iter=i_iter, f_clamp=f_clamp)
+        trim_variables.print_values(i_iter=i_iter, f_clamp=f_clamp)
 
         return i_iter + 1, inner_case, trim_variables, ae_sol, f_clamp
 
@@ -2052,7 +2055,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
         y = f_clamp_new - f_clamp
         b_approx_new = b_approx + jnp.outer(y - b_approx @ s, s) / jnp.dot(s, s)
 
-        trim_variables_new.print(i_iter=i_iter, f_clamp=f_clamp_new)
+        trim_variables_new.print_values(i_iter=i_iter, f_clamp=f_clamp_new)
 
         return (
             i_iter + 1,

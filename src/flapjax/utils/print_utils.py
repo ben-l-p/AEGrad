@@ -41,6 +41,13 @@ def set_verbosity(level: VerbosityLevel) -> None:
     VERBOSITY_LEVEL = level
 
 
+def get_verbosity() -> VerbosityLevel:
+    """
+    Return the current verbosity level.
+    """
+    return VERBOSITY_LEVEL
+
+
 @contextmanager
 def verbosity(level: VerbosityLevel):
     r"""

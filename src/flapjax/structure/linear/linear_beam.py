@@ -71,6 +71,14 @@ class LinearBeam(
             self.m, self.k = beam.make_nodal_m_k(case=reference, int_order=int_order)
             self.mode_shapes = None
 
+        # Rayleigh damping matrix
+        self.alpha_m: float = beam.alpha_m
+        self.beta_k: float = beam.beta_k
+        if beam.alpha_m != 0.0 or beam.beta_k != 0.0:
+            self.c = beam.alpha_m * self.m + beam.beta_k * self.k
+        else:
+            self.c = None
+
         super().__init__(reference=reference, dt=dt)
 
         self.sys: LinearSystem = self.linearise()
@@ -262,10 +270,16 @@ class LinearBeam(
         q_state_size = self.n_modes if self.modal_states else self.n_free_dof
 
         # dynamics matrix: [q_dot; q_ddot] = A [q; q_dot]
+        # includes Raleigh damping contribution if enabled
+        m_inv_c = (
+            lu_solve(m_lu, self.c)
+            if self.c is not None
+            else jnp.zeros((q_state_size, q_state_size))
+        )
         a = jnp.block(
             [
                 [jnp.zeros((q_state_size, q_state_size)), jnp.eye(q_state_size)],
-                [-lu_solve(m_lu, self.k), jnp.zeros((q_state_size, q_state_size))],
+                [-lu_solve(m_lu, self.k), -m_inv_c],
             ]
         )
 

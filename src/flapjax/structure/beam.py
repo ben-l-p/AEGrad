@@ -49,7 +49,7 @@ from flapjax.utils.constants import BASE_LEGENDRE_ORDER, BASE_LOBATTO_ORDER
 from flapjax.utils.data_structures import ConvergenceSettings, ConvergenceStatus
 from flapjax.utils.linear import conjugate_partner_mask
 from flapjax.utils.print_utils import (
-    VERBOSITY_LEVEL,
+    get_verbosity,
     jax_print,
     map_verbosity_level,
     print_table_line,
@@ -102,6 +102,8 @@ class BaseBeamStructure:
         "struct_convergence_settings",
         "relaxation_factor",
         "spectral_radius",
+        "alpha_m",
+        "beta_k",
     )
 
     @property
@@ -158,6 +160,8 @@ class BaseBeamStructure:
         optional_jacobians: OptionalJacobians | None = None,
         relaxation_factor: float = 1.0,
         spectral_radius: float = 0.9,
+        alpha_m: float = 0.0,
+        beta_k: float = 0.0,
         struct_convergence_settings: ConvergenceSettings = DEFAULT_STRUCT_CONVERGENCE_SETTINGS,
         nodal_constraints: NodalConstraint | Sequence[NodalConstraint] | None = None,
     ) -> None:
@@ -181,6 +185,8 @@ class BaseBeamStructure:
         1 is no relaxation, and a value of 0 is no update.
         :param spectral_radius: Spectral radius for structural time integrator, where a value of 0 is highly damped and
         a value of 1 is undamped.
+        :param alpha_m: Mass-proportional Rayleigh damping coefficient.
+        :param beta_k: Stiffness-proportional Rayleigh damping coefficient.
         :param struct_convergence_settings: Structure convergence settings.
         :param nodal_constraints: Optional sequence of single-node constraints (springs, dampers,
         prescribed motions) that add residual + tangent contributions at their target nodes.
@@ -320,6 +326,8 @@ class BaseBeamStructure:
         )
         self.relaxation_factor: float = relaxation_factor
         self.spectral_radius: float = spectral_radius
+        self.alpha_m: float = float(alpha_m)
+        self.beta_k: float = float(beta_k)
 
         self.time_integrator = None
 
@@ -1074,6 +1082,8 @@ class BaseBeamStructure:
         k_nodal: Array,
         freq_range: tuple[float | Array, float | Array],
         damp_range: tuple[float | Array, float | Array],
+        alpha_m: float = 0.0,
+        beta_k: float = 0.0,
     ) -> tuple[Array, Array, Array]:
         # Cholesky-transformed symmetric eigenproblem: K phi = omega^2 M phi
         # ensure symmetry
@@ -1095,7 +1105,15 @@ class BaseBeamStructure:
         omega_sq = mu - sigma
         omega = jnp.sqrt(jnp.maximum(omega_sq, 0.0))
         freq_hz = omega / (2.0 * jnp.pi)
-        damping = jnp.zeros_like(freq_hz)
+
+        # damping can be obtained directly from the natural of the system and the Raleigh coefficients
+        # includex filter to not damp the rigid-body modes
+        safe_omega = jnp.where(omega > 0.0, omega, 1.0)
+        damping = jnp.where(
+            omega > 0.0,
+            0.5 * (alpha_m / safe_omega + beta_k * omega),
+            0.0,
+        )
 
         # eigh returns ascending eigenvalues, so frequency ordering is implicit
         in_range = (
@@ -1172,7 +1190,12 @@ class BaseBeamStructure:
         ordered_freq, out_damping, out_modes = jax.lax.cond(
             k_asymmetry < 1e-10,
             lambda: self._base_modal_symmetric(
-                m_nodal, k_nodal, freq_range, damp_range
+                m_nodal=m_nodal,
+                k_nodal=k_nodal,
+                freq_range=freq_range,
+                damp_range=damp_range,
+                alpha_m=self.alpha_m,
+                beta_k=self.beta_k,
             ),
             lambda: self._base_modal_nonsymmetric(
                 m_nodal,
@@ -1327,6 +1350,19 @@ class BaseBeamStructure:
                 arr=mat, lumped_arr=c_t_lumped * ti.gamma_prime
             )
 
+        # add Rayleigh structural damping contribution
+        if self.beta_k != 0.0:
+            mat += self.beta_k * ti.gamma_prime * k_t
+        if self.alpha_m != 0.0:
+            mat += (
+                self.alpha_m * ti.gamma_prime * self.assemble_matrix_from_entries(m_t)
+            )
+            if self.use_lumped_mass:
+                mat = self.add_lumped_contributions_to_arr(
+                    arr=mat,
+                    lumped_arr=self.alpha_m * ti.gamma_prime * self.m_lumped,
+                )
+
         return mat
 
     def _apply_nodal_constraint_tangent(
@@ -1480,6 +1516,42 @@ class BaseBeamStructure:
         return -jnp.einsum("ijk,ik->ij", m_l, v_dot_elem), -jnp.einsum(
             "ijk,ik->ij", c_l, v_elem
         )  # (n_elem, 12)
+
+    def _make_f_rayleigh_damp(
+        self, m_t: Array, k_t_assembled: Array, v: Array
+    ) -> Array:
+        r"""
+        Compute the Rayleigh structural damping force, returned as a global DOF vector.
+        :param m_t: Element mass matrices, ``(n_elem, 12, 12)``.
+        :param k_t_assembled: Assembled global tangent stiffness matrix, ``(n_dof, n_dof)``.
+        :param v: Nodal velocities in local frames, ``(n_nodes, 6)``.
+        :return: Damping force vector, ``(n_dof, )``.
+        """
+        f_damp = jnp.zeros(self.n_dof)
+
+        # stiffness proportional damping contribution
+        if self.beta_k != 0.0:
+            f_damp -= self.beta_k * (k_t_assembled @ v.ravel())
+
+        # mass proportional damping contribution
+        if self.alpha_m != 0.0:
+            v_elem = self.split_vector_to_elements(v)  # (n_elem, 12)
+            f_mass_elem = -self.alpha_m * jnp.einsum(
+                "ijk,ik->ij", m_t, v_elem
+            )  # (n_elem, 12)
+            f_damp += self.assemble_vector_from_entries(f_mass_elem)
+            if self.use_lumped_mass:
+                f_mass_lumped = (
+                    -self.alpha_m
+                    * jnp.einsum(
+                        "ijk,ik->ij", self.m_lumped, v[self.m_lumped_index_arr, ...]
+                    ).ravel()
+                )
+                f_damp = self.add_lumped_contributions_to_vec(
+                    vec=f_damp, lumped_vec=f_mass_lumped
+                )
+
+        return f_damp
 
     def _make_f_iner_gyr_lumped(
         self, c_l_lumped: Array, v: Array, v_dot: Array
@@ -1780,6 +1852,7 @@ class BaseBeamStructure:
         v: Array,
         v_dot: Array,
         i_ts: int = 0,
+        k_t_assembled: Array | None = None,
     ) -> tuple[Array, Array]: ...
 
     @overload
@@ -1799,6 +1872,7 @@ class BaseBeamStructure:
         v: None,
         v_dot: None,
         i_ts: int = 0,
+        k_t_assembled: Array | None = None,
     ) -> tuple[Array, Array]: ...
 
     def make_f_res(
@@ -1817,6 +1891,7 @@ class BaseBeamStructure:
         v,
         v_dot,
         i_ts: int = 0,
+        k_t_assembled: Array | None = None,
     ) -> tuple[Array, Array]:
         r"""
         Compute the residual force vector for a given configuration and external forces, used in the nonlinear solve.
@@ -1836,6 +1911,8 @@ class BaseBeamStructure:
         :param v: Nodal velocities, ``(n_nodes, 6)``.
         :param v_dot: Nodal accelerations, ``(n_node, 6)``.
         :param i_ts: Time-step index (0 for static solves).
+        :param k_t_assembled: Assembled global tangent stiffness matrix ``(n_dof, n_dof)``, required for Rayleigh
+        damping.
         :return: Residual force vector, ``(n_dof, )``, absolute sum of forces, ``(n_dof, )``.
         """
 
@@ -1899,6 +1976,22 @@ class BaseBeamStructure:
             dofs = node * 6 + jnp.arange(6)
             f_res_vect = f_res_vect.at[dofs].add(f_constraint)
             f_abs_sum_vect = f_abs_sum_vect.at[dofs].add(jnp.abs(f_constraint))
+
+        # Rayleigh structural damping
+        if dynamic and (self.alpha_m != 0.0 or self.beta_k != 0.0):
+            if self.beta_k != 0.0 and k_t_assembled is None:
+                raise ValueError(
+                    "k_t_assembled must be provided when beta_k != 0 for dynamic residual."
+                )
+            f_damp = self._make_f_rayleigh_damp(
+                m_t=m_t,
+                k_t_assembled=k_t_assembled
+                if k_t_assembled is not None
+                else jnp.zeros((self.n_dof, self.n_dof)),
+                v=v,
+            )
+            f_res_vect += f_damp
+            f_abs_sum_vect += jnp.abs(f_damp)
 
         if solve_dofs is not None:
             return f_res_vect[solve_dofs], f_abs_sum_vect[
@@ -2077,7 +2170,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("verbose"):
                 converge_status.print_struct_message(
                     i_ts=None, t=None, i_load_step=i_load_step
                 )
@@ -2106,14 +2199,14 @@ class BaseBeamStructure:
                 ),
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("normal"):
                 convergence_status.print_struct_message(
                     i_ts=None, t=None, i_load_step=i_load_step
                 )
 
             return hg_solve
 
-        if print_header and map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+        if print_header and map_verbosity_level(get_verbosity()) >= map_verbosity_level(
             "normal"
         ):
             ConvergenceStatus.print_header(dynamic=False)
@@ -2126,7 +2219,7 @@ class BaseBeamStructure:
             self.hg0,
         )
 
-        if print_header and map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level(
+        if print_header and map_verbosity_level(get_verbosity()) >= map_verbosity_level(
             "normal"
         ):
             ConvergenceStatus.print_line(dynamic=False)
@@ -2336,6 +2429,7 @@ class BaseBeamStructure:
                 v=q_alpha.v,
                 v_dot=q_alpha.v_dot,
                 i_ts=i_ts,
+                k_t_assembled=k_t,
             )
 
             # system matrix, (n_dof, n_dof)
@@ -2382,7 +2476,7 @@ class BaseBeamStructure:
                 total_force=f_abs_sum_n,
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("verbose"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
                 )
@@ -2572,7 +2666,7 @@ class BaseBeamStructure:
                 )
 
             # print message where we only require one message per timestep
-            if map_verbosity_level(VERBOSITY_LEVEL) == map_verbosity_level("normal"):
+            if map_verbosity_level(get_verbosity()) == map_verbosity_level("normal"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=struct_sol.t[i_ts], i_load_step=load_steps - 1
                 )
@@ -2792,7 +2886,7 @@ class BaseBeamStructure:
                 total_force=f_aero_alpha.ravel()[solve_dofs_arr],
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("verbose"):
                 fsi_convergence_status_.print_fsi_message(i_ts=i_ts, t=t[i_ts])
 
             return (
@@ -2863,7 +2957,7 @@ class BaseBeamStructure:
                 )
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("verbose"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("verbose"):
                 struct_convergence_status_.print_struct_message(
                     i_ts=i_ts, t=t[i_ts], i_load_step=i_load_step
                 )

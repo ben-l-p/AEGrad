@@ -25,7 +25,7 @@ from flapjax.structure.utils import get_solve_dofs, transform_nodal_vect
 from flapjax.utils.constants import BASE_LOBATTO_ORDER
 from flapjax.utils.data_structures import ConvergenceSettings, ConvergenceStatus
 from flapjax.utils.print_utils import (
-    VERBOSITY_LEVEL,
+    get_verbosity,
     map_verbosity_level,
     warn,
     warn_if_32_bit,
@@ -275,7 +275,7 @@ class BaseCoupledAeroelastic:
                 cs_ang=self.aero.cs_ang0,
             )
 
-            if map_verbosity_level(VERBOSITY_LEVEL) >= map_verbosity_level("normal"):
+            if map_verbosity_level(get_verbosity()) >= map_verbosity_level("normal"):
                 converge_status_.print_fsi_message(i_ts=None, t=None)
 
             return converge_status_, struct_case_np1, aero_case_np1, omega, r_curr
