@@ -1640,6 +1640,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#flapjax.utils.print_utils.get_verbosity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_verbosity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flapjax.utils.print_utils.verbosity" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2370,6 +2381,17 @@
   
     <nav class="md-nav" aria-label="print_utils">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flapjax.utils.print_utils.get_verbosity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_verbosity
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#flapjax.utils.print_utils.verbosity" class="md-nav__link">
@@ -5341,6 +5363,39 @@ is then flagged.</p>
 <div class="doc doc-object doc-function">
 
 
+<h4 id="flapjax.utils.print_utils.get_verbosity" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_verbosity</span>
+
+
+<a href="#flapjax.utils.print_utils.get_verbosity" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">get_verbosity</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">VerbosityLevel</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the current verbosity level.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/flapjax/utils/print_utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_verbosity</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">VerbosityLevel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Return the current verbosity level.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">VERBOSITY_LEVEL</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h4 id="flapjax.utils.print_utils.verbosity" class="doc doc-heading">
             <span class="doc doc-object-name doc-function-name">verbosity</span>
 
@@ -5387,18 +5442,18 @@ is then flagged.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/flapjax/utils/print_utils.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">51</span>
 <span class="normal">52</span>
 <span class="normal">53</span>
 <span class="normal">54</span>
-<span class="normal">55</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@contextmanager</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@contextmanager</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">verbosity</span><span class="p">(</span><span class="n">level</span><span class="p">:</span> <span class="n">VerbosityLevel</span><span class="p">):</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    Context manager to temporarily change the verbosity level.</span>
