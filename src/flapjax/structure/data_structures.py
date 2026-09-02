@@ -500,9 +500,7 @@ class StructureCase:
             directory_path = Path(directory).resolve()
             directory_path.mkdir(parents=True, exist_ok=True)
 
-            paths: list[Path] = []
-            for i_ts in index_:
-                paths.append(self[i_ts]._plot_single(directory, n_interp))
+            paths = [self[i_ts]._plot_single(directory, n_interp) for i_ts in index_]
 
             assert self.t is not None
             return write_pvd(directory, "beam_dynamic_ts", paths, list(self.t[index_]))

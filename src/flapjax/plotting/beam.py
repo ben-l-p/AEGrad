@@ -1,15 +1,25 @@
+from __future__ import annotations
+
 import os
 from functools import partial
 from pathlib import Path
 
 import jax
+import numpy as np
 import vtk
 from jax import Array
 from jax import numpy as jnp
-from vtk.numpy_interface import algorithms as algs  # type: ignore
-from vtk.numpy_interface import dataset_adapter as dsa  # type: ignore
 
 from flapjax.algebra.se3 import exp_se3, hg_inv, hg_to_d
+from flapjax.plotting.writer import (
+    configure_fast_writer,
+    make_line_cell_array,
+    make_poly_line_cell_array,
+    make_vtk_points,
+    numpy_to_vtk_scalar,
+    numpy_to_vtk_vector,
+    to_host,
+)
 from flapjax.utils.print_utils import warn
 
 
@@ -25,7 +35,6 @@ def interpolate_beam(
     :param include_endpoints: Whether to include the original nodes in the output (if False, only the interpolated points are returned)
     :return: Interpolated SE(3) transforms along the beam, ``(n_interp, 4, 4)``
     """
-    # beam-wise coordinates, [n_interp]
     s_l = (
         jnp.linspace(0.0, 1.0, n_interp)
         if include_endpoints
@@ -39,14 +48,65 @@ def interpolate_beam(
     hg1h0 = hg1 @ h0
     hg2h0 = hg2 @ h0
 
-    d = hg_to_d(hg1h0, hg2h0)  # (6,), twist coordinates from node 1 to node 2
+    d = hg_to_d(hg1h0, hg2h0)
 
-    s_l_d = jnp.outer(s_l, d)  # (n_interp, 6) scaled twist coordinates along the beam
+    s_l_d = jnp.outer(s_l, d)
 
-    exp_s_l_d = jax.vmap(exp_se3, 0, 0)(s_l_d)  # (n_interp, 4, 4)
-    return jnp.einsum(
-        "ij,hjk,kl->hil", hg1h0, exp_s_l_d, hg_inv(h0)
-    )  # (n_interp, 4, 4)
+    exp_s_l_d = jax.vmap(exp_se3, 0, 0)(s_l_d)
+    return jnp.einsum("ij,hjk,kl->hil", hg1h0, exp_s_l_d, hg_inv(h0))
+
+
+def _interpolate_all_elements(
+    hg: Array, conn: Array, o0: Array, n_interp: int
+) -> Array:
+    """Vectorised beam interpolation for every element."""
+    return jax.vmap(
+        partial(interpolate_beam, n_interp=n_interp, include_endpoints=False),
+        (0, 0, 0),
+        0,
+    )(hg[conn[:, 0], ...], hg[conn[:, 1], ...], o0)
+
+
+def _build_beam_topology(
+    hg: Array, conn: Array, o0: Array, n_interp: int
+) -> tuple[vtk.vtkUnstructuredGrid, np.ndarray, np.ndarray | None]:
+    """Build the beam VTK grid with topology + points.
+
+    :return: (grid, coords_host_(n_pts, 3), full_hg_host or None). ``full_hg``
+        is returned only when interpolation is active, so downstream data
+        attachment can pad node arrays with the interpolated slots.
+    """
+    conn_host = np.asarray(conn, dtype=np.int64)
+    if conn_host.ndim != 2 or conn_host.shape[1] != 2:
+        raise ValueError("Connectivity must be a 2D array with shape (n_elem, 2)")
+
+    n_nodes = int(hg.shape[0])
+    n_elems = int(conn_host.shape[0])
+    ug = vtk.vtkUnstructuredGrid()
+
+    if n_interp > 0:
+        interp_hg = _interpolate_all_elements(hg, conn, o0, n_interp)
+        interp_hg_host = to_host(interp_hg)  # (n_elem, n_interp, 4, 4)
+
+        coords_nodes = to_host(hg[:, :3, 3])  # (n_nodes, 3)
+        coords_interp = interp_hg_host[:, :, :3, 3].reshape(-1, 3)
+        coords = np.concatenate((coords_nodes, coords_interp), axis=0)
+
+        added_nodes = np.arange(
+            n_nodes, n_nodes + n_interp * n_elems, dtype=np.int64
+        ).reshape(n_elems, n_interp)
+        interp_conns = np.concatenate(
+            (conn_host[:, [0]], added_nodes, conn_host[:, [1]]), axis=1
+        )  # (n_elems, 2 + n_interp)
+
+        ug.SetPoints(make_vtk_points(coords))
+        ug.SetCells(vtk.VTK_POLY_LINE, make_poly_line_cell_array(interp_conns))
+        return ug, coords, interp_hg_host
+
+    coords = to_host(hg[:, :3, 3])
+    ug.SetPoints(make_vtk_points(coords))
+    ug.SetCells(vtk.VTK_LINE, make_line_cell_array(conn_host))
+    return ug, coords, None
 
 
 def create_beam_unstructured_grid(
@@ -64,100 +124,90 @@ def create_beam_unstructured_grid(
     :return: vtkUnstructuredGrid with VTK_LINE cells, array of SE(3) transforms interpolated case, and element mapping
     array (mapping each new interpolated element to the original element index).
     """
-    n_nodes = hg.shape[0]
-    n_elems = conn.shape[0]
+    ug, _, interp_hg_host = _build_beam_topology(hg, conn, o0, n_interp)
 
-    coords = hg[
-        :, :3, 3
-    ]  # extract node coordinates from SE(3) transforms, (n_nodes, 3)
-    if coords.ndim != 2 or coords.shape[1] != 3:
-        raise ValueError("coords must be a 2D array with shape (n_nodes, 3)")
-
-    conn = jnp.asarray(conn)
-    if conn.ndim != 2 or conn.shape[1] != 2:
-        raise ValueError("Connectivity must be a 2D array with shape (n_elem, 2)")
-
-    ug = vtk.vtkUnstructuredGrid()
-
-    if n_interp > 0:
-        # interpolate elements, use polyline elements
-        interp_hg = jax.vmap(
-            partial(interpolate_beam, n_interp=n_interp, include_endpoints=False),
-            (0, 0, 0),
-            0,
-        )(hg[conn[:, 0], ...], hg[conn[:, 1], ...], o0)  # (n_elem, n_interp, 4, 4)
-
-        full_hg = jnp.concatenate(
-            (
-                hg[conn[:, 0], ...][:, None, :, :],
-                interp_hg,
-                hg[conn[:, 1], ...][:, None, :, :],
-            ),
-            axis=1,
-        )  # (n_elem, 2 + n_interp, 4, 4)
-
-        added_nodes = jnp.arange(n_nodes, n_nodes + n_interp * n_elems).reshape(
-            n_elems, n_interp
-        )  # (n_elems, n_interp)
-
-        interp_conns = jnp.concatenate(
-            (conn[:, [0]], added_nodes, conn[:, [1]]), axis=1
-        )  # (n_elems, 2 + n_interp)
-
-        interp_coords = jnp.concatenate(
-            (coords, interp_hg[:, :, :3, 3].reshape(-1, 3)), axis=0
-        )  # (n_nodes + n_interp * n_elems, 3)
-
-        # add points
-        points = vtk.vtkPoints()
-        pts_vec = algs.make_vector(
-            interp_coords[:, 0].ravel(),
-            interp_coords[:, 1].ravel(),
-            interp_coords[:, 2].ravel(),
-        )
-        points.SetData(dsa.numpyTovtkDataArray(pts_vec, "Points"))
-        ug.SetPoints(points)
-
-        # build connectivity: for VTK unstructured grid, cells need an offsets/connectivity array or use vtkCellArray
-        cell_array = vtk.vtkCellArray()
-        # iterate elements and insert lines
-        for i in range(n_elems):
-            node_ids = interp_conns[i, :]
-            cell_array.InsertNextCell(
-                2 + n_interp
-            )  # (2 + n_interp) node ids for this element, including original nodes and interpolated nodes
-            for j in range(len(node_ids)):
-                cell_array.InsertCellPoint(int(node_ids[j]))
-
-        # create element mapping
-        elem_map = (
-            jnp.arange(n_elems)[:, None].repeat(1 + n_interp, axis=1).ravel()
-        )  # one entry for each new element
-
-        ug.SetCells(vtk.VTK_POLY_LINE, cell_array)
-        return ug, full_hg, elem_map
-    else:
-        # no interpolation, just use original nodes and connectivity with line elements
-        # add points
-        points = vtk.vtkPoints()
-        pts_vec = algs.make_vector(
-            coords[:, 0].ravel(), coords[:, 1].ravel(), coords[:, 2].ravel()
-        )
-        points.SetData(dsa.numpyTovtkDataArray(pts_vec, "Points"))
-        ug.SetPoints(points)
-
-        # build connectivity: for VTK unstructured grid, cells need an offsets/connectivity array or use vtkCellArray
-        cell_array = vtk.vtkCellArray()
-        # iterate elements and insert lines
-        for i in range(n_elems):
-            n0 = int(conn[i, 0])
-            n1 = int(conn[i, 1])
-            cell_array.InsertNextCell(2)
-            cell_array.InsertCellPoint(n0)
-            cell_array.InsertCellPoint(n1)
-
-        ug.SetCells(vtk.VTK_LINE, cell_array)
+    if n_interp == 0:
         return ug, None, None
+
+    n_elems = int(conn.shape[0])
+    endpoints_start = to_host(hg[conn[:, 0], ...])[:, None, :, :]
+    endpoints_end = to_host(hg[conn[:, 1], ...])[:, None, :, :]
+    full_hg = np.concatenate((endpoints_start, interp_hg_host, endpoints_end), axis=1)
+    elem_map = np.repeat(np.arange(n_elems), 1 + n_interp)
+    return ug, jnp.asarray(full_hg), jnp.asarray(elem_map)
+
+
+def _pad_node_scalar(arr: np.ndarray, n_nodes: int, n_pad: int) -> np.ndarray:
+    if n_pad == 0:
+        return arr
+    out = np.zeros(n_nodes + n_pad, dtype=arr.dtype)
+    out[:n_nodes] = arr.ravel()
+    return out
+
+
+def _pad_node_vector(arr: np.ndarray, n_nodes: int, n_pad: int) -> np.ndarray:
+    if n_pad == 0:
+        return arr
+    out = np.zeros((n_nodes + n_pad, 3), dtype=arr.dtype)
+    out[:n_nodes, :] = arr.reshape(n_nodes, 3)
+    return out
+
+
+def _attach_arrays(
+    ug: vtk.vtkUnstructuredGrid,
+    n_nodes: int,
+    n_elems: int,
+    n_pad_nodes: int,
+    node_scalar_data: dict[str, Array | None] | None,
+    node_vector_data: dict[str, Array | None] | None,
+    cell_scalar_data: dict[str, Array | None] | None,
+    cell_vector_data: dict[str, Array | None] | None,
+) -> None:
+    if node_scalar_data:
+        for name, arr in node_scalar_data.items():
+            if arr is None:
+                continue
+            arr_h = to_host(arr)
+            if arr_h.shape[0] != n_nodes:
+                raise ValueError(
+                    f"Node scalar '{name}' has incorrect length {arr_h.shape[0]}; expected {n_nodes}"
+                )
+            padded = _pad_node_scalar(arr_h, n_nodes, n_pad_nodes)
+            ug.GetPointData().AddArray(numpy_to_vtk_scalar(padded, name))
+
+    if node_vector_data:
+        for name, arr in node_vector_data.items():
+            if arr is None:
+                continue
+            arr_h = to_host(arr)
+            if arr_h.shape != (n_nodes, 3):
+                raise ValueError(
+                    f"Node vector '{name}' must have shape {(n_nodes, 3)}, got {arr_h.shape}"
+                )
+            padded = _pad_node_vector(arr_h, n_nodes, n_pad_nodes)
+            ug.GetPointData().AddArray(numpy_to_vtk_vector(padded, name))
+
+    if cell_scalar_data:
+        for name, arr in cell_scalar_data.items():
+            if arr is None:
+                continue
+            arr_h = to_host(arr)
+            if arr_h.shape != (n_elems,):
+                raise ValueError(
+                    f"Cell scalar '{name}' has incorrect shape {arr_h.shape}; expected {(n_elems,)}"
+                )
+            ug.GetCellData().AddArray(numpy_to_vtk_scalar(arr_h, name))
+
+    if cell_vector_data:
+        for name, arr in cell_vector_data.items():
+            if arr is None:
+                continue
+            arr_h = to_host(arr)
+            if arr_h.shape != (n_elems, 3):
+                raise ValueError(
+                    f"Cell vector '{name}' must have shape {(n_elems, 3)}, got {arr_h.shape}"
+                )
+            ug.GetCellData().AddArray(numpy_to_vtk_vector(arr_h, name))
 
 
 def plot_beam_to_vtk(
@@ -195,77 +245,111 @@ def plot_beam_to_vtk(
         n_interp = 0
 
     filepath = Path(filename)
+    n_nodes = int(hg.shape[0])
+    n_elems = int(conn.shape[0])
 
-    n_nodes = hg.shape[0]
-    n_elems = conn.shape[0]
+    ug, _, _ = _build_beam_topology(hg, conn, o0, n_interp)
+    n_pad_nodes = n_interp * n_elems if n_interp > 0 else 0
+    _attach_arrays(
+        ug,
+        n_nodes,
+        n_elems,
+        n_pad_nodes,
+        node_scalar_data,
+        node_vector_data,
+        cell_scalar_data,
+        cell_vector_data,
+    )
 
-    ug, *_ = create_beam_unstructured_grid(hg, conn, o0, n_interp)
-
-    # attach node (point) data
-    if node_scalar_data is not None:
-        for name, arr in node_scalar_data.items():
-            if arr is None:
-                continue
-            if arr.shape[0] != n_nodes:
-                raise ValueError(
-                    f"Node scalar '{name}' has incorrect length {arr.shape[0]}; expected {n_nodes}"
-                )
-            if n_interp > 0:  # add zero entries for interpolated case
-                arr = jnp.zeros(n_nodes + n_interp * n_elems).at[:n_nodes].set(arr)
-            ug.GetPointData().AddArray(dsa.numpyTovtkDataArray(arr.ravel(), name))
-
-    if node_vector_data is not None:
-        for name, arr in node_vector_data.items():
-            if arr is None:
-                continue
-            if arr.shape != (n_nodes, 3):
-                raise ValueError(
-                    f"Node vector '{name}' must have shape {(n_nodes, 3)}, got {arr.shape}"
-                )
-            if n_interp > 0:  # add zero entries for interpolated case
-                arr = (
-                    jnp.zeros((n_nodes + n_interp * n_elems, 3))
-                    .at[:n_nodes, :]
-                    .set(arr)
-                )
-            vectors = algs.make_vector(
-                arr[:, 0].ravel(), arr[:, 1].ravel(), arr[:, 2].ravel()
-            )
-            ug.GetPointData().AddArray(dsa.numpyTovtkDataArray(vectors, name))
-
-    # attach cell data
-    if cell_scalar_data is not None:
-        for name, arr in cell_scalar_data.items():
-            if arr is None:
-                continue
-            if arr.shape != (n_elems,):
-                raise ValueError(
-                    f"Cell scalar '{name}' has incorrect shape {arr.shape}; expected {(n_elems,)}"
-                )
-            ug.GetCellData().AddArray(dsa.numpyTovtkDataArray(arr.ravel(), name))
-
-    if cell_vector_data is not None:
-        for name, arr in cell_vector_data.items():
-            if arr is None:
-                continue
-            if arr.shape != (n_elems, 3):
-                raise ValueError(
-                    f"Cell vector '{name}' must have shape {(n_elems, 3)}, got {arr.shape}"
-                )
-            vectors = algs.make_vector(
-                arr[:, 0].ravel(), arr[:, 1].ravel(), arr[:, 2].ravel()
-            )
-            ug.GetCellData().AddArray(dsa.numpyTovtkDataArray(vectors, name))
-
-    # write to file
     name = filepath.name
     if i_ts is not None:
         name += f"_ts_{i_ts}"
     filename_full = Path(filepath.parent).joinpath(name).with_suffix(".vtu")
 
     writer = vtk.vtkXMLUnstructuredGridWriter()
+    configure_fast_writer(writer)
     writer.SetFileName(str(filename_full))
     writer.SetInputData(ug)
     writer.Write()
 
     return Path(filename_full)
+
+
+class BeamVTUSeries:
+    """
+    Reusable-topology beam VTU writer.
+    Build once from a reference and refresh the values for each timestep.
+    """
+
+    def __init__(
+        self,
+        hg_ref: Array,
+        conn: Array,
+        o0: Array,
+        n_interp: int,
+        base_filename: str | os.PathLike,
+    ) -> None:
+        if n_interp < 0:
+            warn(
+                "Number of interpolation points cannot be negative; defaulting to 0 (no interpolation)"
+            )
+            n_interp = 0
+        self._n_interp = n_interp
+        self._n_nodes = int(hg_ref.shape[0])
+        self._n_elems = int(conn.shape[0])
+        self._n_pad_nodes = n_interp * self._n_elems if n_interp > 0 else 0
+        self._conn = np.asarray(conn, dtype=np.int64)
+        self._o0 = o0
+        self._base = Path(base_filename)
+
+        self._ug, self._coords, _ = _build_beam_topology(hg_ref, conn, o0, n_interp)
+
+        self._writer = vtk.vtkXMLUnstructuredGridWriter()
+        configure_fast_writer(self._writer)
+        self._writer.SetInputData(self._ug)
+
+    def _refresh_points(self, hg: Array) -> None:
+        if self._n_interp > 0:
+            interp_hg = _interpolate_all_elements(
+                hg, jnp.asarray(self._conn), self._o0, self._n_interp
+            )
+            interp_hg_host = to_host(interp_hg)
+            coords_nodes = to_host(hg[:, :3, 3])
+            coords_interp = interp_hg_host[:, :, :3, 3].reshape(-1, 3)
+            coords = np.concatenate((coords_nodes, coords_interp), axis=0)
+        else:
+            coords = to_host(hg[:, :3, 3])
+        self._ug.SetPoints(make_vtk_points(coords))
+
+    def write(
+        self,
+        hg: Array,
+        i_ts: int | None,
+        *,
+        node_scalar_data: dict[str, Array | None] | None = None,
+        node_vector_data: dict[str, Array | None] | None = None,
+        cell_scalar_data: dict[str, Array | None] | None = None,
+        cell_vector_data: dict[str, Array | None] | None = None,
+    ) -> Path:
+        self._refresh_points(hg)
+
+        self._ug.GetPointData().Initialize()
+        self._ug.GetCellData().Initialize()
+        _attach_arrays(
+            self._ug,
+            self._n_nodes,
+            self._n_elems,
+            self._n_pad_nodes,
+            node_scalar_data,
+            node_vector_data,
+            cell_scalar_data,
+            cell_vector_data,
+        )
+
+        name = self._base.name
+        if i_ts is not None:
+            name += f"_ts_{i_ts}"
+        filename_full = self._base.parent.joinpath(name).with_suffix(".vtu")
+        self._writer.SetFileName(str(filename_full))
+        self._writer.Write()
+        return filename_full

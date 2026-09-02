@@ -10,8 +10,8 @@ from jax import numpy as jnp
 from flapjax.aero.data_structures import AeroCase
 from flapjax.algebra.array_utils import ArrayList
 from flapjax.algebra.se3 import exp_se3
-from flapjax.plotting.aerogrid import plot_grid_to_vtk
-from flapjax.plotting.beam import plot_beam_to_vtk
+from flapjax.plotting.aerogrid import GridVTSSeries
+from flapjax.plotting.beam import BeamVTUSeries
 from flapjax.plotting.pvd import write_pvd
 from flapjax.structure import StructureCase
 
@@ -129,14 +129,47 @@ def plot_modes_vtu(
             f"mode_{i_mode + 1}_f{float(freqs[i_mode]):.2f}Hz_z{float(dampings[i_mode]):+.4f}"
         )
         mode_dir.mkdir(parents=True, exist_ok=True)
+
+        beam_series = BeamVTUSeries(
+            hg_ref=struct_ref.hg,
+            conn=conn,
+            o0=o0,
+            n_interp=n_interp,
+            base_filename=mode_dir.joinpath("beam"),
+        )
         beam_paths: list[Path] = []
 
         if uvlm is not None:
             n_surf = uvlm.n_surf
+
+            zeta_b_ref = uvlm.hg_to_zeta_b(hg_n=struct_ref.hg, cs_ang_n=uvlm.cs_ang0)
+            bound_series: list[GridVTSSeries] = [
+                GridVTSSeries(
+                    grid_arr_ref=zeta_b_ref[i_surf],
+                    base_filename=mode_dir.joinpath(uvlm.surf_b_names[i_surf]),
+                )
+                for i_surf in range(n_surf)
+            ]
+            wake_active = [
+                aero_ref is not None and aero_ref.zeta_w[i_surf].shape[0] > 1
+                for i_surf in range(n_surf)
+            ]
+            wake_series: list[GridVTSSeries | None] = [
+                GridVTSSeries(
+                    grid_arr_ref=aero_ref.zeta_w[i_surf],  # type: ignore[union-attr]
+                    base_filename=mode_dir.joinpath(uvlm.surf_w_names[i_surf]),
+                )
+                if wake_active[i_surf]
+                else None
+                for i_surf in range(n_surf)
+            ]
             bound_paths: list[list[Path]] = [[] for _ in range(n_surf)]
             wake_paths: list[list[Path]] = [[] for _ in range(n_surf)]
         else:
             n_surf = 0
+            bound_series = []
+            wake_series = []
+            wake_active = []
             bound_paths = []
             wake_paths = []
 
@@ -173,26 +206,15 @@ def plot_modes_vtu(
                 vmap(exp_se3)(q_pert_full),
             )
 
-            beam_paths.append(
-                plot_beam_to_vtk(
-                    hg=hg,
-                    conn=conn,
-                    o0=o0,
-                    n_interp=n_interp,
-                    filename=mode_dir.joinpath("beam"),
-                    i_ts=i_phase,
-                )
-            )
+            beam_paths.append(beam_series.write(hg=hg, i_ts=i_phase))
 
             if uvlm is not None:
-                # plot aerodynamic grid
                 zeta_b: ArrayList = uvlm.hg_to_zeta_b(hg_n=hg, cs_ang_n=uvlm.cs_ang0)
 
                 for i_surf in range(n_surf):
                     bound_paths[i_surf].append(
-                        plot_grid_to_vtk(
+                        bound_series[i_surf].write(
                             grid_arr=zeta_b[i_surf],
-                            filename=mode_dir.joinpath(uvlm.surf_b_names[i_surf]),
                             i_ts=i_phase,
                             cell_scalar_data={"gamma": gamma_b[i_surf]}
                             if gamma_b is not None
@@ -200,19 +222,19 @@ def plot_modes_vtu(
                         )
                     )
 
-                    if gamma_w is not None:
+                    if (
+                        gamma_w is not None
+                        and wake_active[i_surf]
+                        and wake_series[i_surf] is not None
+                    ):
                         assert zeta_w is not None
-                        if zeta_w[i_surf].shape[0] > 1:
-                            wake_paths[i_surf].append(
-                                plot_grid_to_vtk(
-                                    grid_arr=zeta_w[i_surf],
-                                    filename=mode_dir.joinpath(
-                                        uvlm.surf_w_names[i_surf]
-                                    ),
-                                    i_ts=i_phase,
-                                    cell_scalar_data={"gamma": gamma_w[i_surf]},
-                                )
+                        wake_paths[i_surf].append(
+                            wake_series[i_surf].write(
+                                grid_arr=zeta_w[i_surf],
+                                i_ts=i_phase,
+                                cell_scalar_data={"gamma": gamma_w[i_surf]},
                             )
+                        )
 
         times = (
             jnp.linspace(0.0, 1.0 / freqs[i_mode], n_phase, endpoint=False)
