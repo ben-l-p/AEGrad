@@ -999,7 +999,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2300,7 +2300,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">numpy</span> <span class="k">as</span> <span class="n">jnp</span><span class="p">,</span> <span class="n">Array</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoupledAeroelastic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.straight.pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_pazy_wing</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.swept.swept_pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_swept_pazy_wing</span>
@@ -2312,7 +2312,7 @@ import jax
 from jax import numpy as jnp, Array
 from matplotlib import pyplot as plt
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 from flapjax.models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing
@@ -2448,7 +2448,7 @@ u_inf_mags = jnp.linspace(1e-3, 70.0, n_vel)  # velocity sweep</div>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">tip_mass_types</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"LE"</span><span class="p">,</span> <span class="s2">"TE"</span><span class="p">,</span> <span class="s2">"LE_CORRECTED"</span><span class="p">,)</span>
 
-<span class="n">swept_models</span> <span class="o">=</span> <span class="p">[</span><span class="n">make_swept_pazy_wing</span><span class="p">(</span><span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+<span class="n">swept_models</span> <span class="o">=</span> <span class="p">[</span><span class="n">make_swept_pazy_wing</span><span class="p">(</span><span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
     <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># whilst this is zero, we overwrite it for every instance</span>
     <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
     <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2461,7 +2461,7 @@ u_inf_mags = jnp.linspace(1e-3, 70.0, n_vel)  # velocity sweep</div>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-4">tip_mass_types = ("LE", "TE", "LE_CORRECTED",)
 
-swept_models = [make_swept_pazy_wing(flowfield=Constant(
+swept_models = [make_swept_pazy_wing(flowfield=ConstantFlowField(
     u_inf=jnp.array([0.0, 0.0, 0.0]),  # whilst this is zero, we overwrite it for every instance
     rho=rho,
     relative_motion=True,
@@ -2506,7 +2506,7 @@ swept_models = [make_swept_pazy_wing(flowfield=Constant(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">swept_models</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">make_pazy_wing</span><span class="p">(</span><span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">swept_models</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">make_pazy_wing</span><span class="p">(</span><span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
     <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># whilst this is zero, we overwrite it for every instance</span>
     <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
     <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2516,7 +2516,7 @@ swept_models = [make_swept_pazy_wing(flowfield=Constant(
     <span class="n">m_star</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
     <span class="n">node_multiplier</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">sweep</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mf">10.0</span><span class="p">),</span> <span class="p">))</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-5">swept_models.append(make_pazy_wing(flowfield=Constant(
+<div class="clipboard-copy-txt" id="cell-5">swept_models.append(make_pazy_wing(flowfield=ConstantFlowField(
     u_inf=jnp.array([0.0, 0.0, 0.0]),  # whilst this is zero, we overwrite it for every instance
     rho=rho,
     relative_motion=True,
@@ -2562,7 +2562,7 @@ swept_models = [make_swept_pazy_wing(flowfield=Constant(
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">modes_at_velocity</span><span class="p">(</span><span class="n">u_mag</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">wing</span><span class="p">:</span> <span class="n">CoupledAeroelastic</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Array</span><span class="p">,</span> <span class="n">Array</span><span class="p">]:</span>
     <span class="c1"># swap only the flowfield's u_inf</span>
-    <span class="n">wing</span><span class="o">.</span><span class="n">aero</span><span class="o">.</span><span class="n">flowfield</span> <span class="o">=</span> <span class="n">Constant</span><span class="p">(</span>
+    <span class="n">wing</span><span class="o">.</span><span class="n">aero</span><span class="o">.</span><span class="n">flowfield</span> <span class="o">=</span> <span class="n">ConstantFlowField</span><span class="p">(</span>
         <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">u_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>
         <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
         <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2583,7 +2583,7 @@ swept_models = [make_swept_pazy_wing(flowfield=Constant(
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">def modes_at_velocity(u_mag: Array, wing: CoupledAeroelastic) -&gt; tuple[Array, Array]:
     # swap only the flowfield's u_inf
-    wing.aero.flowfield = Constant(
+    wing.aero.flowfield = ConstantFlowField(
         u_inf=jnp.array([u_mag, 0.0, 0.0]),
         rho=rho,
         relative_motion=True,

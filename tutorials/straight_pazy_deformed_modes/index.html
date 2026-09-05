@@ -999,7 +999,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2292,7 +2292,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">numpy</span> <span class="k">as</span> <span class="n">jnp</span><span class="p">,</span> <span class="n">Array</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.straight.pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_pazy_wing</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.utils.print_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_verbosity</span>
 </pre></div>
@@ -2300,7 +2300,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 from jax import numpy as jnp, Array
 from matplotlib import pyplot as plt
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 from flapjax.utils.print_utils import set_verbosity</div>
 </div>
@@ -2431,7 +2431,7 @@ u_inf_mags = jnp.sqrt(q_inf * 2.0 / rho)  # velocity magnitudes corresponding to
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">wing</span> <span class="o">=</span> <span class="n">make_pazy_wing</span><span class="p">(</span>
-    <span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+    <span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
         <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># whilst this is zero, we overwrite it for every instance</span>
         <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
         <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2446,7 +2446,7 @@ u_inf_mags = jnp.sqrt(q_inf * 2.0 / rho)  # velocity magnitudes corresponding to
 <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-4">wing = make_pazy_wing(
-    flowfield=Constant(
+    flowfield=ConstantFlowField(
         u_inf=jnp.array([0.0, 0.0, 0.0]),  # whilst this is zero, we overwrite it for every instance
         rho=rho,
         relative_motion=True,
@@ -2496,7 +2496,7 @@ u_inf_mags = jnp.sqrt(q_inf * 2.0 / rho)  # velocity magnitudes corresponding to
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">modes_at_velocity</span><span class="p">(</span><span class="n">u_mag</span><span class="p">:</span> <span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Array</span><span class="p">,</span> <span class="n">Array</span><span class="p">]:</span>
     <span class="c1"># swap only the flowfield's u_inf</span>
-    <span class="n">wing</span><span class="o">.</span><span class="n">aero</span><span class="o">.</span><span class="n">flowfield</span> <span class="o">=</span> <span class="n">Constant</span><span class="p">(</span>
+    <span class="n">wing</span><span class="o">.</span><span class="n">aero</span><span class="o">.</span><span class="n">flowfield</span> <span class="o">=</span> <span class="n">ConstantFlowField</span><span class="p">(</span>
         <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">u_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>
         <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
         <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2517,7 +2517,7 @@ u_inf_mags = jnp.sqrt(q_inf * 2.0 / rho)  # velocity magnitudes corresponding to
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-5">def modes_at_velocity(u_mag: Array) -&gt; tuple[Array, Array]:
     # swap only the flowfield's u_inf
-    wing.aero.flowfield = Constant(
+    wing.aero.flowfield = ConstantFlowField(
         u_inf=jnp.array([u_mag, 0.0, 0.0]),
         rho=rho,
         relative_motion=True,

@@ -999,7 +999,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2350,7 +2350,7 @@ os.environ["XLA_FLAGS"] = (
 <span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">numpy</span> <span class="k">as</span> <span class="n">jnp</span><span class="p">,</span> <span class="n">Array</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoupledAeroelastic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.utils.print_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_verbosity</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.swept.swept_pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_swept_pazy_wing</span>
@@ -2363,7 +2363,7 @@ from typing import cast
 import jax
 from jax import numpy as jnp, Array
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.utils.print_utils import set_verbosity
 from flapjax.models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing</div>
@@ -2463,7 +2463,7 @@ assert jax.device_count() == n_case, (
     <span class="k">for</span> <span class="n">alpha</span> <span class="ow">in</span> <span class="n">alphas</span><span class="p">:</span>
         <span class="n">cases</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="n">make_swept_pazy_wing</span><span class="p">(</span>
-                <span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+                <span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
                     <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
                         <span class="p">(</span>
                             <span class="n">u_inf_mag</span><span class="p">,</span>
@@ -2497,7 +2497,7 @@ for u_inf in u_inf_vec:
     for alpha in alphas:
         cases.append(
             make_swept_pazy_wing(
-                flowfield=Constant(
+                flowfield=ConstantFlowField(
                     u_inf=jnp.array(
                         (
                             u_inf_mag,

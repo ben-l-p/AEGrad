@@ -1122,7 +1122,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2578,7 +2578,7 @@ os.environ["XLA_FLAGS"] = (
 <span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">numpy</span> <span class="k">as</span> <span class="n">jnp</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span><span class="p">,</span> <span class="n">OneMinusCosine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span><span class="p">,</span> <span class="n">OneMinusCosineFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoupledAeroelastic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.simple_hale.simple_hale</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_simple_hale</span>
 
@@ -2597,7 +2597,7 @@ from matplotlib.colors import Normalize
 import jax
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import Constant, OneMinusCosine
+from flapjax.aero.flowfields import ConstantFlowField, OneMinusCosineFlowField
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.models.simple_hale.simple_hale import generate_simple_hale
 
@@ -2691,7 +2691,7 @@ gust_amplitudes = (
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">const_flowfield</span> <span class="o">=</span> <span class="n">Constant</span><span class="p">(</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">const_flowfield</span> <span class="o">=</span> <span class="n">ConstantFlowField</span><span class="p">(</span>
     <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="n">u_inf_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
     <span class="n">rho</span><span class="o">=</span><span class="mf">1.225</span><span class="p">,</span>
     <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2710,7 +2710,7 @@ gust_amplitudes = (
     <span class="n">horseshoe</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-4">const_flowfield = Constant(
+<div class="clipboard-copy-txt" id="cell-4">const_flowfield = ConstantFlowField(
     u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
     rho=1.225,
     relative_motion=True,
@@ -3158,9 +3158,9 @@ static_sol, trim_vars = base_hale.trim(
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">dynamic_init</span> <span class="o">=</span> <span class="n">base_hale</span><span class="o">.</span><span class="n">initialise_dynamic</span><span class="p">(</span><span class="n">static_case</span><span class="o">=</span><span class="n">static_sol</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">dynamic_init</span> <span class="o">=</span> <span class="n">base_hale</span><span class="o">.</span><span class="n">initialise_dynamic</span><span class="p">(</span><span class="n">static_case</span><span class="o">=</span><span class="n">static_sol</span><span class="p">,</span> <span class="n">prescribed_dofs</span><span class="o">=</span><span class="p">())</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-5">dynamic_init = base_hale.initialise_dynamic(static_case=static_sol)</div>
+<div class="clipboard-copy-txt" id="cell-5">dynamic_init = base_hale.initialise_dynamic(static_case=static_sol, prescribed_dofs=())</div>
 </div>
 </div>
 </div>
@@ -3173,7 +3173,7 @@ static_sol, trim_vars = base_hale.trim(
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="build-the-stacked-parallel-case">Build the stacked parallel case<a class="anchor-link" href="#build-the-stacked-parallel-case">¶</a></h2><p>For each gust length/amplitude combination, we build a copy of the aircraft with a <code>OneMinusCosine</code> gust flowfield. The gust is positioned upstream of the aircraft by setting the gust offset with <code>gust_x0</code>, such so that all cases begin with the aircraft outside the gust. The individual case pytrees are then stacked along a leading axis, producing a single pytree that <code>jax.pmap</code> will split across devices.</p>
+<h2 id="build-the-stacked-parallel-case">Build the stacked parallel case<a class="anchor-link" href="#build-the-stacked-parallel-case">¶</a></h2><p>For each gust length/amplitude combination, we build a copy of the aircraft with a <code>OneMinusCosineFlowField</code> gust flowfield. The gust is positioned upstream of the aircraft by setting the gust offset with <code>gust_x0</code>, such so that all cases begin with the aircraft outside the gust. The individual case pytrees are then stacked along a leading axis, producing a single pytree that <code>jax.pmap</code> will split across devices.</p>
 </div>
 </div>
 </div>
@@ -3199,7 +3199,7 @@ static_sol, trim_vars = base_hale.trim(
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cases</span> <span class="o">=</span> <span class="p">[]</span>
 <span class="k">for</span> <span class="n">gust_length</span> <span class="ow">in</span> <span class="n">gust_lengths</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">gust_amplitude</span> <span class="ow">in</span> <span class="n">gust_amplitudes</span><span class="p">:</span>
-        <span class="n">gust_flowfield</span> <span class="o">=</span> <span class="n">OneMinusCosine</span><span class="p">(</span>
+        <span class="n">gust_flowfield</span> <span class="o">=</span> <span class="n">OneMinusCosineFlowField</span><span class="p">(</span>
             <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="n">u_inf_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
             <span class="n">rho</span><span class="o">=</span><span class="mf">1.225</span><span class="p">,</span>
             <span class="n">relative_motion</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -3216,7 +3216,7 @@ static_sol, trim_vars = base_hale.trim(
 <div class="clipboard-copy-txt" id="cell-6">cases = []
 for gust_length in gust_lengths:
     for gust_amplitude in gust_amplitudes:
-        gust_flowfield = OneMinusCosine(
+        gust_flowfield = OneMinusCosineFlowField(
             u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
             rho=1.225,
             relative_motion=False,

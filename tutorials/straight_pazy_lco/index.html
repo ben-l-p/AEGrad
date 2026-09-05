@@ -999,7 +999,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2292,7 +2292,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">numpy</span> <span class="k">as</span> <span class="n">jnp</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.straight.pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_pazy_wing</span>
 
 <span class="n">jax</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">"jax_enable_x64"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>  <span class="c1"># 64-bit required for structural analysis</span>
@@ -2301,7 +2301,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 from jax import numpy as jnp
 from matplotlib import pyplot as plt
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 
 jax.config.update("jax_enable_x64", True)  # 64-bit required for structural analysis</div>
@@ -2391,7 +2391,7 @@ physical_time = 1.5  # time to run the simulation for, in seconds</div>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">case</span> <span class="o">=</span> <span class="n">make_pazy_wing</span><span class="p">(</span>
-    <span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+    <span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
         <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="n">u_inf_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
         <span class="n">rho</span><span class="o">=</span><span class="mf">1.225</span><span class="p">,</span>
         <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2403,7 +2403,7 @@ physical_time = 1.5  # time to run the simulation for, in seconds</div>
 <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">case = make_pazy_wing(
-    flowfield=Constant(
+    flowfield=ConstantFlowField(
         u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
         rho=1.225,
         relative_motion=True,

@@ -999,7 +999,7 @@
   <span class="md-ellipsis">
     
   
-    Pazy wing time-domain LCO
+    Swept Pazy wing time-domain LCO
   
 
     
@@ -2302,7 +2302,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.colors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Normalize</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.aero.flowfields</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstantFlowField</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.coupled</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoupledAeroelastic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.straight.pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_pazy_wing</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flapjax.models.pazy.swept.swept_pazy_wing</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_swept_pazy_wing</span>
@@ -2317,7 +2317,7 @@ from jax import numpy as jnp, Array
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 from flapjax.models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing
@@ -2434,7 +2434,7 @@ norm = cast(Normalize, Normalize(vmin=float(u_inf_mags.min()), vmax=float(u_inf_
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">make_wing</span><span class="p">(</span><span class="n">case</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"swept_LE"</span><span class="p">,</span> <span class="s2">"swept_TE"</span><span class="p">,</span> <span class="s2">"straight_rotated"</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">CoupledAeroelastic</span><span class="p">:</span>
-    <span class="n">flowfield</span> <span class="o">=</span> <span class="n">Constant</span><span class="p">(</span>
+    <span class="n">flowfield</span> <span class="o">=</span> <span class="n">ConstantFlowField</span><span class="p">(</span>
         <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># overwritten per velocity in eigs_at_velocity</span>
         <span class="n">rho</span><span class="o">=</span><span class="mf">1.225</span><span class="p">,</span>
         <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2473,7 +2473,7 @@ norm = cast(Normalize, Normalize(vmin=float(u_inf_mags.min()), vmax=float(u_inf_
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown sweep case: </span><span class="si">{</span><span class="n">case</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">def make_wing(case: Literal["swept_LE", "swept_TE", "straight_rotated"]) -&gt; CoupledAeroelastic:
-    flowfield = Constant(
+    flowfield = ConstantFlowField(
         u_inf=jnp.array([0.0, 0.0, 0.0]),  # overwritten per velocity in eigs_at_velocity
         rho=1.225,
         relative_motion=True,
@@ -2558,7 +2558,7 @@ norm = cast(Normalize, Normalize(vmin=float(u_inf_mags.min()), vmax=float(u_inf_
         <span class="n">m_cs</span><span class="o">=</span><span class="n">inner_wing</span><span class="o">.</span><span class="n">structure</span><span class="o">.</span><span class="n">m_cs</span><span class="p">,</span>
         <span class="n">m_lumped</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span>
-        <span class="n">flowfield</span><span class="o">=</span><span class="n">Constant</span><span class="p">(</span>
+        <span class="n">flowfield</span><span class="o">=</span><span class="n">ConstantFlowField</span><span class="p">(</span>
             <span class="n">u_inf</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">u_mag</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>
             <span class="n">rho</span><span class="o">=</span><span class="mf">1.225</span><span class="p">,</span>
             <span class="n">relative_motion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2599,7 +2599,7 @@ norm = cast(Normalize, Normalize(vmin=float(u_inf_mags.min()), vmax=float(u_inf_
         m_cs=inner_wing.structure.m_cs,
         m_lumped=None,
         dt=dt,
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             u_inf=jnp.array([u_mag, 0.0, 0.0]),
             rho=1.225,
             relative_motion=True,
