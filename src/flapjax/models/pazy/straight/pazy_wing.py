@@ -4,7 +4,7 @@ import jax
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import Constant, FlowField
+from flapjax.aero.flowfields import ConstantFlowField, FlowField
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.models.pazy.base import make_generic_pazy_wing
 from flapjax.models.pazy.straight.data.prepazy_properties import (
@@ -16,7 +16,7 @@ from flapjax.models.pazy.straight.data.technion_pazy_properties import (
     TECHNION_PAZY_WITH_SKIN,
 )
 
-FLOWFIELD_DEFAULT = Constant(
+FLOWFIELD_DEFAULT = ConstantFlowField(
     u_inf=jnp.array((40.0, 0.0, 0.0)), rho=1.225, relative_motion=True
 )
 AOA_DEFAULT = jnp.deg2rad(3.0)
@@ -34,6 +34,7 @@ def make_pazy_wing(
     sweep: float | Array | None = None,
     variable_disc_wake: bool = False,
     custom_dt: float | None = None,
+    lumped_mass: bool = False,
 ) -> CoupledAeroelastic:
     r"""
     Function to construct an instance of the Pazy wing model.
@@ -50,6 +51,8 @@ def make_pazy_wing(
     :param variable_disc_wake: If True, use a variable discretisation wake to extend the wake further downstream without
     an increase in panel count.
     :param custom_dt: Set a custom time step length. If None, uses the default time step length to enforce CFL=1.
+    :param lumped_mass: If True, crease the mass model using point lumped masses. If False, use a distributed mass
+    model.
     :return: CoupledAeroelastic Pazy wing model.
     """
 
@@ -72,6 +75,7 @@ def make_pazy_wing(
         sweep=sweep,
         variable_disc_wake=variable_disc_wake,
         custom_dt=custom_dt,
+        lumped_mass=lumped_mass,
     )
 
 
@@ -92,7 +96,7 @@ if __name__ == "__main__":
         m_star=160,
         skin=True,
         aoa=aoa_,
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
         ),
     )

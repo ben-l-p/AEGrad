@@ -13,6 +13,7 @@ from flapjax.algebra.so3 import vec_to_skew
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.structure import BeamStructure
 from flapjax.utils.data_structures import ConvergenceSettings
+from flapjax.utils.print_utils import warn
 
 
 @dataclass
@@ -39,6 +40,7 @@ class PazyParameters:
     k23: Array
     k24: Array
     k34: Array
+    inertia_at_axis: bool = False
 
 
 def make_generic_pazy_wing(
@@ -52,6 +54,8 @@ def make_generic_pazy_wing(
     sweep: float | Array | None,
     variable_disc_wake: bool,
     custom_dt: float | None = None,
+    lumped_mass: bool = False,
+    y_vector_override: Array | None = None,
 ) -> CoupledAeroelastic:
     # keypoint 3D coordinates at which cross-section properties are defined
     coords_data = jnp.array(data.coords)  # [N_KEYPOINT, 3]
@@ -78,10 +82,17 @@ def make_generic_pazy_wing(
     s_arr = jnp.concatenate([jnp.zeros(1), jnp.cumsum(seg_lengths)])
     elem_midpoints = 0.5 * (s_arr[:-1] + s_arr[1:])
 
-    cg_data = jnp.stack((data.cg_y, -data.cg_x, data.cg_z), axis=1)  # [N_KEYPOINT, 3]
+    # mass/inertia data is provided per keypoint (one entry per node)
+    n_mass = data.mass.shape[0]
+    if n_mass != data.n_keypoints:
+        raise ValueError(
+            f"data.mass has length {n_mass}; expected {data.n_keypoints} (per-node)"
+        )
+
+    cg_data = jnp.stack((data.cg_y, -data.cg_x, data.cg_z), axis=1)  # [n_mass, 3]
 
     # inertia tensor at CG, in beam-local frame
-    j_cg_data = jnp.zeros((data.n_keypoints, 3, 3))
+    j_cg_data = jnp.zeros((n_mass, 3, 3))
 
     idx_keys = (
         (0, 0, "i_yy"),
@@ -92,59 +103,112 @@ def make_generic_pazy_wing(
         (0, 2, "i_yz"),
     )
     for i, j, key in idx_keys:
-        # redundant for diagonal terms
         j_cg_data = j_cg_data.at[:, i, j].set(getattr(data, key))
         j_cg_data = j_cg_data.at[:, j, i].set(getattr(data, key))
 
-    # parallel-axis shift inertia
-    skew_cg_data = jax.vmap(vec_to_skew)(cg_data)  # [N_KEYPOINT, 3]
-    j_axis_data = j_cg_data - data.mass[:, None, None] * (skew_cg_data @ skew_cg_data)
-
-    # distribute nodal lumped mass and inertia
-    elem_lengths_data = seg_lengths_data  # [N_KEYPOINT - 1]
-    half_lengths_data = jnp.concatenate(
-        (
-            0.5 * elem_lengths_data[:1],
-            0.5 * (elem_lengths_data[:-1] + elem_lengths_data[1:]),
-            0.5 * elem_lengths_data[-1:],
+    # parallel-axis shift inertia from CG to the beam axis, at each keypoint
+    skew_cg_data = jax.vmap(vec_to_skew)(cg_data)  # [n_mass, 3, 3]
+    if (
+        data.inertia_at_axis
+    ):  # different Pazy data sets provide inertia either at the CG or at the beam axis
+        j_axis_data = j_cg_data
+    else:
+        j_axis_data = j_cg_data - data.mass[:, None, None] * (
+            skew_cg_data @ skew_cg_data
         )
-    )  # [N_KEYPOINT]
-    m_bar_data = data.mass / half_lengths_data  # mass per unit length of elements
-    j_bar_data = (
-        j_axis_data / half_lengths_data[:, None, None]
-    )  # inertia per unit length of elements
 
-    # interpolate properties from the arclength keypoints
-    m_bar = jnp.interp(elem_midpoints, s_data, m_bar_data)
-    cg_elem = jnp.stack(
-        [jnp.interp(elem_midpoints, s_data, cg_data[:, i]) for i in range(3)],
-        axis=1,
-    )
-    j_bar = jnp.stack(
-        [
-            jnp.stack(
-                [
-                    jnp.interp(elem_midpoints, s_data, j_bar_data[:, i, k])
-                    for k in range(3)
-                ],
-                axis=1,
+    if lumped_mass:
+        if node_multiplier != 1:
+            warn(
+                "lumped_mass=True with a node multiplier > 1 leads to nodes with zero mass"
             )
-            for i in range(3)
-        ],
-        axis=1,
-    )  # [n_elem, 3, 3]
 
-    # assemble the 6x6 cross-section mass matrix per beam element
-    skew_cg_elem = jax.vmap(vec_to_skew)(cg_elem)
-    m_bar_ = m_bar[:, None, None]
-    m_cs = jnp.zeros((n_elem, 6, 6))
-    m_cs = m_cs.at[:, :3, :3].set(m_bar_ * jnp.eye(3))
-    m_cs = m_cs.at[:, :3, 3:].set(-m_bar_ * skew_cg_elem)
-    m_cs = m_cs.at[:, 3:, :3].set(m_bar_ * skew_cg_elem)
-    m_cs = m_cs.at[:, 3:, 3:].set(j_bar)
+        # build 6x6 mass matrix at each point
+        cg_data_ref = jnp.stack((data.cg_x, data.cg_y, data.cg_z), axis=1)
+        j_inertia_ref = jnp.zeros((n_mass, 3, 3))
+        for i, j, key in (
+            # different ordering from above
+            (0, 0, "i_xx"),
+            (1, 1, "i_yy"),
+            (2, 2, "i_zz"),
+            (0, 1, "i_xy"),
+            (0, 2, "i_xz"),
+            (1, 2, "i_yz"),
+        ):
+            j_inertia_ref = j_inertia_ref.at[:, i, j].set(getattr(data, key))
+            j_inertia_ref = j_inertia_ref.at[:, j, i].set(getattr(data, key))
+        skew_cg_ref = jax.vmap(vec_to_skew)(cg_data_ref)
 
-    # stiffness properties
-    # data is provided for non-shear deformation
+        if data.inertia_at_axis:
+            j_axis_ref = j_inertia_ref
+        else:
+            j_axis_ref = j_inertia_ref - data.mass[:, None, None] * (
+                skew_cg_ref @ skew_cg_ref
+            )
+
+        m_arr = data.mass[:, None, None]
+        m_lumped_arr = jnp.zeros((n_mass, 6, 6))
+        m_lumped_arr = m_lumped_arr.at[:, :3, :3].set(m_arr * jnp.eye(3))
+        m_lumped_arr = m_lumped_arr.at[:, :3, 3:].set(-m_arr * skew_cg_ref)
+        m_lumped_arr = m_lumped_arr.at[:, 3:, :3].set(m_arr * skew_cg_ref)
+        m_lumped_arr = m_lumped_arr.at[:, 3:, 3:].set(j_axis_ref)
+
+        # keypoints sit at every node_multiplier-th node of the refined mesh
+        m_lumped_index = jnp.arange(n_mass) * node_multiplier
+
+        m_cs = jnp.zeros((n_elem, 6, 6))
+    else:
+        # split each nodal lump across its adjacent half-elements
+        lengths_data = jnp.concatenate(
+            (
+                0.5 * seg_lengths_data[:1],
+                0.5 * (seg_lengths_data[:-1] + seg_lengths_data[1:]),
+                0.5 * seg_lengths_data[-1:],
+            )
+        )  # [N_KEYPOINT]
+        data_interp_coords = s_data
+
+        m_bar_data = data.mass / lengths_data  # mass per unit length
+        j_bar_data = (
+            j_axis_data / lengths_data[:, None, None]
+        )  # inertia per unit length
+
+        m_bar = jnp.interp(elem_midpoints, data_interp_coords, m_bar_data)
+        cg_elem = jnp.stack(
+            [
+                jnp.interp(elem_midpoints, data_interp_coords, cg_data[:, i])
+                for i in range(3)
+            ],
+            axis=1,
+        )
+        j_bar = jnp.stack(
+            [
+                jnp.stack(
+                    [
+                        jnp.interp(
+                            elem_midpoints, data_interp_coords, j_bar_data[:, i, k]
+                        )
+                        for k in range(3)
+                    ],
+                    axis=1,
+                )
+                for i in range(3)
+            ],
+            axis=1,
+        )  # [n_elem, 3, 3]
+
+        skew_cg_elem = jax.vmap(vec_to_skew)(cg_elem)
+        m_bar_ = m_bar[:, None, None]
+        m_cs = jnp.zeros((n_elem, 6, 6))
+        m_cs = m_cs.at[:, :3, :3].set(m_bar_ * jnp.eye(3))
+        m_cs = m_cs.at[:, :3, 3:].set(-m_bar_ * skew_cg_elem)
+        m_cs = m_cs.at[:, 3:, :3].set(m_bar_ * skew_cg_elem)
+        m_cs = m_cs.at[:, 3:, 3:].set(j_bar)
+
+        m_lumped_arr = None
+        m_lumped_index = None
+
+    # stiffness properties, provided for non-shear deformation
     k_cs_data = jnp.zeros((data.n_keypoints - 1, 6, 6))
 
     idx_keys = (
@@ -185,8 +249,11 @@ def make_generic_pazy_wing(
     conn = jnp.stack(
         [jnp.arange(n_nodes - 1), jnp.arange(1, n_nodes)], axis=1
     )  # [n_elem, 2]
-    y_vector = jnp.zeros((n_elem, 3))  # [n_elem, 3]
-    y_vector = y_vector.at[:, 0].set(-1.0)
+    if y_vector_override is not None:
+        y_vector = jnp.broadcast_to(y_vector_override[None, :], (n_elem, 3))
+    else:
+        y_vector = jnp.zeros((n_elem, 3))  # [n_elem, 3]
+        y_vector = y_vector.at[:, 0].set(-1.0)
 
     if custom_dt is None:
         dt = c_ref / (flowfield.u_inf_mag * m)  # time step based on CFL condition
@@ -213,6 +280,7 @@ def make_generic_pazy_wing(
         y_vector=y_vector,
         k_cs_index=jnp.arange(n_elem),
         m_cs_index=jnp.arange(n_elem),
+        m_lumped_index=m_lumped_index,
         gravity=gravity_,
     )
     structure.struct_convergence_settings = ConvergenceSettings(
@@ -249,7 +317,7 @@ def make_generic_pazy_wing(
         coords=sweep_coords,
         k_cs=k_cs,
         m_cs=m_cs,
-        m_lumped=None,
+        m_lumped=m_lumped_arr,
         dt=dt,
         flowfield=flowfield,
         x0_aero=aero_grid,

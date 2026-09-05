@@ -8,7 +8,11 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
 
 from flapjax.aero.data_structures import AeroCase, GridDiscretisation
-from flapjax.aero.flowfields import Constant, FlowField, OneMinusCosine
+from flapjax.aero.flowfields import (
+    ConstantFlowField,
+    FlowField,
+    OneMinusCosineFlowField,
+)
 from flapjax.aero.linear.data_structures import AeroInputUnflattened
 from flapjax.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
@@ -67,7 +71,9 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_heaving_wing(cls, plot: bool = False, use_matrix: bool = False):
-        flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
+        flowfield = ConstantFlowField(
+            TestLinearAero.u_inf, TestLinearAero.rho_inf, True
+        )
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
 
         # heaving motion
@@ -144,7 +150,9 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_pitching_wing(cls, plot: bool = False, use_matrix: bool = False):
-        flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
+        flowfield = ConstantFlowField(
+            TestLinearAero.u_inf, TestLinearAero.rho_inf, True
+        )
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield)
 
         # heaving motion
@@ -229,7 +237,9 @@ class TestLinearAero:
     def test_linear_pitching_wing_frozen_wake(
         cls, plot: bool = False, use_matrix: bool = False
     ):
-        flowfield = Constant(TestLinearAero.u_inf, TestLinearAero.rho_inf, True)
+        flowfield = ConstantFlowField(
+            TestLinearAero.u_inf, TestLinearAero.rho_inf, True
+        )
         uvlm, static_case, hg0 = TestLinearAero.make_planar_wing(flowfield, ea=1.0)
 
         # heaving motion
@@ -309,7 +319,7 @@ class TestLinearAero:
 
     @classmethod
     def test_linear_cosine_gust(cls, plot: bool = False, use_matrix: bool = False):
-        flowfield = OneMinusCosine(
+        flowfield = OneMinusCosineFlowField(
             TestLinearAero.u_inf,
             TestLinearAero.rho_inf,
             True,

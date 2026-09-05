@@ -8,7 +8,7 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.linear.data_structures import AeroInputUnflattened
 from flapjax.aero.utils import biot_savart_cutoff, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     )
     nonlinear_model.set_design_variables(
         dt=dt,
-        flowfield=Constant(u_inf=u_inf, rho=rho_inf, relative_motion=True),
+        flowfield=ConstantFlowField(u_inf=u_inf, rho=rho_inf, relative_motion=True),
         zeta_b0=x_grid,
         hg0=hg,
         delta_w=delta_w,

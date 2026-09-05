@@ -407,10 +407,14 @@ class UVLM:
         """
 
         if isinstance(delta_w, Array):
-            delta_w_seq: Sequence[Array | None] = [delta_w]
+            delta_w_seq: Sequence[Array | None] = self.n_surf * [delta_w]
         elif delta_w is None:
             delta_w_seq = self.n_surf * [None]
         elif isinstance(delta_w, Sequence):
+            if len(delta_w) != self.n_surf:
+                raise ValueError(
+                    "Number of delta_w entries must match number of surfaces if passed as a Sequence"
+                )
             delta_w_seq = delta_w
         else:
             raise TypeError("Invalid delta_w type")
@@ -709,9 +713,8 @@ class UVLM:
         gamma_b_dot_curr = (gamma_b_n - gamma_b_nm1) / dt
 
         # blend with relaxation parameter
-        return (
-            gamma_b_dot_curr * gamma_dot_relaxation
-            + gamma_b_dot_nm1 * (1.0 - gamma_dot_relaxation)
+        return gamma_b_dot_curr * gamma_dot_relaxation + gamma_b_dot_nm1 * (
+            1.0 - gamma_dot_relaxation
         )
 
     @singledispatchmethod

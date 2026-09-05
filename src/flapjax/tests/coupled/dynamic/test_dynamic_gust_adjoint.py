@@ -1,7 +1,7 @@
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import OneMinusCosine
+from flapjax.aero.flowfields import OneMinusCosineFlowField
 from flapjax.aero.gradients.data_structures import AeroGradsToCompute
 from flapjax.coupled import AeroelasticCase, CoupledAeroelastic
 from flapjax.coupled.data_structures import AeroelasticFullStates
@@ -35,7 +35,7 @@ def _build_wing(k_cs: Array, gust_amplitude: float | Array):
         n_nodes=5,
         u_inf=u_inf,
     )
-    wing.aero.flowfield = OneMinusCosine(
+    wing.aero.flowfield = OneMinusCosineFlowField(
         u_inf=u_inf,
         rho=1.225,
         relative_motion=True,

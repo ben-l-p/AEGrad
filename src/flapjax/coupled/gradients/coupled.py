@@ -62,6 +62,11 @@ type AeroelasticObjectiveFunction = (
 )
 ORIENTATION_DICT: Final[dict[str, int]] = {"x": 0, "y": 1, "z": 2}
 
+DEFAULT_GRADS_TO_COMPUTE: Final[AeroelasticGradsToCompute] = AeroelasticGradsToCompute()
+DEFAULT_OPTIONAL_JACOBIANS: Final[OptionalJacobians] = OptionalJacobians(
+    True, True, True, True
+)
+
 
 @make_pytree
 class CoupledAeroelastic(BaseCoupledAeroelastic):
@@ -189,13 +194,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             ),
             aero=q.aero,
         )
-
-    DEFAULT_GRADS_TO_COMPUTE: Final[AeroelasticGradsToCompute] = (
-        AeroelasticGradsToCompute()
-    )
-    DEFAULT_OPTIONAL_JACOBIANS: Final[OptionalJacobians] = OptionalJacobians(
-        True, True, True, True
-    )
 
     @jax.jit(static_argnums=(0, 1, 2, 3, 4, 5, 6))
     def static_adjoint(
@@ -1576,7 +1574,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             f_clamp_init = jnp.full((len(zero_force_dofs_)), 1e10)
             print_table_title(title="Trim (Adjoint)", inner_width=104)
             trim_variables_init.print_header(f_clamp=f_clamp_init)
-            n_iter, trim_variables, ae_sol, _ = jax.lax.while_loop(
+            _, trim_variables, ae_sol, _ = jax.lax.while_loop(
                 lambda args_: jnp.logical_and(
                     jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
                     args_[0] < max_iter,
@@ -1638,7 +1636,7 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
                 return i_iter, tv, sol, fc, b
 
             trim_variables_init.print_header(f_clamp=f_clamp_init)
-            n_iter, trim_variables, ae_sol, _, _ = jax.lax.while_loop(
+            _, trim_variables, ae_sol, _, _ = jax.lax.while_loop(
                 lambda args_: jnp.logical_and(
                     jnp.any(jnp.abs(args_[3]) >= trim_f_abs_tolerance),
                     args_[0] < max_iter,
@@ -1655,11 +1653,6 @@ class CoupledAeroelastic(BaseCoupledAeroelastic):
             print_table_line(inner_width=104)
         else:
             raise ValueError(f"Unknown trim method: {method!r}.")
-
-        if int(n_iter) >= max_iter:
-            warn(
-                f"Trim did not converge to tolerance {trim_f_abs_tolerance} within {max_iter} iterations."
-            )
 
         new_orientation: Array = self.structure.orientation_euler
         for k, v in trim_variables.trim_angles.items():

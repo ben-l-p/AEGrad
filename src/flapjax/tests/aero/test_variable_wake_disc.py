@@ -2,7 +2,7 @@ from jax import numpy as jnp
 from jax.scipy.spatial.transform import Rotation as Rot
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 
@@ -22,7 +22,7 @@ class TestVarWakeDisc:
         ea = 0.0
         physical_time = 3.0  # seconds
 
-        flowfield = Constant(u_inf, rho_inf, True)
+        flowfield = ConstantFlowField(u_inf, rho_inf, True)
         dt = c_ref / (m * flowfield.u_inf_mag)
         n_tstep = int(jnp.ceil(physical_time / dt))
 

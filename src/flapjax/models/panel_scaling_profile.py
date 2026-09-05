@@ -50,12 +50,12 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.coupled import (
-    CoupledAeroelastic,
     AeroelasticCase,
+    CoupledAeroelastic,
 )
 from flapjax.coupled.data_structures import (
     AeroelasticDesignVariables,
@@ -120,7 +120,7 @@ def build_wing(m: int, n: int, m_star: int) -> CoupledAeroelastic:
         m_cs=m_cs,
         m_lumped=None,
         dt=dt,
-        flowfield=Constant(u_inf=u_inf, rho=1.225, relative_motion=True),
+        flowfield=ConstantFlowField(u_inf=u_inf, rho=1.225, relative_motion=True),
         delta_w=delta_w,
         x0_aero=grid,
     )

@@ -2,7 +2,7 @@ from flapjax.aero.data_structures import (
     AeroCase,
     GridDiscretisation,
 )
-from flapjax.aero.flowfields import Constant, OneMinusCosine
+from flapjax.aero.flowfields import ConstantFlowField, OneMinusCosineFlowField
 from flapjax.aero.gradients.data_structures import (
     AeroGradsToCompute,
     AeroJacobianApproximations,

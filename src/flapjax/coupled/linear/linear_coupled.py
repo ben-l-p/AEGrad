@@ -80,7 +80,7 @@ class LinearCoupled(
             skip_linearisation=True,
             skip_checks=skip_checks,
         )
-        self.beam = LinearBeam(
+        self.structure = LinearBeam(
             beam=case.structure,
             reference=reference.structure,
             dt=case.aero.dt,
@@ -92,13 +92,19 @@ class LinearCoupled(
             reference.structure.prescribed_dofs
         )
         self.n_beam_input_dof: int = (
-            self.beam.n_modes if self.beam.modal_inputs else self.n_beam_nodal_dof
+            self.structure.n_modes
+            if self.structure.modal_inputs
+            else self.n_beam_nodal_dof
         )
         self.n_beam_state_dof: int = (
-            self.beam.n_modes if self.beam.modal_states else self.n_beam_nodal_dof
+            self.structure.n_modes
+            if self.structure.modal_states
+            else self.n_beam_nodal_dof
         )
         self.n_beam_output_dof: int = (
-            self.beam.n_modes if self.beam.modal_outputs else self.n_beam_nodal_dof
+            self.structure.n_modes
+            if self.structure.modal_outputs
+            else self.n_beam_nodal_dof
         )
 
         self.n_nodes: int = case.structure.n_nodes
@@ -122,7 +128,8 @@ class LinearCoupled(
         self,
     ) -> dict[str, Array | ArrayList | None]:
         inputs = (
-            self.aero.extract_reference_inputs() | self.beam.extract_reference_inputs()
+            self.aero.extract_reference_inputs()
+            | self.structure.extract_reference_inputs()
         )
 
         # remove redundant
@@ -134,7 +141,8 @@ class LinearCoupled(
         self,
     ) -> dict[str, Array | ArrayList | None]:
         states = (
-            self.aero.extract_reference_states() | self.beam.extract_reference_states()
+            self.aero.extract_reference_states()
+            | self.structure.extract_reference_states()
         )
 
         # remove redundant
@@ -146,7 +154,7 @@ class LinearCoupled(
     ) -> dict[str, Array | ArrayList | None]:
         states = (
             self.aero.extract_reference_outputs()
-            | self.beam.extract_reference_outputs()
+            | self.structure.extract_reference_outputs()
         )
 
         # remove redundant
@@ -200,7 +208,9 @@ class LinearCoupled(
                 True,
                 # this also allows for input forces on prescribed degrees of freedom for consistency, even if they do
                 # nothing
-                (self.beam.n_modes,) if self.beam.modal_inputs else (self.n_nodes, 6),
+                (self.structure.n_modes,)
+                if self.structure.modal_inputs
+                else (self.n_nodes, 6),
             ),
         )
         return self._make_slices(slice_entries)
@@ -313,12 +323,12 @@ class LinearCoupled(
             else None
         )
         q_nodal = (
-            q_nodal if q_nodal is not None else jnp.zeros(len(self.beam.free_dofs))
+            q_nodal if q_nodal is not None else jnp.zeros(len(self.structure.free_dofs))
         )
         q_dot_nodal = (
             q_dot_nodal
             if q_dot_nodal is not None
-            else jnp.zeros(len(self.beam.free_dofs))
+            else jnp.zeros(len(self.structure.free_dofs))
         )
 
         # fill in prescribed dofs with zeros
@@ -417,24 +427,25 @@ class LinearCoupled(
             + delta_f_aero_beam.ravel()
         )  # [n_nodes * 6]
 
-        if self.beam.modal_inputs:
-            f_ext_full = self.beam.nodal_to_modal(f_ext_full[self.free_dofs])
+        if self.structure.modal_inputs:
+            f_ext_full = self.structure.nodal_to_modal(f_ext_full[self.free_dofs])
 
         # beam step in perturbation form (discrete-time Tustin)
         x_beam_n = jnp.concatenate(
             [
-                self.beam.nodal_to_modal(q_nodal)
-                if self.beam.modal_states
+                self.structure.nodal_to_modal(q_nodal)
+                if self.structure.modal_states
                 else q_nodal,
-                self.beam.nodal_to_modal(q_dot_nodal)
-                if self.beam.modal_states
+                self.structure.nodal_to_modal(q_dot_nodal)
+                if self.structure.modal_states
                 else q_dot_nodal,
             ]
         )
 
         x_beam_np1 = (
-            self.beam.sys.a @ x_beam_n
-            + self.beam.sys.b[:, self.beam.input_slices["f_ext"].slices] @ f_ext_full
+            self.structure.sys.a @ x_beam_n
+            + self.structure.sys.b[:, self.structure.input_slices["f_ext"].slices]
+            @ f_ext_full
         )
 
         q_np1 = x_beam_np1[: self.n_beam_state_dof]
@@ -469,9 +480,11 @@ class LinearCoupled(
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
-            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
-            if self.beam.modal_states
+            q_nodal=self.structure.modal_to_nodal(q_n)
+            if self.structure.modal_states
+            else q_n,
+            q_dot_nodal=self.structure.modal_to_nodal(q_dot_n)
+            if self.structure.modal_states
             else q_dot_n,
         )
         return x_np1.gamma_b.ravel()
@@ -492,7 +505,9 @@ class LinearCoupled(
             gamma_b_vec=gamma_b_n_vec,
             gamma_w_vec=gamma_w_n_vec,
             zeta_w_vec=zeta_w_n_vec,
-            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
+            q_nodal=self.structure.modal_to_nodal(q_n)
+            if self.structure.modal_states
+            else q_n,
         )
         assert not ((x_new.zeta_w is not None) ^ self.aero.prescribed_wake), (
             "zeta_w should be None only if prescribed_wake is False."
@@ -525,9 +540,11 @@ class LinearCoupled(
             zeta_w_vec=zeta_w_n_vec,
             nu_b_vec=nu_b_n_vec,
             nu_w_vec=nu_w_n_vec,
-            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
-            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
-            if self.beam.modal_states
+            q_nodal=self.structure.modal_to_nodal(q_n)
+            if self.structure.modal_states
+            else q_n,
+            q_dot_nodal=self.structure.modal_to_nodal(q_dot_n)
+            if self.structure.modal_states
             else q_dot_n,
         )
         return x_new.q.ravel()
@@ -555,9 +572,11 @@ class LinearCoupled(
             zeta_w_vec=zeta_w_n_vec,
             nu_b_vec=nu_b_n_vec,
             nu_w_vec=nu_w_n_vec,
-            q_nodal=self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n,
-            q_dot_nodal=self.beam.modal_to_nodal(q_dot_n)
-            if self.beam.modal_states
+            q_nodal=self.structure.modal_to_nodal(q_n)
+            if self.structure.modal_states
+            else q_n,
+            q_dot_nodal=self.structure.modal_to_nodal(q_dot_n)
+            if self.structure.modal_states
             else q_dot_n,
         )
         return x_new.q_dot.ravel()
@@ -677,18 +696,18 @@ class LinearCoupled(
         # define Jacobians we know nicely as jac_options
         jac_options = {
             "q": {
-                "q_n": lambda *args, **kwargs: self.beam.sys.a[
+                "q_n": lambda *args, **kwargs: self.structure.sys.a[
                     : self.n_beam_state_dof, : self.n_beam_state_dof
                 ],
-                "q_dot_n": lambda *args, **kwargs: self.beam.sys.a[
+                "q_dot_n": lambda *args, **kwargs: self.structure.sys.a[
                     : self.n_beam_state_dof, self.n_beam_state_dof :
                 ],
             },
             "q_dot": {
-                "q_n": lambda *args, **kwargs: self.beam.sys.a[
+                "q_n": lambda *args, **kwargs: self.structure.sys.a[
                     self.n_beam_state_dof :, : self.n_beam_state_dof
                 ],
-                "q_dot_n": lambda *args, **kwargs: self.beam.sys.a[
+                "q_dot_n": lambda *args, **kwargs: self.structure.sys.a[
                     self.n_beam_state_dof :, self.n_beam_state_dof :
                 ],
             },
@@ -707,9 +726,15 @@ class LinearCoupled(
         ref = self.reference
 
         def to_zeta(q_n: Array, q_dot_n: Array) -> tuple[Array, Array]:
-            q_nodal = self.beam.modal_to_nodal(q_n) if self.beam.modal_states else q_n
+            q_nodal = (
+                self.structure.modal_to_nodal(q_n)
+                if self.structure.modal_states
+                else q_n
+            )
             q_dot_nodal = (
-                self.beam.modal_to_nodal(q_dot_n) if self.beam.modal_states else q_dot_n
+                self.structure.modal_to_nodal(q_dot_n)
+                if self.structure.modal_states
+                else q_dot_n
             )
             q_full = (
                 jnp.zeros(self.n_nodes * 6)
@@ -847,7 +872,7 @@ class LinearCoupled(
             n_profile_loops=None,
             jac_options=None,
             batch_size=batch_size,
-            mode={"gamma_b": "forward"} if self.beam.modal_states else {},  # type: ignore
+            mode={"gamma_b": "forward"} if self.structure.modal_states else {},  # type: ignore
         )
 
         # (row-label in `jacobians`, column-argname used inside each jacobian dict, size)
@@ -899,9 +924,13 @@ class LinearCoupled(
         )
 
         c_entries: tuple[dict[str, Array], ...] = (
-            {"q_n": self.beam.sys.c[: self.n_beam_output_dof, : self.n_beam_state_dof]},
             {
-                "q_dot_n": self.beam.sys.c[
+                "q_n": self.structure.sys.c[
+                    : self.n_beam_output_dof, : self.n_beam_state_dof
+                ]
+            },
+            {
+                "q_dot_n": self.structure.sys.c[
                     self.n_beam_output_dof :, self.n_beam_state_dof :
                 ]
             },
@@ -931,7 +960,7 @@ class LinearCoupled(
         _, compile_time, run_time = self.create_jacobians(
             n_profile_loops=n_profile_loops,
             jac_options=None,
-            mode={"gamma_b": "forward"} if self.beam.modal_states else {},  # type: ignore
+            mode={"gamma_b": "forward"} if self.structure.modal_states else {},  # type: ignore
         )
 
         assert compile_time is not None and run_time is not None, (
@@ -1076,8 +1105,8 @@ class LinearCoupled(
             q_mode = evecs_ordered[
                 :, self.state_slices["q"].slices
             ]  # (m, n_free_dof | n_modes)
-            if self.beam.modal_states:
-                q_mode = self.beam.modal_to_nodal(q_mode)  # (m, n_free_dof)
+            if self.structure.modal_states:
+                q_mode = self.structure.modal_to_nodal(q_mode)  # (m, n_free_dof)
             q_full = (
                 jnp.zeros((n_plot_vtk, self.n_nodes * 6), dtype=complex)
                 .at[:, self.free_dofs]

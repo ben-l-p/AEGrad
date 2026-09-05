@@ -92,7 +92,6 @@ class BaseBeamStructure:
         "y_vector_reference",
         "use_lumped_mass",
         "use_gravity",
-        "gravity_vec",
         "k_cs_index",
         "m_cs_index",
         "m_lumped_index",
@@ -1082,8 +1081,8 @@ class BaseBeamStructure:
         k_nodal: Array,
         freq_range: tuple[float | Array, float | Array],
         damp_range: tuple[float | Array, float | Array],
-        alpha_m: float = 0.0,
-        beta_k: float = 0.0,
+        alpha_m: float | Array = 0.0,
+        beta_k: float | Array = 0.0,
     ) -> tuple[Array, Array, Array]:
         # Cholesky-transformed symmetric eigenproblem: K phi = omega^2 M phi
         # ensure symmetry
@@ -1182,13 +1181,16 @@ class BaseBeamStructure:
 
         m_nodal, k_nodal = self.make_nodal_m_k(case=case, int_order=int_order)
 
-        # dispatch based on stiffness symmetry - external loads can cause a non-conservative system where a symmetric
-        # solve would fail
+        # dispatch based on stiffness symmetry and mass positive-definiteness;
+        # external loads can cause a non-conservative system, and lumped masses
+        # can produce a Jacobian mass matrix with small negative eigenvalues
         k_asymmetry = jnp.linalg.norm(k_nodal - k_nodal.T) / jnp.maximum(
             jnp.linalg.norm(k_nodal), 1.0
         )
+        m_sym = 0.5 * (m_nodal + m_nodal.T)
+        m_pd = jnp.linalg.eigvalsh(m_sym)[0] > 0.0
         ordered_freq, out_damping, out_modes = jax.lax.cond(
-            k_asymmetry < 1e-10,
+            (k_asymmetry < 1e-10) & m_pd,
             lambda: self._base_modal_symmetric(
                 m_nodal=m_nodal,
                 k_nodal=k_nodal,
@@ -1518,7 +1520,7 @@ class BaseBeamStructure:
         )  # (n_elem, 12)
 
     def _make_f_rayleigh_damp(
-        self, m_t: Array, k_t_assembled: Array, v: Array
+        self, m_t: Array, k_t_assembled: Array | None, v: Array
     ) -> Array:
         r"""
         Compute the Rayleigh structural damping force, returned as a global DOF vector.
@@ -1531,6 +1533,7 @@ class BaseBeamStructure:
 
         # stiffness proportional damping contribution
         if self.beta_k != 0.0:
+            assert k_t_assembled is not None
             f_damp -= self.beta_k * (k_t_assembled @ v.ravel())
 
         # mass proportional damping contribution

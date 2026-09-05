@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 
@@ -35,7 +35,7 @@ class TestRotInvariance:
         for i_u_inf, u_inf in enumerate(
             [jnp.array((0.0, 10.0, 3.0)), jnp.array((10.0, 0.0, 3.0))]
         ):
-            flowfield = Constant(u_inf, 1.225, True)
+            flowfield = ConstantFlowField(u_inf, 1.225, True)
             uvlm.set_design_variables(
                 dt=1.0, flowfield=flowfield, zeta_b0=x_grid, hg0=hg
             )

@@ -2,7 +2,7 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import PolarFunction, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 
@@ -24,7 +24,7 @@ def _build_pseudo_infinite_wing(
     """
     alpha_rad = jnp.deg2rad(alpha_deg)
     u_inf = jnp.array((u_mag * jnp.cos(alpha_rad), 0.0, u_mag * jnp.sin(alpha_rad)))
-    flowfield = Constant(u_inf=u_inf, rho=1.225, relative_motion=True)
+    flowfield = ConstantFlowField(u_inf=u_inf, rho=1.225, relative_motion=True)
 
     disc = GridDiscretisation(m=m, n=n, m_star=2)
 

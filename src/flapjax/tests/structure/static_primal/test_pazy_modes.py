@@ -1,11 +1,92 @@
 from typing import Literal
 
+import pytest
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 from flapjax.models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing
+
+
+def _swept_modes(
+    tip_mass: Literal["LE", "TE", "LE_CORRECTED", "TE_CORRECTED"] | None,
+    sweep_angle: Literal[10, 20] = 10,
+    n_modes: int = 3,
+    lumped_mass: bool = False,
+    node_multiplier: int = 2,
+) -> Array:
+    wing = make_swept_pazy_wing(
+        flowfield=ConstantFlowField(
+            u_inf=jnp.array([0.0, 0.0, 0.0]),
+            rho=1.225,
+            relative_motion=True,
+        ),
+        tip_mass=tip_mass,  # type: ignore[arg-type]
+        aoa=jnp.deg2rad(0.0),
+        m=6,
+        m_star=0,
+        node_multiplier=node_multiplier,
+        sweep_angle=sweep_angle,
+        lumped_mass=lumped_mass,
+    )
+
+    reference = wing.reference_configuration(prescribed_dofs=tuple(range(6)))
+
+    freqs, *_ = wing.structure.modal(
+        case=reference.structure,
+        n_modes=n_modes,
+    )
+    return freqs
+
+
+SWEPT_CASES = [
+    pytest.param(
+        "LE",
+        10,
+        (4.31, 28.9, 37.5),
+        (1.1e-2, 1e-2, 0.1),
+        False,
+        2,
+        id="sweep_10_le",
+    ),
+    pytest.param(
+        "LE_CORRECTED",
+        10,
+        (4.31, 28.9, 37.5),
+        (1.1e-2, 1e-2, 2e-2),
+        False,
+        2,
+        id="sweep_10_le_corrected",
+    ),
+    pytest.param(
+        "TE",
+        10,
+        (4.27, 27.4, 38.7),
+        (1e-2, 5e-2, 2e-2),
+        False,
+        2,
+        id="sweep_10_te",
+    ),
+    pytest.param(
+        "TE_CORRECTED",
+        10,
+        (4.27, 27.4, 38.7),
+        (1e-2, 1e-2, 2e-2),
+        False,
+        2,
+        id="sweep_10_te_corrected",
+    ),
+    pytest.param(
+        None,
+        20,
+        (4.568, 28.627, 44.534),
+        (1e-2, 1e-2, 1e-2),
+        True,
+        1,
+        id="sweep_20",
+    ),
+]
 
 
 class TestPazyModal:
@@ -18,7 +99,7 @@ class TestPazyModal:
         """
 
         wing = make_pazy_wing(
-            flowfield=Constant(
+            flowfield=ConstantFlowField(
                 u_inf=jnp.array([0.0, 0.0, 0.0]),
                 rho=1.225,
                 relative_motion=True,
@@ -51,123 +132,31 @@ class TestPazyModal:
         )
 
     @staticmethod
-    def _swept_modes(
-        tip_mass: Literal["LE", "TE", "LE_CORRECTED", "TE_CORRECTED"],
-    ) -> Array:
-        wing = make_swept_pazy_wing(
-            flowfield=Constant(
-                u_inf=jnp.array([0.0, 0.0, 0.0]),
-                rho=1.225,
-                relative_motion=True,
-            ),
+    @pytest.mark.parametrize(
+        "tip_mass, sweep_angle, literature_freqs, tolerances, lumped_mass, node_multiplier",
+        SWEPT_CASES,
+    )
+    def test_swept_modes(
+        tip_mass: Literal["LE", "TE", "LE_CORRECTED", "TE_CORRECTED"] | None,
+        sweep_angle: Literal[10, 20],
+        literature_freqs: tuple[float, ...],
+        tolerances: tuple[float, ...],
+        lumped_mass: bool,
+        node_multiplier: int,
+    ):
+        r"""
+        Check the first 3 modes of a swept Pazy model against literature/FE reference values.
+        See the model data for the source of the data.
+        """
+        freqs = _swept_modes(
             tip_mass=tip_mass,
-            aoa=jnp.deg2rad(0.0),
-            m=6,
-            m_star=0,
-            node_multiplier=2,
+            sweep_angle=sweep_angle,
+            lumped_mass=lumped_mass,
+            node_multiplier=node_multiplier,
         )
 
-        reference = wing.reference_configuration(prescribed_dofs=tuple(range(6)))
+        error = jnp.abs((freqs / jnp.array(literature_freqs)) - 1.0)
 
-        freqs, *_ = wing.structure.modal(
-            case=reference.structure,
-            n_modes=3,
-        )
-        return freqs
-
-    def test_sweep_10_le_modes(self):
-        r"""
-        Check the first 3 modes of the swept Pazy model with leading edge mass, and that they are close to literature.
-        Comparing with "Flutter, Post-Flutter, and Limit-Cycle Oscillations of Very Flexible Swept Wings".
-        """
-        freqs = self._swept_modes(tip_mass="LE")
-
-        literature_freqs = jnp.array((4.31, 28.9, 37.5))  # hz
-
-        # the error in torsion here is quite high, hence the large torsion tolerance to allow it to pass
-        # to make this model more useful, we make a corrected model
-        tolerances = jnp.array(
-            (
-                1.1e-2,
-                1e-2,
-                0.1,
-            )
-        )
-
-        error = jnp.abs((freqs / literature_freqs) - 1.0)
-
-        assert jnp.all(error < tolerances), (
-            "Pazy undeformed structural frequencies do not match literature frequencies"
-        )
-
-    def test_sweep_10_le_corrected_modes(self):
-        r"""
-        Check the first 3 modes of the swept Pazy model with leading edge mass, and that they are close to literature.
-        This uses corrections to the tip inertia properties to better match the torsion mode. Comparing with "Flutter,
-        Post-Flutter, and Limit-Cycle Oscillations of Very Flexible Swept Wings".
-        """
-        freqs = self._swept_modes(tip_mass="LE_CORRECTED")
-
-        literature_freqs = jnp.array((4.31, 28.9, 37.5))  # hz
-
-        tolerances = jnp.array(
-            (
-                1.1e-2,
-                1e-2,
-                2e-2,
-            )
-        )
-
-        error = jnp.abs((freqs / literature_freqs) - 1.0)
-
-        assert jnp.all(error < tolerances), (
-            "Pazy undeformed structural frequencies do not match literature frequencies"
-        )
-
-    def test_sweep_10_te_modes(self):
-        r"""
-        Check the first 3 modes of the swept Pazy model with trailing edge mass, and that they are close to literature.
-        Comparing with "Flutter, Post-Flutter, and Limit-Cycle Oscillations of Very Flexible Swept Wings".
-        """
-        freqs = self._swept_modes(tip_mass="TE")
-
-        literature_freqs = jnp.array((4.27, 27.4, 38.7))  # hz
-
-        # second bending mode has a larger discrepancy, but torsion mode is relatively good
-        tolerances = jnp.array(
-            (
-                1e-2,
-                5e-2,
-                2e-2,
-            )
-        )
-
-        error = jnp.abs((freqs / literature_freqs) - 1.0)
-
-        assert jnp.all(error < tolerances), (
-            "Pazy undeformed structural frequencies do not match literature frequencies"
-        )
-
-    def test_sweep_10_te_corrected_modes(self):
-        r"""
-        Check the first 3 modes of the swept Pazy model with trailing edge mass, and that they are close to literature.
-        This uses corrections to the inertia properties to better match the second bending mode. Comparing with
-        "Flutter, Post-Flutter, and Limit-Cycle Oscillations of Very Flexible Swept Wings".
-        """
-        freqs = self._swept_modes(tip_mass="TE_CORRECTED")
-
-        literature_freqs = jnp.array((4.27, 27.4, 38.7))  # hz
-
-        tolerances = jnp.array(
-            (
-                1e-2,
-                1e-2,
-                2e-2,
-            )
-        )
-
-        error = jnp.abs((freqs / literature_freqs) - 1.0)
-
-        assert jnp.all(error < tolerances), (
+        assert jnp.all(error < jnp.array(tolerances)), (
             "Pazy undeformed structural frequencies do not match literature frequencies"
         )

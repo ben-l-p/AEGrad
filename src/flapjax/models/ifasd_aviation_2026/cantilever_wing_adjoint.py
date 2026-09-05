@@ -3,7 +3,7 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import OneMinusCosine
+from flapjax.aero.flowfields import OneMinusCosineFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.coupled import CoupledAeroelastic
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     beam_coords = jnp.zeros((n + 1, 3)).at[:, 1].set(jnp.linspace(0, b_ref, n + 1))
     grid = make_rectangular_grid(m, n, c_ref, ea=0.2)  # set elastic axis at 0.2 chord
 
-    flowfield = OneMinusCosine(
+    flowfield = OneMinusCosineFlowField(
         u_inf=u_inf,
         rho=1.225,  # flowfield density
         relative_motion=True,

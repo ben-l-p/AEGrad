@@ -5,7 +5,7 @@ from copy import deepcopy
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.gradients.data_structures import AeroGradsToCompute
 from flapjax.coupled import (
     AeroelasticDesignVariables,
@@ -28,7 +28,7 @@ RHO_KS = 20.0
 
 def _build_wing(u_inf_mag: float) -> CoupledAeroelastic:
     wing = make_pazy_wing(
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
             rho=RHO,
             relative_motion=True,
@@ -63,7 +63,7 @@ def _apply_dv(
         m_cs=wing.structure.m_cs,
         m_lumped=None,
         dt=wing.aero.dt,
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
             rho=RHO,
             relative_motion=True,

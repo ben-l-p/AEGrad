@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 
@@ -22,7 +22,7 @@ class TestMirroredWing:
         u_inf = jnp.array((10.0, 0.0, 1.0))
 
         dt = c_ref / (jnp.linalg.norm(u_inf) * m)
-        flowfield = Constant(u_inf, 1.225, True)
+        flowfield = ConstantFlowField(u_inf, 1.225, True)
 
         # mirrored case
         disc = GridDiscretisation(m=m, n=n, m_star=m_star)

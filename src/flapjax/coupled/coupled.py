@@ -21,7 +21,11 @@ from flapjax.coupled.gradients.data_structures import AeroelasticGradsToCompute
 from flapjax.coupled.linear.linear_coupled import LinearCoupled
 from flapjax.structure import BeamStructure, StructureCase
 from flapjax.structure.time_integration import TimeIntegrator
-from flapjax.structure.utils import get_solve_dofs, transform_nodal_vect
+from flapjax.structure.utils import (
+    get_solve_dofs,
+    input_dof_index_to_tuple,
+    transform_nodal_vect,
+)
 from flapjax.utils.constants import BASE_LOBATTO_ORDER
 from flapjax.utils.data_structures import ConvergenceSettings, ConvergenceStatus
 from flapjax.utils.print_utils import (
@@ -437,12 +441,16 @@ class BaseCoupledAeroelastic:
         fsi_converge_status.print_line(dynamic=True)
         return out
 
-    def initialise_dynamic(self, static_case: AeroelasticCase) -> AeroelasticCase:
+    def initialise_dynamic(
+        self, static_case: AeroelasticCase, prescribed_dofs: tuple[int, ...]
+    ) -> AeroelasticCase:
         r"""
         Initialise a dynamic aeroelastic snapshot from a static aeroelastic case. This takes a static aeroelastic case
         obtained under clamped conditions (i.e. `relative_motion` is True for the free stream), and sets the structural
         velocity to be that of the freestream.
         :param static_case: Static aeroelastic case.
+        :param prescribed_dofs: Prescribed dofs. This is often useful for updating from a clamped trim to a free-flying
+        dynamic case.
         :return: Dynamic aeroelastic snapshot.
         """
         u_inf = self.aero.flowfield.u_inf  # flowfield velocity to set
@@ -457,6 +465,13 @@ class BaseCoupledAeroelastic:
 
         dynamic_case = static_case.to_dynamic(t=None)
         dynamic_case.structure.v = dynamic_case.structure.v.at[:, :3].set(v_local)
+        dynamic_case.structure.prescribed_dofs = input_dof_index_to_tuple(
+            prescribed_dofs
+        )
+        dynamic_case.structure.free_dofs = get_solve_dofs(
+            n_dof=self.structure.n_dof,
+            prescribed_dofs=dynamic_case.structure.prescribed_dofs,
+        )
 
         return dynamic_case
 

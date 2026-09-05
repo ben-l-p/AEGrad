@@ -222,14 +222,15 @@ def plot_modes_vtu(
                         )
                     )
 
+                    ws = wake_series[i_surf]
                     if (
                         gamma_w is not None
                         and wake_active[i_surf]
-                        and wake_series[i_surf] is not None
+                        and ws is not None
                     ):
                         assert zeta_w is not None
                         wake_paths[i_surf].append(
-                            wake_series[i_surf].write(
+                            ws.write(
                                 grid_arr=zeta_w[i_surf],
                                 i_ts=i_phase,
                                 cell_scalar_data={"gamma": gamma_w[i_surf]},

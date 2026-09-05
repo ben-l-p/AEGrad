@@ -2,7 +2,7 @@ import pytest
 from jax import Array
 from jax import numpy as jnp
 
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.algebra.so3 import vec_to_skew
 from flapjax.models.pazy.straight.pazy_wing import make_pazy_wing
 from flapjax.models.pazy.swept.swept_pazy_wing import make_swept_pazy_wing
@@ -24,7 +24,7 @@ def generate_straight_static_aeroelastic(
         m_star=160,
         skin=True,
         aoa=aoa,
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
         ),
     )
@@ -54,7 +54,7 @@ def generate_swept_static_aeroelastic(
         m_star=160,
         tip_mass="TE_CORRECTED",
         aoa=aoa,
-        flowfield=Constant(
+        flowfield=ConstantFlowField(
             rho=rho, u_inf=jnp.array((u_inf_mag, 0.0, 0.0)), relative_motion=True
         ),
     )

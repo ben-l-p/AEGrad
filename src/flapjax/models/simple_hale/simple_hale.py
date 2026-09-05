@@ -3,14 +3,18 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant, FlowField, OneMinusCosine
+from flapjax.aero.flowfields import (
+    ConstantFlowField,
+    FlowField,
+    OneMinusCosineFlowField,
+)
 from flapjax.aero.utils import add_control_surface, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.algebra.array_utils import ArrayList
 from flapjax.coupled import CoupledAeroelastic
 from flapjax.structure import BeamStructure
 
-FLOWFIELD_DEFAULT = Constant(
+FLOWFIELD_DEFAULT = ConstantFlowField(
     rho=1.225,
     u_inf=jnp.array((10.0, 0.0, 0.0)),
     relative_motion=True,
@@ -369,7 +373,7 @@ if __name__ == "__main__":
     gust_length: float = 1.0 * u_inf_mag  # 1 second gust duration
     physical_time: float = 10.0
 
-    flowfield_ = OneMinusCosine(
+    flowfield_ = OneMinusCosineFlowField(
         u_inf=jnp.array((u_inf_mag, 0.0, 0.0)),
         rho=1.225,
         relative_motion=True,
@@ -393,7 +397,7 @@ if __name__ == "__main__":
     )
 
     # run gust case
-    dynamic_init = hale.initialise_dynamic(static_case=static_sol)
+    dynamic_init = hale.initialise_dynamic(static_case=static_sol, prescribed_dofs=())
 
     # noinspection bad-argument-type
     dynamic_sol = hale.dynamic_solve(

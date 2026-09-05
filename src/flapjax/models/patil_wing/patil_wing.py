@@ -2,7 +2,7 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import add_control_surface, make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.algebra.array_utils import ArrayList
@@ -106,7 +106,7 @@ def generate_patil_wing(
     )
     grid = make_rectangular_grid(m, n, c_ref, ea)
     dt = c_ref / (jnp.linalg.norm(u_inf) * m)
-    flowfield = Constant(u_inf=u_inf, rho=rho, relative_motion=True)
+    flowfield = ConstantFlowField(u_inf=u_inf, rho=rho, relative_motion=True)
 
     wing.set_design_variables(
         coords=beam_coords,

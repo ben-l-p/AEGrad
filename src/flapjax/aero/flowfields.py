@@ -12,7 +12,8 @@ from flapjax.utils.utils import make_pytree
 
 class FlowField:
     r"""
-    Base class for background flow field definitions.
+    Base class for background flow field definitions. Allows for the definition of arbitrary flow fields which are
+    functions of space and time.
     """
 
     _static: ClassVar[tuple[str, ...]] = ("relative_motion",)
@@ -85,7 +86,7 @@ class FlowField:
 
 
 @make_pytree
-class Constant(FlowField):
+class ConstantFlowField(FlowField):
     r"""
     Constant velocity flow field.
     """
@@ -98,7 +99,7 @@ class Constant(FlowField):
 
 
 @make_pytree
-class OneMinusCosine(FlowField):
+class OneMinusCosineFlowField(FlowField):
     r"""
     One minus cosine gust flow field.
     """
@@ -190,8 +191,8 @@ class OneMinusCosine(FlowField):
 
     def from_design_variables(
         self, design_variables: dict[str, Array]
-    ) -> OneMinusCosine:
-        return OneMinusCosine(
+    ) -> OneMinusCosineFlowField:
+        return OneMinusCosineFlowField(
             **design_variables,
             relative_motion=self.relative_motion,
             gust_travel_direction=self.gust_travel_direction,

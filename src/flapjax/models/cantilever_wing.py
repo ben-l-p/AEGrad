@@ -5,7 +5,7 @@ from jax import Array
 from jax import numpy as jnp
 
 from flapjax.aero.data_structures import GridDiscretisation
-from flapjax.aero.flowfields import Constant
+from flapjax.aero.flowfields import ConstantFlowField
 from flapjax.aero.utils import make_rectangular_grid
 from flapjax.aero.uvlm import UVLM
 from flapjax.coupled import CoupledAeroelastic
@@ -52,7 +52,7 @@ def generate_cantilever_wing(
     beam_coords = jnp.zeros((n_nodes, 3)).at[:, 1].set(jnp.linspace(0, b_ref, n_nodes))
     grid = make_rectangular_grid(m, n, c_ref, ea)
     dt = c_ref / (jnp.linalg.norm(u_inf) * m)
-    flowfield = Constant(u_inf=u_inf, rho=rho, relative_motion=True)
+    flowfield = ConstantFlowField(u_inf=u_inf, rho=rho, relative_motion=True)
 
     wing.set_design_variables(
         coords=beam_coords,
